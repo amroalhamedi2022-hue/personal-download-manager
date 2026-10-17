@@ -95,7 +95,7 @@ class DownloadCoreBaselineTest {
             }.exceptionOrNull()
 
             assertTrue(failure is NoSpaceInStorageException)
-            assertEquals(5L, (failure as NoSpaceInStorageException).available)
+            assertEquals(5L, failure.available)
             assertEquals(6L, failure.required)
             assertContentEquals(original, target.readBytes())
         } finally {
