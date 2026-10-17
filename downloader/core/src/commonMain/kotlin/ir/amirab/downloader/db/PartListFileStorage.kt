@@ -22,10 +22,8 @@ class PartListFileStorage(
 
     override suspend fun setParts(id: Long, parts: Parts) {
         withContext(Dispatchers.IO) {
-            kotlin.runCatching {
-                val file = getFileForId(id)
-                fileSaver.writeObject(file, parts)
-            }
+            val file = getFileForId(id)
+            fileSaver.writeObject(file, parts)
         }
     }
 

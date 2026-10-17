@@ -43,6 +43,15 @@ internal fun validateRemoteFileIdentity(
     }
 }
 
+internal suspend fun persistProgressAfterFlush(
+    flushDestination: () -> Unit,
+    persistSnapshot: suspend () -> Unit,
+) {
+    // Never persist progress that may still only exist in an unflushed write buffer.
+    flushDestination()
+    persistSnapshot()
+}
+
 
 /**
  * alive object that responsible for download a file
@@ -758,8 +767,10 @@ class HttpDownloadJob(
         partLock.withLock {
             val copy = getParts().map { it.copy() }
             if (lastSavedParts != copy) {
-                destination.flush()
-                partListDb.setParts(id, RangedParts(copy))
+                persistProgressAfterFlush(
+                    flushDestination = destination::flush,
+                    persistSnapshot = { partListDb.setParts(id, RangedParts(copy)) },
+                )
                 lastSavedParts = copy
             }
         }

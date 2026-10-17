@@ -11,7 +11,10 @@ import ir.amirab.downloader.connection.proxy.SystemProxySelectorProvider
 import ir.amirab.downloader.connection.response.HttpResponseInfo
 import ir.amirab.downloader.connection.response.expectSuccess
 import ir.amirab.downloader.destination.DestWriter
+import ir.amirab.downloader.db.PartListFileStorage
+import ir.amirab.downloader.db.TransactionalFileSaver
 import ir.amirab.downloader.downloaditem.http.HttpDownloadCredentials
+import ir.amirab.downloader.downloaditem.http.persistProgressAfterFlush
 import ir.amirab.downloader.downloaditem.http.validateRemoteFileIdentity
 import ir.amirab.downloader.exception.FileChangedException
 import ir.amirab.downloader.exception.UnSuccessfulResponseException
@@ -20,6 +23,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 import okio.Buffer
 import okio.FileSystem
@@ -286,6 +290,81 @@ class DownloadCoreBaselineTest {
         }
     }
 
+    @Test
+    fun progressIsPersistedOnlyAfterDestinationFlush() = runBlocking {
+        val events = mutableListOf<String>()
+
+        persistProgressAfterFlush(
+            flushDestination = { events += "flush" },
+            persistSnapshot = { events += "persist" },
+        )
+
+        assertEquals(listOf("flush", "persist"), events)
+    }
+
+    @Test
+    fun failedDestinationFlushNeverPersistsProgress() = runBlocking {
+        var persisted = false
+
+        assertFailsWith<IllegalStateException> {
+            persistProgressAfterFlush(
+                flushDestination = { error("flush failed") },
+                persistSnapshot = { persisted = true },
+            )
+        }
+
+        assertFalse(persisted)
+    }
+
+    @Test
+    fun committedPartProgressSurvivesRestartAndIgnoresInterruptedTempFile() {
+        val folder = java.nio.file.Files.createTempDirectory("download-parts-state-").toFile()
+        val fileSaver = TransactionalFileSaver(Json)
+        val expected = RangedParts(
+            listOf(
+                RangedPart(from = 0, to = 4, current = 3),
+                RangedPart(from = 5, to = 9, current = 7),
+            )
+        )
+
+        try {
+            runBlocking {
+                PartListFileStorage(folder, fileSaver).setParts(TEST_DOWNLOAD_ID, expected)
+            }
+            fileSaver.getBakFile(folder.resolve("$TEST_DOWNLOAD_ID.json"))
+                .writeText("interrupted replacement")
+
+            val restored = runBlocking {
+                PartListFileStorage(folder, TransactionalFileSaver(Json)).getParts(TEST_DOWNLOAD_ID)
+            }
+
+            assertEquals(expected, restored)
+        } finally {
+            folder.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun partProgressWriteFailureIsNotSilentlyIgnored() {
+        val fileInsteadOfFolder = File.createTempFile("download-parts-not-a-folder-", ".tmp")
+
+        try {
+            assertFailsWith<Exception> {
+                runBlocking {
+                    PartListFileStorage(
+                        folder = fileInsteadOfFolder,
+                        fileSaver = TransactionalFileSaver(Json),
+                    ).setParts(
+                        id = TEST_DOWNLOAD_ID,
+                        parts = RangedParts(listOf(RangedPart(from = 0, to = 9, current = 4))),
+                    )
+                }
+            }
+        } finally {
+            fileInsteadOfFolder.delete()
+        }
+    }
+
     private fun <T> withHttpFixture(
         rangeMode: RangeMode,
         block: (HttpFixture) -> T,
@@ -382,6 +461,7 @@ class DownloadCoreBaselineTest {
         val TEST_BYTES = ByteArray(10) { it.toByte() }
         const val TEST_ETAG = "\"fixture-v1\""
         const val TEST_LAST_MODIFIED = "Wed, 14 Oct 2026 20:00:00 GMT"
+        const val TEST_DOWNLOAD_ID = 42L
         const val TEST_SHA256 = "1f825aa2f0020ef7cf91dfa30da4668d791c5d4824fc8e41354b89ec05795ab3"
         val RANGE_PATTERN = Regex("""bytes=(\d+)-(\d*)""")
     }
