@@ -1,0 +1,86 @@
+name: Private Windows validation
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/private-windows-validation.yml"
+      - "build.gradle.kts"
+      - "settings.gradle.kts"
+      - "gradle/**"
+      - "gradle.properties"
+      - "buildSrc/**"
+      - "compositeBuilds/**"
+      - "desktop/**"
+      - "downloader/**"
+      - "integration/**"
+      - "shared/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-and-package:
+    name: Test and package Windows x64
+    runs-on: windows-2022
+    timeout-minutes: 90
+    env:
+      SKIP_ANDROID_BUILD: "true"
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up JetBrains Runtime 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: jetbrains
+          java-package: jdk
+          java-version: "25"
+          check-latest: true
+          cache: gradle
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify Gradle wrapper and toolchain
+        shell: bash
+        run: ./gradlew --no-daemon --version
+
+      - name: Run downloader tests and compile desktop app
+        shell: bash
+        run: >-
+          ./gradlew --no-daemon --stacktrace
+          --dependency-verification strict
+          :downloader:core:desktopTest
+          :desktop:app:compileKotlinDesktop
+
+      - name: Create Windows package
+        shell: bash
+        run: >-
+          ./gradlew --no-daemon --stacktrace
+          --dependency-verification strict
+          createReleaseFolderForCi
+
+      - name: Upload Windows package
+        uses: actions/upload-artifact@v4
+        with:
+          name: personal-download-manager-windows-x64
+          path: build/ci-release/binaries/**
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload test reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-validation-failure-reports
+          path: |
+            **/build/reports/**
+            **/build/test-results/**
+          if-no-files-found: ignore
+          retention-days: 7
