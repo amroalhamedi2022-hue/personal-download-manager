@@ -40,6 +40,9 @@ import java.net.InetSocketAddress
 import java.net.ProxySelector
 import java.security.MessageDigest
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -565,6 +568,96 @@ class DownloadCoreBaselineTest {
         )
     }
 
+    @Test
+    fun partRecoversFromOne503WithoutCorruptingTheFile() {
+        val requestedRanges = downloadAfterTransientFault(TransientFault.ServerError)
+
+        assertTrue(requestedRanges.size >= 2)
+        assertEquals(requestedRanges.first(), requestedRanges.last())
+    }
+
+    @Test
+    fun partRecoversFromOneReadTimeoutWithoutCorruptingTheFile() {
+        val requestedRanges = downloadAfterTransientFault(
+            fault = TransientFault.ReadTimeout,
+            readTimeoutMillis = 100,
+        )
+
+        assertTrue(requestedRanges.size >= 2)
+        assertEquals(requestedRanges.first(), requestedRanges.last())
+    }
+
+    @Test
+    fun partRecoversFromMidStreamDisconnectAtTheExactWrittenOffset() {
+        val requestedRanges = downloadAfterTransientFault(TransientFault.MidStreamDisconnect)
+        val resumedStart = requireNotNull(
+            RANGE_PATTERN.matchEntire(requestedRanges.last())
+        ).groupValues[1].toLong()
+
+        assertTrue(requestedRanges.size >= 2)
+        assertEquals("bytes=0-${TRANSIENT_TEST_BYTES.lastIndex}", requestedRanges.first())
+        assertTrue(resumedStart in 1 until TRANSIENT_TEST_BYTES.lastIndex.toLong())
+    }
+
+    private fun downloadAfterTransientFault(
+        fault: TransientFault,
+        readTimeoutMillis: Long = 10_000,
+    ): List<String> = withTransientFaultFixture(
+        bytes = TRANSIENT_TEST_BYTES,
+        fault = fault,
+        readTimeoutMillis = readTimeoutMillis,
+    ) { fixture ->
+        val target = File.createTempFile("download-core-transient-", ".bin")
+        val part = RangedPart(from = 0, to = TRANSIENT_TEST_BYTES.lastIndex.toLong())
+        val writer = DestWriter(
+            id = part.getID(),
+            file = target,
+            seekPos = part.current,
+            writer = FileSystem.SYSTEM.openReadWrite(target.toOkioPath()),
+        )
+        val terminalFailure = AtomicReference<Throwable?>()
+        val downloader = HttpPartDownloader(
+            credentials = HttpDownloadCredentials(fixture.url),
+            getDestWriter = { writer },
+            part = part,
+            client = fixture.client,
+            speedLimiters = emptyList(),
+            strictMode = true,
+            partSplitLock = Any(),
+            minPartProvider = MinPartSizeProvider { 1 },
+        ).also {
+            it.onTooManyErrors = terminalFailure::set
+        }
+
+        try {
+            RandomAccessFile(target, "rw").use {
+                it.setLength(TRANSIENT_TEST_BYTES.size.toLong())
+            }
+            runBlocking {
+                try {
+                    withTimeout(20.seconds) {
+                        downloader.start()
+                        downloader.join()
+                        assertEquals(PartDownloadStatus.Completed, part.status)
+                    }
+                } finally {
+                    downloader.stop()
+                    withTimeoutOrNull(5.seconds) { downloader.join() }
+                }
+            }
+
+            val assembled = target.readBytes()
+            assertNull(terminalFailure.get())
+            assertTrue(part.isCompleted)
+            assertContentEquals(TRANSIENT_TEST_BYTES, assembled)
+            assertEquals(TRANSIENT_TEST_SHA256, assembled.sha256())
+            fixture.requestedRanges.toList()
+        } finally {
+            writer.writer.close()
+            target.delete()
+        }
+    }
+
     private fun <T> withHttpFixture(
         rangeMode: RangeMode,
         block: (HttpFixture) -> T,
@@ -673,8 +766,71 @@ class DownloadCoreBaselineTest {
         }
     }
 
-    private fun createHttpClient() = OkHttpHttpDownloaderClient(
-        okHttpClient = OkHttpClient(),
+    private fun <T> withTransientFaultFixture(
+        bytes: ByteArray,
+        fault: TransientFault,
+        readTimeoutMillis: Long,
+        block: (FaultyHttpFixture) -> T,
+    ): T {
+        val requestCount = AtomicInteger()
+        val requestedRanges = CopyOnWriteArrayList<String>()
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/faulty.bin") { exchange ->
+            val requestedRange = requireNotNull(exchange.requestHeaders.getFirst("Range"))
+            requestedRanges += requestedRange
+            val match = requireNotNull(RANGE_PATTERN.matchEntire(requestedRange))
+            val start = match.groupValues[1].toInt()
+            val end = match.groupValues[2].takeIf(String::isNotEmpty)?.toInt()
+                ?: bytes.lastIndex
+            val attempt = requestCount.incrementAndGet()
+
+            try {
+                if (fault == TransientFault.ServerError && attempt == 1) {
+                    exchange.sendResponseHeaders(503, -1)
+                    return@createContext
+                }
+
+                exchange.responseHeaders.add("Content-Type", "application/octet-stream")
+                exchange.responseHeaders.add("Content-Range", "bytes $start-$end/${bytes.size}")
+                exchange.sendResponseHeaders(206, (end - start + 1).toLong())
+
+                if (fault == TransientFault.ReadTimeout && attempt == 1) {
+                    Thread.sleep(350)
+                }
+
+                exchange.responseBody.use { output ->
+                    if (fault == TransientFault.MidStreamDisconnect && attempt == 1) {
+                        val length = minOf(32 * 1024, end - start + 1)
+                        output.write(bytes, start, length)
+                        output.flush()
+                    } else {
+                        output.write(bytes, start, end - start + 1)
+                    }
+                }
+            } catch (_: IOException) {
+                // The timeout/disconnect attempt is intentionally closed by the client.
+            } finally {
+                exchange.close()
+            }
+        }
+        server.start()
+        return try {
+            block(
+                FaultyHttpFixture(
+                    url = "http://127.0.0.1:${server.address.port}/faulty.bin",
+                    client = createHttpClient(readTimeoutMillis),
+                    requestedRanges = requestedRanges,
+                )
+            )
+        } finally {
+            server.stop(0)
+        }
+    }
+
+    private fun createHttpClient(readTimeoutMillis: Long = 10_000) = OkHttpHttpDownloaderClient(
+        okHttpClient = OkHttpClient.Builder()
+            .readTimeout(readTimeoutMillis, TimeUnit.MILLISECONDS)
+            .build(),
         customUserAgentProvider = object : UserAgentProvider {
             override fun getUserAgent() = "download-manager-test"
         },
@@ -711,6 +867,18 @@ class DownloadCoreBaselineTest {
         val requestedRanges: List<String>,
     )
 
+    private data class FaultyHttpFixture(
+        val url: String,
+        val client: OkHttpHttpDownloaderClient,
+        val requestedRanges: List<String>,
+    )
+
+    private enum class TransientFault {
+        ServerError,
+        ReadTimeout,
+        MidStreamDisconnect,
+    }
+
     private enum class RangeMode {
         Supported,
         Ignored,
@@ -725,6 +893,8 @@ class DownloadCoreBaselineTest {
         const val TEST_DOWNLOAD_ID = 42L
         const val TEST_SHA256 = "1f825aa2f0020ef7cf91dfa30da4668d791c5d4824fc8e41354b89ec05795ab3"
         const val SLOW_TEST_SHA256 = "61d1d9c5745bdaa4fab39240651bc242a5186b15393fd475082fcf6e84f400ab"
+        val TRANSIENT_TEST_BYTES = ByteArray(128 * 1024) { (it % 239).toByte() }
+        const val TRANSIENT_TEST_SHA256 = "a543dd6017d1b53148dd67eba279f6ae618ea88e6c1b98436ff497e37429a4a0"
         val RANGE_PATTERN = Regex("""bytes=(\d+)-(\d*)""")
     }
 }
