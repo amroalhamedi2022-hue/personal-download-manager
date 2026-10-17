@@ -2,6 +2,8 @@ package ir.amirab.downloader.part
 
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
+import ir.amirab.downloader.DownloadManagerEvents
+import ir.amirab.downloader.DownloadManagerMinimalControl
 import ir.amirab.downloader.shouldDeleteDownloadOutput
 import ir.amirab.downloader.connection.OkHttpHttpDownloaderClient
 import ir.amirab.downloader.connection.UserAgentProvider
@@ -15,9 +17,11 @@ import ir.amirab.downloader.destination.DestWriter
 import ir.amirab.downloader.db.PartListFileStorage
 import ir.amirab.downloader.db.TransactionalFileSaver
 import ir.amirab.downloader.downloaditem.http.HttpDownloadCredentials
+import ir.amirab.downloader.downloaditem.http.HttpDownloadItem
 import ir.amirab.downloader.downloaditem.http.persistProgressAfterFlush
 import ir.amirab.downloader.downloaditem.http.validateRemoteFileIdentity
 import ir.amirab.downloader.downloaditem.DownloadStatus
+import ir.amirab.downloader.downloaditem.DownloadItemContext
 import ir.amirab.downloader.downloaditem.calculateRetryDelayMillis
 import ir.amirab.downloader.downloaditem.retryAfterHeaderOrNull
 import ir.amirab.downloader.exception.FileChangedException
@@ -26,13 +30,21 @@ import ir.amirab.downloader.utils.splitToRange
 import ir.amirab.downloader.utils.speedlimiter.OkioCustomizedThrottler
 import ir.amirab.downloader.utils.hostlimits.HostLimitRegistry
 import ir.amirab.downloader.utils.hostlimits.HostLimits
+import ir.amirab.downloader.queue.ManualDownloadQueue
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 import okio.Buffer
@@ -251,6 +263,104 @@ class DownloadCoreBaselineTest {
             assertEquals(3, registry.activeConnections("api.example.test"))
         } finally {
             permits.forEach { it.close() }
+        }
+    }
+
+    @Test
+    fun queueAndHostLimitsComposeWithoutStarvingPendingDownloads() = runBlocking {
+        val registry = HostLimitRegistry().apply {
+            configure("files.example.test", HostLimits(maxConnections = 3))
+        }
+        val items = (1L..3L).associateWith { id ->
+            HttpDownloadItem(
+                link = "https://files.example.test/$id.bin",
+                id = id,
+                folder = ".",
+                name = "$id.bin",
+            )
+        }
+        val events = MutableSharedFlow<DownloadManagerEvents>(extraBufferCapacity = 32)
+        val activeJobs = AtomicInteger()
+        val peakJobs = AtomicInteger()
+        val activeHostConnections = AtomicInteger()
+        val peakHostConnections = AtomicInteger()
+        val perJobActiveConnections = items.keys.associateWith { AtomicInteger() }
+        val perJobPeakConnections = items.keys.associateWith { AtomicInteger() }
+        val started = CopyOnWriteArrayList<Long>()
+        val completed = CopyOnWriteArrayList<Long>()
+
+        val controls = object : DownloadManagerMinimalControl {
+            override val listOfJobsEvents: SharedFlow<DownloadManagerEvents> = events
+
+            override suspend fun startJob(id: Long, context: DownloadItemContext) {
+                val item = requireNotNull(items[id])
+                started += id
+                events.emit(DownloadManagerEvents.OnJobStarting(item, context))
+                events.emit(DownloadManagerEvents.OnJobStarted(item, context))
+                val jobCount = activeJobs.incrementAndGet()
+                peakJobs.updateAndGet { previous -> maxOf(previous, jobCount) }
+                try {
+                    coroutineScope {
+                        List(2) {
+                            async {
+                                registry.withConnectionPermit("files.example.test") {
+                                    val hostCount = activeHostConnections.incrementAndGet()
+                                    peakHostConnections.updateAndGet { previous ->
+                                        maxOf(previous, hostCount)
+                                    }
+                                    val jobConnectionCount =
+                                        requireNotNull(perJobActiveConnections[id]).incrementAndGet()
+                                    requireNotNull(perJobPeakConnections[id]).updateAndGet { previous ->
+                                        maxOf(previous, jobConnectionCount)
+                                    }
+                                    try {
+                                        delay(80)
+                                    } finally {
+                                        requireNotNull(perJobActiveConnections[id]).decrementAndGet()
+                                        activeHostConnections.decrementAndGet()
+                                    }
+                                }
+                            }
+                        }.awaitAll()
+                    }
+                    completed += id
+                    events.emit(DownloadManagerEvents.OnJobCompleted(item, context))
+                } finally {
+                    activeJobs.decrementAndGet()
+                }
+            }
+
+            override suspend fun stopJob(id: Long, context: DownloadItemContext) = Unit
+
+            override fun canActivateJob(id: Long): Boolean = id !in completed
+        }
+        val queueScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val queue = ManualDownloadQueue(controls, queueScope)
+
+        try {
+            queue.boot()
+            withTimeout(1.seconds) {
+                events.subscriptionCount.first { it > 0 }
+            }
+            queue.setMaxConcurrent(2)
+            items.keys.forEach(queue::resume)
+
+            withTimeout(5.seconds) {
+                while (completed.size < items.size) {
+                    delay(20)
+                }
+            }
+
+            assertEquals(items.keys, started.toSet())
+            assertEquals(items.keys, completed.toSet())
+            assertEquals(items.size, started.size)
+            assertEquals(2, peakJobs.get())
+            assertEquals(3, peakHostConnections.get())
+            assertTrue(perJobPeakConnections.values.all { it.get() in 1..2 })
+            assertEquals(0, registry.activeConnections("files.example.test"))
+        } finally {
+            queue.clearQueue()
+            queueScope.cancel()
         }
     }
 
