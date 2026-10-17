@@ -13,8 +13,11 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withStyle
@@ -50,6 +53,8 @@ import ir.amirab.util.compose.IconSource
 import ir.amirab.util.compose.StringSource
 import ir.amirab.util.compose.asStringSource
 import ir.amirab.util.compose.resources.myStringResource
+import kotlin.math.PI
+import kotlin.math.sin
 
 enum class SingleDownloadPageSections(
     val title: StringSource,
@@ -240,90 +245,147 @@ private fun RenderProgressBar(itemState: IDownloadItemState) {
     }
 
     val status = itemState.statusOrFinished()
-    val background = when (status) {
-        is DownloadJobStatus.Finished -> myColors.successGradient
+    val liquidColors = when (status) {
+        is DownloadJobStatus.Finished -> myColors.primaryGradientColors
         is DownloadJobStatus.Canceled -> if (ExceptionUtils.isNormalCancellation(status.e)) {
-            myColors.warningGradient
+            listOf(myColors.warning, myColors.secondary)
         } else {
-            myColors.errorGradient
+            listOf(myColors.error, myColors.warning)
         }
 
-        DownloadJobStatus.IDLE -> myColors.warningGradient
-        is DownloadJobStatus.Retrying -> myColors.errorGradient
-        DownloadJobStatus.Finished -> myColors.successGradient
-        is DownloadJobStatus.PreparingFile -> myColors.infoGradient
+        DownloadJobStatus.IDLE -> listOf(myColors.warning, myColors.secondary)
+        is DownloadJobStatus.Retrying -> listOf(myColors.error, myColors.warning)
+        DownloadJobStatus.Finished -> myColors.primaryGradientColors
+        is DownloadJobStatus.PreparingFile -> listOf(myColors.info, myColors.secondary)
         DownloadJobStatus.Resuming,
         DownloadJobStatus.Downloading,
-            -> myColors.primaryGradient
+            -> myColors.primaryGradientColors
     }
 
+    LiquidProgressTrack(
+        progress = progress,
+        colors = liquidColors,
+        active = status is DownloadJobStatus.IsActive,
+        modifier = Modifier.fillMaxWidth().height(18.dp),
+        bubbleCount = 12,
+        showCompletionIcon = true,
+    )
+}
+
+/**
+ * Theme-aware liquid progress used by both progress lines in the download
+ * window. The wave and bubbles are clipped to the downloaded portion and the
+ * palette changes immediately when the application theme changes.
+ */
+@Composable
+private fun LiquidProgressTrack(
+    progress: Float?,
+    colors: List<Color>,
+    active: Boolean,
+    modifier: Modifier,
+    bubbleCount: Int,
+    showCompletionIcon: Boolean = false,
+) {
+    val animatedProgress by animateFloatAsState(
+        targetValue = progress?.coerceIn(0f, 1f) ?: 0f,
+        animationSpec = tween(180, easing = LinearEasing),
+    )
+    val liquidAnimation = rememberInfiniteTransition()
+    val phase by liquidAnimation.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2400, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart,
+        )
+    )
+    val shape = myShapes.defaultRounded
+
     Box(
-        Modifier
-            .fillMaxWidth()
-            .clip(myShapes.defaultRounded)
-            .height(14.dp)
+        modifier
+            .clip(shape)
             .background(myColors.onBackground / 15)
+            .border(1.dp, myColors.onBackground / 10, shape)
     ) {
-        progress?.let { progress ->
-            Box(
-                Modifier
-                    .background(background)
-                    .fillMaxHeight()
-                    .fillMaxWidth(
-                        animateFloatAsState(
-                            progress,
-                            tween(100, easing = LinearEasing)
-                        ).value
-                    )
-            ) {
-                if (progress == 1f) {
-                    MyIcon(
-                        MyIcons.check,
-                        null,
-                        Modifier
-                            .padding(1.dp)
-                            .clip(CircleShape)
-                            .background(myColors.onBackground)
-                            .padding(1.dp)
-                            .fillMaxHeight()
-                            .align(Alignment.CenterEnd),
-                        tint = myColors.background,
+        Canvas(Modifier.fillMaxSize()) {
+            if (progress == null && !active) return@Canvas
+
+            val isIndeterminate = progress == null
+            val nominalEnd = if (isIndeterminate) {
+                size.width * (phase * 1.45f)
+            } else {
+                size.width * animatedProgress
+            }
+            val startX = if (isIndeterminate) {
+                (nominalEnd - size.width * 0.38f).coerceAtLeast(0f)
+            } else {
+                0f
+            }
+            val endX = nominalEnd.coerceIn(0f, size.width)
+            if (endX <= startX) return@Canvas
+
+            val amplitude = if (!isIndeterminate && animatedProgress >= 0.995f) {
+                0f
+            } else {
+                size.height * 0.16f
+            }
+            val liquidPath = Path().apply {
+                moveTo(startX, 0f)
+                lineTo(endX, 0f)
+                val steps = 14
+                for (step in 0..steps) {
+                    val y = size.height * step / steps
+                    val angle = (step.toFloat() / steps * PI * 2.0) + (phase * PI * 2.0)
+                    val waveX = (endX + sin(angle).toFloat() * amplitude)
+                        .coerceIn(startX, size.width)
+                    lineTo(waveX, y)
+                }
+                lineTo(startX, size.height)
+                close()
+            }
+            drawPath(
+                path = liquidPath,
+                brush = Brush.linearGradient(
+                    colors = colors,
+                    start = Offset(startX, 0f),
+                    end = Offset(endX.coerceAtLeast(startX + 1f), size.height),
+                )
+            )
+
+            val liquidWidth = (endX - startX).coerceAtLeast(1f)
+            repeat(bubbleCount) { index ->
+                val speed = 0.28f + (index % 4) * 0.07f
+                val xRatio = ((index * 0.173f) + phase * speed) % 1f
+                val yRatio = ((index * 0.317f) + phase * (0.35f + index % 3 * 0.08f)) % 1f
+                val radius = size.height * (0.08f + (index % 3) * 0.035f)
+                val center = Offset(
+                    x = startX + liquidWidth * xRatio,
+                    y = size.height * (0.18f + yRatio * 0.64f),
+                )
+                if (center.x + radius < endX + amplitude) {
+                    drawCircle(
+                        color = Color.White.copy(alpha = 0.28f),
+                        radius = radius,
+                        center = center,
+                        style = Stroke(width = (radius * 0.38f).coerceAtLeast(0.7f)),
                     )
                 }
             }
         }
-        if (progress == null && status is DownloadJobStatus.IsActive) {
-            val anim = rememberInfiniteTransition()
-            val l = 2000
-            val endPos by anim.animateFloat(
-                0f,
-                1f,
-                infiniteRepeatable(tween(l), RepeatMode.Restart)
-            )
-            val width by anim.animateFloat(
-                6f, 16f, infiniteRepeatable(
-                    keyframes {
-                        durationMillis = l
-                        0f atFraction 0f
-                        0.75f atFraction 0.25f
-                        0f atFraction 1f
-                    },
-                    repeatMode = RepeatMode.Restart
-                )
-            )
-            Box(
+
+        if (showCompletionIcon && progress != null && progress >= 1f) {
+            MyIcon(
+                MyIcons.check,
+                null,
                 Modifier
+                    .padding(2.dp)
+                    .clip(CircleShape)
+                    .background(myColors.onBackground)
+                    .padding(1.dp)
                     .fillMaxHeight()
-                    .fillMaxWidth(endPos)
-            ) {
-                Box(
-                    Modifier
-                        .background(background)
-                        .fillMaxHeight()
-                        .align(Alignment.CenterEnd)
-                        .fillMaxWidth(width)
-                )
-            }
+                    .align(Alignment.CenterEnd),
+                tint = myColors.background,
+            )
         }
     }
 }
@@ -348,7 +410,7 @@ private fun RenderPartInfo(
                 itemState.parts,
                 Modifier
                     .padding(horizontal = horizontalPadding)
-                    .height(4.dp)
+                    .height(10.dp)
                     .clip(myShapes.defaultRounded)
                     .background(myColors.onBackground / 15)
             )
@@ -820,27 +882,21 @@ private fun RenderParts(parts: List<UiPart>, modifier: Modifier) {
 private fun RenderPart(part: UiPart, modifier: Modifier) {
     val partProgress = part.percent?.let {
         it / 100f
-    } ?: 0f
+    }
 
-    val foregroundColor = when (part.status) {
-        is PartDownloadStatus.Canceled -> myColors.error
-        PartDownloadStatus.Completed -> myColors.info
-        PartDownloadStatus.IDLE -> myColors.info / 25
-        PartDownloadStatus.ReceivingData -> myColors.success
-        PartDownloadStatus.Connecting -> myColors.warning
+    val liquidColors = when (part.status) {
+        is PartDownloadStatus.Canceled -> listOf(myColors.error, myColors.warning)
+        PartDownloadStatus.Completed -> myColors.primaryGradientColors
+        PartDownloadStatus.IDLE -> myColors.primaryGradientColors
+        PartDownloadStatus.ReceivingData -> myColors.primaryGradientColors
+        PartDownloadStatus.Connecting -> listOf(myColors.info, myColors.secondary)
     }
-    Row(modifier) {
-        Box(
-            Modifier
-                .fillMaxSize()
-        ) {
-            Box(
-                Modifier
-                    .align(Alignment.CenterStart)
-                    .fillMaxWidth(partProgress)
-                    .fillMaxHeight()
-                    .background(foregroundColor)
-            )
-        }
-    }
+    LiquidProgressTrack(
+        progress = partProgress,
+        colors = liquidColors,
+        active = part.status == PartDownloadStatus.ReceivingData ||
+            part.status == PartDownloadStatus.Connecting,
+        modifier = modifier.padding(end = 1.dp),
+        bubbleCount = 2,
+    )
 }
