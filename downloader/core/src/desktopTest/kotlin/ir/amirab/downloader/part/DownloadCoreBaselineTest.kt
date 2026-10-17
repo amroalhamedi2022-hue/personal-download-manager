@@ -18,6 +18,8 @@ import ir.amirab.downloader.downloaditem.http.HttpDownloadCredentials
 import ir.amirab.downloader.downloaditem.http.persistProgressAfterFlush
 import ir.amirab.downloader.downloaditem.http.validateRemoteFileIdentity
 import ir.amirab.downloader.downloaditem.DownloadStatus
+import ir.amirab.downloader.downloaditem.calculateRetryDelayMillis
+import ir.amirab.downloader.downloaditem.retryAfterHeaderOrNull
 import ir.amirab.downloader.exception.FileChangedException
 import ir.amirab.downloader.exception.UnSuccessfulResponseException
 import kotlinx.coroutines.async
@@ -166,6 +168,35 @@ class DownloadCoreBaselineTest {
             }
             assertEquals(416, failure.code)
             assertFalse(it.responseInfo.resumeSupport)
+        }
+    }
+
+    @Test
+    fun liveTooManyRequestsResponsePreservesRetryAfterDelay() = withHttpFixture(
+        rangeMode = RangeMode.TooManyRequests,
+    ) { fixture ->
+        val connection = runBlocking {
+            fixture.client.connect(
+                credentials = HttpDownloadCredentials(fixture.url),
+                start = 0,
+                end = 9,
+            )
+        }
+
+        connection.use {
+            val failure = assertFailsWith<UnSuccessfulResponseException> {
+                it.responseInfo.expectSuccess()
+            }
+
+            assertEquals(429, failure.code)
+            assertEquals("7", failure.retryAfterHeader)
+            assertEquals(
+                7_000,
+                calculateRetryDelayMillis(
+                    retryIndex = 0,
+                    retryAfterHeader = failure.retryAfterHeader,
+                ),
+            )
         }
     }
 
@@ -489,6 +520,51 @@ class DownloadCoreBaselineTest {
         }
     }
 
+    @Test
+    fun retryDelayUsesBoundedExponentialBackoff() {
+        assertEquals(3_000, calculateRetryDelayMillis(retryIndex = 0))
+        assertEquals(6_000, calculateRetryDelayMillis(retryIndex = 1))
+        assertEquals(12_000, calculateRetryDelayMillis(retryIndex = 2))
+        assertEquals(60_000, calculateRetryDelayMillis(retryIndex = 20))
+    }
+
+    @Test
+    fun retryAfterDeltaSecondsOverridesShorterBackoffAndIsBounded() {
+        assertEquals(
+            120_000,
+            calculateRetryDelayMillis(retryIndex = 0, retryAfterHeader = "120"),
+        )
+        assertEquals(
+            15 * 60_000,
+            calculateRetryDelayMillis(retryIndex = 0, retryAfterHeader = "999999999"),
+        )
+    }
+
+    @Test
+    fun retryAfterHttpDateAndNestedResponseFailureArePreserved() {
+        val now = 1_792_008_000_000L // Wed, 14 Oct 2026 20:00:00 GMT
+        val response = HttpResponseInfo(
+            statusCode = 429,
+            message = "Too Many Requests",
+            requestUrl = "https://example.test/file.bin",
+            responseHeaders = mapOf("retry-after" to "Wed, 14 Oct 2026 20:00:10 GMT"),
+        )
+        val failure = assertFailsWith<UnSuccessfulResponseException> {
+            response.expectSuccess()
+        }
+        val nested = IllegalStateException("part failed", failure)
+
+        assertEquals("Wed, 14 Oct 2026 20:00:10 GMT", nested.retryAfterHeaderOrNull())
+        assertEquals(
+            10_000,
+            calculateRetryDelayMillis(
+                retryIndex = 0,
+                retryAfterHeader = nested.retryAfterHeaderOrNull(),
+                nowEpochMillis = now,
+            ),
+        )
+    }
+
     private fun <T> withHttpFixture(
         rangeMode: RangeMode,
         block: (HttpFixture) -> T,
@@ -538,6 +614,12 @@ class DownloadCoreBaselineTest {
                 assertEquals("bytes=10-20", exchange.requestHeaders.getFirst("Range"))
                 exchange.responseHeaders.add("Content-Range", "bytes */10")
                 exchange.sendResponseHeaders(416, -1)
+            }
+
+            RangeMode.TooManyRequests -> {
+                assertEquals("bytes=0-9", exchange.requestHeaders.getFirst("Range"))
+                exchange.responseHeaders.add("Retry-After", "7")
+                exchange.sendResponseHeaders(429, -1)
             }
         }
         exchange.close()
@@ -633,6 +715,7 @@ class DownloadCoreBaselineTest {
         Supported,
         Ignored,
         NotSatisfiable,
+        TooManyRequests,
     }
 
     private companion object {

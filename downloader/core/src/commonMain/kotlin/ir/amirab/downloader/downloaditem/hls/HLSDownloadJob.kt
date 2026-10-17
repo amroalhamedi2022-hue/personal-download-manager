@@ -10,6 +10,8 @@ import ir.amirab.downloader.downloaditem.DownloadJobExtraConfig
 import ir.amirab.downloader.downloaditem.DownloadJobStatus
 import ir.amirab.downloader.downloaditem.DownloadStatus
 import ir.amirab.downloader.downloaditem.IDownloadItem
+import ir.amirab.downloader.downloaditem.calculateRetryDelayMillis
+import ir.amirab.downloader.downloaditem.retryAfterHeaderOrNull
 import ir.amirab.downloader.exception.DownloadValidationException
 import ir.amirab.downloader.exception.TooManyErrorException
 import ir.amirab.downloader.part.*
@@ -346,7 +348,6 @@ class HLSDownloadJob(
     }
 
     var failedDownloadTries = 0
-    val delayForEachRetry = 3_000L
     private var downloadedSizeBeforeRetry = 0L
 
     private var retryJob: Job? = null
@@ -383,22 +384,28 @@ class HLSDownloadJob(
             // we always have one try (the initial resume action), after that others are retries!
             val retriedCount = (failedDownloadTries - 1).coerceAtLeast(0)
             if (retriedCount < getMaxAllowedRetries()) {
-                retry(isInFirstResume)
+                retry(
+                    isInFirstResume = isInFirstResume,
+                    delayMillis = calculateRetryDelayMillis(
+                        retryIndex = retriedCount,
+                        retryAfterHeader = e.retryAfterHeaderOrNull(),
+                    ),
+                )
             } else {
                 pause(TooManyErrorException(e))
             }
         }
     }
 
-    fun retry(isInFirstResume: Boolean) {
+    fun retry(isInFirstResume: Boolean, delayMillis: Long) {
         scope.launch {
             val newScopeResult = retryLock.tryLocked {
                 val job = async {
                     saveState()
                     cancelDownloadScope()
                     stopAllParts()
-                    _status.update { DownloadJobStatus.Retrying(delayForEachRetry) }
-                    delay(delayForEachRetry.milliseconds)
+                    _status.update { DownloadJobStatus.Retrying(delayMillis) }
+                    delay(delayMillis.milliseconds)
                     createAndInitializeDownloadScope()
                 }
                 retryJob = job
