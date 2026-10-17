@@ -25,10 +25,8 @@ kotlin {
                 api("io.lindstrom:m3u8-parser:0.29")
             }
         }
-        desktopTest {
-            dependencies {
-                implementation(kotlin("test"))
-            }
+        commonTest.dependencies {
+            implementation(kotlin("test"))
         }
     }
 }
