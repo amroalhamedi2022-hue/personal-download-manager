@@ -10,13 +10,23 @@ import ir.amirab.downloader.connection.proxy.ProxyStrategyProvider
 import ir.amirab.downloader.connection.proxy.SystemProxySelectorProvider
 import ir.amirab.downloader.connection.response.HttpResponseInfo
 import ir.amirab.downloader.connection.response.expectSuccess
+import ir.amirab.downloader.destination.DestWriter
 import ir.amirab.downloader.downloaditem.http.HttpDownloadCredentials
+import ir.amirab.downloader.downloaditem.http.validateRemoteFileIdentity
+import ir.amirab.downloader.exception.FileChangedException
 import ir.amirab.downloader.exception.UnSuccessfulResponseException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient
 import okio.Buffer
+import okio.FileSystem
+import okio.Path.Companion.toOkioPath
+import java.io.File
+import java.io.RandomAccessFile
 import java.net.InetSocketAddress
 import java.net.ProxySelector
+import java.security.MessageDigest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -147,6 +157,123 @@ class DownloadCoreBaselineTest {
         }
     }
 
+    @Test
+    fun matchingRemoteIdentityAllowsResume() {
+        validateRemoteFileIdentity(
+            expectedLength = 10,
+            expectedETag = TEST_ETAG,
+            actualLength = 10,
+            actualETag = TEST_ETAG,
+        )
+    }
+
+    @Test
+    fun changedRemoteLengthBlocksResume() {
+        val failure = assertFailsWith<FileChangedException.LengthChangedException> {
+            validateRemoteFileIdentity(
+                expectedLength = 10,
+                expectedETag = TEST_ETAG,
+                actualLength = 11,
+                actualETag = TEST_ETAG,
+            )
+        }
+
+        assertEquals(10, failure.lastContentLength)
+        assertEquals(11, failure.newContentLength)
+    }
+
+    @Test
+    fun missingRemoteLengthBlocksResume() {
+        val failure = assertFailsWith<FileChangedException.LengthChangedException> {
+            validateRemoteFileIdentity(
+                expectedLength = 10,
+                expectedETag = TEST_ETAG,
+                actualLength = null,
+                actualETag = TEST_ETAG,
+            )
+        }
+
+        assertEquals(-1, failure.newContentLength)
+    }
+
+    @Test
+    fun changedRemoteETagBlocksResume() {
+        val failure = assertFailsWith<FileChangedException.ETagChangedException> {
+            validateRemoteFileIdentity(
+                expectedLength = 10,
+                expectedETag = TEST_ETAG,
+                actualLength = 10,
+                actualETag = "\"fixture-v2\"",
+            )
+        }
+
+        assertEquals(TEST_ETAG, failure.oldETag)
+        assertEquals("\"fixture-v2\"", failure.newETag)
+    }
+
+    @Test
+    fun absentETagPreservesLengthBasedResumeCompatibility() {
+        validateRemoteFileIdentity(
+            expectedLength = 10,
+            expectedETag = TEST_ETAG,
+            actualLength = 10,
+            actualETag = null,
+        )
+    }
+
+    @Test
+    fun threeRealHttpPartsAssembleTheExpectedFile() = withHttpFixture(
+        rangeMode = RangeMode.Supported,
+    ) { fixture ->
+        val target = File.createTempFile("download-core-multipart-", ".bin")
+        val ranges = listOf(0L..3L, 4L..6L, 7L..9L)
+        val writers = mutableListOf<DestWriter>()
+        val partSplitLock = Any()
+
+        try {
+            RandomAccessFile(target, "rw").use { it.setLength(TEST_BYTES.size.toLong()) }
+            val downloaders = ranges.map { range ->
+                val part = RangedPart(from = range.first, to = range.last)
+                val writer = DestWriter(
+                    id = part.getID(),
+                    file = target,
+                    seekPos = part.current,
+                    writer = FileSystem.SYSTEM.openReadWrite(target.toOkioPath()),
+                ).also(writers::add)
+
+                HttpPartDownloader(
+                    credentials = HttpDownloadCredentials(fixture.url),
+                    getDestWriter = { writer },
+                    part = part,
+                    client = fixture.client,
+                    speedLimiters = emptyList(),
+                    strictMode = true,
+                    partSplitLock = partSplitLock,
+                    minPartProvider = MinPartSizeProvider { 1 },
+                ).also { downloader ->
+                    downloader.onTooManyErrors = { throw AssertionError(it) }
+                }
+            }
+
+            runBlocking {
+                downloaders.forEach(HttpPartDownloader::start)
+                downloaders.map { downloader ->
+                    async { downloader.awaitFinishOrError() }
+                }.awaitAll().forEach { status ->
+                    assertEquals(PartDownloadStatus.Completed, status)
+                }
+                downloaders.forEach { it.join() }
+            }
+
+            val assembled = target.readBytes()
+            assertContentEquals(TEST_BYTES, assembled)
+            assertEquals(TEST_SHA256, assembled.sha256())
+        } finally {
+            writers.forEach { it.writer.close() }
+            target.delete()
+        }
+    }
+
     private fun <T> withHttpFixture(
         rangeMode: RangeMode,
         block: (HttpFixture) -> T,
@@ -175,9 +302,13 @@ class DownloadCoreBaselineTest {
 
         when (rangeMode) {
             RangeMode.Supported -> {
-                assertEquals("bytes=2-5", exchange.requestHeaders.getFirst("Range"))
-                val body = TEST_BYTES.copyOfRange(2, 6)
-                exchange.responseHeaders.add("Content-Range", "bytes 2-5/10")
+                val requestedRange = requireNotNull(exchange.requestHeaders.getFirst("Range"))
+                val match = requireNotNull(RANGE_PATTERN.matchEntire(requestedRange))
+                val start = match.groupValues[1].toInt()
+                val end = match.groupValues[2].takeIf(String::isNotEmpty)?.toInt()
+                    ?: TEST_BYTES.lastIndex
+                val body = TEST_BYTES.copyOfRange(start, end + 1)
+                exchange.responseHeaders.add("Content-Range", "bytes $start-$end/${TEST_BYTES.size}")
                 exchange.sendResponseHeaders(206, body.size.toLong())
                 exchange.responseBody.use { it.write(body) }
             }
@@ -220,6 +351,10 @@ class DownloadCoreBaselineTest {
         return buffer.readByteArray()
     }
 
+    private fun ByteArray.sha256(): String = MessageDigest.getInstance("SHA-256")
+        .digest(this)
+        .joinToString("") { "%02x".format(it) }
+
     private data class HttpFixture(
         val url: String,
         val client: OkHttpHttpDownloaderClient,
@@ -235,5 +370,7 @@ class DownloadCoreBaselineTest {
         val TEST_BYTES = ByteArray(10) { it.toByte() }
         const val TEST_ETAG = "\"fixture-v1\""
         const val TEST_LAST_MODIFIED = "Wed, 14 Oct 2026 20:00:00 GMT"
+        const val TEST_SHA256 = "1f825aa2f0020ef7cf91dfa30da4668d791c5d4824fc8e41354b89ec05795ab3"
+        val RANGE_PATTERN = Regex("""bytes=(\d+)-(\d*)""")
     }
 }

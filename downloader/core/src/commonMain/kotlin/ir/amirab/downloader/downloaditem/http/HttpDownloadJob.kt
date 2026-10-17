@@ -29,6 +29,21 @@ import java.util.concurrent.ConcurrentHashMap
 import kotlin.time.Duration.Companion.milliseconds
 
 
+internal fun validateRemoteFileIdentity(
+    expectedLength: Long,
+    expectedETag: String?,
+    actualLength: Long?,
+    actualETag: String?,
+) {
+    if (actualLength != expectedLength) {
+        throw FileChangedException.LengthChangedException(expectedLength, actualLength ?: -1)
+    }
+    if (expectedETag != null && actualETag != null && expectedETag != actualETag) {
+        throw FileChangedException.ETagChangedException(expectedETag, actualETag)
+    }
+}
+
+
 /**
  * alive object that responsible for download a file
  */
@@ -676,17 +691,12 @@ class HttpDownloadJob(
             downloadItem.serverETag = newServerETag
         } else {
             // check if we file not changed from remote
-            if (totalLength != downloadItem.contentLength) {
-                throw FileChangedException.LengthChangedException(downloadItem.contentLength, totalLength ?: -1)
-            }
-            if (oldServerETag != null && newServerETag != null) {
-                // we already know that sizes are the same,
-                // but we also have etag header
-                // so, we have chance to compare file contents of local and server
-                if (oldServerETag != newServerETag) {
-                    throw FileChangedException.ETagChangedException(oldServerETag, newServerETag)
-                }
-            }
+            validateRemoteFileIdentity(
+                expectedLength = downloadItem.contentLength,
+                expectedETag = oldServerETag,
+                actualLength = totalLength,
+                actualETag = newServerETag,
+            )
         }
 //            thisLogger().info("fetchDownloadInfoAndValidate :${response.code},${response.headers} ")
         saveState()
