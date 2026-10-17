@@ -8,6 +8,7 @@ import ir.amirab.downloader.destination.DestWriter
 import ir.amirab.downloader.downloaditem.http.IHttpDownloadCredentials
 import ir.amirab.downloader.exception.ServerPartIsNotTheSameAsWeExpectException
 import ir.amirab.downloader.utils.speedlimiter.SpeedLimiter
+import ir.amirab.downloader.utils.hostlimits.HostLimitRegistry
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.isActive
@@ -36,6 +37,7 @@ class HttpPartDownloader(
     val strictMode: Boolean,
     partSplitLock: Any,
     minPartProvider: MinPartSizeProvider,
+    private val hostLimitRegistry: HostLimitRegistry? = null,
 ) : PartDownloader<RangedPart>(
     part = part,
     getDestWriter = getDestWriter
@@ -46,24 +48,37 @@ class HttpPartDownloader(
         from: Long,
         to: Long?,
     ): Connection<HttpResponseInfo> {
-        val connect = client.connect(credentials, from, to)
-        // make sure this is a 2xx response
-        kotlin.runCatching {
-            connect.responseInfo.expectSuccess()
-        }
-            .onFailure {
-                // close connection before throwing exception
-                kotlin.runCatching {
-                    connect.close()
-                }
+        val hostPermit = hostLimitRegistry?.acquireForUrl(credentials.link)
+        var openedConnection: Connection<HttpResponseInfo>? = null
+        try {
+            val connect = client.connect(credentials, from, to)
+            openedConnection = connect
+            // make sure this is a 2xx response
+            kotlin.runCatching {
+                connect.responseInfo.expectSuccess()
             }
-            .getOrThrow()
-        val source = speedLimiters.fold<SpeedLimiter, Source>(connect.source) { acc, speedLimiter ->
-            speedLimiter.source(acc)
+                .onFailure {
+                    // close connection before throwing exception
+                    kotlin.runCatching {
+                        connect.close()
+                    }
+                }
+                .getOrThrow()
+            val limiters = buildList {
+                addAll(speedLimiters)
+                hostLimitRegistry?.speedLimiterForUrl(credentials.link)?.let(::add)
+            }
+            val source = limiters.fold<SpeedLimiter, Source>(connect.source) { acc, speedLimiter ->
+                speedLimiter.source(acc)
+            }.let { limitedSource ->
+                hostPermit?.releaseWhenClosed(limitedSource) ?: limitedSource
+            }
+            return connect.copy(source = source)
+        } catch (failure: Throwable) {
+            kotlin.runCatching { openedConnection?.close() }
+            hostPermit?.close()
+            throw failure
         }
-        return connect.copy(
-            source = source
-        )
     }
 
     override fun onFinish() {

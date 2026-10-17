@@ -25,6 +25,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import ir.amirab.downloader.utils.speedlimiter.SpeedLimiter
+import ir.amirab.downloader.utils.hostlimits.HostLimitRegistry
+import ir.amirab.downloader.utils.hostlimits.HostLimits
 import java.io.File
 
 internal fun shouldDeleteDownloadOutput(
@@ -353,8 +355,24 @@ class DownloadManager(
 
     //global speed limiter
     internal val speedLimiter = SpeedLimiter()
+    internal val hostLimitRegistry = HostLimitRegistry()
+
     fun limitGlobalSpeed(bytePerSecond: Long) {
         speedLimiter.bytesPerSecond(bytePerSecond)
+    }
+
+    fun configureHostLimits(
+        host: String,
+        maxConnections: Int = 0,
+        bytesPerSecond: Long = 0,
+    ) {
+        hostLimitRegistry.configure(
+            host = host,
+            limits = HostLimits(
+                maxConnections = maxConnections,
+                bytesPerSecond = bytesPerSecond,
+            ),
+        )
     }
 
     fun reloadSetting() {

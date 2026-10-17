@@ -635,7 +635,8 @@ class HttpDownloadJob(
                     ),
                     strictMode = strictDownload,
                     partSplitLock = partSplitLock,
-                    minPartProvider = { downloadManager.settings.minPartSize }
+                    minPartProvider = { downloadManager.settings.minPartSize },
+                    hostLimitRegistry = downloadManager.hostLimitRegistry,
                 ).also { partDownloader: HttpPartDownloader ->
                     partDownloader.onTooManyErrors = {
                         onPartHaveToManyError(it)

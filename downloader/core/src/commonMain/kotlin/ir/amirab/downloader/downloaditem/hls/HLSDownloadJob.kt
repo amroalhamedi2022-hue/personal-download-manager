@@ -491,6 +491,7 @@ class HLSDownloadJob(
                         downloadManager.speedLimiter,
                         speedLimiter,
                     ),
+                    hostLimitRegistry = downloadManager.hostLimitRegistry,
                 ).also { partDownloader: HLSPartDownloader ->
                     partDownloader.onTooManyErrors = {
                         onPartHaveToManyError(it)

@@ -24,8 +24,11 @@ import ir.amirab.downloader.exception.FileChangedException
 import ir.amirab.downloader.exception.UnSuccessfulResponseException
 import ir.amirab.downloader.utils.splitToRange
 import ir.amirab.downloader.utils.speedlimiter.OkioCustomizedThrottler
+import ir.amirab.downloader.utils.hostlimits.HostLimitRegistry
+import ir.amirab.downloader.utils.hostlimits.HostLimits
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -141,6 +144,57 @@ class DownloadCoreBaselineTest {
             10,
             limiter.byteCountOrWaitNanos(now = now + 100_000_000, byteCount = 20),
         )
+    }
+
+    @Test
+    fun hostRegistryCapsConcurrentConnectionsAcrossJobs() = runBlocking {
+        val registry = HostLimitRegistry()
+        registry.configure(
+            host = "EXAMPLE.test.",
+            limits = HostLimits(maxConnections = 2),
+        )
+        val active = AtomicInteger()
+        val peak = AtomicInteger()
+
+        coroutineScope {
+            List(6) {
+                async {
+                    registry.withConnectionPermit("example.TEST") {
+                        val current = active.incrementAndGet()
+                        peak.updateAndGet { previous -> maxOf(previous, current) }
+                        delay(40)
+                        active.decrementAndGet()
+                    }
+                }
+            }.awaitAll()
+        }
+
+        assertEquals(2, peak.get())
+        assertEquals(0, active.get())
+        assertEquals(0, registry.activeConnections("example.test"))
+    }
+
+    @Test
+    fun hostPermitIsReleasedExactlyOnceWhenConnectionSourceCloses() = runBlocking {
+        val registry = HostLimitRegistry()
+        registry.configure(
+            host = "example.test",
+            limits = HostLimits(maxConnections = 1, bytesPerSecond = 64 * 1024),
+        )
+        val permit = requireNotNull(
+            registry.acquireForUrl("https://EXAMPLE.test/file.bin")
+        )
+        val source = permit.releaseWhenClosed(Buffer().writeUtf8("payload"))
+
+        assertEquals(1, registry.activeConnections("example.test"))
+        assertTrue(
+            registry.speedLimiterForHost("example.test") ===
+                registry.speedLimiterForUrl("https://example.test/another.bin")
+        )
+        source.close()
+        source.close()
+
+        assertEquals(0, registry.activeConnections("example.test"))
     }
 
     @Test

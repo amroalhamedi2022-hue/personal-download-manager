@@ -11,6 +11,7 @@ import ir.amirab.util.HttpUrlUtils
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.isActive
 import ir.amirab.downloader.utils.speedlimiter.SpeedLimiter
+import ir.amirab.downloader.utils.hostlimits.HostLimitRegistry
 import kotlin.coroutines.cancellation.CancellationException
 
 class HLSPartDownloader(
@@ -19,6 +20,7 @@ class HLSPartDownloader(
     private val baseURL: String,
     private val client: HttpDownloaderClient,
     private val speedLimiters: List<SpeedLimiter>,
+    private val hostLimitRegistry: HostLimitRegistry? = null,
 ) : PartDownloader<
         MediaSegment
         >(
@@ -37,25 +39,38 @@ class HLSPartDownloader(
         requireNotNull(fullLink) {
             "link is incorrect! ${part.link}"
         }
-        val connect = client.connect(
-            HttpDownloadCredentials(fullLink.toString()),
-            null, null,
-        )
-        if (stop || !currentCoroutineContext().isActive) {
-            connect.close()
-            throw CancellationException()
-        }
-        if (!connect.responseInfo.isSuccessFul) {
-            connect.close()
-            throw CancellationException()
-        }
-        part.length = connect.responseInfo.contentLength
-        return connect.let {
-            it.copy(
-                source = speedLimiters.fold(it.source) { acc, thr ->
-                    thr.source(acc)
-                }
+        val url = fullLink.toString()
+        val hostPermit = hostLimitRegistry?.acquireForUrl(url)
+        var openedConnection: Connection<HttpResponseInfo>? = null
+        try {
+            val connect = client.connect(
+                HttpDownloadCredentials(url),
+                null, null,
             )
+            openedConnection = connect
+            if (stop || !currentCoroutineContext().isActive) {
+                connect.close()
+                throw CancellationException()
+            }
+            if (!connect.responseInfo.isSuccessFul) {
+                connect.close()
+                throw CancellationException()
+            }
+            part.length = connect.responseInfo.contentLength
+            val limiters = buildList {
+                addAll(speedLimiters)
+                hostLimitRegistry?.speedLimiterForUrl(url)?.let(::add)
+            }
+            val source = limiters.fold(connect.source) { acc, limiter ->
+                limiter.source(acc)
+            }.let { limitedSource ->
+                hostPermit?.releaseWhenClosed(limitedSource) ?: limitedSource
+            }
+            return connect.copy(source = source)
+        } catch (failure: Throwable) {
+            kotlin.runCatching { openedConnection?.close() }
+            hostPermit?.close()
+            throw failure
         }
 
     }
