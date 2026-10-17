@@ -27,6 +27,11 @@ import kotlinx.coroutines.sync.withLock
 import ir.amirab.downloader.utils.speedlimiter.SpeedLimiter
 import java.io.File
 
+internal fun shouldDeleteDownloadOutput(
+    status: DownloadStatus,
+    removeCompletedFile: Boolean,
+): Boolean = status != DownloadStatus.Completed || removeCompletedFile
+
 class DownloadManager(
     val dlListDb: IDownloadListDb,
     val partListDb: IDownloadPartListDb,
@@ -165,12 +170,11 @@ class DownloadManager(
         // at this point: job will be created (and booted) if it was not created before
         contextContainer.updateContext(id) { it + context }
         job.downloadRemoved(
-            removeOutputFile = if (itemToDelete.status == DownloadStatus.Completed) {
-                alsoRemoveFile(itemToDelete)
-            } else {
-                // always remove file if download is not finished!
-                true
-            },
+            removeOutputFile = shouldDeleteDownloadOutput(
+                status = itemToDelete.status,
+                removeCompletedFile = itemToDelete.status == DownloadStatus.Completed &&
+                    alsoRemoveFile(itemToDelete),
+            ),
         )
         deleteJob(job.id)
         dlListDb.remove(itemToDelete)

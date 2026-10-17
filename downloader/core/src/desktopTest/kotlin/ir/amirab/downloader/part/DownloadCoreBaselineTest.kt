@@ -2,6 +2,7 @@ package ir.amirab.downloader.part
 
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
+import ir.amirab.downloader.shouldDeleteDownloadOutput
 import ir.amirab.downloader.connection.OkHttpHttpDownloaderClient
 import ir.amirab.downloader.connection.UserAgentProvider
 import ir.amirab.downloader.connection.proxy.AutoConfigurableProxyProvider
@@ -16,6 +17,7 @@ import ir.amirab.downloader.db.TransactionalFileSaver
 import ir.amirab.downloader.downloaditem.http.HttpDownloadCredentials
 import ir.amirab.downloader.downloaditem.http.persistProgressAfterFlush
 import ir.amirab.downloader.downloaditem.http.validateRemoteFileIdentity
+import ir.amirab.downloader.downloaditem.DownloadStatus
 import ir.amirab.downloader.exception.FileChangedException
 import ir.amirab.downloader.exception.UnSuccessfulResponseException
 import kotlinx.coroutines.async
@@ -362,6 +364,39 @@ class DownloadCoreBaselineTest {
             }
         } finally {
             fileInsteadOfFolder.delete()
+        }
+    }
+
+    @Test
+    fun removingCompletedEntryKeepsFileUnlessUserChecksDeleteFile() {
+        assertFalse(
+            shouldDeleteDownloadOutput(
+                status = DownloadStatus.Completed,
+                removeCompletedFile = false,
+            )
+        )
+        assertTrue(
+            shouldDeleteDownloadOutput(
+                status = DownloadStatus.Completed,
+                removeCompletedFile = true,
+            )
+        )
+    }
+
+    @Test
+    fun removingUnfinishedEntryAlwaysDeletesItsPartialFile() {
+        listOf(
+            DownloadStatus.Added,
+            DownloadStatus.Downloading,
+            DownloadStatus.Paused,
+            DownloadStatus.Error,
+        ).forEach { status ->
+            assertTrue(
+                shouldDeleteDownloadOutput(
+                    status = status,
+                    removeCompletedFile = false,
+                )
+            )
         }
     }
 
