@@ -12,8 +12,12 @@ fun splitToRange(size: Long, minPartSize: Long, maxPartCount: Long): List<LongRa
         "maxPartCount must be >=1 passed :$maxPartCount"
     }
 
-    val minParts = (size + minPartSize - 1) / minPartSize // round up division
-    val actualPartCount = minOf(maxPartCount, minParts)
+    // A single small file is allowed, but once split, every initial part must
+    // remain at least minPartSize. Using ceil(size / minPartSize) here created
+    // undersized parts (for example, 700 KiB became two 350 KiB parts when
+    // the configured minimum was 512 KiB).
+    val maxPartsRespectingMinimum = (size / minPartSize).coerceAtLeast(1)
+    val actualPartCount = minOf(maxPartCount, maxPartsRespectingMinimum)
     val idealPartSize = size / actualPartCount
     val ranges = mutableListOf<LongRange>()
     var start = 0L

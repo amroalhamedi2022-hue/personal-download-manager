@@ -22,6 +22,8 @@ import ir.amirab.downloader.downloaditem.calculateRetryDelayMillis
 import ir.amirab.downloader.downloaditem.retryAfterHeaderOrNull
 import ir.amirab.downloader.exception.FileChangedException
 import ir.amirab.downloader.exception.UnSuccessfulResponseException
+import ir.amirab.downloader.utils.splitToRange
+import ir.amirab.downloader.utils.speedlimiter.OkioCustomizedThrottler
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
@@ -86,6 +88,59 @@ class DownloadCoreBaselineTest {
         assertFalse(split.canSplit())
         assertNull(split.splitPart())
         assertEquals(0L..199L, original.range)
+    }
+
+    @Test
+    fun initialSplitNeverCreatesPartsBelowTheConfiguredMinimum() {
+        val totalSize = 700L * 1024
+        val minimumPartSize = 512L * 1024
+
+        val ranges = splitToRange(
+            size = totalSize,
+            minPartSize = minimumPartSize,
+            maxPartCount = 8,
+        )
+
+        assertEquals(listOf(0L..totalSize - 1), ranges)
+    }
+
+    @Test
+    fun initialSplitHonorsConnectionCapAndKeepsExactCoverage() {
+        val totalSize = 10L * 1024 * 1024
+        val minimumPartSize = 512L * 1024
+
+        val ranges = splitToRange(
+            size = totalSize,
+            minPartSize = minimumPartSize,
+            maxPartCount = 4,
+        )
+
+        assertEquals(4, ranges.size)
+        assertEquals(0L, ranges.first().first)
+        assertEquals(totalSize - 1, ranges.last().last)
+        assertTrue(ranges.all { range -> range.last - range.first + 1 >= minimumPartSize })
+        ranges.zipWithNext().forEach { (previous, next) ->
+            assertEquals(previous.last + 1, next.first)
+        }
+    }
+
+    @Test
+    fun oneSpeedLimiterSharesItsBudgetAcrossConnections() {
+        val now = 1_000_000_000L
+        val limiter = OkioCustomizedThrottler(allocatedUntil = now)
+        limiter.bytesPerSecond(
+            bytesPerSecond = 100,
+            waitByteCount = 10,
+            maxByteCount = 20,
+            changeImmediately = false,
+        )
+
+        assertEquals(20, limiter.byteCountOrWaitNanos(now = now, byteCount = 20))
+        assertEquals(-100_000_000, limiter.byteCountOrWaitNanos(now = now, byteCount = 20))
+        assertEquals(
+            10,
+            limiter.byteCountOrWaitNanos(now = now + 100_000_000, byteCount = 20),
+        )
     }
 
     @Test
