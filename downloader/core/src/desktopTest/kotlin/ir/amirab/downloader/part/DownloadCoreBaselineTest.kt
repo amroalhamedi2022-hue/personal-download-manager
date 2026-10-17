@@ -14,6 +14,7 @@ import ir.amirab.downloader.connection.proxy.SystemProxySelectorProvider
 import ir.amirab.downloader.connection.response.HttpResponseInfo
 import ir.amirab.downloader.connection.response.expectSuccess
 import ir.amirab.downloader.destination.DestWriter
+import ir.amirab.downloader.destination.DownloadDestination
 import ir.amirab.downloader.db.PartListFileStorage
 import ir.amirab.downloader.db.TransactionalFileSaver
 import ir.amirab.downloader.downloaditem.http.HttpDownloadCredentials
@@ -25,7 +26,12 @@ import ir.amirab.downloader.downloaditem.DownloadItemContext
 import ir.amirab.downloader.downloaditem.calculateRetryDelayMillis
 import ir.amirab.downloader.downloaditem.retryAfterHeaderOrNull
 import ir.amirab.downloader.exception.FileChangedException
+import ir.amirab.downloader.exception.NoSpaceInStorageException
 import ir.amirab.downloader.exception.UnSuccessfulResponseException
+import ir.amirab.downloader.utils.EmptyFileCreator
+import ir.amirab.downloader.utils.FileNameUtil
+import ir.amirab.downloader.utils.IDiskStat
+import ir.amirab.downloader.utils.ISparseFile
 import ir.amirab.downloader.utils.splitToRange
 import ir.amirab.downloader.utils.speedlimiter.OkioCustomizedThrottler
 import ir.amirab.downloader.utils.hostlimits.HostLimitRegistry
@@ -70,6 +76,119 @@ import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
 
 class DownloadCoreBaselineTest {
+    @Test
+    fun emptyFileCreationRejectsInsufficientSpaceBeforeMutation() = runBlocking {
+        val folder = java.nio.file.Files.createTempDirectory("download-no-space-").toFile()
+        val target = folder.resolve("existing.bin")
+        val original = byteArrayOf(1, 2, 3, 4)
+        target.writeBytes(original)
+        val creator = EmptyFileCreator(
+            diskStat = object : IDiskStat {
+                override fun getRemainingSpace(path: File): Long = 5
+            },
+            useSparseFile = { false },
+        )
+
+        try {
+            val failure = runCatching {
+                creator.prepareFile(target, length = 10) {}
+            }.exceptionOrNull()
+
+            assertTrue(failure is NoSpaceInStorageException)
+            assertEquals(5L, (failure as NoSpaceInStorageException).available)
+            assertEquals(6L, failure.required)
+            assertContentEquals(original, target.readBytes())
+        } finally {
+            folder.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun zeroLengthDestinationNeverSeeksBeforeFileStart() = runBlocking {
+        val folder = java.nio.file.Files.createTempDirectory("download-zero-length-").toFile()
+        val target = folder.resolve("empty.bin")
+        val creator = EmptyFileCreator(
+            diskStat = unlimitedDiskStat(),
+            useSparseFile = { true },
+            sparseFile = testSparseFile(),
+        )
+
+        try {
+            creator.prepareFile(target, length = 0) {}
+
+            assertTrue(target.exists())
+            assertEquals(0L, target.length())
+        } finally {
+            folder.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun conflictingArabicNamesAreNumberedWithoutLosingExtension() = runBlocking {
+        val folder = java.nio.file.Files.createTempDirectory("download-arabic-name-").toFile()
+        val original = folder.resolve("ملف التحميل.zip")
+
+        try {
+            original.writeBytes(byteArrayOf(1))
+            val firstCandidate = FileNameUtil.numberedIfExists(original).first()
+            assertEquals("ملف التحميل_1.zip", firstCandidate.name)
+
+            firstCandidate.writeBytes(byteArrayOf(2))
+            val secondCandidate = FileNameUtil.numberedIfExists(original).first()
+            assertEquals("ملف التحميل_2.zip", secondCandidate.name)
+        } finally {
+            folder.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun longArabicDestinationPathCanBePrepared() = runBlocking {
+        val root = java.nio.file.Files.createTempDirectory("download-long-path-").toFile()
+        val nested = (1..12).fold(root) { parent, index ->
+            parent.resolve("segment_${index}_12345678901234567890")
+        }
+        val target = nested.resolve("ملف_تجريبي_نهائي.bin")
+        val creator = EmptyFileCreator(
+            diskStat = unlimitedDiskStat(),
+            useSparseFile = { false },
+        )
+
+        try {
+            assertTrue(target.absolutePath.length > 300)
+            DownloadDestination.prepareDestinationFolder(target)
+            creator.prepareFile(target, length = 0) {}
+
+            assertTrue(target.exists())
+            assertEquals(0L, target.length())
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun sparseDestinationSupportsLengthsBeyondFourGigabytes() = runBlocking {
+        val folder = java.nio.file.Files.createTempDirectory("download-large-sparse-").toFile()
+        val target = folder.resolve("large.bin")
+        val expectedLength = 5L * 1024 * 1024 * 1024 + 17
+        val creator = EmptyFileCreator(
+            diskStat = unlimitedDiskStat(),
+            useSparseFile = { true },
+            sparseFile = testSparseFile(),
+        )
+
+        try {
+            creator.prepareFile(target, expectedLength) {}
+
+            assertEquals(expectedLength, target.length())
+            RandomAccessFile(target, "r").use {
+                it.seek(expectedLength - 1)
+                assertEquals(0, it.read())
+            }
+        } finally {
+            folder.deleteRecursively()
+        }
+    }
+
     @Test
     fun splitPreservesCoverageWithoutOverlap() {
         val original = RangedPart(from = 0, to = 999)
@@ -1163,6 +1282,16 @@ class DownloadCoreBaselineTest {
     }
 
     private companion object {
+        fun unlimitedDiskStat(): IDiskStat = object : IDiskStat {
+            override fun getRemainingSpace(path: File): Long = Long.MAX_VALUE
+        }
+
+        fun testSparseFile(): ISparseFile = object : ISparseFile {
+            override fun createSparseFile(file: File): Boolean = file.createNewFile()
+
+            override fun canWeCreateSparseFile(file: File): Boolean = true
+        }
+
         val TEST_BYTES = ByteArray(10) { it.toByte() }
         const val TEST_ETAG = "\"fixture-v1\""
         const val TEST_LAST_MODIFIED = "Wed, 14 Oct 2026 20:00:00 GMT"

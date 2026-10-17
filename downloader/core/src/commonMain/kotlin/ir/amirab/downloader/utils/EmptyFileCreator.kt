@@ -11,14 +11,15 @@ import java.io.RandomAccessFile
 
 class EmptyFileCreator(
     private val diskStat: IDiskStat,
-    private val useSparseFile: () -> Boolean
+    private val useSparseFile: () -> Boolean,
+    private val sparseFile: ISparseFile = SparseFile,
 ) {
     private fun canWeUseSparse(file: File): Boolean {
-        return useSparseFile() && SparseFile.canWeCreateSparseFile(file)
+        return useSparseFile() && sparseFile.canWeCreateSparseFile(file)
     }
 
     /**
-     * @param length must be -1 , or positive
+     * @param length must be -1, zero, or positive
      */
     suspend fun prepareFile(
         file: File,
@@ -26,19 +27,19 @@ class EmptyFileCreator(
         onProgressUpdate: (percent: Int?) -> Unit,
     ) {
         require(length >= -1) {
-            "length must be -1 , or positive value but we got ${length}"
+            "length must be -1, zero, or positive but we got $length"
         }
         withContext(Dispatchers.IO) {
 
-            val canWeUseSparse = canWeUseSparse(file)
             onProgressUpdate(0)
-            if (length == -1L) {
+            if (length <= 0L) {
                 RandomAccessFile(file, "rw").use {
                     it.setLength(0)
                 }
                 onProgressUpdate(100)
                 return@withContext
             }
+            val canWeUseSparse = canWeUseSparse(file)
             val remainingSpace = diskStat.getRemainingSpace(file.parentFile)
             if (file.exists()) {
                 val currentLength = file.length()
@@ -61,7 +62,7 @@ class EmptyFileCreator(
                             if (!file.delete()) {
                                 throw IOException("can't delete file")
                             }
-                            if (SparseFile.createSparseFile(file)) {
+                            if (sparseFile.createSparseFile(file)) {
                                 onProgressUpdate(null)
                                 writeAtLast(file, length)
                             } else {
@@ -84,7 +85,7 @@ class EmptyFileCreator(
                 if (remainingSpace < length) {
                     throw NoSpaceInStorageException(remainingSpace, length)
                 }
-                if (canWeUseSparse && SparseFile.createSparseFile(file)) {
+                if (canWeUseSparse && sparseFile.createSparseFile(file)) {
                     onProgressUpdate(null)
                     writeAtLast(file, length)
                 } else {
