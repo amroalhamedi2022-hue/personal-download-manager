@@ -18,6 +18,8 @@ import ir.amirab.downloader.exception.UnSuccessfulResponseException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.OkHttpClient
 import okio.Buffer
 import okio.FileSystem
@@ -34,6 +36,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertContentEquals
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.seconds
 
 class DownloadCoreBaselineTest {
     @Test
@@ -256,13 +259,22 @@ class DownloadCoreBaselineTest {
             }
 
             runBlocking {
-                downloaders.forEach(HttpPartDownloader::start)
-                downloaders.map { downloader ->
-                    async { downloader.awaitFinishOrError() }
-                }.awaitAll().forEach { status ->
-                    assertEquals(PartDownloadStatus.Completed, status)
+                try {
+                    withTimeout(30.seconds) {
+                        downloaders.forEach(HttpPartDownloader::start)
+                        downloaders.map { downloader ->
+                            async { downloader.awaitFinishOrError() }
+                        }.awaitAll().forEach { status ->
+                            assertEquals(PartDownloadStatus.Completed, status)
+                        }
+                        downloaders.forEach { it.join() }
+                    }
+                } finally {
+                    downloaders.forEach(HttpPartDownloader::stop)
+                    withTimeoutOrNull(5.seconds) {
+                        downloaders.forEach { it.join() }
+                    }
                 }
-                downloaders.forEach { it.join() }
             }
 
             val assembled = target.readBytes()
