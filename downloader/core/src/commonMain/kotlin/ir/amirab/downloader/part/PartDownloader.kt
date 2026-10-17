@@ -10,6 +10,7 @@ import ir.amirab.downloader.utils.printStackIfNOtUsual
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
@@ -40,6 +41,7 @@ abstract class PartDownloader<
 ) {
     private var thread: Thread? = null
     private var scope: CoroutineScope? = null
+    private var workerJob: Job? = null
     private val _statusFlow = part.statusFlow
     val statusFlow = _statusFlow.asStateFlow()
 
@@ -71,7 +73,7 @@ abstract class PartDownloader<
         val scope = CoroutineScope(SupervisorJob()).also {
             this.scope = it
         }
-        scope.launch {
+        val workerJob = scope.launch {
             tries = 0
             lastCriticalException = null
             lastException = null
@@ -140,6 +142,12 @@ abstract class PartDownloader<
                 }
             }
         }
+        this.workerJob = workerJob
+        workerJob.invokeOnCompletion {
+            // A SupervisorJob does not complete merely because its child completed.
+            // Close the per-run scope so it cannot remain active after the part is done.
+            scope.coroutineContext.job.cancel()
+        }
     }
 
     @Volatile
@@ -152,7 +160,7 @@ abstract class PartDownloader<
 
     suspend fun join() {
         withContext(Dispatchers.IO) {
-            scope?.coroutineContext?.job?.join()
+            workerJob?.join()
             thread?.join()
         }
     }
