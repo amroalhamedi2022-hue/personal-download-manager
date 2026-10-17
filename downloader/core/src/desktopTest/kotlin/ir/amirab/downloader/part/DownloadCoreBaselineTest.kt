@@ -22,6 +22,7 @@ import ir.amirab.downloader.exception.FileChangedException
 import ir.amirab.downloader.exception.UnSuccessfulResponseException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
@@ -31,10 +32,12 @@ import okio.Buffer
 import okio.FileSystem
 import okio.Path.Companion.toOkioPath
 import java.io.File
+import java.io.IOException
 import java.io.RandomAccessFile
 import java.net.InetSocketAddress
 import java.net.ProxySelector
 import java.security.MessageDigest
+import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -400,6 +403,92 @@ class DownloadCoreBaselineTest {
         }
     }
 
+    @Test
+    fun stoppedPartResumesFromItsExactOffsetAndKeepsFileIntegrity() {
+        val bytes = ByteArray(512 * 1024) { (it % 251).toByte() }
+
+        withSlowRangeFixture(bytes) { fixture ->
+            val target = File.createTempFile("download-core-resume-", ".bin")
+            val part = RangedPart(from = 0, to = bytes.lastIndex.toLong())
+            val partSplitLock = Any()
+
+            fun createDownloader(): Pair<HttpPartDownloader, DestWriter> {
+                val writer = DestWriter(
+                    id = part.getID(),
+                    file = target,
+                    seekPos = part.current,
+                    writer = FileSystem.SYSTEM.openReadWrite(target.toOkioPath()),
+                )
+                val downloader = HttpPartDownloader(
+                    credentials = HttpDownloadCredentials(fixture.url),
+                    getDestWriter = { writer },
+                    part = part,
+                    client = fixture.client,
+                    speedLimiters = emptyList(),
+                    strictMode = true,
+                    partSplitLock = partSplitLock,
+                    minPartProvider = MinPartSizeProvider { 1 },
+                ).also {
+                    it.onTooManyErrors = { failure -> throw AssertionError(failure) }
+                }
+                return downloader to writer
+            }
+
+            var firstWriter: DestWriter? = null
+            var resumedWriter: DestWriter? = null
+            try {
+                RandomAccessFile(target, "rw").use { it.setLength(bytes.size.toLong()) }
+                val (firstDownloader, writer) = createDownloader()
+                firstWriter = writer
+
+                runBlocking {
+                    withTimeout(15.seconds) {
+                        firstDownloader.start()
+                        assertTrue(firstDownloader.awaitToEnsureDataBeingTransferred())
+                        delay(40)
+                        firstDownloader.stop()
+                        firstDownloader.join()
+                        firstDownloader.awaitIdle()
+                    }
+                }
+                writer.writer.close()
+                firstWriter = null
+
+                val resumeOffset = part.current
+                assertTrue(resumeOffset in 1 until bytes.lastIndex.toLong())
+                assertEquals(PartDownloadStatus.IDLE, part.status)
+
+                val (resumedDownloader, writerAfterResume) = createDownloader()
+                resumedWriter = writerAfterResume
+                runBlocking {
+                    try {
+                        withTimeout(15.seconds) {
+                            resumedDownloader.start()
+                            assertEquals(
+                                PartDownloadStatus.Completed,
+                                resumedDownloader.awaitFinishOrError(),
+                            )
+                            resumedDownloader.join()
+                        }
+                    } finally {
+                        resumedDownloader.stop()
+                        withTimeoutOrNull(5.seconds) { resumedDownloader.join() }
+                    }
+                }
+
+                val assembled = target.readBytes()
+                assertContentEquals(bytes, assembled)
+                assertEquals(SLOW_TEST_SHA256, assembled.sha256())
+                assertEquals("bytes=0-${bytes.lastIndex}", fixture.requestedRanges.first())
+                assertEquals("bytes=$resumeOffset-${bytes.lastIndex}", fixture.requestedRanges.last())
+            } finally {
+                firstWriter?.writer?.close()
+                resumedWriter?.writer?.close()
+                target.delete()
+            }
+        }
+    }
+
     private fun <T> withHttpFixture(
         rangeMode: RangeMode,
         block: (HttpFixture) -> T,
@@ -454,6 +543,54 @@ class DownloadCoreBaselineTest {
         exchange.close()
     }
 
+    private fun <T> withSlowRangeFixture(
+        bytes: ByteArray,
+        block: (SlowHttpFixture) -> T,
+    ): T {
+        val requestedRanges = CopyOnWriteArrayList<String>()
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/slow.bin") { exchange ->
+            val requestedRange = requireNotNull(exchange.requestHeaders.getFirst("Range"))
+            requestedRanges += requestedRange
+            val match = requireNotNull(RANGE_PATTERN.matchEntire(requestedRange))
+            val start = match.groupValues[1].toInt()
+            val end = match.groupValues[2].takeIf(String::isNotEmpty)?.toInt()
+                ?: bytes.lastIndex
+
+            exchange.responseHeaders.add("Content-Type", "application/octet-stream")
+            exchange.responseHeaders.add("Content-Range", "bytes $start-$end/${bytes.size}")
+            exchange.sendResponseHeaders(206, (end - start + 1).toLong())
+            try {
+                exchange.responseBody.use { output ->
+                    var offset = start
+                    while (offset <= end) {
+                        val length = minOf(8_192, end - offset + 1)
+                        output.write(bytes, offset, length)
+                        output.flush()
+                        offset += length
+                        Thread.sleep(5)
+                    }
+                }
+            } catch (_: IOException) {
+                // Expected when the first range connection is deliberately stopped.
+            } finally {
+                exchange.close()
+            }
+        }
+        server.start()
+        return try {
+            block(
+                SlowHttpFixture(
+                    url = "http://127.0.0.1:${server.address.port}/slow.bin",
+                    client = createHttpClient(),
+                    requestedRanges = requestedRanges,
+                )
+            )
+        } finally {
+            server.stop(0)
+        }
+    }
+
     private fun createHttpClient() = OkHttpHttpDownloaderClient(
         okHttpClient = OkHttpClient(),
         customUserAgentProvider = object : UserAgentProvider {
@@ -486,6 +623,12 @@ class DownloadCoreBaselineTest {
         val client: OkHttpHttpDownloaderClient,
     )
 
+    private data class SlowHttpFixture(
+        val url: String,
+        val client: OkHttpHttpDownloaderClient,
+        val requestedRanges: List<String>,
+    )
+
     private enum class RangeMode {
         Supported,
         Ignored,
@@ -498,6 +641,7 @@ class DownloadCoreBaselineTest {
         const val TEST_LAST_MODIFIED = "Wed, 14 Oct 2026 20:00:00 GMT"
         const val TEST_DOWNLOAD_ID = 42L
         const val TEST_SHA256 = "1f825aa2f0020ef7cf91dfa30da4668d791c5d4824fc8e41354b89ec05795ab3"
+        const val SLOW_TEST_SHA256 = "61d1d9c5745bdaa4fab39240651bc242a5186b15393fd475082fcf6e84f400ab"
         val RANGE_PATTERN = Regex("""bytes=(\d+)-(\d*)""")
     }
 }
