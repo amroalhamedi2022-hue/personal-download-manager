@@ -10,10 +10,12 @@ import com.abdownloadmanager.shared.util.DownloadSystem
 import com.abdownloadmanager.shared.util.autoremove.RemovedDownloadsFromDiskTracker
 import com.abdownloadmanager.shared.util.category.CategoryManager
 import com.abdownloadmanager.shared.util.proxy.ProxyManager
+import com.abdownloadmanager.shared.util.perhostsettings.PerHostSettingsManager
 import com.abdownloadmanager.shared.util.systemusage.SystemUsageMonitor
 import ir.amirab.downloader.DownloadManager
 import ir.amirab.downloader.DownloadSettings
 import ir.amirab.downloader.monitor.IDownloadMonitor
+import ir.amirab.downloader.utils.hostlimits.HostLimits
 import ir.amirab.util.datasize.ConvertSizeConfig
 import ir.amirab.util.flow.mapStateFlow
 import ir.amirab.util.flow.withPrevious
@@ -37,6 +39,7 @@ open class BaseAppRepository(
     protected val downloadSettings: DownloadSettings,
     protected val removedDownloadsFromDiskTracker: RemovedDownloadsFromDiskTracker,
     protected val categoryManager: CategoryManager,
+    protected val perHostSettingsManager: PerHostSettingsManager,
     private val appUsageMonitor: SystemUsageMonitor,
     private val backgroundTracker: IApplicationBackgroundTracker,
 ) : SizeAndSpeedUnitProvider {
@@ -208,6 +211,19 @@ open class BaseAppRepository(
             .debounce(500.milliseconds)
             .onEach {
                 downloadSystem.manualDownloadQueue.setMaxConcurrent(it)
+            }.launchIn(scope)
+        perHostSettingsManager.settingsFlow
+            .onEach { settings ->
+                downloadManager.replaceHostLimits(
+                    settings
+                        .filter { it.host.isNotBlank() }
+                        .associate { item ->
+                            item.host to HostLimits(
+                                maxConnections = (item.hostConnectionLimit ?: 0).coerceAtLeast(0),
+                                bytesPerSecond = (item.hostSpeedLimit ?: 0).coerceAtLeast(0),
+                            )
+                        }
+                )
             }.launchIn(scope)
     }
 }

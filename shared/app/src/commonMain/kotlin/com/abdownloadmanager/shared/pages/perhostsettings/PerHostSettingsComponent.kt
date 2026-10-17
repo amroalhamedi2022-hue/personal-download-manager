@@ -157,6 +157,43 @@ abstract class BasePerHostSettingsComponent(
             ConfigurableGroup(
                 nestedConfigurable = listOf(
                     ToggleableSpeedLimitConfigurable(
+                        title = Res.string.settings_per_host_speed_limit.asStringSource(),
+                        description = Res.string.settings_per_host_speed_limit_description.asStringSource(),
+                        backedBy = state.mapTwoWayStateFlow(
+                            map = {
+                                it.hostSpeedLimit ?: 0
+                            },
+                            unMap = {
+                                copy(hostSpeedLimit = it.takeIf { it != 0L })
+                            }
+                        ),
+                        describe = {
+                            if (it == 0L) Res.string.unlimited.asStringSource()
+                            else convertPositiveSpeedToHumanReadable(it, appRepository.speedUnit.value).asStringSource()
+                        }
+                    ),
+                    IntConfigurable(
+                        title = Res.string.settings_per_host_connection_limit.asStringSource(),
+                        description = Res.string.settings_per_host_connection_limit_description.asStringSource(),
+                        backedBy = state.mapTwoWayStateFlow(
+                            map = {
+                                it.hostConnectionLimit ?: 0
+                            },
+                            unMap = {
+                                copy(hostConnectionLimit = it.takeIf { it != 0 })
+                            }
+                        ),
+                        range = 0..ThreadCountLimitation.MAX_ALLOWED_THREAD_COUNT,
+                        describe = {
+                            if (it == 0) Res.string.unlimited.asStringSource()
+                            else it.toString().asStringSource()
+                        }
+                    ),
+                )
+            ),
+            ConfigurableGroup(
+                nestedConfigurable = listOf(
+                    ToggleableSpeedLimitConfigurable(
                         title = Res.string.download_item_settings_speed_limit.asStringSource(),
                         description = Res.string.download_item_settings_speed_limit_description.asStringSource(),
                         backedBy = state.mapTwoWayStateFlow(

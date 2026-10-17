@@ -375,6 +375,10 @@ class DownloadManager(
         )
     }
 
+    fun replaceHostLimits(limitsByHostPattern: Map<String, HostLimits>) {
+        hostLimitRegistry.replaceLimits(limitsByHostPattern)
+    }
+
     fun reloadSetting() {
         for (downloadJob in downloadJobs) {
             downloadJob.reloadSettings()

@@ -23,9 +23,27 @@ data class HostLimits(
 
 class HostLimitRegistry {
     private val entries = ConcurrentHashMap<String, HostLimitEntry>()
+    private val rulesLock = Any()
+
+    @Volatile
+    private var rules: Map<String, HostLimits> = emptyMap()
 
     fun configure(host: String, limits: HostLimits) {
-        entryForHost(host).configure(limits)
+        val normalizedPattern = normalizeHost(host)
+        synchronized(rulesLock) {
+            rules = rules + (normalizedPattern to limits)
+        }
+        reconfigureEntries()
+    }
+
+    fun replaceLimits(limitsByHostPattern: Map<String, HostLimits>) {
+        val normalizedRules = limitsByHostPattern.mapKeys { (hostPattern, _) ->
+            normalizeHost(hostPattern)
+        }
+        synchronized(rulesLock) {
+            rules = normalizedRules
+        }
+        reconfigureEntries()
     }
 
     fun speedLimiterForHost(host: String): SpeedLimiter = entryForHost(host).speedLimiter
@@ -49,8 +67,13 @@ class HostLimitRegistry {
 
     internal fun activeConnections(host: String): Int = entryForHost(host).connectionGate.activeCount()
 
-    private fun entryForHost(host: String): HostLimitEntry = entries.computeIfAbsent(normalizeHost(host)) {
-        HostLimitEntry()
+    private fun entryForHost(host: String): HostLimitEntry {
+        val normalizedHost = normalizeHost(host)
+        return entries.computeIfAbsent(normalizedHost) {
+            HostLimitEntry().also { entry ->
+                entry.configure(resolveLimits(normalizedHost))
+            }
+        }
     }
 
     private fun hostFromUrl(url: String): String? = HttpUrlUtils.getHost(url)?.let(::normalizeHost)
@@ -59,6 +82,34 @@ class HostLimitRegistry {
         return host.trim().trimEnd('.').lowercase(Locale.ROOT).also {
             require(it.isNotEmpty()) { "host must not be blank" }
         }
+    }
+
+    private fun reconfigureEntries() {
+        entries.forEach { (host, entry) ->
+            entry.configure(resolveLimits(host))
+        }
+    }
+
+    private fun resolveLimits(host: String): HostLimits {
+        return rules.entries
+            .asSequence()
+            .filter { (pattern, _) -> patternMatchesHost(pattern, host) }
+            .sortedWith(
+                compareBy<Map.Entry<String, HostLimits>> { (pattern, _) -> pattern.count { it == '*' } }
+                    .thenByDescending { (pattern, _) -> pattern.length }
+                    .thenBy { (pattern, _) -> pattern }
+            )
+            .firstOrNull()
+            ?.value
+            ?: HostLimits()
+    }
+
+    private fun patternMatchesHost(pattern: String, host: String): Boolean {
+        val regex = pattern
+            .split("*")
+            .joinToString(".*") { Regex.escape(it) }
+            .toRegex(RegexOption.IGNORE_CASE)
+        return regex.matches(host)
     }
 }
 

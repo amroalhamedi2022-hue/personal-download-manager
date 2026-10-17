@@ -1,12 +1,16 @@
 package com.abdownloadmanager.shared.util.perhostsettings
 
 import ir.amirab.util.wildcardMatch
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 class PerHostSettingsManager(
     private val storage: IPerHostSettingsStorage
 ) {
+    val settingsFlow: StateFlow<List<PerHostSettingsItem>> =
+        storage.perHostSettingsFlow.asStateFlow()
 
     fun getStorageData(): List<PerHostSettingsItem> {
         return storage.perHostSettingsFlow.value

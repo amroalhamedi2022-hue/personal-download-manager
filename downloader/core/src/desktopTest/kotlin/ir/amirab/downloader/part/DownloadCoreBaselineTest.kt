@@ -198,6 +198,63 @@ class DownloadCoreBaselineTest {
     }
 
     @Test
+    fun hostRegistryAppliesWildcardRulesAndPrefersExactHostRules() = runBlocking {
+        val registry = HostLimitRegistry()
+        registry.replaceLimits(
+            mapOf(
+                "*.example.test" to HostLimits(maxConnections = 1),
+                "cdn.example.test" to HostLimits(maxConnections = 2),
+            )
+        )
+
+        suspend fun measurePeak(host: String): Int {
+            val active = AtomicInteger()
+            val peak = AtomicInteger()
+            coroutineScope {
+                List(4) {
+                    async {
+                        registry.withConnectionPermit(host) {
+                            val current = active.incrementAndGet()
+                            peak.updateAndGet { previous -> maxOf(previous, current) }
+                            delay(30)
+                            active.decrementAndGet()
+                        }
+                    }
+                }.awaitAll()
+            }
+            return peak.get()
+        }
+
+        assertEquals(1, measurePeak("api.example.test"))
+        assertEquals(2, measurePeak("CDN.EXAMPLE.TEST."))
+    }
+
+    @Test
+    fun replacingHostRulesReconfiguresExistingEntries() = runBlocking {
+        val registry = HostLimitRegistry()
+        registry.configure("*.example.test", HostLimits(maxConnections = 1))
+
+        assertEquals(1, run {
+            val first = registry.acquireForHost("api.example.test")
+            try {
+                registry.activeConnections("api.example.test")
+            } finally {
+                first.close()
+            }
+        })
+
+        registry.replaceLimits(
+            mapOf("*.example.test" to HostLimits(maxConnections = 3))
+        )
+        val permits = List(3) { registry.acquireForHost("api.example.test") }
+        try {
+            assertEquals(3, registry.activeConnections("api.example.test"))
+        } finally {
+            permits.forEach { it.close() }
+        }
+    }
+
+    @Test
     fun partialResponseKeepsIdentityAndRangeMetadata() {
         val response = HttpResponseInfo(
             statusCode = 206,

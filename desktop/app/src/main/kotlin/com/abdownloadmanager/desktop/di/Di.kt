@@ -511,6 +511,7 @@ val appModule = module {
             get(),
             get(),
             get(),
+            get(),
         )
     }.apply {
         bind<BaseAppRepository>()

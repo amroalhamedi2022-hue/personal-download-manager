@@ -8,6 +8,7 @@ import com.abdownloadmanager.shared.util.DownloadSystem
 import com.abdownloadmanager.shared.util.autoremove.RemovedDownloadsFromDiskTracker
 import com.abdownloadmanager.shared.util.category.CategoryManager
 import com.abdownloadmanager.shared.util.proxy.ProxyManager
+import com.abdownloadmanager.shared.util.perhostsettings.PerHostSettingsManager
 import com.abdownloadmanager.shared.util.systemusage.SystemUsageMonitor
 import ir.amirab.downloader.DownloadSettings
 import kotlinx.coroutines.CoroutineScope
@@ -24,6 +25,7 @@ class AppRepository(
     downloadSettings: DownloadSettings,
     removedDownloadsFromDiskTracker: RemovedDownloadsFromDiskTracker,
     categoryManager: CategoryManager,
+    perHostSettingsManager: PerHostSettingsManager,
     appUsageMonitor: SystemUsageMonitor,
     backgroundTracker: IApplicationBackgroundTracker,
 ) : BaseAppRepository(
@@ -34,6 +36,7 @@ class AppRepository(
     downloadSettings = downloadSettings,
     removedDownloadsFromDiskTracker = removedDownloadsFromDiskTracker,
     categoryManager = categoryManager,
+    perHostSettingsManager = perHostSettingsManager,
     appUsageMonitor = appUsageMonitor,
     backgroundTracker = backgroundTracker,
 ) {

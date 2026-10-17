@@ -479,6 +479,7 @@ fun getAppModule(context: ABDMApp) = module {
             get(),
             get(),
             get(),
+            get(),
         )
     }.apply {
         bind<BaseAppRepository>()
