@@ -34,6 +34,7 @@ import ir.amirab.downloader.downloaditem.contexts.User
 import ir.amirab.downloader.queue.DownloadQueue
 import ir.amirab.downloader.queue.QueueManager
 import ir.amirab.downloader.queue.queueModelsFlow
+import ir.amirab.downloader.monitor.totalContentLengthOrNull
 import ir.amirab.util.compose.asStringSource
 import ir.amirab.util.coroutines.combine
 import ir.amirab.util.flow.combineStateFlows
@@ -304,10 +305,7 @@ abstract class BaseHomeComponent(
     }
 
     val selectionContentSize = selectionListItems.mapStateFlow { items ->
-        items.sumOf {
-            // consider -1 as 0
-            it.contentLength.coerceAtLeast(0)
-        }
+        items.totalContentLengthOrNull()
     }
 
     fun openFileOrShowProperties(id: Long) {

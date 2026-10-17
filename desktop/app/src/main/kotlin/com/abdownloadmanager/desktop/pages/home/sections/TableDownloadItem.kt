@@ -114,14 +114,15 @@ fun NameCell(
 fun TimeLeftCell(
     itemState: IDownloadItemState,
 ) {
-    (itemState as? ProcessingDownloadItemState)?.remainingTime?.let { remaining ->
-        Text(
-            text = convertTimeRemainingToHumanReadable(remaining, TimeNames.ShortNames),
-            maxLines = 1,
-            fontSize = myTextSizes.base,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
+    val processingState = itemState as? ProcessingDownloadItemState ?: return
+    Text(
+        text = processingState.remainingTime?.let { remaining ->
+            convertTimeRemainingToHumanReadable(remaining, TimeNames.ShortNames)
+        } ?: myStringResource(Res.string.unknown),
+        maxLines = 1,
+        fontSize = myTextSizes.base,
+        overflow = TextOverflow.Ellipsis,
+    )
 }
 
 @Composable

@@ -57,6 +57,7 @@ jobs:
           ./gradlew --no-daemon --stacktrace
           --dependency-verification strict
           :downloader:core:desktopTest
+          :downloader:monitor:desktopTest
           :desktop:app:compileKotlin
 
       - name: Create Windows package

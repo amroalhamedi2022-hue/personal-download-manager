@@ -58,7 +58,7 @@ data class RangeBasedProcessingDownloadItemState(
     override val remainingTime: Long? = kotlin.run {
         when {
             contentLength <= 0 || speed <= 0 -> null
-            else -> (contentLength - progress) / speed
+            else -> (contentLength - progress).coerceAtLeast(0) / speed
         }
     }
 
@@ -105,22 +105,9 @@ data class DurationBasedProcessingDownloadItemState(
 //    }
 
     override val remainingTime: Long? = kotlin.run {
-        val length = getLengthOrOptimistic(contentLength, optimisticLength)
         when {
-            length <= 0 || speed <= 0 -> null
-            else -> (length - progress) / speed
-        }
-    }
-
-    companion object {
-        private fun getLengthOrOptimistic(
-            exactLength: Long, optimisticLength: Long
-        ): Long {
-            return when {
-                exactLength > 0 -> exactLength
-                optimisticLength > 0 -> optimisticLength
-                else -> -1
-            }
+            contentLength <= 0 || speed <= 0 -> null
+            else -> (contentLength - progress).coerceAtLeast(0) / speed
         }
     }
 }

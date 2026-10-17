@@ -360,9 +360,10 @@ abstract class BaseSingleDownloadComponent<
                 add(
                     SingleDownloadPagePropertyItem(
                         Res.string.time_left.asStringSource(),
-                        (it.remainingTime?.let { remainingTime ->
+                        it.remainingTime?.let { remainingTime ->
                             convertTimeRemainingToHumanReadable(remainingTime, TimeNames.ShortNames)
-                        }.orEmpty()).asStringSource()
+                                .asStringSource()
+                        } ?: Res.string.unknown.asStringSource()
                     )
                 )
                 add(

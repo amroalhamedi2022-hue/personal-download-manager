@@ -20,5 +20,8 @@ kotlin {
                 implementation(libs.compose.runtime)
             }
         }
+        commonTest.dependencies {
+            implementation(kotlin("test"))
+        }
     }
 }

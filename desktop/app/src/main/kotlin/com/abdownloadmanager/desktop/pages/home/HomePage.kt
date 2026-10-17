@@ -837,12 +837,20 @@ private fun Footer(component: HomeComponent) {
             )
 
             Spacer(Modifier.width(4.dp))
-            val sizeWithUnit = convertPositiveBytesToSizeUnit(selectionSize, LocalSizeUnit.current)
+            val sizeWithUnit = selectionSize?.let {
+                convertPositiveBytesToSizeUnit(it, LocalSizeUnit.current)
+            }
             if (sizeWithUnit != null) {
                 FooterItem(
                     MyIcons.data,
                     value = sizeWithUnit.formatedValue(),
                     unit = sizeWithUnit.unit.toString()
+                )
+            } else {
+                FooterItem(
+                    MyIcons.data,
+                    value = myStringResource(Res.string.unknown),
+                    unit = ""
                 )
             }
         }
