@@ -14,6 +14,11 @@ interface IDownloadItem : IDownloadCredentials {
     var startTime: Long?
     var completeTime: Long?
     var status: DownloadStatus
+    /**
+     * Retry state persisted so an interrupted retry delay can continue exactly once after restart.
+     */
+    var retryAttempt: Int
+    var retryAt: Long?
     var preferredConnectionCount: Int?
     var speedLimit: Long
     var fileChecksum: String?
