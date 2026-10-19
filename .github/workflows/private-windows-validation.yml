@@ -3,7 +3,7 @@ name: Private Windows validation
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, codex/p2-10-restart-persistence]
     paths:
       - ".github/workflows/private-windows-validation.yml"
       - "build.gradle.kts"
@@ -58,6 +58,7 @@ jobs:
           --dependency-verification strict
           :downloader:core:desktopTest
           :downloader:monitor:desktopTest
+          :shared:app:desktopTest
           :desktop:app:compileKotlin
 
       - name: Create Windows package
