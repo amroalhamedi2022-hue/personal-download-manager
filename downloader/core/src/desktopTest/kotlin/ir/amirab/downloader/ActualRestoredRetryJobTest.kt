@@ -143,7 +143,7 @@ class ActualRestoredRetryJobTest {
                     }
                 }
 
-                manager.stopAll()
+                withTimeout(10_000) { manager.stopAll() }
                 withTimeout(5_000) {
                     while (fixture.activeTransferCount() != 0) delay(5)
                 }
@@ -196,7 +196,7 @@ class ActualRestoredRetryJobTest {
                     }
                 }
 
-                manager.stopAll()
+                withTimeout(10_000) { manager.stopAll() }
                 withTimeout(5_000) {
                     while (fixture.activeTransferCount() != 0) delay(5)
                 }
@@ -737,7 +737,7 @@ class ActualRestoredRetryJobTest {
 
             assertTrue(job.status.value is DownloadJobStatus.Retrying)
             assertFalse(job.isDownloadActive.value)
-            manager.stopAll()
+            withTimeout(10_000) { manager.stopAll() }
             delay((dueAt - System.currentTimeMillis() + 300).coerceAtLeast(300))
 
             assertTrue(job.status.value is DownloadJobStatus.Canceled)
