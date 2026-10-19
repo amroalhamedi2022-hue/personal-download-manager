@@ -57,6 +57,171 @@ import kotlin.test.assertTrue
 class ActualRestoredRetryJobTest {
 
     @Test
+    fun stopAllCancelsFutureActualHttpRetryBeforeAnyRequest() = withRetryServer { fixture ->
+        runBlocking {
+            val output = createTempDir("stop-future-http-output-")
+            val data = createTempDir("stop-future-http-data-")
+            val item = HttpDownloadItem(
+                link = "${fixture.baseUrl}/file/71.bin",
+                id = 71,
+                folder = output.path,
+                name = "71.bin",
+                dateAdded = 71,
+                retryAttempt = 2,
+                retryAt = System.currentTimeMillis() + 1_200,
+            )
+            val manager = createHttpManager(listOf(item), fixture.client, data)
+
+            try {
+                runFutureRetryStoppedBeforeAdmission(manager, item)
+                assertEquals(0, fixture.requestsFor("/file/71.bin"))
+            } finally {
+                closeManager(manager)
+                output.deleteRecursively()
+                data.deleteRecursively()
+            }
+        }
+    }
+
+    @Test
+    fun stopAllCancelsFutureActualHlsRetryBeforeAnyRequest() = withRetryServer { fixture ->
+        runBlocking {
+            val output = createTempDir("stop-future-hls-output-")
+            val data = createTempDir("stop-future-hls-data-")
+            val item = HLSDownloadItem(
+                link = "${fixture.baseUrl}/playlist/72.m3u8",
+                id = 72,
+                folder = output.path,
+                name = "72.ts",
+                dateAdded = 72,
+                retryAttempt = 2,
+                retryAt = System.currentTimeMillis() + 1_200,
+            )
+            val manager = createHlsManager(listOf(item), fixture.client, data)
+
+            try {
+                runFutureRetryStoppedBeforeAdmission(manager, item)
+                assertEquals(0, fixture.requestsFor("/playlist/72.m3u8"))
+                assertEquals(0, fixture.requestsFor("/segment/72.ts"))
+            } finally {
+                closeManager(manager)
+                output.deleteRecursively()
+                data.deleteRecursively()
+            }
+        }
+    }
+
+    @Test
+    fun stopAllHaltsActualHttpTransferWithoutLateCompletion() = withRetryServer { fixture ->
+        runBlocking {
+            val output = createTempDir("stop-http-output-")
+            val data = createTempDir("stop-http-data-")
+            val item = HttpDownloadItem(
+                link = "${fixture.baseUrl}/file/61.bin",
+                id = 61,
+                folder = output.path,
+                name = "61.bin",
+                dateAdded = 61,
+                preferredConnectionCount = 1,
+            )
+            val manager = createHttpManager(listOf(item), fixture.client, data)
+            val completions = AtomicInteger()
+            val eventJob = manager.scope.launch {
+                manager.listOfJobsEvents.collect { event ->
+                    if (event is DownloadManagerEvents.OnJobCompleted) completions.incrementAndGet()
+                }
+            }
+
+            try {
+                manager.boot()
+                val job = manager.downloadJobs.single()
+                withTimeout(5_000) { manager.listOfJobsEvents.subscriptionCount.first { it >= 1 } }
+                manager.resume(item.id)
+                withTimeout(10_000) {
+                    while (job.status.value != DownloadJobStatus.Downloading || fixture.activeTransferCount() == 0) {
+                        delay(5)
+                    }
+                }
+
+                manager.stopAll()
+                withTimeout(5_000) {
+                    while (fixture.activeTransferCount() != 0) delay(5)
+                }
+                val requestsAfterStop = fixture.requestsFor("/file/61.bin")
+                delay(250)
+
+                assertFalse(job.isDownloadActive.value)
+                assertTrue(job.status.value is DownloadJobStatus.Canceled)
+                assertNull(item.retryAt)
+                assertEquals(0, completions.get())
+                assertEquals(requestsAfterStop, fixture.requestsFor("/file/61.bin"))
+            } finally {
+                eventJob.cancel()
+                closeManager(manager)
+                output.deleteRecursively()
+                data.deleteRecursively()
+            }
+        }
+    }
+
+    @Test
+    fun stopAllHaltsActualHlsTransferWithoutLateCompletion() = withRetryServer { fixture ->
+        runBlocking {
+            val output = createTempDir("stop-hls-output-")
+            val data = createTempDir("stop-hls-data-")
+            val item = HLSDownloadItem(
+                link = "${fixture.baseUrl}/playlist/62.m3u8",
+                id = 62,
+                folder = output.path,
+                name = "62.ts",
+                dateAdded = 62,
+                preferredConnectionCount = 1,
+            )
+            val manager = createHlsManager(listOf(item), fixture.client, data)
+            val completions = AtomicInteger()
+            val eventJob = manager.scope.launch {
+                manager.listOfJobsEvents.collect { event ->
+                    if (event is DownloadManagerEvents.OnJobCompleted) completions.incrementAndGet()
+                }
+            }
+
+            try {
+                manager.boot()
+                val job = manager.downloadJobs.single()
+                withTimeout(5_000) { manager.listOfJobsEvents.subscriptionCount.first { it >= 1 } }
+                manager.resume(item.id)
+                withTimeout(10_000) {
+                    while (job.status.value != DownloadJobStatus.Downloading || fixture.activeTransferCount() == 0) {
+                        delay(5)
+                    }
+                }
+
+                manager.stopAll()
+                withTimeout(5_000) {
+                    while (fixture.activeTransferCount() != 0) delay(5)
+                }
+                val requestsAfterStop = fixture.requestsFor("/playlist/62.m3u8") +
+                    fixture.requestsFor("/segment/62.ts")
+                delay(250)
+
+                assertFalse(job.isDownloadActive.value)
+                assertTrue(job.status.value is DownloadJobStatus.Canceled)
+                assertNull(item.retryAt)
+                assertEquals(0, completions.get())
+                assertEquals(
+                    requestsAfterStop,
+                    fixture.requestsFor("/playlist/62.m3u8") + fixture.requestsFor("/segment/62.ts"),
+                )
+            } finally {
+                eventJob.cancel()
+                closeManager(manager)
+                output.deleteRecursively()
+                data.deleteRecursively()
+            }
+        }
+    }
+
+    @Test
     fun concurrentResumeCommandsStartOneActualHttpLifecycle() = withRetryServer { fixture ->
         runBlocking {
             val output = createTempDir("concurrent-http-output-")
@@ -554,6 +719,37 @@ class ActualRestoredRetryJobTest {
         }
     }
 
+    private suspend fun runFutureRetryStoppedBeforeAdmission(
+        manager: DownloadManager,
+        item: ir.amirab.downloader.downloaditem.IDownloadItem,
+    ) {
+        val dueAt = requireNotNull(item.retryAt)
+        val queueScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val queue = ManualDownloadQueue(manager, queueScope)
+        try {
+            manager.boot()
+            val job = manager.downloadJobs.single()
+            queue.boot()
+            withTimeout(5_000) { manager.listOfJobsEvents.subscriptionCount.first { it >= 1 } }
+            queue.setMaxConcurrent(1)
+            manager.restoreInterruptedRetries { queue.resume(it) }
+            delay(100)
+
+            assertTrue(job.status.value is DownloadJobStatus.Retrying)
+            assertFalse(job.isDownloadActive.value)
+            manager.stopAll()
+            delay((dueAt - System.currentTimeMillis() + 300).coerceAtLeast(300))
+
+            assertTrue(job.status.value is DownloadJobStatus.Canceled)
+            assertFalse(job.isDownloadActive.value)
+            assertNull(item.retryAt)
+            assertEquals(0, item.retryAttempt)
+        } finally {
+            queue.clearQueue()
+            queueScope.cancel()
+        }
+    }
+
     private suspend fun runRestoredJobOwnedByStoppedQueue(
         manager: DownloadManager,
         itemId: Long,
@@ -691,13 +887,13 @@ class ActualRestoredRetryJobTest {
         fun activeTransferCount(): Int = activeTransfers.get()
 
         fun fileBytes(id: Long): ByteArray = ByteArray(
-            if (id == 41L) 512 * 1024 else 4_096
+            if (id == 41L || id == 61L) 512 * 1024 else 4_096
         ) { index ->
             ((index * 31 + id.toInt()) and 0xff).toByte()
         }
 
         fun segmentBytes(id: Long): ByteArray = ByteArray(
-            if (id == 42L || id == 52L) 512 * 1024 else 2_048
+            if (id == 42L || id == 52L || id == 62L) 512 * 1024 else 2_048
         ) { index ->
             ((index * 17 + id.toInt()) and 0xff).toByte()
         }
