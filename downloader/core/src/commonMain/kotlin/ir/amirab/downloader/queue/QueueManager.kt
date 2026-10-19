@@ -112,8 +112,9 @@ class QueueManager(
 
     suspend fun boot() {
         booted.action {
-            val queueModels = queueDb
-                .getAllQueues()
+            val queueModels = normalizePersistedQueueModels(
+                queueDb.getAllQueues()
+            )
             val dbQueues = queueModels.map {
                 createQueue(it)
             }
@@ -135,6 +136,36 @@ class QueueManager(
                 it.id == DefaultQueueInfo.ID
             }
         ) { "we can't find main queue" }
+    }
+
+    private suspend fun normalizePersistedQueueModels(
+        queueModels: List<QueueModel>,
+    ): List<QueueModel> {
+        if (queueModels.isEmpty()) {
+            return emptyList()
+        }
+
+        val claimedDownloadIds = mutableSetOf<Long>()
+        val normalizedByQueueId = queueModels
+            .sortedWith(
+                compareBy<QueueModel> { it.id == DefaultQueueInfo.ID }
+                    .thenBy { it.id }
+            )
+            .associate { queueModel ->
+                queueModel.id to queueModel.copy(
+                    queueItems = queueModel.queueItems.filter(claimedDownloadIds::add)
+                )
+            }
+
+        val normalized = queueModels.map { queueModel ->
+            requireNotNull(normalizedByQueueId[queueModel.id])
+        }
+        normalized.zip(queueModels).forEach { (newModel, oldModel) ->
+            if (newModel != oldModel) {
+                queueDb.updateQueue(newModel)
+            }
+        }
+        return normalized
     }
 
     private fun createQueue(queueModel: QueueModel): DownloadQueue {

@@ -57,6 +57,7 @@ class HLSDownloadJob(
         loadPartState()
         applySpeedLimit()
         downloadedSizeBeforeRetry = getDownloadedSize()
+        failedDownloadTries = downloadItem.retryAttempt
     }
 
     override fun initializeDestination() {
@@ -104,6 +105,7 @@ class HLSDownloadJob(
         downloadItem.completeTime = null
         downloadItem.duration = null
         downloadedSizeBeforeRetry = 0 // nothing
+        clearRetryState()
         saveState()
         downloadManager.onDownloadItemChange(downloadItem)
     }
@@ -151,6 +153,7 @@ class HLSDownloadJob(
                 beginDownloadParts()
                 startAutoSaver()
                 downloadItem.status = DownloadStatus.Downloading
+                clearRetryState()
                 if (downloadItem.startTime == null) {
                     downloadItem.startTime = System.currentTimeMillis()
                 }
@@ -397,7 +400,14 @@ class HLSDownloadJob(
         }
     }
 
-    fun retry(isInFirstResume: Boolean, delayMillis: Long) {
+    fun retry(
+        isInFirstResume: Boolean,
+        delayMillis: Long,
+        retryAtMillis: Long? = null,
+    ) {
+        val scheduledRetryAt = retryAtMillis ?: System.currentTimeMillis() + delayMillis
+        downloadItem.retryAttempt = failedDownloadTries
+        downloadItem.retryAt = scheduledRetryAt
         scope.launch {
             val newScopeResult = retryLock.tryLocked {
                 val job = async {
@@ -415,6 +425,22 @@ class HLSDownloadJob(
                 resumeWithNewScope(it, isInFirstResume)
             }
         }
+    }
+
+    override suspend fun restoreInterruptedRetry() {
+        val scheduledRetryAt = downloadItem.retryAt ?: return
+        failedDownloadTries = downloadItem.retryAttempt
+        retry(
+            isInFirstResume = false,
+            delayMillis = (scheduledRetryAt - System.currentTimeMillis()).coerceAtLeast(0L),
+            retryAtMillis = scheduledRetryAt,
+        )
+    }
+
+    private fun clearRetryState() {
+        failedDownloadTries = 0
+        downloadItem.retryAttempt = 0
+        downloadItem.retryAt = null
     }
 
     fun shouldRetryIfInitialFailed(): Boolean {
@@ -607,7 +633,7 @@ class HLSDownloadJob(
 
     override suspend fun pause(throwable: Throwable) {
         boot()
-        failedDownloadTries = 0
+        clearRetryState()
         cancelRetry()
         cancelDownloadScope()
         stopAllParts()

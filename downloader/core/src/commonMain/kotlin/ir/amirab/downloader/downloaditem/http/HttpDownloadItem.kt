@@ -30,6 +30,8 @@ data class HttpDownloadItem(
     override var startTime: Long? = null,
     override var completeTime: Long? = null,
     override var status: DownloadStatus = DownloadStatus.Added,
+    override var retryAttempt: Int = 0,
+    override var retryAt: Long? = null,
     override var preferredConnectionCount: Int? = null,
     override var speedLimit: Long = 0,//0 is unlimited
     override var fileChecksum: String? = null,
@@ -168,6 +170,8 @@ fun HttpDownloadItem.applyFrom(other: HttpDownloadItem) {
     startTime = other.startTime
     completeTime = other.completeTime
     status = other.status
+    retryAttempt = other.retryAttempt
+    retryAt = other.retryAt
     preferredConnectionCount = other.preferredConnectionCount
     speedLimit = other.speedLimit
 

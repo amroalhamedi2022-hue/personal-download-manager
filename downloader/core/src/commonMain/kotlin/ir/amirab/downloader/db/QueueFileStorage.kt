@@ -35,7 +35,7 @@ class DownloadQueueFileStorageDatabase(
                 it.name.substring(0,it.name.length-".$queueExtension".length)
             }.mapNotNull {
                 it.toLongOrNull()
-            }
+            }.sorted()
         }
     }
 
