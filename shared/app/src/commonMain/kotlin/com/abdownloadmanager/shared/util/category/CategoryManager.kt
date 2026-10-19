@@ -26,8 +26,12 @@ class CategoryManager(
     suspend fun boot() {
         booted.action {
             if (categoryStorage.isCategoriesSet()) {
-                _categories.value = categoryStorage
-                    .getCategories()
+                val persistedCategories = categoryStorage.getCategories()
+                val normalizedCategories = normalizePersistedCategories(persistedCategories)
+                _categories.value = normalizedCategories
+                if (normalizedCategories != persistedCategories) {
+                    categoryStorage.setCategories(normalizedCategories)
+                }
             } else {
                 reset()
             }
@@ -48,6 +52,17 @@ class CategoryManager(
             autoAddItemsToCategoriesBasedOnFileNames(
                 categoryItemProvider
                     .getAll()
+            )
+        }
+    }
+
+    private fun normalizePersistedCategories(
+        categories: List<Category>,
+    ): List<Category> {
+        val claimedItemIds = mutableSetOf<Long>()
+        return categories.map { category ->
+            category.copy(
+                items = category.items.filter(claimedItemIds::add)
             )
         }
     }
