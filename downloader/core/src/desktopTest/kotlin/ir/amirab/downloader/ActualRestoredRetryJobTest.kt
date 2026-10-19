@@ -103,6 +103,52 @@ class ActualRestoredRetryJobTest {
     }
 
     @Test
+    fun concurrentResumeCommandsStartOneActualHlsLifecycle() = withRetryServer { fixture ->
+        runBlocking {
+            val output = createTempDir("concurrent-hls-output-")
+            val data = createTempDir("concurrent-hls-data-")
+            val item = HLSDownloadItem(
+                link = "${fixture.baseUrl}/playlist/52.m3u8",
+                id = 52,
+                folder = output.path,
+                name = "52.ts",
+                dateAdded = 52,
+                preferredConnectionCount = 1,
+            )
+            val manager = createHlsManager(listOf(item), fixture.client, data)
+            val started = AtomicInteger()
+            val completed = CompletableDeferred<Unit>()
+            val eventJob = manager.scope.launch {
+                manager.listOfJobsEvents
+                    .onEach { event ->
+                        if (event is DownloadManagerEvents.OnJobStarting) started.incrementAndGet()
+                    }
+                    .filterIsInstance<DownloadManagerEvents.OnJobCompleted>()
+                    .first()
+                completed.complete(Unit)
+            }
+
+            try {
+                manager.boot()
+                withTimeout(5_000) { manager.listOfJobsEvents.subscriptionCount.first { it >= 1 } }
+                coroutineScope {
+                    List(16) { async { manager.resume(item.id) } }.awaitAll()
+                }
+                withTimeout(20_000) { completed.await() }
+
+                assertEquals(1, started.get())
+                assertEquals(1, fixture.peakTransfers.get())
+                assertContentEquals(fixture.segmentBytes(item.id), File(item.folder, item.name).readBytes())
+            } finally {
+                eventJob.cancel()
+                closeManager(manager)
+                output.deleteRecursively()
+                data.deleteRecursively()
+            }
+        }
+    }
+
+    @Test
     fun restoredHttpRetryStopsBeforeMovingDestinationAndCanResumeSafely() = withRetryServer { fixture ->
         runBlocking {
             val oldOutput = createTempDir("move-http-old-")
@@ -164,6 +210,78 @@ class ActualRestoredRetryJobTest {
                 manager.resume(item.id)
                 withTimeout(20_000) { completed.await() }
                 assertContentEquals(fixture.fileBytes(item.id), newFile.readBytes())
+                assertEquals(1, fixture.peakTransfers.get())
+            } finally {
+                completionJob.cancel()
+                queue.clearQueue()
+                queueScope.cancel()
+                closeManager(manager)
+                oldOutput.deleteRecursively()
+                newOutput.deleteRecursively()
+                data.deleteRecursively()
+            }
+        }
+    }
+
+    @Test
+    fun restoredHlsRetryStopsBeforeMovingDestinationAndCanResumeSafely() = withRetryServer { fixture ->
+        runBlocking {
+            val oldOutput = createTempDir("move-hls-old-")
+            val newOutput = createTempDir("move-hls-new-")
+            val data = createTempDir("move-hls-data-")
+            val item = HLSDownloadItem(
+                link = "${fixture.baseUrl}/playlist/42.m3u8",
+                id = 42,
+                folder = oldOutput.path,
+                name = "before.ts",
+                dateAdded = 42,
+                retryAttempt = 1,
+                retryAt = System.currentTimeMillis() - 1,
+                preferredConnectionCount = 1,
+            )
+            val manager = createHlsManager(listOf(item), fixture.client, data)
+            val queueScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+            val queue = ManualDownloadQueue(manager, queueScope)
+            val completed = CompletableDeferred<Unit>()
+            val completionJob = queueScope.launch {
+                manager.listOfJobsEvents
+                    .filterIsInstance<DownloadManagerEvents.OnJobCompleted>()
+                    .first()
+                completed.complete(Unit)
+            }
+
+            try {
+                manager.boot()
+                val job = manager.downloadJobs.single()
+                queue.boot()
+                withTimeout(5_000) { manager.listOfJobsEvents.subscriptionCount.first { it >= 2 } }
+                queue.setMaxConcurrent(1)
+                manager.restoreInterruptedRetries { queue.resume(it) }
+                withTimeout(10_000) {
+                    while (job.status.value != DownloadJobStatus.Downloading || fixture.activeTransferCount() == 0) {
+                        delay(5)
+                    }
+                }
+
+                val oldFile = File(oldOutput, "before.ts")
+                val newFile = File(newOutput, "after.ts")
+                manager.updateDownloadItem(item.id, null) { updated ->
+                    updated.folder = newOutput.path
+                    updated.name = newFile.name
+                }
+
+                assertFalse(job.isDownloadActive.value)
+                assertTrue(job.status.value is DownloadJobStatus.Canceled)
+                withTimeout(5_000) {
+                    while (fixture.activeTransferCount() != 0) delay(5)
+                }
+                assertFalse(oldFile.exists())
+                delay(150)
+                assertFalse(oldFile.exists())
+
+                manager.resume(item.id)
+                withTimeout(20_000) { completed.await() }
+                assertContentEquals(fixture.segmentBytes(item.id), newFile.readBytes())
                 assertEquals(1, fixture.peakTransfers.get())
             } finally {
                 completionJob.cancel()
@@ -578,7 +696,9 @@ class ActualRestoredRetryJobTest {
             ((index * 31 + id.toInt()) and 0xff).toByte()
         }
 
-        fun segmentBytes(id: Long): ByteArray = ByteArray(2_048) { index ->
+        fun segmentBytes(id: Long): ByteArray = ByteArray(
+            if (id == 42L || id == 52L) 512 * 1024 else 2_048
+        ) { index ->
             ((index * 17 + id.toInt()) and 0xff).toByte()
         }
 
