@@ -66,7 +66,10 @@ class DownloadManager(
             // Storage must never turn one persisted task into multiple live jobs after restart.
             .distinctBy { it.id }
             .forEach {
-                createJob(it).boot()
+                createJob(it).also { job ->
+                    job.boot()
+                    job.restoreInterruptedRetry()
+                }
             }
     }
 
