@@ -17,7 +17,6 @@ import ir.amirab.downloader.exception.TooManyErrorException
 import ir.amirab.downloader.part.*
 import ir.amirab.downloader.utils.*
 import ir.amirab.downloader.utils.speedlimiter.SpeedLimiter
-import ir.amirab.util.tryLocked
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
@@ -112,10 +111,9 @@ class HLSDownloadJob(
 
 
     override suspend fun resume() {
-        if (isDownloadActive.value) {
+        if (!tryActivateDownload()) {
             return
         }
-        _isDownloadActive.update { true }
         resumeWithNewScope(
             newActiveScope = createAndInitializeDownloadScope(),
             isInFirstResume = true
@@ -353,11 +351,6 @@ class HLSDownloadJob(
     var failedDownloadTries = 0
     private var downloadedSizeBeforeRetry = 0L
 
-    private var retryJob: Job? = null
-
-    private val retryLock = Mutex()
-
-    // I have to improve this function to not allow accessing it concurrently
     private fun downloadFailedRetryOrPause(
         e: Throwable,
         isInFirstResume: Boolean,
@@ -404,26 +397,29 @@ class HLSDownloadJob(
         isInFirstResume: Boolean,
         delayMillis: Long,
         retryAtMillis: Long? = null,
+        allowInactive: Boolean = false,
     ) {
+        if (!allowInactive && !isDownloadActive.value) {
+            return
+        }
         val scheduledRetryAt = retryAtMillis ?: System.currentTimeMillis() + delayMillis
-        downloadItem.retryAttempt = failedDownloadTries
-        downloadItem.retryAt = scheduledRetryAt
-        scope.launch {
-            val newScopeResult = retryLock.tryLocked {
-                val job = async {
-                    saveState()
-                    cancelDownloadScope()
-                    stopAllParts()
-                    _status.update { DownloadJobStatus.Retrying(delayMillis) }
-                    delay(delayMillis.milliseconds)
-                    createAndInitializeDownloadScope()
-                }
-                retryJob = job
-                job.await()
-            }
-            newScopeResult.getOrNull()?.let {
-                resumeWithNewScope(it, isInFirstResume)
-            }
+        launchExclusiveRetry(
+            onAccepted = {
+                downloadItem.retryAttempt = failedDownloadTries
+                downloadItem.retryAt = scheduledRetryAt
+                markDownloadActive()
+                _status.value = DownloadJobStatus.Retrying(delayMillis)
+            },
+        ) {
+            saveState()
+            cancelDownloadScope()
+            stopAllParts()
+            delay(delayMillis.milliseconds)
+            ensureActive()
+            resumeWithNewScope(
+                newActiveScope = createAndInitializeDownloadScope(),
+                isInFirstResume = isInFirstResume,
+            )
         }
     }
 
@@ -434,6 +430,7 @@ class HLSDownloadJob(
             isInFirstResume = false,
             delayMillis = (scheduledRetryAt - System.currentTimeMillis()).coerceAtLeast(0L),
             retryAtMillis = scheduledRetryAt,
+            allowInactive = true,
         )
     }
 
@@ -615,11 +612,6 @@ class HLSDownloadJob(
         activeDownloadScope = null
     }
 
-    suspend fun cancelRetry() {
-        retryJob?.cancel()
-        retryJob = null
-    }
-
     suspend fun stopAllParts() {
         withContext(Dispatchers.IO) {
             partDownloaderList.values.onEach {
@@ -633,8 +625,10 @@ class HLSDownloadJob(
 
     override suspend fun pause(throwable: Throwable) {
         boot()
+        // Make a concurrent failure callback ineligible to enqueue a new retry.
+        markDownloadInactive()
+        cancelExclusiveRetry()
         clearRetryState()
-        cancelRetry()
         cancelDownloadScope()
         stopAllParts()
         onDownloadCanceled(throwable)

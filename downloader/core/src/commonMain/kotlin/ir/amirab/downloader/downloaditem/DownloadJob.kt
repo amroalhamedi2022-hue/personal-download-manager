@@ -5,10 +5,13 @@ import ir.amirab.downloader.destination.DownloadDestination
 import ir.amirab.downloader.utils.ExceptionUtils
 import ir.amirab.util.suspendGuardedEntry
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -22,6 +25,76 @@ abstract class DownloadJob(
 ) {
     protected val _isDownloadActive = MutableStateFlow(false)
     val isDownloadActive = _isDownloadActive.asStateFlow()
+
+    /**
+     * Claims the one active lifecycle allowed for this persisted download.
+     * StateFlow's compare-and-set makes simultaneous Resume calls deterministic.
+     */
+    protected fun tryActivateDownload(): Boolean =
+        _isDownloadActive.compareAndSet(expect = false, update = true)
+
+    protected fun markDownloadActive() {
+        _isDownloadActive.value = true
+    }
+
+    protected fun markDownloadInactive() {
+        _isDownloadActive.value = false
+    }
+
+    private val scheduledRetryLock = Any()
+    private var scheduledRetryGeneration = 0L
+    private var scheduledRetryJob: Job? = null
+
+    /**
+     * Publishes a retry before starting its coroutine. Pause can therefore always
+     * find and join the accepted retry, including the small pre-start window.
+     */
+    protected fun launchExclusiveRetry(
+        onAccepted: () -> Unit,
+        block: suspend CoroutineScope.() -> Unit,
+    ): Boolean {
+        lateinit var newJob: Job
+        val accepted = synchronized(scheduledRetryLock) {
+            if (scheduledRetryJob?.isCompleted == false) {
+                false
+            } else {
+                val generation = ++scheduledRetryGeneration
+                newJob = scope.launch(start = CoroutineStart.LAZY) {
+                    try {
+                        val stillCurrent = synchronized(scheduledRetryLock) {
+                            scheduledRetryGeneration == generation && scheduledRetryJob === newJob
+                        }
+                        if (stillCurrent) {
+                            block()
+                        }
+                    } finally {
+                        synchronized(scheduledRetryLock) {
+                            if (scheduledRetryJob === newJob) {
+                                scheduledRetryJob = null
+                            }
+                        }
+                    }
+                }
+                scheduledRetryJob = newJob
+                onAccepted()
+                true
+            }
+        }
+        if (accepted) {
+            newJob.start()
+        }
+        return accepted
+    }
+
+    protected suspend fun cancelExclusiveRetry() {
+        val jobToCancel = synchronized(scheduledRetryLock) {
+            scheduledRetryGeneration++
+            scheduledRetryJob.also {
+                scheduledRetryJob = null
+            }
+        }
+        jobToCancel?.cancelAndJoin()
+    }
 
     abstract val downloadItem: IDownloadItem
     val id get() = downloadItem.id
@@ -86,7 +159,7 @@ abstract class DownloadJob(
         } else {
             downloadItem.status = DownloadStatus.Error
         }
-        _isDownloadActive.update { false }
+        markDownloadInactive()
         saveState()
         downloadManager.onDownloadCanceled(downloadItem, throwable)
     }
@@ -104,7 +177,7 @@ abstract class DownloadJob(
             downloadItem.status = DownloadStatus.Completed
             downloadItem.completeTime = System.currentTimeMillis()
             _status.value = DownloadJobStatus.Finished
-            _isDownloadActive.update { false }
+            markDownloadInactive()
             onDownloadFinishedBeforeSave()
             saveState()
             downloadManager.onDownloadFinished(downloadItem)

@@ -16,6 +16,7 @@ import ir.amirab.util.FileNameValidator
 import ir.amirab.util.PathValidator
 import ir.amirab.util.suspendGuardedEntry
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -67,6 +68,8 @@ class DownloadManager(
     }
 
     private val contextContainer = ContextProvider()
+
+    private val jobModificationLock = Any()
 
     private suspend fun createJobForPendingDownloads() {
         pendingDownloadsToBoot(dlListDb.getAll())
@@ -159,15 +162,17 @@ class DownloadManager(
         return job.id
     }
 
-    private val jobModificationLock = Any()
     private fun createJob(downloadItem: IDownloadItem): DownloadJob {
-        val job = downloaderRegistry.createJob(
-            downloadItem,
-            this,
-        )
-//        thisLogger().info("download job for $id created")
-        downloadJobs = downloadJobs + job
-        return job
+        return synchronized(jobModificationLock) {
+            downloadJobs.find { it.id == downloadItem.id }
+                ?: downloaderRegistry.createJob(
+                    downloadItem,
+                    this,
+                ).also { job ->
+//                    thisLogger().info("download job for $id created")
+                    downloadJobs = downloadJobs + job
+                }
+        }
     }
 
     suspend fun deleteDownload(
@@ -219,14 +224,21 @@ class DownloadManager(
     }
 
     suspend fun resume(id: Long, context: DownloadItemContext = EmptyContext) {
-        val job = getDownloadJob(id) ?: run {
-            dlListDb.getById(id)?.let {
-                createJob(it)
-            }
+        if (!beginStartCommand()) {
+            return
         }
-        job?.let {
-            contextContainer.updateContext(id) { it + context }
-            it.resume()
+        try {
+            val job = getDownloadJob(id) ?: run {
+                dlListDb.getById(id)?.let {
+                    createJob(it)
+                }
+            }
+            job?.let {
+                contextContainer.updateContext(id) { it + context }
+                it.resume()
+            }
+        } finally {
+            endStartCommand()
         }
     }
 
@@ -244,8 +256,10 @@ class DownloadManager(
 
     private fun getDownloadJob(id: Long): DownloadJob? {
 //        thisLogger().info("finding job for $id")
-        return downloadJobs.find {
-            it.id == id
+        return synchronized(jobModificationLock) {
+            downloadJobs.find {
+                it.id == id
+            }
         }.also {
             if (it == null) {
 //                thisLogger().info("there is no job for dl_$id")
@@ -327,22 +341,62 @@ class DownloadManager(
     }
 
     override fun canActivateJob(id: Long): Boolean {
-        val job = downloadJobs.find { id == it.id }
+        val job = getDownloadJob(id)
         val status = job?.status?.value
 //        println("job status $status")
         return status is DownloadJobStatus.CanBeResumed
     }
 
+    private val lifecycleCommandLock = Mutex()
+    private val stopAllLock = Mutex()
+    private var stopAllInProgress = false
+    private var startsInFlight = 0
+    private var startsDrained = CompletableDeferred(Unit).apply { complete(Unit) }
+
+    private suspend fun beginStartCommand(): Boolean = lifecycleCommandLock.withLock {
+        if (stopAllInProgress) {
+            return@withLock false
+        }
+        if (startsInFlight == 0) {
+            startsDrained = CompletableDeferred()
+        }
+        startsInFlight++
+        true
+    }
+
+    private suspend fun endStartCommand() {
+        lifecycleCommandLock.withLock {
+            startsInFlight--
+            check(startsInFlight >= 0) { "download start command count became negative" }
+            if (startsInFlight == 0) {
+                startsDrained.complete(Unit)
+            }
+        }
+    }
+
     suspend fun stopAll(
         context: DownloadItemContext = EmptyContext,
-    ) {
-        downloadJobs.filter {
-            it.status.value == DownloadJobStatus.Downloading
-        }.map {
-            scope.async {
-                pause(it.id, context)
+    ) = stopAllLock.withLock {
+        val waitForStarts = lifecycleCommandLock.withLock {
+            stopAllInProgress = true
+            startsDrained.takeIf { startsInFlight > 0 }
+        }
+        try {
+            // Do not hold lifecycleCommandLock while a Job performs network/disk cleanup.
+            waitForStarts?.await()
+            val activeJobs = synchronized(jobModificationLock) {
+                downloadJobs.filter { it.status.value is DownloadJobStatus.IsActive }
             }
-        }.awaitAll()
+            activeJobs.map { job ->
+                scope.async {
+                    pause(job.id, context)
+                }
+            }.awaitAll()
+        } finally {
+            lifecycleCommandLock.withLock {
+                stopAllInProgress = false
+            }
+        }
     }
 
     fun getActiveCount(): Int {

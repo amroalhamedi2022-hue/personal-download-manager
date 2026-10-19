@@ -181,7 +181,7 @@ class DownloadSystem(
 
     suspend fun stopAnything() {
         queueManager.getAll().forEach {
-            it.stop()
+            it.stopAsync()
         }
         manualDownloadQueue.clearQueue()
         downloadManager.stopAll()
