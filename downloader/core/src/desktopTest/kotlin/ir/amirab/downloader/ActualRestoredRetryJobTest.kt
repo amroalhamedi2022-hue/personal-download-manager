@@ -330,7 +330,7 @@ class ActualRestoredRetryJobTest {
         runBlocking {
             val output = createTempDir("restored-http-output-")
             val data = createTempDir("restored-http-data-")
-            val items = (1L..3L).map { id ->
+            val items = (1L..5L).map { id ->
                 HttpDownloadItem(
                     link = "${fixture.baseUrl}/file/$id.bin",
                     id = id,
@@ -370,7 +370,7 @@ class ActualRestoredRetryJobTest {
         runBlocking {
             val output = createTempDir("restored-hls-output-")
             val data = createTempDir("restored-hls-data-")
-            val items = (11L..13L).map { id ->
+            val items = (11L..15L).map { id ->
                 HLSDownloadItem(
                     link = "${fixture.baseUrl}/playlist/$id.m3u8",
                     id = id,
