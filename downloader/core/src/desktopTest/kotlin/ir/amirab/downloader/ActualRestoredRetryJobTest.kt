@@ -1,0 +1,327 @@
+package ir.amirab.downloader
+
+import com.sun.net.httpserver.HttpExchange
+import com.sun.net.httpserver.HttpServer
+import ir.amirab.downloader.connection.OkHttpHttpDownloaderClient
+import ir.amirab.downloader.connection.UserAgentProvider
+import ir.amirab.downloader.connection.proxy.AutoConfigurableProxyProvider
+import ir.amirab.downloader.connection.proxy.ProxyStrategy
+import ir.amirab.downloader.connection.proxy.ProxyStrategyProvider
+import ir.amirab.downloader.connection.proxy.SystemProxySelectorProvider
+import ir.amirab.downloader.db.MemoryDownloadListDB
+import ir.amirab.downloader.db.MemoryDownloadPartStatesDB
+import ir.amirab.downloader.downloaditem.DownloadJob
+import ir.amirab.downloader.downloaditem.DownloadJobStatus
+import ir.amirab.downloader.downloaditem.hls.HLSDownloadItem
+import ir.amirab.downloader.downloaditem.hls.HLSDownloader
+import ir.amirab.downloader.downloaditem.http.HttpDownloadItem
+import ir.amirab.downloader.downloaditem.http.HttpDownloader
+import ir.amirab.downloader.queue.ManualDownloadQueue
+import ir.amirab.downloader.utils.EmptyFileCreator
+import ir.amirab.downloader.utils.IDiskStat
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import okhttp3.OkHttpClient
+import java.io.File
+import java.net.InetSocketAddress
+import java.net.ProxySelector
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
+import kotlin.test.Test
+import kotlin.test.assertContentEquals
+import kotlin.test.assertEquals
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
+
+class ActualRestoredRetryJobTest {
+
+    @Test
+    fun restoredHttpJobsCompleteThroughManualQueueOneAtATime() = withRetryServer { fixture ->
+        runBlocking {
+            val output = createTempDir("restored-http-output-")
+            val data = createTempDir("restored-http-data-")
+            val items = (1L..3L).map { id ->
+                HttpDownloadItem(
+                    link = "${fixture.baseUrl}/file/$id.bin",
+                    id = id,
+                    folder = output.path,
+                    name = "$id.bin",
+                    dateAdded = id,
+                    retryAttempt = 1,
+                    retryAt = System.currentTimeMillis() - 1,
+                    preferredConnectionCount = 1,
+                )
+            }
+            val manager = createHttpManager(items, fixture.client, data)
+
+            try {
+                runRestoredJobsWithLimitOne(manager, items.size)
+
+                items.forEach { item ->
+                    assertContentEquals(
+                        fixture.fileBytes(item.id),
+                        File(item.folder, item.name).readBytes(),
+                    )
+                    assertNull(item.retryAt)
+                    assertEquals(0, item.retryAttempt)
+                    assertTrue(fixture.requestsFor("/file/${item.id}.bin") >= 2)
+                }
+                assertEquals(1, fixture.peakTransfers.get())
+                assertEquals(items.size, manager.downloadJobs.map { it.id }.distinct().size)
+            } finally {
+                closeManager(manager)
+                output.deleteRecursively()
+                data.deleteRecursively()
+            }
+        }
+    }
+
+    @Test
+    fun restoredHlsJobsCompleteThroughManualQueueOneAtATime() = withRetryServer { fixture ->
+        runBlocking {
+            val output = createTempDir("restored-hls-output-")
+            val data = createTempDir("restored-hls-data-")
+            val items = (11L..13L).map { id ->
+                HLSDownloadItem(
+                    link = "${fixture.baseUrl}/playlist/$id.m3u8",
+                    id = id,
+                    folder = output.path,
+                    name = "$id.ts",
+                    dateAdded = id,
+                    retryAttempt = 1,
+                    retryAt = System.currentTimeMillis() - 1,
+                    preferredConnectionCount = 1,
+                )
+            }
+            val manager = createHlsManager(items, fixture.client, data)
+
+            try {
+                runRestoredJobsWithLimitOne(manager, items.size)
+
+                items.forEach { item ->
+                    assertContentEquals(
+                        fixture.segmentBytes(item.id),
+                        File(item.folder, item.name).readBytes(),
+                    )
+                    assertNull(item.retryAt)
+                    assertEquals(0, item.retryAttempt)
+                    assertTrue(fixture.requestsFor("/playlist/${item.id}.m3u8") >= 1)
+                    assertTrue(fixture.requestsFor("/segment/${item.id}.ts") >= 1)
+                }
+                assertEquals(1, fixture.peakTransfers.get())
+                assertEquals(items.size, manager.downloadJobs.map { it.id }.distinct().size)
+            } finally {
+                closeManager(manager)
+                output.deleteRecursively()
+                data.deleteRecursively()
+            }
+        }
+    }
+
+    private suspend fun runRestoredJobsWithLimitOne(
+        manager: DownloadManager,
+        expectedCount: Int,
+    ) {
+        val queueScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val queue = ManualDownloadQueue(manager, queueScope)
+        try {
+            manager.boot()
+            queue.boot()
+            withTimeout(5_000) { manager.listOfJobsEvents.subscriptionCount.first { it > 0 } }
+            queue.setMaxConcurrent(1)
+            manager.restoreInterruptedRetries { queue.resume(it) }
+
+            withTimeout(20_000) {
+                while (manager.downloadJobs.count { it.status.value == DownloadJobStatus.Finished } < expectedCount) {
+                    delay(20)
+                }
+            }
+        } finally {
+            queue.clearQueue()
+            queueScope.cancel()
+        }
+    }
+
+    private suspend fun createHttpManager(
+        items: List<HttpDownloadItem>,
+        client: OkHttpHttpDownloaderClient,
+        dataFolder: File,
+    ): DownloadManager = createManager(
+        items = items,
+        dataFolder = dataFolder,
+        registry = DownloaderRegistry().apply { add(HttpDownloader(lazyOf(client))) },
+    )
+
+    private suspend fun createHlsManager(
+        items: List<HLSDownloadItem>,
+        client: OkHttpHttpDownloaderClient,
+        dataFolder: File,
+    ): DownloadManager = createManager(
+        items = items,
+        dataFolder = dataFolder,
+        registry = DownloaderRegistry().apply { add(HLSDownloader(lazyOf(client))) },
+    )
+
+    private suspend fun createManager(
+        items: List<ir.amirab.downloader.downloaditem.IDownloadItem>,
+        dataFolder: File,
+        registry: DownloaderRegistry,
+    ): DownloadManager {
+        val listDb = MemoryDownloadListDB().also { db -> items.forEach { db.add(it) } }
+        return DownloadManager(
+            dlListDb = listDb,
+            partListDb = MemoryDownloadPartStatesDB(),
+            settings = DownloadSettings(defaultThreadCount = 1),
+            emptyFileCreator = EmptyFileCreator(
+                diskStat = object : IDiskStat {
+                    override fun getRemainingSpace(path: File): Long = Long.MAX_VALUE
+                },
+                useSparseFile = { false },
+            ),
+            downloaderRegistry = registry,
+            downloadDataFolder = dataFolder,
+        )
+    }
+
+    private fun closeManager(manager: DownloadManager) {
+        manager.downloadJobs.forEach(DownloadJob::close)
+        manager.scope.cancel()
+    }
+
+    private fun createTempDir(prefix: String): File =
+        java.nio.file.Files.createTempDirectory(prefix).toFile()
+
+    private fun <T> withRetryServer(block: (RetryServerFixture) -> T): T {
+        val executor = Executors.newCachedThreadPool()
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        val fixture = RetryServerFixture(server)
+        server.executor = executor
+        server.createContext("/") { exchange -> fixture.respond(exchange) }
+        server.start()
+        return try {
+            block(fixture)
+        } finally {
+            server.stop(0)
+            executor.shutdownNow()
+        }
+    }
+
+    private class RetryServerFixture(
+        private val server: HttpServer,
+    ) {
+        val baseUrl: String get() = "http://127.0.0.1:${server.address.port}"
+        val peakTransfers = AtomicInteger()
+        private val activeTransfers = AtomicInteger()
+        private val requests = ConcurrentHashMap<String, AtomicInteger>()
+
+        val client = OkHttpHttpDownloaderClient(
+            okHttpClient = OkHttpClient.Builder()
+                .readTimeout(10, TimeUnit.SECONDS)
+                .build(),
+            customUserAgentProvider = object : UserAgentProvider {
+                override fun getUserAgent() = "restored-retry-test"
+            },
+            proxyStrategyProvider = object : ProxyStrategyProvider {
+                override fun getProxyStrategyFor(url: String) = ProxyStrategy.Direct
+            },
+            systemProxySelectorProvider = object : SystemProxySelectorProvider {
+                override fun getSystemProxySelector(): ProxySelector? = null
+            },
+            autoConfigurableProxyProvider = AutoConfigurableProxyProvider.NoOp(),
+        )
+
+        fun requestsFor(path: String): Int = requests[path]?.get() ?: 0
+
+        fun fileBytes(id: Long): ByteArray = ByteArray(4_096) { index ->
+            ((index * 31 + id.toInt()) and 0xff).toByte()
+        }
+
+        fun segmentBytes(id: Long): ByteArray = ByteArray(2_048) { index ->
+            ((index * 17 + id.toInt()) and 0xff).toByte()
+        }
+
+        fun respond(exchange: HttpExchange) {
+            val path = exchange.requestURI.path
+            requests.computeIfAbsent(path) { AtomicInteger() }.incrementAndGet()
+            when {
+                path.startsWith("/file/") -> respondRanged(exchange, fileBytes(idFrom(path)))
+                path.startsWith("/playlist/") -> respondPlaylist(exchange, idFrom(path))
+                path.startsWith("/segment/") -> respondBytes(exchange, segmentBytes(idFrom(path)), "video/mp2t")
+                else -> {
+                    exchange.sendResponseHeaders(404, -1)
+                    exchange.close()
+                }
+            }
+        }
+
+        private fun respondRanged(exchange: HttpExchange, bytes: ByteArray) {
+            val range = exchange.requestHeaders.getFirst("Range")
+            val match = range?.let(RANGE_PATTERN::matchEntire)
+            val start = match?.groupValues?.get(1)?.toIntOrNull() ?: 0
+            val requestedEnd = match?.groupValues?.get(2)?.toIntOrNull() ?: bytes.lastIndex
+            val end = requestedEnd.coerceAtMost(bytes.lastIndex)
+            val body = bytes.copyOfRange(start, end + 1)
+            exchange.responseHeaders.add("Accept-Ranges", "bytes")
+            exchange.responseHeaders.add("ETag", "\"retry-fixture\"")
+            if (range != null) {
+                exchange.responseHeaders.add("Content-Range", "bytes $start-$end/${bytes.size}")
+                respondBytes(exchange, body, "application/octet-stream", 206)
+            } else {
+                respondBytes(exchange, body, "application/octet-stream", 200)
+            }
+        }
+
+        private fun respondPlaylist(exchange: HttpExchange, id: Long) {
+            val body = """
+                #EXTM3U
+                #EXT-X-VERSION:3
+                #EXT-X-TARGETDURATION:1
+                #EXT-X-MEDIA-SEQUENCE:0
+                #EXTINF:1.0,
+                ../segment/$id.ts
+                #EXT-X-ENDLIST
+            """.trimIndent().toByteArray()
+            respondBytes(exchange, body, "application/vnd.apple.mpegurl")
+        }
+
+        private fun respondBytes(
+            exchange: HttpExchange,
+            bytes: ByteArray,
+            contentType: String,
+            status: Int = 200,
+        ) {
+            val active = activeTransfers.incrementAndGet()
+            peakTransfers.updateAndGet { previous -> maxOf(previous, active) }
+            try {
+                exchange.responseHeaders.add("Content-Type", contentType)
+                exchange.sendResponseHeaders(status, bytes.size.toLong())
+                exchange.responseBody.use { output ->
+                    bytes.asList().chunked(512).forEach { chunk ->
+                        output.write(chunk.toByteArray())
+                        output.flush()
+                        Thread.sleep(2)
+                    }
+                }
+            } finally {
+                activeTransfers.decrementAndGet()
+                exchange.close()
+            }
+        }
+
+        private fun idFrom(path: String): Long =
+            requireNotNull(ID_PATTERN.find(path)).groupValues[1].toLong()
+    }
+
+    private companion object {
+        val RANGE_PATTERN = Regex("bytes=(\\d+)-(\\d*)")
+        val ID_PATTERN = Regex("/(\\d+)\\.")
+    }
+}

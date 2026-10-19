@@ -21,6 +21,7 @@ class ManualDownloadQueue(
     private val downloadEvents: DownloadManagerMinimalControl,
     private val scope: CoroutineScope,
 ) {
+    private val admissionLock = Any()
 
     private var booted = guardedEntry()
 
@@ -81,12 +82,14 @@ class ManualDownloadQueue(
     }
 
     private fun onDownloadCanceled(id: Long, e: Throwable) {
-        if (trimmedItems.remove(id)) {
-            // it was trimmed so we shouldn't remove it from queue
-            // it should be processed after
-            removeActiveItem(id)
-        } else {
-            removeFromQueue(id)
+        synchronized(admissionLock) {
+            if (trimmedItems.remove(id)) {
+                // it was trimmed so we shouldn't remove it from queue
+                // it should be processed after
+                removeActiveItem(id)
+            } else {
+                removeFromQueue(id)
+            }
         }
         shake()
     }
@@ -103,15 +106,15 @@ class ManualDownloadQueue(
         }
     }
 
-    private fun actualShake(): Boolean {
-        val activeItems = activeItems
-        val maxConcurrent = maxConcurrent
-        if (activeItems.size < maxConcurrent) {
+    private fun actualShake(): Boolean = synchronized(admissionLock) {
+        val currentActiveItems = activeItems
+        val currentMaxConcurrent = maxConcurrent
+        if (currentActiveItems.size < currentMaxConcurrent) {
             extend()
-        } else if (activeItems.size > maxConcurrent) {
+        } else if (currentActiveItems.size > currentMaxConcurrent) {
             trim()
         }
-        return true
+        true
     }
 
     // If multiple downloads are canceled at the same time, multiple `shake` calls may occur.
@@ -170,10 +173,12 @@ class ManualDownloadQueue(
 
 
     fun setMaxConcurrent(value: Int) {
-        maxConcurrent = if (value <= 0) {
-            Int.MAX_VALUE
-        } else {
-            value
+        synchronized(admissionLock) {
+            maxConcurrent = if (value <= 0) {
+                Int.MAX_VALUE
+            } else {
+                value
+            }
         }
         shake()
     }
@@ -301,23 +306,27 @@ class ManualDownloadQueue(
     }
 
     fun clearQueue() {
-        trimmedItems.clear()
-        clearActiveItems()
-        clearTotalItems()
+        synchronized(admissionLock) {
+            trimmedItems.clear()
+            clearActiveItems()
+            clearTotalItems()
+        }
     }
 
     fun removeFromQueue(ids: Set<Long>) {
-        totalItemsFlow.update {
-            it.filter { id ->
-                id !in ids
+        synchronized(admissionLock) {
+            totalItemsFlow.update {
+                it.filter { id ->
+                    id !in ids
+                }
             }
-        }
-        activeItemsFlow.update {
-            it.filter {
-                it !in ids
+            activeItemsFlow.update {
+                it.filter {
+                    it !in ids
+                }
             }
+            trimmedItems.removeAll(ids)
         }
-        trimmedItems.removeAll(ids)
     }
 
     fun removeFromQueue(id: Long) {
@@ -325,8 +334,10 @@ class ManualDownloadQueue(
     }
 
     fun resume(item: Long) {
-        totalItemsFlow.update {
-            (it + item).distinct()
+        synchronized(admissionLock) {
+            totalItemsFlow.update {
+                (it + item).distinct()
+            }
         }
         shake(
             // immediately shake the queue
@@ -338,7 +349,9 @@ class ManualDownloadQueue(
     suspend fun pause(item: Long) {
         // this should be removed here as it indicates that user manually paused it
         // so the trimmed item list should not contain it anymore
-        trimmedItems.remove(item)
+        synchronized(admissionLock) {
+            trimmedItems.remove(item)
+        }
         downloadEvents.stopJob(item, StoppedBy(me))
     }
 }

@@ -13,6 +13,8 @@ import ir.amirab.util.coroutines.debounce
 import ir.amirab.util.guardedEntry
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
@@ -24,6 +26,8 @@ class DownloadQueue(
     val onQueueEvent: (QueueEvent) -> Unit,
 ) {
     private val scope = CoroutineScope(SupervisorJob())
+    private val admissionLock = Any()
+    private val stopLock = Mutex()
 
     //    private val mutex = Mutex()
     private var booted = guardedEntry()
@@ -84,11 +88,14 @@ class DownloadQueue(
     }
 
     private fun onDownloadCanceled(id: Long, e: Throwable) {
-        val removed = activeItems.remove(id)
-        if (isQueueActive) {
-            if (!trimmedItems.remove(id)) {
-                canceledItems.add(id)
+        val removed = synchronized(admissionLock) {
+            val wasRemoved = activeItems.remove(id)
+            if (isQueueActive) {
+                if (!trimmedItems.remove(id)) {
+                    canceledItems.add(id)
+                }
             }
+            wasRemoved
         }
         shake(
             itemChangeHappened = removed,
@@ -104,12 +111,14 @@ class DownloadQueue(
     }
 
     fun start() {
-        if (stopping) return
-//        println("on start queue")
-        canceledItems.clear()
-        trimmedItems.clear()
-        ensureBooted()
-        setActive(true)
+        synchronized(admissionLock) {
+            if (stopping) return
+//          println("on start queue")
+            canceledItems.clear()
+            trimmedItems.clear()
+            ensureBooted()
+            setActive(true)
+        }
 //        println("starting")
         shake(
             delayed = false
@@ -136,9 +145,9 @@ class DownloadQueue(
 
     private fun actualShake(
         itemChangeHappened: Boolean = false
-    ): Boolean {
-//        println("shake queue")
-        return when {
+    ): Boolean = synchronized(admissionLock) {
+//      println("shake queue")
+        when {
             !isQueueActive -> false
             activeItems.isEmpty() && (getDownloadableItemFromQueue() == null) -> {
                 if (stopQueueOnEmpty) {
@@ -262,23 +271,30 @@ class DownloadQueue(
 
     @Volatile
     var stopping = false
-    suspend fun stopAsync() {
-        if (stopping) return
-        setActive(false)
-        stopping = true
-        //active item is a synchronized list so we should iterate over it FAST!
-        val stopJobs = activeItems.map {
-            scope.async {
-                downloadEvents.stopJob(it, StoppedBy(me))
+    suspend fun stopAsync() = stopLock.withLock {
+        val activeSnapshot = synchronized(admissionLock) {
+            if (stopping) return@withLock
+            stopping = true
+            setActive(false)
+            activeItems.toList()
+        }
+        try {
+            val stopJobs = activeSnapshot.map {
+                scope.async {
+                    downloadEvents.stopJob(it, StoppedBy(me))
+                }
+            }
+            kotlin.runCatching {
+                stopJobs.awaitAll()
+            }.onFailure {
+                // should not happen!
+//                it.printStackTrace()
+            }
+        } finally {
+            synchronized(admissionLock) {
+                stopping = false
             }
         }
-        kotlin.runCatching {
-            stopJobs.awaitAll()
-        }.onFailure {
-            // should not happen!
-//            it.printStackTrace()
-        }
-        stopping = false
     }
 
 
@@ -501,9 +517,11 @@ class DownloadQueue(
         _queueModel.update {
             it.copy(queueItems = emptyList())
         }
-        activeItems.clear()
-        canceledItems.clear()
-        trimmedItems.clear()
+        synchronized(admissionLock) {
+            activeItems.clear()
+            canceledItems.clear()
+            trimmedItems.clear()
+        }
     }
 
     fun removeFromQueue(ids: List<Long>) {
@@ -514,10 +532,12 @@ class DownloadQueue(
                 }.distinct()
             )
         }
-        for (id in ids) {
-            activeItems.remove(id)
-            canceledItems.remove(id)
-            trimmedItems.remove(id)
+        synchronized(admissionLock) {
+            for (id in ids) {
+                activeItems.remove(id)
+                canceledItems.remove(id)
+                trimmedItems.remove(id)
+            }
         }
     }
 
