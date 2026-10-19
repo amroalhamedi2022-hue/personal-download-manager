@@ -40,6 +40,13 @@ abstract class DownloadJob(
     }
 
     abstract suspend fun actualBoot()
+
+    /**
+     * Recreate a retry delay that was persisted before the app stopped.
+     * Download types that do not use retries keep the safe no-op default.
+     */
+    open suspend fun restoreInterruptedRetry() = Unit
+
     abstract fun initializeDestination()
     abstract suspend fun reset()
     abstract suspend fun resume()
