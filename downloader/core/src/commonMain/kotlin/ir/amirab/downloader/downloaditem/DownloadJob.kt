@@ -96,6 +96,70 @@ abstract class DownloadJob(
         jobToCancel?.cancelAndJoin()
     }
 
+    private val retryAdmissionLock = Any()
+    private var retryAdmissionGeneration = 0L
+    private var retryAdmissionJob: Job? = null
+
+    /**
+     * Restores only the persisted wait. When it becomes due, ownership is handed
+     * back to DownloadSystem so an existing queue can admit the job normally.
+     * No queue/file/host permit is reserved during this wait.
+     */
+    internal fun scheduleInterruptedRetryAdmission(
+        onDue: suspend (Long) -> Unit,
+    ): Boolean {
+        val retryAt = downloadItem.retryAt ?: return false
+        lateinit var newJob: Job
+        val accepted = synchronized(retryAdmissionLock) {
+            if (retryAdmissionJob?.isCompleted == false) {
+                false
+            } else {
+                val generation = ++retryAdmissionGeneration
+                newJob = scope.launch(start = CoroutineStart.LAZY) {
+                    try {
+                        val remainingMillis = (retryAt - System.currentTimeMillis()).coerceAtLeast(0L)
+                        delay(remainingMillis)
+                        ensureActive()
+                        val shouldNotify = synchronized(retryAdmissionLock) {
+                            retryAdmissionGeneration == generation &&
+                                retryAdmissionJob === newJob
+                        }
+                        if (shouldNotify) {
+                            _status.value = DownloadJobStatus.IDLE
+                            onDue(id)
+                        }
+                    } finally {
+                        synchronized(retryAdmissionLock) {
+                            if (retryAdmissionJob === newJob) {
+                                retryAdmissionJob = null
+                            }
+                        }
+                    }
+                }
+                retryAdmissionJob = newJob
+                markDownloadInactive()
+                _status.value = DownloadJobStatus.Retrying(
+                    (retryAt - System.currentTimeMillis()).coerceAtLeast(0L)
+                )
+                true
+            }
+        }
+        if (accepted) {
+            newJob.start()
+        }
+        return accepted
+    }
+
+    protected suspend fun cancelInterruptedRetryAdmission() {
+        val jobToCancel = synchronized(retryAdmissionLock) {
+            retryAdmissionGeneration++
+            retryAdmissionJob.also {
+                retryAdmissionJob = null
+            }
+        }
+        jobToCancel?.cancelAndJoin()
+    }
+
     abstract val downloadItem: IDownloadItem
     val id get() = downloadItem.id
     val scope = CoroutineScope(SupervisorJob())

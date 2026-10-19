@@ -490,6 +490,13 @@ class DownloadQueue(
         )
     }
 
+    /** Re-checks persisted membership when a restored retry becomes due. */
+    fun onRetryDue(item: Long) {
+        if (item in getQueueModel().queueItems) {
+            shake(itemChangeHappened = true, delayed = false)
+        }
+    }
+
     fun clearQueue() {
         _queueModel.update {
             it.copy(queueItems = emptyList())

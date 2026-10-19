@@ -31,6 +31,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.io.File
 
 /**
@@ -55,6 +57,8 @@ class DownloadSystem(
     private val foldersRegistry: DownloadFoldersRegistry,
 ) {
     private val booted = suspendGuardedEntry()
+    private val stopAnythingLock = Mutex()
+    private var stopAnythingInProgress = false
 
     val downloadEvents = downloadManager.listOfJobsEvents
 
@@ -68,6 +72,21 @@ class DownloadSystem(
             failedDownloads.boot()
             onDownloadCompletionActionRunner.startListening()
             onQueueEventActionRunner.startListening()
+            downloadManager.restoreInterruptedRetries(::admitRestoredRetry)
+        }
+    }
+
+    private suspend fun admitRestoredRetry(id: Long) {
+        stopAnythingLock.withLock {
+            if (stopAnythingInProgress) {
+                return
+            }
+            val ownerQueueId = queueManager.findItemInQueue(id)
+            if (ownerQueueId == null) {
+                manualDownloadQueue.resume(id)
+            } else {
+                queueManager.getQueue(ownerQueueId).onRetryDue(id)
+            }
         }
     }
 
@@ -179,12 +198,17 @@ class DownloadSystem(
         queue.start()
     }
 
-    suspend fun stopAnything() {
-        queueManager.getAll().forEach {
-            it.stopAsync()
+    suspend fun stopAnything() = stopAnythingLock.withLock {
+        stopAnythingInProgress = true
+        try {
+            queueManager.getAll().forEach {
+                it.stopAsync()
+            }
+            manualDownloadQueue.clearQueue()
+            downloadManager.stopAll()
+        } finally {
+            stopAnythingInProgress = false
         }
-        manualDownloadQueue.clearQueue()
-        downloadManager.stopAll()
     }
 
     suspend fun stopQueue(

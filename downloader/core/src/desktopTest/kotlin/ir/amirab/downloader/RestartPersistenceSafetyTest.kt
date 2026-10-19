@@ -18,6 +18,8 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.withTimeout
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -112,7 +114,7 @@ class RestartPersistenceSafetyTest {
         assertNull(legacyRestored.retryAt)
     }
     @Test
-    fun managerBootRestoresOneRetryAndNeverCreatesDuplicateJob() = kotlinx.coroutines.runBlocking {
+    fun managerBootDefersRetryUntilAdmissionIsReadyAndNeverCreatesDuplicateJob() = kotlinx.coroutines.runBlocking {
         val first = HttpDownloadItem(
             link = "https://example.test/retry",
             id = 12,
@@ -120,7 +122,7 @@ class RestartPersistenceSafetyTest {
             name = "retry.bin",
             dateAdded = 1,
             retryAttempt = 2,
-            retryAt = System.currentTimeMillis() + 60_000,
+            retryAt = System.currentTimeMillis() - 1,
         )
         val duplicated = first.copy(name = "duplicate.bin")
         val completed = first.copy(
@@ -151,6 +153,13 @@ class RestartPersistenceSafetyTest {
 
             assertEquals(listOf(12L), audit.created)
             assertEquals(listOf(12L), audit.booted)
+            assertEquals(emptyList(), audit.restoredRetries)
+
+            val dueId = CompletableDeferred<Long>()
+            manager.restoreInterruptedRetries { dueId.complete(it) }
+            assertEquals(12L, withTimeout(5_000) { dueId.await() })
+            manager.resume(12L)
+
             assertEquals(listOf(12L), audit.restoredRetries)
         } finally {
             manager.downloadJobs.forEach(DownloadJob::close)

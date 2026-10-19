@@ -326,7 +326,7 @@ class ManualDownloadQueue(
 
     fun resume(item: Long) {
         totalItemsFlow.update {
-            it + item
+            (it + item).distinct()
         }
         shake(
             // immediately shake the queue

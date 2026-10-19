@@ -312,6 +312,7 @@ class DownloadLifecycleSafetyTest {
         override suspend fun pause(throwable: Throwable) {
             audit.trackLifecycleCommand {
                 markDownloadInactive()
+                cancelInterruptedRetryAdmission()
                 cancelExclusiveRetry()
                 downloadItem.retryAttempt = 0
                 downloadItem.retryAt = null

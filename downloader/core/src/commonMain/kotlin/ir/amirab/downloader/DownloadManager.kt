@@ -56,6 +56,7 @@ class DownloadManager(
     val scope = CoroutineScope(SupervisorJob())
 
     private val bootGuard = suspendGuardedEntry()
+    private val retryRestoreGuard = suspendGuardedEntry()
     suspend fun awaitBoot() {
         bootGuard.awaitDone()
     }
@@ -86,9 +87,25 @@ class DownloadManager(
             .forEach {
                 createJob(it).also { job ->
                     job.boot()
-                    job.restoreInterruptedRetry()
                 }
             }
+    }
+
+    /**
+     * Starts persisted retry clocks only after queues, categories and listeners
+     * are ready. A due retry is returned to its queue owner instead of resuming
+     * network work directly from manager boot.
+     */
+    suspend fun restoreInterruptedRetries(
+        onRetryDue: suspend (Long) -> Unit,
+    ) {
+        awaitBoot()
+        retryRestoreGuard.action {
+            val jobs = synchronized(jobModificationLock) { downloadJobs.toList() }
+            jobs.forEach { job ->
+                job.scheduleInterruptedRetryAdmission(onRetryDue)
+            }
+        }
     }
 
     var downloadJobs = listOf<DownloadJob>()
@@ -245,7 +262,11 @@ class DownloadManager(
                 }
                 job?.let {
                     contextContainer.updateContext(id) { it + context }
-                    it.resume()
+                    if (it.downloadItem.retryAt != null) {
+                        it.restoreInterruptedRetry()
+                    } else {
+                        it.resume()
+                    }
                 }
             }
         } finally {
@@ -398,7 +419,9 @@ class DownloadManager(
             // Do not hold lifecycleCommandLock while a Job performs network/disk cleanup.
             waitForStarts?.await()
             val activeJobs = synchronized(jobModificationLock) {
-                downloadJobs.filter { it.status.value is DownloadJobStatus.IsActive }
+                downloadJobs.filter {
+                    it.status.value is DownloadJobStatus.IsActive || it.downloadItem.retryAt != null
+                }
             }
             activeJobs.map { job ->
                 scope.async {

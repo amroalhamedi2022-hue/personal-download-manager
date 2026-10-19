@@ -762,6 +762,7 @@ class HttpDownloadJob(
         boot()
         // Make a concurrent failure callback ineligible to enqueue a new retry.
         markDownloadInactive()
+        cancelInterruptedRetryAdmission()
         cancelExclusiveRetry()
         clearRetryState()
         cancelDownloadScope()
