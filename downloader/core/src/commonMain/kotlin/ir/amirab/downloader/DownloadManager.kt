@@ -34,6 +34,15 @@ internal fun shouldDeleteDownloadOutput(
     removeCompletedFile: Boolean,
 ): Boolean = status != DownloadStatus.Completed || removeCompletedFile
 
+internal fun pendingDownloadsToBoot(
+    items: List<IDownloadItem>,
+): List<IDownloadItem> = items
+    .asSequence()
+    .filter { it.status != DownloadStatus.Completed }
+    // Storage must never turn one persisted task into multiple live jobs after restart.
+    .distinctBy { it.id }
+    .toList()
+
 class DownloadManager(
     val dlListDb: IDownloadListDb,
     val partListDb: IDownloadPartListDb,
@@ -60,11 +69,7 @@ class DownloadManager(
     private val contextContainer = ContextProvider()
 
     private suspend fun createJobForPendingDownloads() {
-        dlListDb.getAll()
-            .asSequence()
-            .filter { it.status != DownloadStatus.Completed }
-            // Storage must never turn one persisted task into multiple live jobs after restart.
-            .distinctBy { it.id }
+        pendingDownloadsToBoot(dlListDb.getAll())
             .forEach {
                 createJob(it).also { job ->
                     job.boot()
