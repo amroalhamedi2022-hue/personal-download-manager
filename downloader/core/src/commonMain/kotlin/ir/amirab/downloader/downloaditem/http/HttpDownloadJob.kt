@@ -89,6 +89,7 @@ class HttpDownloadJob(
         }
         applySpeedLimit()
         downloadedSizeBeforeRetry = getDownloadedSize()
+        failedDownloadTries = downloadItem.retryAttempt
     }
 
     override fun initializeDestination() {
@@ -148,6 +149,7 @@ class HttpDownloadJob(
         downloadItem.completeTime = null
         strictDownload = true
         downloadedSizeBeforeRetry = 0 // nothing
+        clearRetryState()
         saveState()
         downloadManager.onDownloadItemChange(downloadItem)
     }
@@ -199,6 +201,7 @@ class HttpDownloadJob(
                 beginDownloadParts()
                 startAutoSaver()
                 downloadItem.status = DownloadStatus.Downloading
+                clearRetryState()
                 if (downloadItem.startTime == null) {
                     downloadItem.startTime = System.currentTimeMillis()
                 }
@@ -539,7 +542,14 @@ class HttpDownloadJob(
         }
     }
 
-    fun retry(isInFirstResume: Boolean, delayMillis: Long) {
+    fun retry(
+        isInFirstResume: Boolean,
+        delayMillis: Long,
+        retryAtMillis: Long? = null,
+    ) {
+        val scheduledRetryAt = retryAtMillis ?: System.currentTimeMillis() + delayMillis
+        downloadItem.retryAttempt = failedDownloadTries
+        downloadItem.retryAt = scheduledRetryAt
         scope.launch {
             val newScopeResult = retryLock.tryLocked {
                 val job = async {
@@ -557,6 +567,22 @@ class HttpDownloadJob(
                 resumeWithNewScope(it, isInFirstResume)
             }
         }
+    }
+
+    override suspend fun restoreInterruptedRetry() {
+        val scheduledRetryAt = downloadItem.retryAt ?: return
+        failedDownloadTries = downloadItem.retryAttempt
+        retry(
+            isInFirstResume = false,
+            delayMillis = (scheduledRetryAt - System.currentTimeMillis()).coerceAtLeast(0L),
+            retryAtMillis = scheduledRetryAt,
+        )
+    }
+
+    private fun clearRetryState() {
+        failedDownloadTries = 0
+        downloadItem.retryAttempt = 0
+        downloadItem.retryAt = null
     }
 
     fun shouldRetryIfInitialFailed(): Boolean {
@@ -742,7 +768,7 @@ class HttpDownloadJob(
 
     override suspend fun pause(throwable: Throwable) {
         boot()
-        failedDownloadTries = 0
+        clearRetryState()
         cancelRetry()
         cancelDownloadScope()
         stopAllParts()
