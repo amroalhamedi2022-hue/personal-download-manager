@@ -163,6 +163,40 @@ class DownloadLifecycleSafetyTest {
         }
     }
 
+    @Test
+    fun lifecycleCommandsForOneIdNeverOverlap() = runBlocking {
+        val item = testItem(id = 51)
+        val audit = LifecycleAudit()
+        val manager = createManager(items = listOf(item), audit = audit)
+
+        try {
+            manager.boot()
+            val startTogether = CompletableDeferred<Unit>()
+            val commands = List(24) { index ->
+                async(Dispatchers.Default) {
+                    startTogether.await()
+                    when (index % 4) {
+                        0 -> manager.resume(item.id)
+                        1 -> manager.pause(item.id)
+                        2 -> manager.reset(item.id)
+                        else -> manager.updateDownloadItem(item.id, null) {
+                            it.name = "updated-$index.bin"
+                        }
+                    }
+                }
+            }
+            startTogether.complete(Unit)
+            withTimeout(10_000) { commands.awaitAll() }
+
+            assertEquals(1, audit.maxLifecycleCommands.get())
+            assertEquals(0, audit.lifecycleCommandsInFlight.get())
+            assertEquals(1, manager.downloadJobs.count { it.id == item.id })
+        } finally {
+            manager.downloadJobs.forEach(DownloadJob::close)
+            manager.downloadDataFolder.deleteRecursively()
+        }
+    }
+
     private fun createManager(
         items: List<HttpDownloadItem>,
         audit: LifecycleAudit,
@@ -199,10 +233,23 @@ class DownloadLifecycleSafetyTest {
         val created = AtomicInteger()
         val activeResumeClaims = AtomicInteger()
         val retryResumes = AtomicInteger()
+        val lifecycleCommandsInFlight = AtomicInteger()
+        val maxLifecycleCommands = AtomicInteger()
         val firstResumeEntered = CompletableDeferred<Unit>()
         val retryEntered = CompletableDeferred<Unit>()
         val releaseRetry = CompletableDeferred<Unit>()
         val pausedIds = java.util.concurrent.ConcurrentLinkedQueue<Long>()
+
+        suspend fun <T> trackLifecycleCommand(block: suspend () -> T): T {
+            val current = lifecycleCommandsInFlight.incrementAndGet()
+            maxLifecycleCommands.updateAndGet { previous -> maxOf(previous, current) }
+            return try {
+                delay(10)
+                block()
+            } finally {
+                lifecycleCommandsInFlight.decrementAndGet()
+            }
+        }
     }
 
     private class LifecycleTestDownloader(
@@ -244,24 +291,33 @@ class DownloadLifecycleSafetyTest {
 
         override fun getDestination(): DownloadDestination = error("destination is not used")
         override fun initializeDestination() = Unit
-        override suspend fun reset() = Unit
+        override suspend fun reset() {
+            audit.trackLifecycleCommand {
+                markDownloadInactive()
+                _status.value = DownloadJobStatus.IDLE
+            }
+        }
 
         override suspend fun resume() {
             boot()
             if (!tryActivateDownload()) return
             audit.activeResumeClaims.incrementAndGet()
-            audit.firstResumeEntered.complete(Unit)
-            releaseResume.await()
-            _status.value = DownloadJobStatus.Downloading
+            audit.trackLifecycleCommand {
+                audit.firstResumeEntered.complete(Unit)
+                releaseResume.await()
+                _status.value = DownloadJobStatus.Downloading
+            }
         }
 
         override suspend fun pause(throwable: Throwable) {
-            markDownloadInactive()
-            cancelExclusiveRetry()
-            downloadItem.retryAttempt = 0
-            downloadItem.retryAt = null
-            _status.value = DownloadJobStatus.Canceled(throwable)
-            audit.pausedIds += id
+            audit.trackLifecycleCommand {
+                markDownloadInactive()
+                cancelExclusiveRetry()
+                downloadItem.retryAttempt = 0
+                downloadItem.retryAt = null
+                _status.value = DownloadJobStatus.Canceled(throwable)
+                audit.pausedIds += id
+            }
         }
 
         fun scheduleRetryForTest(): Boolean = launchExclusiveRetry(
@@ -284,7 +340,10 @@ class DownloadLifecycleSafetyTest {
         override suspend fun changeConfig(
             updater: (IDownloadItem) -> Unit,
             extraConfig: DownloadJobExtraConfig?,
-        ): IDownloadItem = downloadItem
+        ): IDownloadItem = audit.trackLifecycleCommand {
+            updater(downloadItem)
+            downloadItem
+        }
 
         override suspend fun extraConfigsReceived(config: DownloadJobExtraConfig) = Unit
     }

@@ -70,6 +70,16 @@ class DownloadManager(
     private val contextContainer = ContextProvider()
 
     private val jobModificationLock = Any()
+    private val jobLifecycleLocks = mutableMapOf<Long, Mutex>()
+
+    private fun getJobLifecycleLock(id: Long): Mutex = synchronized(jobModificationLock) {
+        jobLifecycleLocks.getOrPut(id) { Mutex() }
+    }
+
+    private suspend fun <T> withJobLifecycleLock(
+        id: Long,
+        block: suspend () -> T,
+    ): T = getJobLifecycleLock(id).withLock { block() }
 
     private suspend fun createJobForPendingDownloads() {
         pendingDownloadsToBoot(dlListDb.getAll())
@@ -179,14 +189,11 @@ class DownloadManager(
         id: Long,
         alsoRemoveFile: (IDownloadItem) -> Boolean,
         context: DownloadItemContext = EmptyContext,
-    ) {
-        kotlin.runCatching { pause(id) }
-        val itemToDelete = dlListDb.getById(id) ?: return
-        val job = getDownloadJob(id) ?: run {
-            createJob(itemToDelete).apply { boot() }
-        }
-        // at this point: job will be created (and booted) if it was not created before
+    ) = withJobLifecycleLock(id) {
+        val itemToDelete = dlListDb.getById(id) ?: return@withJobLifecycleLock
+        val job = getDownloadJob(id) ?: createJob(itemToDelete).apply { boot() }
         contextContainer.updateContext(id) { it + context }
+        kotlin.runCatching { job.pause() }
         job.downloadRemoved(
             removeOutputFile = shouldDeleteDownloadOutput(
                 status = itemToDelete.status,
@@ -218,9 +225,11 @@ class DownloadManager(
     }
 
     suspend fun pause(id: Long, context: DownloadItemContext = EmptyContext) {
-        val job = getDownloadJob(id) ?: return
-        contextContainer.updateContext(id) { it + context }
-        job.pause()
+        withJobLifecycleLock(id) {
+            val job = getDownloadJob(id) ?: return@withJobLifecycleLock
+            contextContainer.updateContext(id) { it + context }
+            job.pause()
+        }
     }
 
     suspend fun resume(id: Long, context: DownloadItemContext = EmptyContext) {
@@ -228,14 +237,16 @@ class DownloadManager(
             return
         }
         try {
-            val job = getDownloadJob(id) ?: run {
-                dlListDb.getById(id)?.let {
-                    createJob(it)
+            withJobLifecycleLock(id) {
+                val job = getDownloadJob(id) ?: run {
+                    dlListDb.getById(id)?.let {
+                        createJob(it)
+                    }
                 }
-            }
-            job?.let {
-                contextContainer.updateContext(id) { it + context }
-                it.resume()
+                job?.let {
+                    contextContainer.updateContext(id) { it + context }
+                    it.resume()
+                }
             }
         } finally {
             endStartCommand()
@@ -243,14 +254,16 @@ class DownloadManager(
     }
 
     suspend fun reset(id: Long, context: DownloadItemContext = EmptyContext) {
-        val job = getDownloadJob(id) ?: run {
-            dlListDb.getById(id)?.let {
-                createJob(it)
+        withJobLifecycleLock(id) {
+            val job = getDownloadJob(id) ?: run {
+                dlListDb.getById(id)?.let {
+                    createJob(it)
+                }
             }
-        }
-        job?.let {
-            contextContainer.updateContext(id) { it + context }
-            it.reset()
+            job?.let {
+                contextContainer.updateContext(id) { it + context }
+                it.reset()
+            }
         }
     }
 
@@ -454,14 +467,14 @@ class DownloadManager(
         id: Long,
         downloadJobExtraConfig: DownloadJobExtraConfig?,
         updater: (IDownloadItem) -> Unit,
-    ) {
+    ) = withJobLifecycleLock(id) {
         var wasCreated = false
         val job = getDownloadJob(id) ?: run {
             dlListDb.getById(id)?.let {
                 wasCreated = true
                 createJob(it)
             }
-        } ?: return
+        } ?: return@withJobLifecycleLock
         val updated = job.changeConfig(updater, downloadJobExtraConfig)
         if (wasCreated && updated.status == DownloadStatus.Completed) {
             deleteJob(job.id)
@@ -473,10 +486,12 @@ class DownloadManager(
 
 private class ContextProvider {
     val contexts = mutableMapOf<Long, DownloadItemContext>()
+    @Synchronized
     fun getContext(id: Long): DownloadItemContext {
         return contexts.getOrDefault(id, EmptyContext)
     }
 
+    @Synchronized
     fun setContext(id: Long, context: DownloadItemContext) {
         if (context == EmptyContext) {
             removeContext(id)
@@ -485,10 +500,12 @@ private class ContextProvider {
         contexts[id] = context
     }
 
+    @Synchronized
     fun removeContext(id: Long) {
         contexts.remove(id)
     }
 
+    @Synchronized
     fun updateContext(id: Long, block: (DownloadItemContext) -> DownloadItemContext) {
         setContext(id, getContext(id).let(block))
     }
