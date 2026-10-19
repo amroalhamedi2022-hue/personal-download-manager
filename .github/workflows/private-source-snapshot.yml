@@ -1,0 +1,32 @@
+name: Private source snapshot
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/private-source-snapshot.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  snapshot:
+    name: Archive private source
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Create tracked source archive
+        shell: bash
+        run: git archive --format=tar.gz --output=source-snapshot.tar.gz HEAD
+
+      - name: Upload source snapshot
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: personal-download-manager-source
+          path: source-snapshot.tar.gz
+          if-no-files-found: error
+          retention-days: 7
