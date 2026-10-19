@@ -60,11 +60,14 @@ class DownloadManager(
     private val contextContainer = ContextProvider()
 
     private suspend fun createJobForPendingDownloads() {
-        dlListDb.getAll().filter {
-            it.status != DownloadStatus.Completed
-        }.forEach {
-            createJob(it).boot()
-        }
+        dlListDb.getAll()
+            .asSequence()
+            .filter { it.status != DownloadStatus.Completed }
+            // Storage must never turn one persisted task into multiple live jobs after restart.
+            .distinctBy { it.id }
+            .forEach {
+                createJob(it).boot()
+            }
     }
 
     var downloadJobs = listOf<DownloadJob>()
