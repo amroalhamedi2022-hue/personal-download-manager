@@ -45,6 +45,8 @@ class RestoredRetryAdmissionTest {
 
         try {
             manager.boot()
+            assertEquals(items.size, manager.downloadJobs.size)
+            assertEquals(items.size, manager.downloadJobs.map { it.id }.distinct().size)
             queue.boot()
             withTimeout(5_000) { manager.listOfJobsEvents.subscriptionCount.first { it > 0 } }
             queue.setMaxConcurrent(1)
@@ -57,7 +59,6 @@ class RestoredRetryAdmissionTest {
             assertEquals(items.map { it.id }.toSet(), audit.started.toSet())
             assertEquals(items.size, audit.started.size)
             assertEquals(1, audit.peakActive.get())
-            assertEquals(items.size, manager.downloadJobs.size)
         } finally {
             queue.clearQueue()
             queueScope.cancel()
