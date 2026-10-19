@@ -85,7 +85,7 @@ class RestartPersistenceTest {
             try {
                 restartedManager.boot()
 
-                assertEquals(listOf(7), restartedManager.getMainQueue().getQueueModel().queueItems)
+                assertEquals(listOf(7L), restartedManager.getMainQueue().getQueueModel().queueItems)
                 assertEquals(
                     QueueModel(
                         id = 11,
