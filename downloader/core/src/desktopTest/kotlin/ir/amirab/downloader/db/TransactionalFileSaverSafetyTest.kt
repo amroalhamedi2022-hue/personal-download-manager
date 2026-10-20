@@ -483,52 +483,54 @@ data class HttpDownloadCrashSnapshot(
 /** Child-process entry point that persists flushed HTTP progress, then remains killable mid-transfer. */
 object HttpDownloadCrashWriter {
     @JvmStatic
-    fun main(args: Array<String>) = runBlocking {
-        require(args.size == 5)
-        val url = args[0]
-        val target = File(args[1]).canonicalFile
-        val stateFile = File(args[2]).canonicalFile
-        val marker = File(args[3]).canonicalFile
-        val length = args[4].toLong()
-        val part = RangedPart(from = 0, to = length - 1)
-        val handle = FileSystem.SYSTEM.openReadWrite(target.toOkioPath())
-        val writer = DestWriter(
-            id = part.getID(),
-            file = target,
-            seekPos = part.current,
-            writer = handle,
-        )
-        val failure = AtomicReference<Throwable?>(null)
-        val downloader = createProcessKillDownloader(url, part, writer).also {
-            it.onTooManyErrors = failure::set
-        }
-
-        try {
-            downloader.start()
-            withTimeout(30_000) {
-                while (part.current < HTTP_CRASH_COMMIT_THRESHOLD) {
-                    failure.get()?.let { throw it }
-                    delay(10)
-                }
-            }
-
-            val committedCurrent = part.current
-            handle.flush()
-            TransactionalFileSaver(Json).writeObject(
-                stateFile,
-                HttpDownloadCrashSnapshot(current = committedCurrent, length = length),
+    fun main(args: Array<String>) {
+        runBlocking {
+            require(args.size == 5)
+            val url = args[0]
+            val target = File(args[1]).canonicalFile
+            val stateFile = File(args[2]).canonicalFile
+            val marker = File(args[3]).canonicalFile
+            val length = args[4].toLong()
+            val part = RangedPart(from = 0, to = length - 1)
+            val handle = FileSystem.SYSTEM.openReadWrite(target.toOkioPath())
+            val writer = DestWriter(
+                id = part.getID(),
+                file = target,
+                seekPos = part.current,
+                writer = handle,
             )
-            FileOutputStream(marker).use { output ->
-                output.write("ready".encodeToByteArray())
-                output.fd.sync()
+            val failure = AtomicReference<Throwable?>(null)
+            val downloader = createProcessKillDownloader(url, part, writer).also {
+                it.onTooManyErrors = failure::set
             }
 
-            downloader.awaitFinishOrError()
-            downloader.join()
-            failure.get()?.let { throw it }
-        } finally {
-            downloader.stop()
-            handle.close()
+            try {
+                downloader.start()
+                withTimeout(30_000) {
+                    while (part.current < HTTP_CRASH_COMMIT_THRESHOLD) {
+                        failure.get()?.let { throw it }
+                        delay(10)
+                    }
+                }
+
+                val committedCurrent = part.current
+                handle.flush()
+                TransactionalFileSaver(Json).writeObject(
+                    stateFile,
+                    HttpDownloadCrashSnapshot(current = committedCurrent, length = length),
+                )
+                FileOutputStream(marker).use { output ->
+                    output.write("ready".encodeToByteArray())
+                    output.fd.sync()
+                }
+
+                downloader.awaitFinishOrError()
+                downloader.join()
+                failure.get()?.let { throw it }
+            } finally {
+                downloader.stop()
+                handle.close()
+            }
         }
     }
 
