@@ -206,6 +206,8 @@ class DownloadSystem(
             }
             manualDownloadQueue.clearQueue()
             downloadManager.stopAll()
+            queueManager.flush()
+            categoryManager.flush()
         } finally {
             stopAnythingInProgress = false
         }

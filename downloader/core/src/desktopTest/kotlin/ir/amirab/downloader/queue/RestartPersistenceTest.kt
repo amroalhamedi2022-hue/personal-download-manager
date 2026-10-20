@@ -21,6 +21,30 @@ import kotlin.time.Duration.Companion.seconds
 
 class RestartPersistenceTest {
     @Test
+    fun explicitFlushPersistsQueueChangeWithoutWaitingForCollector() = runBlocking {
+        val folder = Files.createTempDirectory("download-queue-flush-").toFile()
+        val database = DownloadQueueFileStorageDatabase(
+            fileSaver = TransactionalFileSaver(Json),
+            queueFolder = folder,
+        )
+        try {
+            database.addQueue(QueueModel(id = DefaultQueueInfo.ID, name = DefaultQueueInfo.NAME))
+            val manager = QueueManager(database, InactiveDownloads())
+            try {
+                manager.boot()
+                manager.getMainQueue().setName("Saved immediately")
+                manager.flush()
+
+                assertEquals("Saved immediately", database.getQueue(DefaultQueueInfo.ID).name)
+            } finally {
+                manager.getAll().forEach(DownloadQueue::dispose)
+            }
+        } finally {
+            folder.deleteRecursively()
+        }
+    }
+
+    @Test
     fun restartRestoresQueueSettingsAndRepairsDuplicateMemberships() = runBlocking {
         val folder = Files.createTempDirectory("download-queue-restart-").toFile()
         val schedule = ScheduleTimes(

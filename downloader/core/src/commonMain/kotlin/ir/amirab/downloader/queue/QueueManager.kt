@@ -184,6 +184,10 @@ class QueueManager(
         return queues.value
     }
 
+    suspend fun flush() {
+        getAll().forEach { it.flush() }
+    }
+
     fun getQueue(queue: Long): DownloadQueue {
         return requireNotNull(
             queues.value.find {

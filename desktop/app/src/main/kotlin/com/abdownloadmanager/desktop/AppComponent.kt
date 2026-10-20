@@ -1023,7 +1023,18 @@ class AppComponent(
     }
 
     suspend fun exitApp() {
-        downloadSystem.stopAnything()
+        try {
+            downloadSystem.stopAnything()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            sendDialogNotification(
+                title = Res.string.error.asStringSource(),
+                description = (e.localizedMessage ?: e::class.simpleName ?: "Storage error").asStringSource(),
+                type = MessageDialogType.Error,
+            )
+            return
+        }
         exitProcess(0)
     }
 

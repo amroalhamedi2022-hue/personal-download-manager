@@ -32,7 +32,7 @@ class ExtraDownloadSettingsStorage<T : IExtraDownloadItemSettings>(
         lastEmits.tryEmit(
             dataClassDefinitions.createDefault(downloadId)
         )
-        getFileOf(downloadId).delete()
+        transactionalFileSaver.delete(getFileOf(downloadId))
     }
 
     override suspend fun setExtraDownloadItemSettings(

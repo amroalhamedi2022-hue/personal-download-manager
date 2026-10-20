@@ -14,9 +14,85 @@ import java.lang.reflect.Proxy
 import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
 
 class CategoryRestartPersistenceTest {
+    @Test
+    fun validEmptyCategoryFileIsNotTreatedAsMissing() = runBlocking {
+        val folder = Files.createTempDirectory("download-category-empty-").toFile()
+        val storage = CategoryFileStorage(
+            file = folder.resolve("categories.json"),
+            fileSaver = TransactionalFileSaver(Json),
+        )
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        try {
+            storage.setCategories(emptyList())
+            val manager = categoryManager(storage, scope)
+            manager.boot()
+
+            assertEquals(emptyList(), manager.getCategories())
+        } finally {
+            scope.cancel()
+            folder.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun corruptCategoryFileUsesBackupAndPreservesCorruptEvidence() = runBlocking {
+        val folder = Files.createTempDirectory("download-category-corrupt-").toFile()
+        val storageFile = folder.resolve("categories.json")
+        val saver = TransactionalFileSaver(Json)
+        val storage = CategoryFileStorage(storageFile, saver)
+        val first = listOf(category(id = 1, name = "Recover me", items = listOf(7)))
+        val second = listOf(category(id = 2, name = "Newer", items = listOf(8)))
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        try {
+            storage.setCategories(first)
+            storage.setCategories(second)
+            storageFile.writeText("{broken")
+
+            val manager = categoryManager(storage, scope)
+            manager.boot()
+
+            assertEquals(first, manager.getCategories())
+            assertEquals(first, storage.getCategories())
+            assertTrue(
+                folder.listFiles().orEmpty().any {
+                    it.name.startsWith("categories.json.corrupt-") && it.readText() == "{broken"
+                }
+            )
+        } finally {
+            scope.cancel()
+            folder.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun explicitFlushPersistsChangeBeforeSamplingDelay() = runBlocking {
+        val folder = Files.createTempDirectory("download-category-flush-").toFile()
+        val storageFile = folder.resolve("categories.json")
+        val storage = CategoryFileStorage(storageFile, TransactionalFileSaver(Json))
+        val initial = listOf(category(id = 1, name = "Initial", items = emptyList()))
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        try {
+            storage.setCategories(initial)
+            val manager = categoryManager(storage, scope)
+            manager.boot()
+            manager.updateCategory(1) { it.copy(name = "Saved immediately") }
+            manager.flush()
+
+            val restartedStorage = CategoryFileStorage(
+                storageFile,
+                TransactionalFileSaver(Json),
+            )
+            assertEquals("Saved immediately", restartedStorage.getCategories().single().name)
+        } finally {
+            scope.cancel()
+            folder.deleteRecursively()
+        }
+    }
+
     @Test
     fun restartRestoresCategoriesAndRepairsDuplicateMemberships() = runBlocking {
         val folder = Files.createTempDirectory("download-category-restart-").toFile()

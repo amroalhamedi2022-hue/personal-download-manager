@@ -1,9 +1,9 @@
 package ir.amirab.util
 
-import okio.FileSystem
-import okio.IOException
-import okio.Path.Companion.toOkioPath
 import java.io.File
+import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 
 
 fun File.toUpUntil(
@@ -22,18 +22,25 @@ fun File.toUpUntil(
 }
 
 fun File.tryAtomicMove(destination: File) {
-    val target = destination.toOkioPath()
-    val source = toOkioPath()
+    fun replaceWithoutDeletingTarget() {
+        // The source and destination are siblings, so a replace move is the safest available
+        // fallback. Never delete the committed target before this succeeds.
+        Files.move(
+            toPath(),
+            destination.toPath(),
+            StandardCopyOption.REPLACE_EXISTING,
+        )
+    }
     try {
-        // this should replace existing target in java.nio file system
-        // however if on some target we have to use java.io we should delete the file first
-        FileSystem.SYSTEM.atomicMove(source, target)
-    } catch (e: IOException) {
-        if (!e.message.orEmpty().contains("atomic move")) {
-            throw e
-        }
-        FileSystem.SYSTEM.delete(target, false)
-        FileSystem.SYSTEM.copy(source, target)
-        FileSystem.SYSTEM.delete(source)
+        Files.move(
+            toPath(),
+            destination.toPath(),
+            StandardCopyOption.ATOMIC_MOVE,
+            StandardCopyOption.REPLACE_EXISTING,
+        )
+    } catch (_: AtomicMoveNotSupportedException) {
+        replaceWithoutDeletingTarget()
+    } catch (_: UnsupportedOperationException) {
+        replaceWithoutDeletingTarget()
     }
 }

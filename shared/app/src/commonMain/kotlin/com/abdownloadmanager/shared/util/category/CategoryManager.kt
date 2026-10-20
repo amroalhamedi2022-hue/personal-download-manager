@@ -6,6 +6,8 @@ import ir.amirab.util.suspendGuardedEntry
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -21,6 +23,7 @@ class CategoryManager(
     val categoriesFlow = _categories.asStateFlow()
 
     private var booted = suspendGuardedEntry()
+    private var persistenceJob: Job? = null
 
     @OptIn(FlowPreview::class)
     suspend fun boot() {
@@ -35,7 +38,7 @@ class CategoryManager(
             } else {
                 reset()
             }
-            _categories
+            persistenceJob = _categories
                 .sample(500.milliseconds)
                 .onEach { categoryStorage.setCategories(it) }
                 .launchIn(scope)
@@ -54,6 +57,19 @@ class CategoryManager(
                     .getAll()
             )
         }
+        flush()
+    }
+
+    /** Persists the latest value without relying on the periodic sampling window. */
+    suspend fun flush() {
+        categoryStorage.setCategories(_categories.value)
+    }
+
+    /** Stops periodic persistence and commits the final in-memory snapshot before shutdown. */
+    suspend fun close() {
+        persistenceJob?.cancelAndJoin()
+        persistenceJob = null
+        flush()
     }
 
     private fun normalizePersistedCategories(

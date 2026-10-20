@@ -478,6 +478,11 @@ class DownloadQueue(
         persistedData.setModel(queue)
     }
 
+    /** Commits the current model synchronously for orderly application shutdown. */
+    suspend fun flush() {
+        persist()
+    }
+
     //    suspend fun swapQueueItemToEnd(item: Long){
 //        val currentIndex = queue.indexOf(item).takeIf { it > 0 } ?: return
 //        queue.removeAt(currentIndex)

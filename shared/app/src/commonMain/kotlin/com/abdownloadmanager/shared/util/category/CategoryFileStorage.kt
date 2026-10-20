@@ -21,6 +21,6 @@ class CategoryFileStorage(
     }
 
     override suspend fun isCategoriesSet(): Boolean {
-        return file.exists()
+        return file.exists() || fileSaver.getRecoveryFile(file).exists()
     }
 }

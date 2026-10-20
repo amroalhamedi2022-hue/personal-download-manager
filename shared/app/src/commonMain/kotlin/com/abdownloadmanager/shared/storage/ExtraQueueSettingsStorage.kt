@@ -32,7 +32,7 @@ class ExtraQueueSettingsStorage<T : IExtraQueueSettings>(
         lastEmits.tryEmit(
             dataClassDefinitions.createDefault(queueId)
         )
-        getFileOf(queueId).delete()
+        transactionalFileSaver.delete(getFileOf(queueId))
     }
 
     override suspend fun setExtraQueueSettings(
