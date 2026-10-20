@@ -21,6 +21,7 @@ import ir.amirab.downloader.downloaditem.http.HttpDownloadItem
 import ir.amirab.downloader.downloaditem.http.HttpDownloader
 import ir.amirab.downloader.queue.ManualDownloadQueue
 import ir.amirab.downloader.queue.DownloadQueue
+import ir.amirab.downloader.part.RangedParts
 import ir.amirab.downloader.utils.EmptyFileCreator
 import ir.amirab.downloader.utils.IDiskStat
 import kotlinx.coroutines.CoroutineScope
@@ -100,6 +101,8 @@ class ActualRestoredRetryJobTest {
         runBlocking {
             val output = createTempDir("retry-progress-output-")
             val data = createTempDir("retry-progress-data-")
+            val listDb = MemoryDownloadListDB()
+            val partDb = MemoryDownloadPartStatesDB()
             val item = HttpDownloadItem(
                 link = "${fixture.baseUrl}/file/86.bin",
                 id = 86,
@@ -108,25 +111,55 @@ class ActualRestoredRetryJobTest {
                 dateAdded = 86,
                 preferredConnectionCount = 1,
             )
-            val manager = createHttpManager(listOf(item), fixture.client, data)
+            val firstManager = createHttpManager(
+                items = listOf(item),
+                client = fixture.client,
+                dataFolder = data,
+                listDb = listDb,
+                partDb = partDb,
+            )
+            var restartedManager: DownloadManager? = null
+            var firstManagerClosed = false
 
             try {
-                manager.boot()
-                val job = manager.downloadJobs.single()
-                manager.resume(item.id)
+                firstManager.boot()
+                val firstJob = firstManager.downloadJobs.single()
+                firstManager.resume(item.id)
                 withTimeout(15_000) {
-                    while (job.getDownloadedSize() == 0L || item.retryAt == null) delay(10)
+                    while (firstJob.getDownloadedSize() == 0L || item.retryAt == null) delay(10)
+                }
+                withTimeout(5_000) {
+                    while (
+                        ((partDb.getParts(item.id) as? RangedParts)
+                            ?.list
+                            ?.sumOf { it.howMuchProceed() } ?: 0L) == 0L
+                    ) delay(10)
                 }
 
                 assertEquals(1, item.retryAttempt)
+                closeManager(firstManager)
+                firstManagerClosed = true
+
+                val secondManager = createHttpManager(
+                    items = listOf(item),
+                    client = fixture.client,
+                    dataFolder = data,
+                    listDb = listDb,
+                    partDb = partDb,
+                )
+                restartedManager = secondManager
+                secondManager.boot()
+                val restoredJob = secondManager.downloadJobs.single()
+                secondManager.resume(item.id)
                 withTimeout(25_000) {
-                    while (job.status.value !is DownloadJobStatus.Canceled) delay(10)
+                    while (restoredJob.status.value !is DownloadJobStatus.Canceled) delay(10)
                 }
                 assertEquals(4, fixture.partRequestsFor("/file/86.bin"))
                 assertNull(item.retryAt)
                 assertEquals(0, item.retryAttempt)
             } finally {
-                closeManager(manager)
+                restartedManager?.let(::closeManager)
+                if (!firstManagerClosed) closeManager(firstManager)
                 output.deleteRecursively()
                 data.deleteRecursively()
             }
@@ -1046,10 +1079,14 @@ class ActualRestoredRetryJobTest {
         items: List<HttpDownloadItem>,
         client: OkHttpHttpDownloaderClient,
         dataFolder: File,
+        listDb: MemoryDownloadListDB? = null,
+        partDb: MemoryDownloadPartStatesDB? = null,
     ): DownloadManager = createManager(
         items = items,
         dataFolder = dataFolder,
         registry = DownloaderRegistry().apply { add(HttpDownloader(lazyOf(client))) },
+        listDb = listDb,
+        partDb = partDb,
     )
 
     private suspend fun createHlsManager(
@@ -1066,11 +1103,16 @@ class ActualRestoredRetryJobTest {
         items: List<ir.amirab.downloader.downloaditem.IDownloadItem>,
         dataFolder: File,
         registry: DownloaderRegistry,
+        listDb: MemoryDownloadListDB? = null,
+        partDb: MemoryDownloadPartStatesDB? = null,
     ): DownloadManager {
-        val listDb = MemoryDownloadListDB().also { db -> items.forEach { db.add(it) } }
+        val actualListDb = listDb ?: MemoryDownloadListDB()
+        items.forEach { item ->
+            if (actualListDb.getById(item.id) == null) actualListDb.add(item)
+        }
         return DownloadManager(
-            dlListDb = listDb,
-            partListDb = MemoryDownloadPartStatesDB(),
+            dlListDb = actualListDb,
+            partListDb = partDb ?: MemoryDownloadPartStatesDB(),
             settings = DownloadSettings(
                 defaultThreadCount = 1,
                 maxDownloadRetryCount = 2,
