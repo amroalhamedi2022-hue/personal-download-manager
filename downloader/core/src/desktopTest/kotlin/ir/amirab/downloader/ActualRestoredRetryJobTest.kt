@@ -852,7 +852,10 @@ class ActualRestoredRetryJobTest {
         return DownloadManager(
             dlListDb = listDb,
             partListDb = MemoryDownloadPartStatesDB(),
-            settings = DownloadSettings(defaultThreadCount = 1),
+            settings = DownloadSettings(
+                defaultThreadCount = 1,
+                maxDownloadRetryCount = 2,
+            ),
             emptyFileCreator = EmptyFileCreator(
                 diskStat = object : IDiskStat {
                     override fun getRemainingSpace(path: File): Long = Long.MAX_VALUE
