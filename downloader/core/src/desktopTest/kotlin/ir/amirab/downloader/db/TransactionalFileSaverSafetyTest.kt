@@ -1,19 +1,42 @@
 package ir.amirab.downloader.db
 
+import com.sun.net.httpserver.HttpExchange
+import com.sun.net.httpserver.HttpServer
+import ir.amirab.downloader.connection.OkHttpHttpDownloaderClient
+import ir.amirab.downloader.connection.UserAgentProvider
+import ir.amirab.downloader.connection.proxy.AutoConfigurableProxyProvider
+import ir.amirab.downloader.connection.proxy.ProxyStrategy
+import ir.amirab.downloader.connection.proxy.ProxyStrategyProvider
+import ir.amirab.downloader.connection.proxy.SystemProxySelectorProvider
+import ir.amirab.downloader.destination.DestWriter
+import ir.amirab.downloader.downloaditem.http.HttpDownloadCredentials
+import ir.amirab.downloader.part.HttpPartDownloader
+import ir.amirab.downloader.part.MinPartSizeProvider
+import ir.amirab.downloader.part.PartDownloadStatus
+import ir.amirab.downloader.part.RangedPart
 import ir.amirab.util.tryAtomicMove
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import okhttp3.OkHttpClient
 import okio.FileSystem
+import okio.Path.Companion.toOkioPath
 import java.io.IOException
 import java.io.File
 import java.io.FileOutputStream
+import java.io.RandomAccessFile
+import java.net.InetSocketAddress
+import java.net.ProxySelector
+import java.security.MessageDigest
 import java.net.URLClassLoader
 import java.nio.file.Files
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.test.Test
+import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
@@ -191,6 +214,121 @@ class TransactionalFileSaverSafetyTest {
     }
 
     @Test
+    fun forcedProcessTerminationDuringHttpDownloadResumesExactBytesAndHash() = runBlocking {
+        val folder = Files.createTempDirectory("http-download-process-kill-").toFile()
+        val target = folder.resolve("payload.bin")
+        val stateFile = folder.resolve("payload.parts.json")
+        val marker = folder.resolve("download-progress.marker")
+        val childLog = folder.resolve("download-child.log")
+        val payload = ByteArray(HTTP_CRASH_PAYLOAD_SIZE) { index -> (index % 251).toByte() }
+        val requestedRanges = CopyOnWriteArrayList<String>()
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        var process: Process? = null
+
+        server.createContext("/payload.bin") { exchange ->
+            respondSlowRange(exchange, payload, requestedRanges)
+        }
+        server.start()
+
+        try {
+            RandomAccessFile(target, "rw").use { it.setLength(payload.size.toLong()) }
+            val url = "http://127.0.0.1:${server.address.port}/payload.bin"
+            val childProcess = ProcessBuilder(
+                javaExecutable().absolutePath,
+                "-cp",
+                testProcessClasspath(),
+                HttpDownloadCrashWriter::class.java.name,
+                url,
+                target.absolutePath,
+                stateFile.absolutePath,
+                marker.absolutePath,
+                payload.size.toString(),
+            )
+                .redirectErrorStream(true)
+                .redirectOutput(childLog)
+                .start()
+            process = childProcess
+
+            withTimeout(30_000) {
+                while (!marker.exists()) {
+                    check(childProcess.isAlive) {
+                        "Download child exited before the progress barrier: ${childLog.takeIf(File::exists)?.readText()}"
+                    }
+                    delay(20)
+                }
+            }
+
+            val saver = TransactionalFileSaver(Json)
+            val committedBeforeKill = requireNotNull(
+                saver.readObject<HttpDownloadCrashSnapshot>(stateFile)
+            )
+            assertTrue(committedBeforeKill.current in 1 until payload.size.toLong())
+            assertTrue(childProcess.isAlive)
+
+            childProcess.destroyForcibly()
+            assertTrue(childProcess.waitFor(10, TimeUnit.SECONDS))
+
+            val restored = requireNotNull(saver.readObject<HttpDownloadCrashSnapshot>(stateFile))
+            assertEquals(committedBeforeKill, restored)
+            assertContentEquals(
+                payload.copyOfRange(0, restored.current.toInt()),
+                target.inputStream().use { it.readNBytes(restored.current.toInt()) },
+            )
+
+            val part = RangedPart(
+                from = 0,
+                to = payload.lastIndex.toLong(),
+                current = restored.current,
+            )
+            val handle = FileSystem.SYSTEM.openReadWrite(target.toOkioPath())
+            val writer = DestWriter(
+                id = part.getID(),
+                file = target,
+                seekPos = part.current,
+                writer = handle,
+            )
+            val terminalFailure = AtomicReference<Throwable?>(null)
+            val downloader = createProcessKillDownloader(url, part, writer).also {
+                it.onTooManyErrors = terminalFailure::set
+            }
+
+            try {
+                withTimeout(30_000) {
+                    downloader.start()
+                    assertEquals(PartDownloadStatus.Completed, downloader.awaitFinishOrError())
+                    downloader.join()
+                }
+                handle.flush()
+            } finally {
+                downloader.stop()
+                handle.close()
+            }
+
+            saver.writeObject(
+                stateFile,
+                HttpDownloadCrashSnapshot(current = part.current, length = payload.size.toLong()),
+            )
+            assertNull(terminalFailure.get())
+            assertTrue(part.isCompleted)
+            assertEquals(payload.size.toLong(), requireNotNull(
+                saver.readObject<HttpDownloadCrashSnapshot>(stateFile)
+            ).current)
+            assertContentEquals(payload, target.readBytes())
+            assertEquals(HTTP_CRASH_PAYLOAD_SHA256, target.readBytes().sha256())
+            assertEquals("bytes=0-${payload.lastIndex}", requestedRanges.first())
+            assertEquals(
+                "bytes=${restored.current}-${payload.lastIndex}",
+                requestedRanges.last(),
+            )
+        } finally {
+            process?.destroyForcibly()
+            server.stop(0)
+            folder.deleteRecursively()
+        }
+        Unit
+    }
+
+    @Test
     fun corruptDownloadRecordIsReportedInsteadOfFilteredOut() = runBlocking {
         val folder = Files.createTempDirectory("download-list-corrupt-").toFile()
         val saver = TransactionalFileSaver(Json)
@@ -253,7 +391,10 @@ class TransactionalFileSaverSafetyTest {
 
         listOf(
             TransactionalFileSaverCrashWriter::class.java,
+            HttpDownloadCrashWriter::class.java,
             TransactionalFileSaver::class.java,
+            HttpPartDownloader::class.java,
+            OkHttpClient::class.java,
             Json::class.java,
             FileSystem::class.java,
             Unit::class.java,
@@ -261,6 +402,51 @@ class TransactionalFileSaverSafetyTest {
             type.protectionDomain?.codeSource?.location?.toURI()?.let { File(it) }?.absolutePath
         }
         return entries.joinToString(File.pathSeparator)
+    }
+
+    private fun respondSlowRange(
+        exchange: HttpExchange,
+        payload: ByteArray,
+        requestedRanges: MutableList<String>,
+    ) {
+        val requestedRange = requireNotNull(exchange.requestHeaders.getFirst("Range"))
+        requestedRanges += requestedRange
+        val match = requireNotNull(HTTP_RANGE_PATTERN.matchEntire(requestedRange))
+        val start = match.groupValues[1].toInt()
+        val end = match.groupValues[2].takeIf(String::isNotEmpty)?.toInt()
+            ?: payload.lastIndex
+
+        exchange.responseHeaders.add("Content-Type", "application/octet-stream")
+        exchange.responseHeaders.add("Accept-Ranges", "bytes")
+        exchange.responseHeaders.add("Content-Range", "bytes $start-$end/${payload.size}")
+        exchange.sendResponseHeaders(206, (end - start + 1).toLong())
+        try {
+            exchange.responseBody.use { output ->
+                var offset = start
+                while (offset <= end) {
+                    val length = minOf(8_192, end - offset + 1)
+                    output.write(payload, offset, length)
+                    output.flush()
+                    offset += length
+                    Thread.sleep(5)
+                }
+            }
+        } catch (_: IOException) {
+            // The first connection is expected to break when its JVM is killed forcibly.
+        } finally {
+            exchange.close()
+        }
+    }
+
+    private fun ByteArray.sha256(): String = MessageDigest.getInstance("SHA-256")
+        .digest(this)
+        .joinToString("") { "%02x".format(it) }
+
+    private companion object {
+        const val HTTP_CRASH_PAYLOAD_SIZE = 4 * 1024 * 1024
+        const val HTTP_CRASH_PAYLOAD_SHA256 =
+            "a117210941a0b00dcb2d8577e680d84b6fa0eaf760d2afc654c953b9859d54fa"
+        val HTTP_RANGE_PATTERN = Regex("""bytes=(\d+)-(\d*)""")
     }
 }
 
@@ -287,3 +473,94 @@ object TransactionalFileSaverCrashWriter {
         saver.writeText(target, "{\"value\":2}")
     }
 }
+
+@Serializable
+data class HttpDownloadCrashSnapshot(
+    val current: Long,
+    val length: Long,
+)
+
+/** Child-process entry point that persists flushed HTTP progress, then remains killable mid-transfer. */
+object HttpDownloadCrashWriter {
+    @JvmStatic
+    fun main(args: Array<String>) = runBlocking {
+        require(args.size == 5)
+        val url = args[0]
+        val target = File(args[1]).canonicalFile
+        val stateFile = File(args[2]).canonicalFile
+        val marker = File(args[3]).canonicalFile
+        val length = args[4].toLong()
+        val part = RangedPart(from = 0, to = length - 1)
+        val handle = FileSystem.SYSTEM.openReadWrite(target.toOkioPath())
+        val writer = DestWriter(
+            id = part.getID(),
+            file = target,
+            seekPos = part.current,
+            writer = handle,
+        )
+        val failure = AtomicReference<Throwable?>(null)
+        val downloader = createProcessKillDownloader(url, part, writer).also {
+            it.onTooManyErrors = failure::set
+        }
+
+        try {
+            downloader.start()
+            withTimeout(30_000) {
+                while (part.current < HTTP_CRASH_COMMIT_THRESHOLD) {
+                    failure.get()?.let { throw it }
+                    delay(10)
+                }
+            }
+
+            val committedCurrent = part.current
+            handle.flush()
+            TransactionalFileSaver(Json).writeObject(
+                stateFile,
+                HttpDownloadCrashSnapshot(current = committedCurrent, length = length),
+            )
+            FileOutputStream(marker).use { output ->
+                output.write("ready".encodeToByteArray())
+                output.fd.sync()
+            }
+
+            downloader.awaitFinishOrError()
+            downloader.join()
+            failure.get()?.let { throw it }
+        } finally {
+            downloader.stop()
+            handle.close()
+        }
+    }
+
+    private const val HTTP_CRASH_COMMIT_THRESHOLD = 256L * 1024L
+}
+
+private fun createProcessKillDownloader(
+    url: String,
+    part: RangedPart,
+    writer: DestWriter,
+): HttpPartDownloader = HttpPartDownloader(
+    credentials = HttpDownloadCredentials(url),
+    getDestWriter = { writer },
+    part = part,
+    client = OkHttpHttpDownloaderClient(
+        okHttpClient = OkHttpClient.Builder()
+            .readTimeout(20, TimeUnit.SECONDS)
+            .build(),
+        customUserAgentProvider = object : UserAgentProvider {
+            override fun getUserAgent() = "process-kill-download-test"
+        },
+        proxyStrategyProvider = object : ProxyStrategyProvider {
+            override fun getProxyStrategyFor(url: String) = ProxyStrategy.Direct
+        },
+        systemProxySelectorProvider = object : SystemProxySelectorProvider {
+            override fun getSystemProxySelector(): ProxySelector? = null
+        },
+        autoConfigurableProxyProvider = AutoConfigurableProxyProvider.NoOp(),
+    ),
+    speedLimiters = emptyList(),
+    strictMode = true,
+    partSplitLock = Any(),
+    minPartProvider = MinPartSizeProvider { 1 },
+    allowInternalRetries = false,
+)
