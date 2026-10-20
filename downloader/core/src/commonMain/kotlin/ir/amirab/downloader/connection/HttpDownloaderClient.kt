@@ -69,6 +69,7 @@ abstract class HttpDownloaderClient {
             }
         } catch (e: Exception) {
             e.throwIf { ExceptionUtils.isNormalCancellation(e) }
+            e.throwIf { ExceptionUtils.isResponseError(e) }
             // some servers may reset the connection (ECONNRESET) if we ask for bytes=0-255
             // so we don't provide resume support for them
         }

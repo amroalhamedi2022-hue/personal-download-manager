@@ -14,6 +14,7 @@ import ir.amirab.downloader.db.DownloadQueuePersistedDataAccess
 import ir.amirab.downloader.db.QueueModel
 import ir.amirab.downloader.downloaditem.DownloadJob
 import ir.amirab.downloader.downloaditem.DownloadJobStatus
+import ir.amirab.downloader.downloaditem.DownloadStatus
 import ir.amirab.downloader.downloaditem.hls.HLSDownloadItem
 import ir.amirab.downloader.downloaditem.hls.HLSDownloader
 import ir.amirab.downloader.downloaditem.http.HttpDownloadItem
@@ -45,6 +46,7 @@ import java.io.File
 import java.net.InetSocketAddress
 import java.net.ProxySelector
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
@@ -56,6 +58,184 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class ActualRestoredRetryJobTest {
+
+    @Test
+    fun httpPartFailuresExhaustExactlyTwoRetriesWithoutProgress() = withRetryServer { fixture ->
+        runBlocking {
+            val output = createTempDir("retry-budget-output-")
+            val data = createTempDir("retry-budget-data-")
+            val item = HttpDownloadItem(
+                link = "${fixture.baseUrl}/file/81.bin",
+                id = 81,
+                folder = output.path,
+                name = "81.bin",
+                dateAdded = 81,
+                preferredConnectionCount = 1,
+            )
+            val manager = createHttpManager(listOf(item), fixture.client, data)
+
+            try {
+                manager.boot()
+                val job = manager.downloadJobs.single()
+                manager.resume(item.id)
+                withTimeout(20_000) {
+                    while (job.status.value !is DownloadJobStatus.Canceled) delay(10)
+                }
+
+                assertFalse(job.isDownloadActive.value)
+                assertEquals(3, fixture.partRequestsFor("/file/81.bin"))
+                assertEquals(6, fixture.requestsFor("/file/81.bin"))
+                assertNull(item.retryAt)
+                assertEquals(0, item.retryAttempt)
+            } finally {
+                closeManager(manager)
+                output.deleteRecursively()
+                data.deleteRecursively()
+            }
+        }
+    }
+
+    @Test
+    fun http429RetryAfterPreventsEarlyMetadataRetry() = withRetryServer { fixture ->
+        runBlocking {
+            val output = createTempDir("retry-after-http-output-")
+            val data = createTempDir("retry-after-http-data-")
+            val item = HttpDownloadItem(
+                link = "${fixture.baseUrl}/file/82.bin",
+                id = 82,
+                folder = output.path,
+                name = "82.bin",
+                dateAdded = 82,
+                preferredConnectionCount = 1,
+            )
+            val manager = createHttpManager(listOf(item), fixture.client, data)
+
+            try {
+                manager.boot()
+                manager.resume(item.id)
+                withTimeout(15_000) {
+                    while (item.status != DownloadStatus.Completed) delay(10)
+                }
+
+                val times = fixture.requestTimesFor("/file/82.bin")
+                assertTrue(times.size >= 3)
+                assertTrue(
+                    TimeUnit.NANOSECONDS.toMillis(times[1] - times[0]) >= 900,
+                    "metadata retry was sent before Retry-After elapsed",
+                )
+                assertContentEquals(fixture.fileBytes(item.id), File(item.folder, item.name).readBytes())
+            } finally {
+                closeManager(manager)
+                output.deleteRecursively()
+                data.deleteRecursively()
+            }
+        }
+    }
+
+    @Test
+    fun retryAfterOneHourIsPersistedWithoutOverflowOrEarlyRequest() = withRetryServer { fixture ->
+        runBlocking {
+            val output = createTempDir("retry-hour-output-")
+            val data = createTempDir("retry-hour-data-")
+            val item = HttpDownloadItem(
+                link = "${fixture.baseUrl}/file/83.bin",
+                id = 83,
+                folder = output.path,
+                name = "83.bin",
+                dateAdded = 83,
+            )
+            val manager = createHttpManager(listOf(item), fixture.client, data)
+
+            try {
+                manager.boot()
+                val job = manager.downloadJobs.single()
+                manager.resume(item.id)
+                withTimeout(5_000) {
+                    while (item.retryAt == null || job.status.value !is DownloadJobStatus.Retrying) delay(10)
+                }
+                val remaining = requireNotNull(item.retryAt) - System.currentTimeMillis()
+                assertTrue(remaining >= 3_590_000, "one-hour Retry-After was shortened: $remaining")
+                assertEquals(1, fixture.requestsFor("/file/83.bin"))
+                delay(250)
+                assertEquals(1, fixture.requestsFor("/file/83.bin"))
+                withTimeout(10_000) { manager.stopAll() }
+            } finally {
+                closeManager(manager)
+                output.deleteRecursively()
+                data.deleteRecursively()
+            }
+        }
+    }
+
+    @Test
+    fun http404IsPermanentAndDoesNotRetry() = withRetryServer { fixture ->
+        runBlocking {
+            val output = createTempDir("permanent-http-output-")
+            val data = createTempDir("permanent-http-data-")
+            val item = HttpDownloadItem(
+                link = "${fixture.baseUrl}/file/84.bin",
+                id = 84,
+                folder = output.path,
+                name = "84.bin",
+                dateAdded = 84,
+            )
+            val manager = createHttpManager(listOf(item), fixture.client, data)
+
+            try {
+                manager.boot()
+                val job = manager.downloadJobs.single()
+                manager.resume(item.id)
+                withTimeout(5_000) {
+                    while (job.status.value !is DownloadJobStatus.Canceled) delay(10)
+                }
+                delay(250)
+                assertEquals(1, fixture.requestsFor("/file/84.bin"))
+                assertNull(item.retryAt)
+                assertFalse(job.isDownloadActive.value)
+            } finally {
+                closeManager(manager)
+                output.deleteRecursively()
+                data.deleteRecursively()
+            }
+        }
+    }
+
+    @Test
+    fun hls503SegmentPreservesRetryAfterAndRecoversThroughJobBudget() = withRetryServer { fixture ->
+        runBlocking {
+            val output = createTempDir("retry-after-hls-output-")
+            val data = createTempDir("retry-after-hls-data-")
+            val item = HLSDownloadItem(
+                link = "${fixture.baseUrl}/playlist/85.m3u8",
+                id = 85,
+                folder = output.path,
+                name = "85.ts",
+                dateAdded = 85,
+                preferredConnectionCount = 1,
+            )
+            val manager = createHlsManager(listOf(item), fixture.client, data)
+
+            try {
+                manager.boot()
+                manager.resume(item.id)
+                withTimeout(15_000) {
+                    while (item.status != DownloadStatus.Completed) delay(10)
+                }
+
+                val times = fixture.requestTimesFor("/segment/85.ts")
+                assertEquals(2, times.size)
+                assertTrue(
+                    TimeUnit.NANOSECONDS.toMillis(times[1] - times[0]) >= 900,
+                    "HLS segment retry was sent before Retry-After elapsed",
+                )
+                assertContentEquals(fixture.segmentBytes(item.id), File(item.folder, item.name).readBytes())
+            } finally {
+                closeManager(manager)
+                output.deleteRecursively()
+                data.deleteRecursively()
+            }
+        }
+    }
 
     @Test
     fun stopAllCancelsFutureActualHttpRetryBeforeAnyRequest() = withRetryServer { fixture ->
@@ -897,6 +1077,8 @@ class ActualRestoredRetryJobTest {
         val peakTransfers = AtomicInteger()
         private val activeTransfers = AtomicInteger()
         private val requests = ConcurrentHashMap<String, AtomicInteger>()
+        private val partRequests = ConcurrentHashMap<String, AtomicInteger>()
+        private val requestTimes = ConcurrentHashMap<String, CopyOnWriteArrayList<Long>>()
 
         val client = OkHttpHttpDownloaderClient(
             okHttpClient = OkHttpClient.Builder()
@@ -916,6 +1098,10 @@ class ActualRestoredRetryJobTest {
 
         fun requestsFor(path: String): Int = requests[path]?.get() ?: 0
 
+        fun partRequestsFor(path: String): Int = partRequests[path]?.get() ?: 0
+
+        fun requestTimesFor(path: String): List<Long> = requestTimes[path]?.toList().orEmpty()
+
         fun activeTransferCount(): Int = activeTransfers.get()
 
         fun fileBytes(id: Long): ByteArray = ByteArray(
@@ -932,7 +1118,35 @@ class ActualRestoredRetryJobTest {
 
         fun respond(exchange: HttpExchange) {
             val path = exchange.requestURI.path
-            requests.computeIfAbsent(path) { AtomicInteger() }.incrementAndGet()
+            val requestNumber = requests.computeIfAbsent(path) { AtomicInteger() }.incrementAndGet()
+            requestTimes.computeIfAbsent(path) { CopyOnWriteArrayList() }.add(System.nanoTime())
+            val range = exchange.requestHeaders.getFirst("Range")
+            val isPartRequest = path.startsWith("/file/") && range != null && range != "bytes=0-255"
+            if (isPartRequest) {
+                partRequests.computeIfAbsent(path) { AtomicInteger() }.incrementAndGet()
+            }
+            when {
+                path == "/file/81.bin" && isPartRequest -> {
+                    respondFailure(exchange, 503, "0")
+                    return
+                }
+                path == "/file/82.bin" && requestNumber == 1 -> {
+                    respondFailure(exchange, 429, "1")
+                    return
+                }
+                path == "/file/83.bin" && requestNumber == 1 -> {
+                    respondFailure(exchange, 503, "3600")
+                    return
+                }
+                path == "/file/84.bin" -> {
+                    respondFailure(exchange, 404)
+                    return
+                }
+                path == "/segment/85.ts" && requestNumber == 1 -> {
+                    respondFailure(exchange, 503, "1")
+                    return
+                }
+            }
             when {
                 path.startsWith("/file/") -> respondRanged(exchange, fileBytes(idFrom(path)))
                 path.startsWith("/playlist/") -> respondPlaylist(exchange, idFrom(path))
@@ -946,6 +1160,16 @@ class ActualRestoredRetryJobTest {
                     exchange.close()
                 }
             }
+        }
+
+        private fun respondFailure(
+            exchange: HttpExchange,
+            status: Int,
+            retryAfter: String? = null,
+        ) {
+            retryAfter?.let { exchange.responseHeaders.add("Retry-After", it) }
+            exchange.sendResponseHeaders(status, -1)
+            exchange.close()
         }
 
         private fun respondRanged(
