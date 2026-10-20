@@ -17,6 +17,19 @@ class OkHttpHttpDownloaderClient(
     private val systemProxySelectorProvider: SystemProxySelectorProvider,
     private val autoConfigurableProxyProvider: AutoConfigurableProxyProvider,
 ) : HttpDownloaderClient() {
+    /**
+     * Download jobs own the retry budget and persist its delay/attempt state. OkHttp otherwise
+     * performs an invisible follow-up for responses such as 408 and 503 (notably when
+     * `Retry-After: 0`), which would make one job attempt issue multiple network requests and
+     * bypass that budget. Connection failures are also retried by the job through the same path.
+     *
+     * Building from the supplied client retains its dispatcher, pool, interceptors and the rest
+     * of its configuration while making each call a single observable attempt.
+     */
+    private val singleAttemptClient = okHttpClient.newBuilder()
+        .retryOnConnectionFailure(false)
+        .build()
+
     private fun newCall(
         downloadCredentials: IHttpBasedDownloadCredentials,
         start: Long?,
@@ -26,7 +39,7 @@ class OkHttpHttpDownloaderClient(
         val rangeHeader = start?.let {
             createRangeHeader(start, end)
         }
-        return okHttpClient
+        return singleAttemptClient
             .applyProxy(downloadCredentials)
             .newCall(
                 Request.Builder()
