@@ -37,7 +37,8 @@ abstract class PartDownloader<
         TPart : DownloadPart
         >(
     val part: TPart,
-    val getDestWriter: () -> DestWriter
+    val getDestWriter: () -> DestWriter,
+    private val allowInternalRetries: Boolean = true,
 ) {
     private var thread: Thread? = null
     private var scope: CoroutineScope? = null
@@ -172,13 +173,15 @@ abstract class PartDownloader<
                 CanRetryResult.No
             }
 
-            e is DownloadValidationException -> if (e.isCritical()) {
+            e is DownloadValidationException -> if (e.isCritical() || !allowInternalRetries) {
                 //download validation occurs, and also it is critical,
                 //so we can't proceed any further
                 CanRetryResult.NoAndStopDownloadJob
             } else {
                 CanRetryResult.Yes
             }
+
+            !allowInternalRetries -> CanRetryResult.NoAndStopDownloadJob
 
             else -> {
                 CanRetryResult.Yes

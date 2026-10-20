@@ -11,6 +11,8 @@ import ir.amirab.downloader.downloaditem.DownloadJobStatus
 import ir.amirab.downloader.downloaditem.DownloadStatus
 import ir.amirab.downloader.downloaditem.IDownloadItem
 import ir.amirab.downloader.downloaditem.calculateRetryDelayMillis
+import ir.amirab.downloader.downloaditem.calculateRetryAtMillis
+import ir.amirab.downloader.downloaditem.isRetryableDownloadFailure
 import ir.amirab.downloader.downloaditem.retryAfterHeaderOrNull
 import ir.amirab.downloader.exception.DownloadValidationException
 import ir.amirab.downloader.exception.TooManyErrorException
@@ -151,7 +153,7 @@ class HLSDownloadJob(
                 beginDownloadParts()
                 startAutoSaver()
                 downloadItem.status = DownloadStatus.Downloading
-                clearRetryState()
+                markRetryAttemptStarted()
                 if (downloadItem.startTime == null) {
                     downloadItem.startTime = System.currentTimeMillis()
                 }
@@ -357,14 +359,12 @@ class HLSDownloadJob(
     ) {
         //moving to the main scope and request to cancel activeDownload scope!
         scope.launch {
-            if (isInFirstResume && failedDownloadTries == 0 && shouldRetryIfInitialFailed()) {
-                if (ExceptionUtils.isNetworkError(e) || ExceptionUtils.isResponseError(e)) {
-                    pause(e)
-                    return@launch
-                }
-            }
             // can't proceed
             if (e is DownloadValidationException && e.isCritical()) {
+                pause(e)
+                return@launch
+            }
+            if (!e.isRetryableDownloadFailure() && e !is DownloadValidationException) {
                 pause(e)
                 return@launch
             }
@@ -402,7 +402,7 @@ class HLSDownloadJob(
         if (!allowInactive && !isDownloadActive.value) {
             return
         }
-        val scheduledRetryAt = retryAtMillis ?: System.currentTimeMillis() + delayMillis
+        val scheduledRetryAt = retryAtMillis ?: calculateRetryAtMillis(delayMillis)
         launchExclusiveRetry(
             onAccepted = {
                 downloadItem.retryAttempt = failedDownloadTries
@@ -437,6 +437,11 @@ class HLSDownloadJob(
     private fun clearRetryState() {
         failedDownloadTries = 0
         downloadItem.retryAttempt = 0
+        downloadItem.retryAt = null
+    }
+
+    private fun markRetryAttemptStarted() {
+        downloadItem.retryAttempt = failedDownloadTries
         downloadItem.retryAt = null
     }
 
@@ -515,6 +520,7 @@ class HLSDownloadJob(
                         speedLimiter,
                     ),
                     hostLimitRegistry = downloadManager.hostLimitRegistry,
+                    allowInternalRetries = false,
                 ).also { partDownloader: HLSPartDownloader ->
                     partDownloader.onTooManyErrors = {
                         onPartHaveToManyError(it)

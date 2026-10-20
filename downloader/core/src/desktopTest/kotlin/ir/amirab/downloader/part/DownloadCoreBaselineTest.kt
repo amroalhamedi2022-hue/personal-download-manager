@@ -23,7 +23,10 @@ import ir.amirab.downloader.downloaditem.http.persistProgressAfterFlush
 import ir.amirab.downloader.downloaditem.http.validateRemoteFileIdentity
 import ir.amirab.downloader.downloaditem.DownloadStatus
 import ir.amirab.downloader.downloaditem.DownloadItemContext
+import ir.amirab.downloader.downloaditem.BASE_RETRY_DELAY_MILLIS
+import ir.amirab.downloader.downloaditem.calculateRetryAtMillis
 import ir.amirab.downloader.downloaditem.calculateRetryDelayMillis
+import ir.amirab.downloader.downloaditem.isRetryableDownloadFailure
 import ir.amirab.downloader.downloaditem.retryAfterHeaderOrNull
 import ir.amirab.downloader.exception.FileChangedException
 import ir.amirab.downloader.exception.NoSpaceInStorageException
@@ -38,6 +41,7 @@ import ir.amirab.downloader.utils.hostlimits.HostLimitRegistry
 import ir.amirab.downloader.utils.hostlimits.HostLimits
 import ir.amirab.downloader.queue.ManualDownloadQueue
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
@@ -927,15 +931,51 @@ class DownloadCoreBaselineTest {
     }
 
     @Test
-    fun retryAfterDeltaSecondsOverridesShorterBackoffAndIsBounded() {
+    fun retryAfterDeltaSecondsOverridesBackoffWithoutShorteningServerDelay() {
         assertEquals(
             120_000,
             calculateRetryDelayMillis(retryIndex = 0, retryAfterHeader = "120"),
         )
         assertEquals(
-            15 * 60_000,
+            3_600_000,
+            calculateRetryDelayMillis(retryIndex = 0, retryAfterHeader = "3600"),
+        )
+        assertEquals(
+            999_999_999_000,
             calculateRetryDelayMillis(retryIndex = 0, retryAfterHeader = "999999999"),
         )
+    }
+
+    @Test
+    fun retryAfterMalformedPastAndOverflowValuesRemainSafe() {
+        val now = 1_792_008_000_000L
+        assertEquals(
+            BASE_RETRY_DELAY_MILLIS,
+            calculateRetryDelayMillis(retryIndex = 0, retryAfterHeader = "not-a-delay", nowEpochMillis = now),
+        )
+        assertEquals(
+            BASE_RETRY_DELAY_MILLIS,
+            calculateRetryDelayMillis(
+                retryIndex = 0,
+                retryAfterHeader = "Wed, 14 Oct 2020 20:00:00 GMT",
+                nowEpochMillis = now,
+            ),
+        )
+        assertEquals(
+            Long.MAX_VALUE,
+            calculateRetryDelayMillis(retryIndex = 0, retryAfterHeader = "999999999999999999999999999999"),
+        )
+        assertEquals(Long.MAX_VALUE, calculateRetryAtMillis(Long.MAX_VALUE, now))
+    }
+
+    @Test
+    fun retryClassificationSeparatesTransientResponsesPermanentResponsesAndCancellation() {
+        assertTrue(UnSuccessfulResponseException(429, "rate limited", "7").isRetryableDownloadFailure())
+        assertTrue(UnSuccessfulResponseException(503, "unavailable").isRetryableDownloadFailure())
+        assertTrue(IOException("temporary network failure").isRetryableDownloadFailure())
+        assertFalse(UnSuccessfulResponseException(403, "forbidden").isRetryableDownloadFailure())
+        assertFalse(UnSuccessfulResponseException(404, "missing").isRetryableDownloadFailure())
+        assertFalse(CancellationException("user stopped").isRetryableDownloadFailure())
     }
 
     @Test

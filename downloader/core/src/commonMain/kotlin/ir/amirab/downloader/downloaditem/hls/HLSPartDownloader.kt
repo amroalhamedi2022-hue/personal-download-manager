@@ -3,6 +3,7 @@ package ir.amirab.downloader.downloaditem.hls
 import ir.amirab.downloader.connection.Connection
 import ir.amirab.downloader.connection.HttpDownloaderClient
 import ir.amirab.downloader.connection.response.HttpResponseInfo
+import ir.amirab.downloader.connection.response.expectSuccess
 import ir.amirab.downloader.destination.DestWriter
 import ir.amirab.downloader.downloaditem.http.HttpDownloadCredentials
 import ir.amirab.downloader.part.MediaSegment
@@ -21,11 +22,13 @@ class HLSPartDownloader(
     private val client: HttpDownloaderClient,
     private val speedLimiters: List<SpeedLimiter>,
     private val hostLimitRegistry: HostLimitRegistry? = null,
+    allowInternalRetries: Boolean = true,
 ) : PartDownloader<
         MediaSegment
         >(
     part = part,
     getDestWriter = getDestWriter,
+    allowInternalRetries = allowInternalRetries,
 ) {
     override fun howMuchCanRead(maxAllowed: Long): Long {
         return maxAllowed
@@ -54,7 +57,7 @@ class HLSPartDownloader(
             }
             if (!connect.responseInfo.isSuccessFul) {
                 connect.close()
-                throw CancellationException()
+                connect.responseInfo.expectSuccess()
             }
             part.length = connect.responseInfo.contentLength
             val limiters = buildList {

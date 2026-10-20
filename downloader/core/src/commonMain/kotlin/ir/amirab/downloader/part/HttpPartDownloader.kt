@@ -38,9 +38,11 @@ class HttpPartDownloader(
     partSplitLock: Any,
     minPartProvider: MinPartSizeProvider,
     private val hostLimitRegistry: HostLimitRegistry? = null,
+    allowInternalRetries: Boolean = true,
 ) : PartDownloader<RangedPart>(
     part = part,
-    getDestWriter = getDestWriter
+    getDestWriter = getDestWriter,
+    allowInternalRetries = allowInternalRetries,
 ) {
 
 

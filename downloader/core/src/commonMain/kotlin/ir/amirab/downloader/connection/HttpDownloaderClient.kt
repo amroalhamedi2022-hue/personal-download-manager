@@ -1,6 +1,7 @@
 package ir.amirab.downloader.connection
 
 import ir.amirab.downloader.connection.response.HttpResponseInfo
+import ir.amirab.downloader.connection.response.expectSuccess
 import ir.amirab.downloader.downloaditem.http.IHttpBasedDownloadCredentials
 import ir.amirab.downloader.downloaditem.http.IHttpDownloadCredentials
 import ir.amirab.downloader.utils.ExceptionUtils
@@ -61,7 +62,7 @@ abstract class HttpDownloaderClient {
             val rangeStart = 0L
             val rangeEnd = 255L
             val rangeLength = rangeEnd - rangeStart + 1 // 256
-            val response = head(credentials, rangeStart, rangeEnd)
+            val response = head(credentials, rangeStart, rangeEnd).expectSuccess()
 
             if (response.isSuccessFul && response.totalLength != rangeLength) {
                 return response
@@ -72,7 +73,7 @@ abstract class HttpDownloaderClient {
             // so we don't provide resume support for them
         }
         // server may return un-standard response we use headless (without resuming support)
-        return head(credentials, null, null)
+        return head(credentials, null, null).expectSuccess()
     }
 
     private suspend fun <T> usingNetwork(block: suspend () -> T): T {
