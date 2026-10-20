@@ -109,6 +109,7 @@ class TransactionalFileSaverSafetyTest {
             assertFailsWith<StoredFileReadException> {
                 storage.getAll()
             }
+            Unit
         } finally {
             folder.deleteRecursively()
         }
@@ -124,6 +125,7 @@ class TransactionalFileSaverSafetyTest {
             assertFailsWith<StoredFileReadException> {
                 DownloadQueueFileStorageDatabase(saver, folder).getAllQueues()
             }
+            Unit
         } finally {
             folder.deleteRecursively()
         }
