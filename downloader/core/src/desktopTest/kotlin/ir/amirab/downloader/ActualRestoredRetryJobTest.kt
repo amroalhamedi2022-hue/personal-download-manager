@@ -39,6 +39,7 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.OkHttpClient
 import java.io.File
 import java.net.InetSocketAddress
@@ -138,20 +139,21 @@ class ActualRestoredRetryJobTest {
                 withTimeout(5_000) { manager.listOfJobsEvents.subscriptionCount.first { it >= 1 } }
                 manager.resume(item.id)
                 withTimeout(10_000) {
-                    while (job.status.value != DownloadJobStatus.Downloading || fixture.activeTransferCount() == 0) {
+                    while (
+                        job.status.value != DownloadJobStatus.Downloading ||
+                        fixture.requestsFor("/file/61.bin") < 2
+                    ) {
                         delay(5)
                     }
                 }
 
                 withTimeout(10_000) { manager.stopAll() }
-                withTimeout(5_000) {
-                    while (fixture.activeTransferCount() != 0) delay(5)
-                }
                 val requestsAfterStop = fixture.requestsFor("/file/61.bin")
                 delay(250)
 
                 assertFalse(job.isDownloadActive.value)
                 assertTrue(job.status.value is DownloadJobStatus.Canceled)
+                assertNull(job.activeDownloadScope)
                 assertNull(item.retryAt)
                 assertEquals(0, completions.get())
                 assertEquals(requestsAfterStop, fixture.requestsFor("/file/61.bin"))
@@ -191,21 +193,22 @@ class ActualRestoredRetryJobTest {
                 withTimeout(5_000) { manager.listOfJobsEvents.subscriptionCount.first { it >= 1 } }
                 manager.resume(item.id)
                 withTimeout(10_000) {
-                    while (job.status.value != DownloadJobStatus.Downloading || fixture.activeTransferCount() == 0) {
+                    while (
+                        job.status.value != DownloadJobStatus.Downloading ||
+                        fixture.requestsFor("/segment/62.ts") < 1
+                    ) {
                         delay(5)
                     }
                 }
 
                 withTimeout(10_000) { manager.stopAll() }
-                withTimeout(5_000) {
-                    while (fixture.activeTransferCount() != 0) delay(5)
-                }
                 val requestsAfterStop = fixture.requestsFor("/playlist/62.m3u8") +
                     fixture.requestsFor("/segment/62.ts")
                 delay(250)
 
                 assertFalse(job.isDownloadActive.value)
                 assertTrue(job.status.value is DownloadJobStatus.Canceled)
+                assertNull(job.activeDownloadScope)
                 assertNull(item.retryAt)
                 assertEquals(0, completions.get())
                 assertEquals(
@@ -348,7 +351,10 @@ class ActualRestoredRetryJobTest {
                 queue.setMaxConcurrent(1)
                 manager.restoreInterruptedRetries { queue.resume(it) }
                 withTimeout(10_000) {
-                    while (job.status.value != DownloadJobStatus.Downloading || fixture.activeTransferCount() == 0) {
+                    while (
+                        job.status.value != DownloadJobStatus.Downloading ||
+                        fixture.requestsFor("/file/41.bin") < 2
+                    ) {
                         delay(5)
                     }
                 }
@@ -373,7 +379,16 @@ class ActualRestoredRetryJobTest {
                 assertContentEquals(bytesAfterMove, newFile.readBytes())
 
                 manager.resume(item.id)
-                withTimeout(20_000) { completed.await() }
+                val completedInTime = withTimeoutOrNull(20_000) {
+                    completed.await()
+                    true
+                } ?: false
+                assertTrue(
+                    completedInTime,
+                    "HTTP resume after move did not finish: status=${job.status.value}, " +
+                        "active=${job.isDownloadActive.value}, retryAt=${item.retryAt}, " +
+                        "requests=${fixture.requestsFor("/file/41.bin")}, output=${newFile.length()}",
+                )
                 assertContentEquals(fixture.fileBytes(item.id), newFile.readBytes())
                 assertEquals(1, fixture.peakTransfers.get())
             } finally {
@@ -423,7 +438,10 @@ class ActualRestoredRetryJobTest {
                 queue.setMaxConcurrent(1)
                 manager.restoreInterruptedRetries { queue.resume(it) }
                 withTimeout(10_000) {
-                    while (job.status.value != DownloadJobStatus.Downloading || fixture.activeTransferCount() == 0) {
+                    while (
+                        job.status.value != DownloadJobStatus.Downloading ||
+                        fixture.requestsFor("/segment/42.ts") < 1
+                    ) {
                         delay(5)
                     }
                 }
@@ -445,7 +463,17 @@ class ActualRestoredRetryJobTest {
                 assertFalse(oldFile.exists())
 
                 manager.resume(item.id)
-                withTimeout(20_000) { completed.await() }
+                val completedInTime = withTimeoutOrNull(20_000) {
+                    completed.await()
+                    true
+                } ?: false
+                assertTrue(
+                    completedInTime,
+                    "HLS resume after move did not finish: status=${job.status.value}, " +
+                        "active=${job.isDownloadActive.value}, retryAt=${item.retryAt}, " +
+                        "playlistRequests=${fixture.requestsFor("/playlist/42.m3u8")}, " +
+                        "segmentRequests=${fixture.requestsFor("/segment/42.ts")}, output=${newFile.length()}",
+                )
                 assertContentEquals(fixture.segmentBytes(item.id), newFile.readBytes())
                 assertEquals(1, fixture.peakTransfers.get())
             } finally {
@@ -904,7 +932,11 @@ class ActualRestoredRetryJobTest {
             when {
                 path.startsWith("/file/") -> respondRanged(exchange, fileBytes(idFrom(path)))
                 path.startsWith("/playlist/") -> respondPlaylist(exchange, idFrom(path))
-                path.startsWith("/segment/") -> respondBytes(exchange, segmentBytes(idFrom(path)), "video/mp2t")
+                path.startsWith("/segment/") -> respondRanged(
+                    exchange,
+                    segmentBytes(idFrom(path)),
+                    "video/mp2t",
+                )
                 else -> {
                     exchange.sendResponseHeaders(404, -1)
                     exchange.close()
@@ -912,7 +944,11 @@ class ActualRestoredRetryJobTest {
             }
         }
 
-        private fun respondRanged(exchange: HttpExchange, bytes: ByteArray) {
+        private fun respondRanged(
+            exchange: HttpExchange,
+            bytes: ByteArray,
+            contentType: String = "application/octet-stream",
+        ) {
             val range = exchange.requestHeaders.getFirst("Range")
             val match = range?.let(RANGE_PATTERN::matchEntire)
             val start = match?.groupValues?.get(1)?.toIntOrNull() ?: 0
@@ -923,9 +959,9 @@ class ActualRestoredRetryJobTest {
             exchange.responseHeaders.add("ETag", "\"retry-fixture\"")
             if (range != null) {
                 exchange.responseHeaders.add("Content-Range", "bytes $start-$end/${bytes.size}")
-                respondBytes(exchange, body, "application/octet-stream", 206)
+                respondBytes(exchange, body, contentType, 206)
             } else {
-                respondBytes(exchange, body, "application/octet-stream", 200)
+                respondBytes(exchange, body, contentType, 200)
             }
         }
 
