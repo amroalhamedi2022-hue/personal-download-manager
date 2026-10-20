@@ -22,10 +22,49 @@ class TransactionalFileSaverSafetyTest {
             assertNull(saver.readObject<Snapshot>(file))
 
             file.writeText("{not-json")
-            assertFailsWith<StoredFileReadException> {
+            val failure = assertFailsWith<StoredFileReadException> {
                 saver.readObject<Snapshot>(file)
             }
+            assertEquals(StoredFileReadFailureReason.MALFORMED_JSON, failure.reason)
             assertEquals("{not-json", file.readText())
+        } finally {
+            folder.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun validJsonWithUnsupportedSchemaIsDistinctFromMalformedJson() {
+        val folder = Files.createTempDirectory("transactional-schema-").toFile()
+        val file = folder.resolve("state.json")
+        val saver = TransactionalFileSaver(Json)
+        try {
+            file.writeText("{\"unexpected\":\"value\"}")
+
+            val failure = assertFailsWith<StoredFileReadException> {
+                saver.readObject<Snapshot>(file)
+            }
+
+            assertEquals(StoredFileReadFailureReason.UNSUPPORTED_SCHEMA, failure.reason)
+            assertEquals("{\"unexpected\":\"value\"}", file.readText())
+        } finally {
+            folder.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun ioFailureIsDistinctFromMissingAndInvalidData() {
+        val folder = Files.createTempDirectory("transactional-io-").toFile()
+        val directoryInPlaceOfFile = folder.resolve("state.json")
+        val saver = TransactionalFileSaver(Json)
+        try {
+            assertTrue(directoryInPlaceOfFile.mkdir())
+
+            val failure = assertFailsWith<StoredFileReadException> {
+                saver.readObject<Snapshot>(directoryInPlaceOfFile)
+            }
+
+            assertEquals(StoredFileReadFailureReason.IO, failure.reason)
+            assertTrue(directoryInPlaceOfFile.isDirectory)
         } finally {
             folder.deleteRecursively()
         }

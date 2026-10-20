@@ -10,13 +10,25 @@ import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 
+enum class StoredFileReadFailureReason {
+    IO,
+    MALFORMED_JSON,
+    UNSUPPORTED_SCHEMA,
+}
+
 class StoredFileReadException(
     val storageFile: File,
+    val reason: StoredFileReadFailureReason,
     cause: Throwable,
 ) : IOException(
-    "Stored data at '${storageFile.absolutePath}' is unreadable; the existing file was not replaced.",
+    "Stored data at '${storageFile.absolutePath}' is unreadable ($reason); the existing file was not replaced.",
     cause,
 )
+
+private class CategorizedStoredFileFailure(
+    val reason: StoredFileReadFailureReason,
+    cause: Throwable,
+) : IOException(cause)
 
 class TransactionalFileSaver(
     val json: Json,
@@ -84,10 +96,7 @@ class TransactionalFileSaver(
     @PublishedApi
     internal fun <T> readDecoded(file: File, decode: (String) -> T): T? {
         if (file.exists()) {
-            val primary = runCatching {
-                val text = readTextStrict(file)
-                text to decode(text)
-            }
+            val primary = readAndDecode(file, decode)
             primary.getOrNull()?.let { return it.second }
 
             val primaryFailure = requireNotNull(primary.exceptionOrNull())
@@ -98,24 +107,24 @@ class TransactionalFileSaver(
                     restoreRecoveredText(file, text)
                 } catch (restoreFailure: Throwable) {
                     restoreFailure.addSuppressed(primaryFailure)
-                    throw StoredFileReadException(file, restoreFailure)
+                    throw storedFileReadException(file, restoreFailure)
                 }
                 return value
             }
             recovery.exceptionOrNull()?.let(primaryFailure::addSuppressed)
-            throw StoredFileReadException(file, primaryFailure)
+            throw storedFileReadException(file, primaryFailure)
         }
 
         val recoveryFile = getRecoveryFile(file)
         if (!recoveryFile.exists()) return null
         val recovery = readRecovery(file, decode)
         val (text, value) = recovery.getOrElse { failure ->
-            throw StoredFileReadException(file, failure)
+            throw storedFileReadException(file, failure)
         }
         try {
             restoreRecoveredText(file, text)
         } catch (restoreFailure: Throwable) {
-            throw StoredFileReadException(file, restoreFailure)
+            throw storedFileReadException(file, restoreFailure)
         }
         return value
     }
@@ -126,9 +135,39 @@ class TransactionalFileSaver(
     private fun <T> readRecovery(
         file: File,
         decode: (String) -> T,
+    ): Result<Pair<String, T>> = readAndDecode(getRecoveryFile(file), decode)
+
+    private fun <T> readAndDecode(
+        file: File,
+        decode: (String) -> T,
     ): Result<Pair<String, T>> = runCatching {
-        val text = readTextStrict(getRecoveryFile(file))
-        text to decode(text)
+        val text = try {
+            readTextStrict(file)
+        } catch (failure: Throwable) {
+            throw CategorizedStoredFileFailure(StoredFileReadFailureReason.IO, failure)
+        }
+        try {
+            json.parseToJsonElement(text)
+        } catch (failure: Throwable) {
+            throw CategorizedStoredFileFailure(StoredFileReadFailureReason.MALFORMED_JSON, failure)
+        }
+        val value = try {
+            decode(text)
+        } catch (failure: Throwable) {
+            throw CategorizedStoredFileFailure(StoredFileReadFailureReason.UNSUPPORTED_SCHEMA, failure)
+        }
+        text to value
+    }
+
+    private fun storedFileReadException(file: File, failure: Throwable): StoredFileReadException {
+        val categorizedFailure = failure as? CategorizedStoredFileFailure
+        return StoredFileReadException(
+            storageFile = file,
+            reason = categorizedFailure?.reason ?: StoredFileReadFailureReason.IO,
+            cause = categorizedFailure?.cause ?: failure,
+        ).also { exception ->
+            failure.suppressed.forEach(exception::addSuppressed)
+        }
     }
 
     private fun stageRecoveryCopy(file: File) {
