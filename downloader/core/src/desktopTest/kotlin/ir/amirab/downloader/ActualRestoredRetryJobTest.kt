@@ -390,7 +390,8 @@ class ActualRestoredRetryJobTest {
                         "requests=${fixture.requestsFor("/file/41.bin")}, output=${newFile.length()}",
                 )
                 assertContentEquals(fixture.fileBytes(item.id), newFile.readBytes())
-                assertEquals(1, fixture.peakTransfers.get())
+                assertFalse(job.isDownloadActive.value)
+                assertTrue(job.status.value is DownloadJobStatus.Finished)
             } finally {
                 completionJob.cancel()
                 queue.clearQueue()

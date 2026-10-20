@@ -460,6 +460,7 @@ class HLSDownloadJob(
             }
 
             PartDownloadStatus.Completed -> {
+                recordMeaningfulProgress()
                 destination.onPartCancelled(partDownloader.part)
                 if (getParts().all { it.isCompleted }) {
                     onDownloadFinished()
@@ -470,9 +471,19 @@ class HLSDownloadJob(
                 }
             }
 
-            PartDownloadStatus.ReceivingData -> {}
+            PartDownloadStatus.ReceivingData -> recordMeaningfulProgress()
             PartDownloadStatus.Connecting -> {}
             PartDownloadStatus.IDLE -> {}
+        }
+    }
+
+    private fun recordMeaningfulProgress() {
+        val downloadedSize = getDownloadedSize()
+        if (downloadedSize > downloadedSizeBeforeRetry) {
+            downloadedSizeBeforeRetry = downloadedSize
+            failedDownloadTries = 0
+            downloadItem.retryAttempt = 0
+            downloadItem.retryAt = null
         }
     }
 
