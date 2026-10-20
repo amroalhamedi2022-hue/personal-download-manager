@@ -320,6 +320,9 @@ class HLSDownloadJob(
     }
 
     private fun onPartHaveToManyError(throwable: Throwable) {
+        if (!isDownloadActive.value) {
+            return
+        }
         var paused = false
         if (throwable is DownloadValidationException) {
             if (throwable.isCritical()) {

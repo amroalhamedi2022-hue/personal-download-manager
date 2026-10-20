@@ -9,7 +9,6 @@ import ir.amirab.downloader.utils.ExceptionUtils
 import ir.amirab.downloader.utils.printStackIfNOtUsual
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
@@ -192,9 +191,7 @@ abstract class PartDownloader<
     lateinit var onTooManyErrors: ((Throwable) -> Unit)
     private fun iCantRetryAnymore(throwable: Throwable) {
         lastCriticalException = throwable
-        GlobalScope.launch {
-            onTooManyErrors(throwable)
-        }
+        onTooManyErrors(throwable)
     }
 
     private fun haveToManyErrors(): Boolean {
