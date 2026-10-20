@@ -994,7 +994,8 @@ class ActualRestoredRetryJobTest {
                 exchange.responseHeaders.add("Content-Type", contentType)
                 exchange.sendResponseHeaders(status, bytes.size.toLong())
                 exchange.responseBody.use { output ->
-                    bytes.asList().chunked(512).forEach { chunk ->
+                    val chunkSize = if (bytes.size >= 512 * 1024) 2_048 else 512
+                    bytes.asList().chunked(chunkSize).forEach { chunk ->
                         output.write(chunk.toByteArray())
                         output.flush()
                         Thread.sleep(2)
