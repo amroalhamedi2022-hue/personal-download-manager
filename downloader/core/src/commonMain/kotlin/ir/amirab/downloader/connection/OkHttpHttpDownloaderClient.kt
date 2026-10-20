@@ -10,6 +10,9 @@ import java.net.InetSocketAddress
 import java.net.Proxy
 import java.net.ProxySelector
 
+private const val ORIGINAL_RETRY_AFTER_HEADER =
+    "X-Personal-Download-Manager-Original-Retry-After"
+
 class OkHttpHttpDownloaderClient(
     private val okHttpClient: OkHttpClient,
     private val customUserAgentProvider: UserAgentProvider,
@@ -28,6 +31,20 @@ class OkHttpHttpDownloaderClient(
      */
     private val singleAttemptClient = okHttpClient.newBuilder()
         .retryOnConnectionFailure(false)
+        .addNetworkInterceptor { chain ->
+            val response = chain.proceed(chain.request())
+            if (response.code == 503 && response.header("Retry-After")?.trim() == "0") {
+                // OkHttp performs a 503 follow-up even when connection retries are disabled.
+                // Present a non-zero value only to its internal follow-up policy, and retain the
+                // server's exact value for the download job below.
+                response.newBuilder()
+                    .header(ORIGINAL_RETRY_AFTER_HEADER, "0")
+                    .header("Retry-After", "1")
+                    .build()
+            } else {
+                response
+            }
+        }
         .build()
 
     private fun newCall(
@@ -164,6 +181,12 @@ class OkHttpHttpDownloaderClient(
     }
 
     private fun createFileInfo(response: Response): HttpResponseInfo {
+        val responseHeaders = response.headers
+            .associate { (key, value) -> key.lowercase() to value }
+            .toMutableMap()
+        responseHeaders.remove(ORIGINAL_RETRY_AFTER_HEADER.lowercase())?.let { originalValue ->
+            responseHeaders["retry-after"] = originalValue
+        }
         return HttpResponseInfo(
             statusCode = response.code,
             message = response.message,
@@ -171,9 +194,7 @@ class OkHttpHttpDownloaderClient(
             requestHeaders = response.request.headers.associate { (key, value) ->
                 key.lowercase() to value
             },
-            responseHeaders = response.headers.associate { (key, value) ->
-                key.lowercase() to value
-            },
+            responseHeaders = responseHeaders,
         )
     }
 
