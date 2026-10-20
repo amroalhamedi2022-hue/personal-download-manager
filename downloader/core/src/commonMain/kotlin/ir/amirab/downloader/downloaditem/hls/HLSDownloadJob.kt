@@ -373,11 +373,11 @@ class HLSDownloadJob(
             }
             val downloadedSize = getDownloadedSize()
             if (downloadedSize > downloadedSizeBeforeRetry) {
-                // download had progress! so we reset it
+                // Real byte progress starts a fresh budget, and the failure that ended this
+                // progressed attempt is the first failed attempt in that new budget.
                 failedDownloadTries = 0
-            } else {
-                failedDownloadTries++
             }
+            failedDownloadTries++
             downloadedSizeBeforeRetry = downloadedSize
 
             // we always have one try (the initial resume action), after that others are retries!

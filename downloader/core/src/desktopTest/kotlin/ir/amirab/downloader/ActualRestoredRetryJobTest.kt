@@ -96,6 +96,44 @@ class ActualRestoredRetryJobTest {
     }
 
     @Test
+    fun realByteProgressStartsOneFreshRetryBudget() = withRetryServer { fixture ->
+        runBlocking {
+            val output = createTempDir("retry-progress-output-")
+            val data = createTempDir("retry-progress-data-")
+            val item = HttpDownloadItem(
+                link = "${fixture.baseUrl}/file/86.bin",
+                id = 86,
+                folder = output.path,
+                name = "86.bin",
+                dateAdded = 86,
+                preferredConnectionCount = 1,
+            )
+            val manager = createHttpManager(listOf(item), fixture.client, data)
+
+            try {
+                manager.boot()
+                val job = manager.downloadJobs.single()
+                manager.resume(item.id)
+                withTimeout(15_000) {
+                    while (job.getDownloadedSize() == 0L || item.retryAt == null) delay(10)
+                }
+
+                assertEquals(1, item.retryAttempt)
+                withTimeout(25_000) {
+                    while (job.status.value !is DownloadJobStatus.Canceled) delay(10)
+                }
+                assertEquals(4, fixture.partRequestsFor("/file/86.bin"))
+                assertNull(item.retryAt)
+                assertEquals(0, item.retryAttempt)
+            } finally {
+                closeManager(manager)
+                output.deleteRecursively()
+                data.deleteRecursively()
+            }
+        }
+    }
+
+    @Test
     fun http429RetryAfterPreventsEarlyMetadataRetry() = withRetryServer { fixture ->
         runBlocking {
             val output = createTempDir("retry-after-http-output-")
@@ -1131,6 +1169,14 @@ class ActualRestoredRetryJobTest {
                     respondFailure(exchange, 503, "0")
                     return
                 }
+                path == "/file/86.bin" && isPartRequest -> {
+                    when (partRequestsFor(path)) {
+                        1 -> respondFailure(exchange, 503, "0")
+                        2 -> respondTruncatedRange(exchange, fileBytes(86))
+                        else -> respondFailure(exchange, 503, "0")
+                    }
+                    return
+                }
                 path == "/file/82.bin" && requestNumber == 1 -> {
                     respondFailure(exchange, 429, "1")
                     return
@@ -1192,6 +1238,28 @@ class ActualRestoredRetryJobTest {
             } else {
                 respondBytes(exchange, body, contentType, 200)
             }
+        }
+
+        private fun respondTruncatedRange(
+            exchange: HttpExchange,
+            bytes: ByteArray,
+        ) {
+            val range = requireNotNull(exchange.requestHeaders.getFirst("Range"))
+            val match = requireNotNull(RANGE_PATTERN.matchEntire(range))
+            val start = match.groupValues[1].toInt()
+            val requestedEnd = match.groupValues[2].toIntOrNull() ?: bytes.lastIndex
+            val end = requestedEnd.coerceAtMost(bytes.lastIndex)
+            val body = bytes.copyOfRange(start, end + 1)
+            exchange.responseHeaders.add("Accept-Ranges", "bytes")
+            exchange.responseHeaders.add("ETag", "\"retry-fixture\"")
+            exchange.responseHeaders.add("Content-Range", "bytes $start-$end/${bytes.size}")
+            exchange.responseHeaders.add("Content-Type", "application/octet-stream")
+            exchange.sendResponseHeaders(206, body.size.toLong())
+            exchange.responseBody.use { output ->
+                output.write(body, 0, body.size / 2)
+                output.flush()
+            }
+            exchange.close()
         }
 
         private fun respondPlaylist(exchange: HttpExchange, id: Long) {
