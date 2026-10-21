@@ -1,5 +1,17 @@
 package ir.amirab.downloader.ftp
 
+import ir.amirab.downloader.DownloadManager
+import ir.amirab.downloader.DownloaderRegistry
+import ir.amirab.downloader.DownloadSettings
+import ir.amirab.downloader.db.MemoryDownloadListDB
+import ir.amirab.downloader.db.MemoryDownloadPartStatesDB
+import ir.amirab.downloader.downloaditem.DownloadStatus
+import ir.amirab.downloader.utils.EmptyFileCreator
+import ir.amirab.downloader.utils.IDiskStat
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.apache.ftpserver.FtpServerFactory
 import org.apache.ftpserver.listener.ListenerFactory
 import org.apache.ftpserver.usermanager.impl.BaseUser
@@ -159,6 +171,59 @@ class FtpTransferClientTest {
                 output = fixture.downloadFolder.resolve("invalid-speed.bin"),
                 speedLimitBytesPerSecond = -1L,
             )
+        }
+    }
+
+    @Test
+    fun realFtpJobUsesManagerLifecycleAndTransientCredentials() = withFixture { fixture ->
+        runBlocking {
+            val item = FtpDownloadItem(
+                id = 71L,
+                folder = fixture.downloadFolder.toString(),
+                name = "manager-downloaded.bin",
+                link = fixture.url("fixture.bin"),
+                username = "test",
+                dateAdded = 71L,
+            )
+            val listDb = MemoryDownloadListDB()
+            listDb.add(item)
+            val provider = FtpCredentialsProvider { FtpSessionCredentials("test", "secret") }
+            val registry = DownloaderRegistry().apply { add(FtpDownloader(provider)) }
+            val manager = DownloadManager(
+                dlListDb = listDb,
+                partListDb = MemoryDownloadPartStatesDB(),
+                settings = DownloadSettings(),
+                emptyFileCreator = EmptyFileCreator(
+                    diskStat = object : IDiskStat {
+                        override fun getRemainingSpace(path: java.io.File) = Long.MAX_VALUE
+                    },
+                    useSparseFile = { false },
+                ),
+                downloaderRegistry = registry,
+                downloadDataFolder = fixture.downloadFolder.toFile(),
+            )
+            try {
+                manager.boot()
+                assertEquals(1, manager.downloadJobs.size)
+                manager.resume(item.id)
+                withTimeout(25_000) {
+                    while (item.status != DownloadStatus.Completed) delay(20)
+                }
+                assertContentEquals(
+                    fixture.bytes,
+                    Files.readAllBytes(fixture.downloadFolder.resolve("manager-downloaded.bin")),
+                )
+                assertEquals(fixture.bytes.size.toLong(), item.contentLength)
+                assertEquals(DownloadStatus.Completed, listDb.getById(item.id)?.status)
+                assertFalse(FtpSessionCredentials("test", "secret").toString().contains("secret"))
+                assertFalse(
+                    item.toString().contains("secret"),
+                    "FTP persisted item should never contain a password",
+                )
+            } finally {
+                manager.downloadJobs.forEach { it.close() }
+                manager.scope.cancel()
+            }
         }
     }
 
