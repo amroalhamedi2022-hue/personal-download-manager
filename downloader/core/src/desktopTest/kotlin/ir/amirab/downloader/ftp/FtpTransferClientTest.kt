@@ -99,6 +99,48 @@ class FtpTransferClientTest {
         assertFalse(Files.exists(destination))
     }
 
+    @Test
+    fun missingRemoteFileDoesNotLeaveMisleadingResumeMetadata() = withFixture { fixture ->
+        val destination = fixture.downloadFolder.resolve("does-not-exist.bin")
+        val exception = assertFailsWith<IOException> {
+            FtpTransferClient().download(
+                fixture.url("missing-remote.bin"), destination,
+                username = "test", password = "secret"
+            )
+        }
+        assertTrue(exception.message.orEmpty().contains("FTP RETR rejected"))
+        assertFalse(Files.exists(destination))
+        assertFalse(Files.exists(fixture.downloadFolder.resolve("does-not-exist.bin.ftp-part")))
+        assertFalse(Files.exists(fixture.downloadFolder.resolve("does-not-exist.bin.ftp-part.properties")))
+    }
+
+    @Test
+    fun existingDestinationRemainsByteForByteUntouched() = withFixture { fixture ->
+        val destination = fixture.downloadFolder.resolve("protected.bin")
+        val original = byteArrayOf(1, 2, 3, 4, 5, 6)
+        Files.write(destination, original)
+        assertFailsWith<IOException> {
+            FtpTransferClient().download(fixture.url("fixture.bin"), destination, "test", "secret")
+        }
+        assertContentEquals(original, Files.readAllBytes(destination))
+        assertFalse(Files.exists(fixture.downloadFolder.resolve("protected.bin.ftp-part")))
+    }
+
+    @Test
+    fun partialResumeSidecarNeverStoresLoginPassword() = withFixture { fixture ->
+        val destination = fixture.downloadFolder.resolve("metadata.bin")
+        assertFailsWith<IOException> {
+            FtpTransferClient().download(fixture.url("fixture.bin"), destination, "test", "secret") { done, _ ->
+                if (done >= 16 * 1024) throw IOException("Intentional interruption for sidecar audit")
+            }
+        }
+        val metadata = fixture.downloadFolder.resolve("metadata.bin.ftp-part.properties")
+        assertTrue(Files.isRegularFile(metadata))
+        val contents = Files.readString(metadata)
+        assertFalse(contents.contains("secret"), "FTP password must not be persisted in resume sidecars")
+        assertFalse(contents.contains("password", ignoreCase = true), "FTP sidecar must contain only source identity")
+    }
+
     private class Fixture(
         val root: Path,
         val downloadFolder: Path,
