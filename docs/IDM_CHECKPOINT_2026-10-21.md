@@ -60,3 +60,15 @@
 4. تحقق عمليًا من Liquid Progress وSpeed Graph/Parts وبقية المطابقة، ثم RAM/CPU، ثم اختيار حزمة Release نهائية فقط بعد القبول.
 
 **تذكير:** لا تعِد مصدرًا جديدًا، لا تمس بنية JSON/البيانات دون Backup مستقل، لا تسوّي بين Compile/Unit/Windows UI/Internet، ولا تكرر فحص المصدر المثبت بلا سبب.
+
+## ملحق متابعة OSS / FTP — مساء 2026-10-21
+
+- طلب المستخدم الاستمرار على نفس المشروع والاستفادة من مكتبات مفتوحة المصدر بدل إعادة كتابة المنظومات من الصفر. لذلك لم يُستبدل محرك HTTP/HLS ولم تُنشأ Repositories أخرى.
+- **E038:** Run `39605054630`، SHA `4eaaea470ec137892ad302c75071d99f870b8f47`، ناجح 108/108؛ ملفات XML العشرة فُحصت في الجلسة. C04/ C07 زادت تغطيتهما، لكن C07 لا يزال يحتاج Restart من Disk ثابت، وليس مجرد Manager جديد من object الذاكرة. السجل الأصلي `docs/Download_Manager_Execution_Plan_v1.md` هو المرجع.
+- **Apache Commons Net 3.13.0:** اخترناه لنقل FTP Binary/Passive/REST/Authentication في Windows (ترخيص Apache-2.0)، و**Apache FtpServer 1.2.1** لتشغيل خادم حقيقي في الاختبارات فقط. API https://commons.apache.org/proper/commons-net/apidocs/org/apache/commons/net/ftp/FTPClient.html ؛ Maven Central https://central.sonatype.com/artifact/commons-net/commons-net/3.13.0 .
+- الملفات المضافة في نفس الفرع: `downloader/core/src/desktopMain/kotlin/ir/amirab/downloader/ftp/FtpTransferClient.kt`، و`downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/ftp/FtpTransferClientTest.kt`، مع تعديل `downloader/core/build.gradle.kts` لحصر Client في desktopMain وServer في desktopTest. تفاصيل وحدود التراخيص في `docs/Open_Source_Reuse_FTP_2026-10-21.md`.
+- محرك FTP الحالي يملك Socket Data/Control حقيقي، يستعمل UTF-8 وPassive/BINARY، يتحقق من SIZE/MDTM عند REST، يكتب إلى `.ftp-part` ثم يلتزم عند اكتمال السيرفر والعدد، ويحفظ هوية Remote في Sidecar بلا أسرار. اختبارات Loopback تتضمن كامل البايتات، Resume، تغيير Remote، وInvalid Auth.
+- **بوابة FTP المفتوحة:** هذا Transport داخل Library حتى الآن، **لم يُوصَل بعد** إلى `FtpDownloadItem/Job` أو `DownloaderInUiRegistry` أو أزرار New URL/Queue. لا تفك تعطيل OK لروابط FTP حتى يثبت الربط وظيفيًا واختبارات التكامل؛ لا ادعاء دعم FTP للمستخدم في المثبت النهائي بعد.
+- **تشغيل CI الجاري للتحقق من المكتبة:** Run `39673643097`، SHA `f2029ffe8a8e1564fc3053b98c74a7b170b2bdba`. عند كتابة الملحق كان غير منتهٍ؛ اقرأ النتيجة وLogs/XML، أصلح المشاكل ولا تسمي هذا النجاح مسبقًا. وثائق لاحقة لم تغيّر Gradle/Source ولم تُبنَ ضمن هذا SHA.
+- مصادر محتملة لاحقًا دون تطبيق آلي: Lucide SVG (ISC + أيقونات مشتقة تتطلب MIT)، والإبقاء على yt-dlp من مصدره مع تحديث وإدارة تبعيات FFmpeg وفق ترخيص كل Build. لا تعِد كتابة منظومات قائمة ولا تضف مكتبة بلا ميزة واختبار.
+- **الخطوة القادمة مباشرة:** حسم CI للاختبارات الـFTP، ثم إزالة أي خلل Test/Build، تحديث سجل الأدلة E039، وتنفيذ ربط FTP إلى Job/Registry/LinkChecker/UI بشكل كامل، بعدها اختبارات Password/Anonymous/REST/HostLimit/StopAll وLAN/WAN. قبل ترحيل بيانات سجّل Backup مستقل، لا تعتمد على فرع Git وحده.
