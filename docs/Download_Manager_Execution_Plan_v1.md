@@ -450,6 +450,16 @@ DownloadItem، Package، Part، Source/Mirror، Queue، SiteProfile، Credential
 - **حالة بوابات القبول:** نتيجة Run 68 خضراء لجزء M02 والتغليف، لكن M02 لم يُغلق: C04 وC07 وباقي ثبات HLS/C06 عبر التكرار مفتوحة. M04 FTP غير منفذ، M06/M07/M08 UI لم تطابق بعد على Runtime، M09 أداء بلا قياسات، M11 غير مغلق قبل اختبارات تثبيت Windows/Edge وشبكة عامة.
 - **القادم:** تكرار HLS المستهدف بحواجز مدروسة وفحص الاستمرار، ثم استكمال C04/C07، متابعة FTP كاملًا من رابط/مصداقية/محرك/حفظ/اختبارات، وبعده واجهة Liquid Progress والمطابقة البصرية. **لا داعي لإعادة تحميل ZIP المرجعي أو إعادة إنشاء المستودعات**.
 
+### بدء M04 — نقل FTP فعلي مع إعادة استخدام Apache Commons Net (قيد التحقق)
+
+- **قرار المصدر والترخيص:** `commons-net:commons-net:3.13.0` (Apache 2.0) لتنزيل FTP في `desktopMain`؛ `org.apache.ftpserver:ftpserver-core:1.2.1` خادم Loopback حقيقي **للاختبارات فقط**. راجع `docs/Open_Source_Reuse_FTP_2026-10-21.md`. حافظ على HTTP/HLS والـRegistry والـJSON الحاليين بلا حذف.
+- **كود منفذ:** `downloader/core/src/desktopMain/kotlin/ir/amirab/downloader/ftp/FtpTransferClient.kt` يضم Passive وBinary وLogin وREST، وSIDE-CAR معرف حجم/MDTM دون أسرار، وملف مؤقت `.ftp-part` لا يلتزم حتى استجابة الخادم النهائية وفحص عدد البايتات. `FtpTransferClientTest.kt` يملك 4 اختبارات محلية لبصمة ملف، استكمال، رفض Remote متغير، وفشل مصادقة.
+- **فشل تجميع تشخيصي Run `39673643097` (SHA `f2029ffe...`):** `desktopMain` و`desktopTest` غير متاحين كـKotlin DSL accessors بهذه النسخة؛ صحّح `downloader/core/build.gradle.kts` إلى `getByName(...)` في `3f9c72f1`. لا يحسب نجاحًا ولا فشل FTP في الشبكة.
+- **فشل تجميع Test التشخيصي Run `39674929421` (SHA `3f9c72f1...`):** production FTP source مرّ من compile، لكن import `PropertiesUserManagerFactory` في FtpServer test كان من `.impl` بدل `.usermanager`. صحّح في `ad0e979c` وثبّت تخزين Fixture users في مجلد مؤقت معزول.
+- **جولة التحقق القادمة:** Windows Run `39676264990` / Code SHA `ad0e979cd2efd734f3f2cbc98c949491e3d19415`، كانت قيد التشغيل عند كتابة هذا السجل؛ اقرأ Logs وXML وSHA الحقيقي قبل إنشاء Evidence ID ناجح.
+- **ممنوع إعلان دعم FTP الآن:** Transport **ليس بعد** `IDownloadItem/DownloadJob/DownloaderInUi` أو قبول رابط `ftp://` في نافذة New URL ولا طابور أو مراقبة حقيقية. N07–N12 مفتوحة كلها حتى ربط المكونات واختبار LAN/WAN. لا تفعّل زر OK منفردًا. المصادقة FTP plain text؛ خزّن أسرار المستخدمين في Credential Store بعد RF04/RF05.
+- **لا توجد ترحيلات بيانات**، والاختبارات على server/مجلدات مؤقتة فقط؛ لا تبدأ أي تغيير Schema بدون نسخة بيانات واسترجاع مثبتة.
+
 ## 13. آخر حالة وخطوة تالية
 
 - آخر دليل ناجح: E033 على فرع العمل؛ أُغلقت C05، وأُغلقت C02/BUG-004 في E032، وRF03/T03 في E031. P2-10 ما زالت جزئية/قيد التحقق بسبب بقايا C04/C06/C07، ولأن T18 مستقل. يبقى E025 دليلًا تاريخيًا صحيحًا ضمن نطاقه.
