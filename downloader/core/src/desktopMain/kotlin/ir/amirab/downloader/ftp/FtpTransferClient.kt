@@ -110,9 +110,6 @@ class FtpTransferClient {
                 if (!canResume) {
                     throw IOException("FTP resume blocked: remote identity unavailable or changed")
                 }
-            } else {
-                // No nonzero prefix exists. An obsolete sidecar is safe to replace.
-                storeIdentity(meta, endpoint.identity, identity)
             }
 
             if (existing > 0) {
@@ -120,6 +117,11 @@ class FtpTransferClient {
             }
             val stream = ftp.retrieveFileStream(endpoint.path)
                 ?: throw IOException("FTP RETR rejected (code ${ftp.replyCode})")
+            // A server may advertise metadata for a path that is not readable.
+            // Don't leave a misleading resume sidecar unless RETR was accepted.
+            if (existing == 0L) {
+                storeIdentity(meta, endpoint.identity, identity)
+            }
             var downloaded = existing
             stream.use { input ->
                 Files.newOutputStream(
