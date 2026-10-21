@@ -71,7 +71,7 @@ function Get-Snapshot {
             # Process ended between CIM enumeration and Get-Process.
         }
     }
-    return ,$procs
+    return $procs
 }
 
 $os = (Get-CimInstance Win32_OperatingSystem).Caption
