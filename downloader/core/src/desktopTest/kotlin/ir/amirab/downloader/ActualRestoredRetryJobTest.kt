@@ -746,7 +746,20 @@ class ActualRestoredRetryJobTest {
                 coroutineScope {
                     List(16) { async { manager.resume(item.id) } }.awaitAll()
                 }
-                withTimeout(20_000) { completed.await() }
+                val completedInTime = withTimeoutOrNull(20_000) {
+                    completed.await()
+                    true
+                } ?: false
+                assertTrue(
+                    completedInTime,
+                    "HLS lifecycle did not emit completion: itemStatus=${item.status}, " +
+                        "jobStatus=${manager.getJobStatusOf(item.id)}, " +
+                        "active=${manager.downloadJobs.find { it.id == item.id }?.isDownloadActive?.value}, " +
+                        "playlistRequests=${fixture.requestsFor(\"/playlist/52.m3u8\")}, " +
+                        "segmentRequests=${fixture.requestsFor(\"/segment/52.ts\")}, " +
+                        "bytes=${File(item.folder, item.name).length()}, " +
+                        "peakTransfers=${fixture.peakTransfers.get()}",
+                )
 
                 assertEquals(1, started.get())
                 assertEquals(1, fixture.peakTransfers.get())
