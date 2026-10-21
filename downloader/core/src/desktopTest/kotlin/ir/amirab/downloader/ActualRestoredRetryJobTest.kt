@@ -922,8 +922,13 @@ class ActualRestoredRetryJobTest {
                 manager.updateDownloadItem(item.id, null) { updated ->
                     updated.folder = newOutput.path
                     updated.name = newFile.name
+                    // C04: change transfer configuration atomically with the destination.
+                    updated.preferredConnectionCount = 2
+                    updated.speedLimit = 64L * 1024L * 1024L
                 }
 
+                assertEquals(2, job.downloadItem.preferredConnectionCount)
+                assertEquals(64L * 1024L * 1024L, job.downloadItem.speedLimit)
                 assertFalse(job.isDownloadActive.value)
                 assertTrue(job.status.value is DownloadJobStatus.Canceled)
                 withTimeout(5_000) {
@@ -1010,8 +1015,13 @@ class ActualRestoredRetryJobTest {
                 manager.updateDownloadItem(item.id, null) { updated ->
                     updated.folder = newOutput.path
                     updated.name = newFile.name
+                    // C04: change transfer configuration atomically with the destination.
+                    updated.preferredConnectionCount = 2
+                    updated.speedLimit = 64L * 1024L * 1024L
                 }
 
+                assertEquals(2, job.downloadItem.preferredConnectionCount)
+                assertEquals(64L * 1024L * 1024L, job.downloadItem.speedLimit)
                 assertFalse(job.isDownloadActive.value)
                 assertTrue(job.status.value is DownloadJobStatus.Canceled)
                 withTimeout(5_000) {
