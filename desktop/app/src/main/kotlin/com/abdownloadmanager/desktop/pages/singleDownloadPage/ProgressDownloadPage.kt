@@ -265,7 +265,10 @@ private fun RenderProgressBar(itemState: IDownloadItemState) {
     LiquidProgressTrack(
         progress = progress,
         colors = liquidColors,
-        active = status is DownloadJobStatus.IsActive,
+        // A retry timer owns no network transfer and must not animate like one.
+        active = status == DownloadJobStatus.Downloading ||
+            status == DownloadJobStatus.Resuming ||
+            status is DownloadJobStatus.PreparingFile,
         modifier = Modifier.fillMaxWidth().height(18.dp),
         bubbleCount = 12,
         showCompletionIcon = true,
@@ -290,15 +293,22 @@ private fun LiquidProgressTrack(
         targetValue = progress?.coerceIn(0f, 1f) ?: 0f,
         animationSpec = tween(180, easing = LinearEasing),
     )
-    val liquidAnimation = rememberInfiniteTransition()
-    val phase by liquidAnimation.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(2400, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart,
+    // Do not keep a perpetual Compose animation running while paused, retrying,
+    // completed or otherwise inactive. Hidden dialogs are not composed at all.
+    val phase = if (active) {
+        val liquidAnimation = rememberInfiniteTransition()
+        val animatedPhase by liquidAnimation.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(2400, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart,
+            )
         )
-    )
+        animatedPhase
+    } else {
+        0f
+    }
     val shape = myShapes.defaultRounded
 
     Box(
