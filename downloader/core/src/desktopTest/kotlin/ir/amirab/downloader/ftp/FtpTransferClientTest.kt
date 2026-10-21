@@ -131,9 +131,12 @@ class FtpTransferClientTest {
             password = "secret"
             homeDirectory = root.toAbsolutePath().toString()
         }
+        val userDbFile = root.resolve("ftp-test-users.properties")
+        // FtpServer 1.2.1 requires the properties file to exist before manager construction.
+        Files.createFile(userDbFile)
         val userManager = PropertiesUserManagerFactory().apply {
-            // Real local server uses an isolated user DB inside its own fixture folder.
-            file = root.resolve("ftp-test-users.properties").toFile()
+            // Never touch host/project credentials or any user-local settings.
+            file = userDbFile.toFile()
         }.createUserManager()
         userManager.save(user)
         serverFactory.userManager = userManager
