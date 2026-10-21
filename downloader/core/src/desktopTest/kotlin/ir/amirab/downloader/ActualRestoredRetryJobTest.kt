@@ -21,6 +21,7 @@ import ir.amirab.downloader.downloaditem.http.HttpDownloadItem
 import ir.amirab.downloader.downloaditem.http.HttpDownloader
 import ir.amirab.downloader.queue.ManualDownloadQueue
 import ir.amirab.downloader.queue.DownloadQueue
+import ir.amirab.downloader.queue.ScheduleTimes
 import ir.amirab.downloader.part.RangedParts
 import ir.amirab.downloader.utils.EmptyFileCreator
 import ir.amirab.downloader.utils.IDiskStat
@@ -42,10 +43,13 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.datetime.DayOfWeek
+import kotlinx.datetime.LocalTime
 import okhttp3.OkHttpClient
 import java.io.File
 import java.net.InetSocketAddress
 import java.net.ProxySelector
+import java.time.ZonedDateTime
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.Executors
@@ -806,6 +810,104 @@ class ActualRestoredRetryJobTest {
     }
 
     @Test
+    fun scheduledRestoredHttpRetriesWaitForWindowAndRespectQueueHostAndPartLimits() =
+        withRetryServer { fixture ->
+            runBlocking {
+                val output = createTempDir("scheduled-retry-output-")
+                val data = createTempDir("scheduled-retry-data-")
+                val items = listOf(71L, 72L).map { id ->
+                    HttpDownloadItem(
+                        link = "${fixture.baseUrl}/file/$id.bin",
+                        id = id,
+                        folder = output.path,
+                        name = "$id.bin",
+                        dateAdded = id,
+                        retryAttempt = 1,
+                        retryAt = System.currentTimeMillis() - 1,
+                        preferredConnectionCount = 2,
+                    )
+                }
+                val manager = createHttpManager(items, fixture.client, data)
+                manager.configureHostLimits("127.0.0.1", maxConnections = 3)
+
+                val scheduledStart = ZonedDateTime.now().plusSeconds(4)
+                val persisted = InMemoryQueueData(
+                    QueueModel(
+                        id = 78,
+                        name = "Scheduled restored retries",
+                        maxConcurrent = 2,
+                        queueItems = items.map { it.id },
+                        scheduledTimes = ScheduleTimes(
+                            daysOfWeek = setOf(DayOfWeek.valueOf(scheduledStart.dayOfWeek.name)),
+                            startTime = LocalTime(
+                                scheduledStart.hour,
+                                scheduledStart.minute,
+                                scheduledStart.second,
+                                scheduledStart.nano,
+                            ),
+                            endTime = LocalTime(23, 59),
+                            enabledStartTime = true,
+                            enabledEndTime = false,
+                        ),
+                    )
+                )
+                val queue = DownloadQueue(
+                    persistedModel = persisted.model,
+                    persistedData = persisted,
+                    downloadEvents = manager,
+                    onQueueEvent = {},
+                )
+                val completed = CompletableDeferred<Unit>()
+                val completionJob = manager.scope.launch {
+                    manager.listOfJobsEvents
+                        .filterIsInstance<DownloadManagerEvents.OnJobCompleted>()
+                        .take(items.size)
+                        .collect()
+                    completed.complete(Unit)
+                }
+
+                try {
+                    manager.boot()
+                    queue.boot()
+                    withTimeout(5_000) {
+                        manager.listOfJobsEvents.subscriptionCount.first { it >= 2 }
+                    }
+                    manager.restoreInterruptedRetries { queue.onRetryDue(it) }
+
+                    delay(500)
+                    assertFalse(queue.isQueueActive)
+                    assertTrue(manager.downloadJobs.none { it.isDownloadActive.value })
+                    items.forEach { item ->
+                        assertEquals(0, fixture.requestsFor("/file/${item.id}.bin"))
+                    }
+
+                    withTimeout(35_000) { completed.await() }
+
+                    assertTrue(queue.isQueueActive)
+                    assertEquals(items.size, manager.downloadJobs.map { it.id }.distinct().size)
+                    val perFilePeaks = mutableListOf<Int>()
+                    items.forEach { item ->
+                        assertContentEquals(
+                            fixture.fileBytes(item.id),
+                            File(item.folder, item.name).readBytes(),
+                        )
+                        assertTrue(fixture.partRequestsFor("/file/${item.id}.bin") >= 2)
+                        perFilePeaks += fixture.peakPartTransfersFor("/file/${item.id}.bin")
+                    }
+                    assertTrue(perFilePeaks.all { it in 1..2 })
+                    assertEquals(2, perFilePeaks.max())
+                    assertEquals(3, fixture.peakPartTransfers())
+                } finally {
+                    completionJob.cancel()
+                    queue.dispose()
+                    closeManager(manager)
+                    output.deleteRecursively()
+                    data.deleteRecursively()
+                }
+            }
+        }
+
+    @Test
     fun futureHttpRetryWaitsWithoutOwningAnActiveSlot() = withRetryServer { fixture ->
         runBlocking {
             val output = createTempDir("future-http-output-")
@@ -1160,6 +1262,10 @@ class ActualRestoredRetryJobTest {
         private val requests = ConcurrentHashMap<String, AtomicInteger>()
         private val partRequests = ConcurrentHashMap<String, AtomicInteger>()
         private val requestTimes = ConcurrentHashMap<String, CopyOnWriteArrayList<Long>>()
+        private val activePartTransfers = AtomicInteger()
+        private val peakPartTransferCount = AtomicInteger()
+        private val activePartTransfersByPath = ConcurrentHashMap<String, AtomicInteger>()
+        private val peakPartTransfersByPath = ConcurrentHashMap<String, AtomicInteger>()
 
         val client = OkHttpHttpDownloaderClient(
             okHttpClient = OkHttpClient.Builder()
@@ -1181,12 +1287,20 @@ class ActualRestoredRetryJobTest {
 
         fun partRequestsFor(path: String): Int = partRequests[path]?.get() ?: 0
 
+        fun peakPartTransfers(): Int = peakPartTransferCount.get()
+
+        fun peakPartTransfersFor(path: String): Int = peakPartTransfersByPath[path]?.get() ?: 0
+
         fun requestTimesFor(path: String): List<Long> = requestTimes[path]?.toList().orEmpty()
 
         fun activeTransferCount(): Int = activeTransfers.get()
 
         fun fileBytes(id: Long): ByteArray = ByteArray(
-            if (id == 41L || id == 61L) 512 * 1024 else 4_096
+            when (id) {
+                71L, 72L -> 2 * 1024 * 1024
+                41L, 61L -> 512 * 1024
+                else -> 4_096
+            }
         ) { index ->
             ((index * 31 + id.toInt()) and 0xff).toByte()
         }
@@ -1325,6 +1439,24 @@ class ActualRestoredRetryJobTest {
         ) {
             val active = activeTransfers.incrementAndGet()
             peakTransfers.updateAndGet { previous -> maxOf(previous, active) }
+            val path = exchange.requestURI.path
+            val range = exchange.requestHeaders.getFirst("Range")
+            val isFilePartTransfer = path.startsWith("/file/") &&
+                range != null && range != "bytes=0-255"
+            val activeForPath = if (isFilePartTransfer) {
+                val activeParts = activePartTransfers.incrementAndGet()
+                peakPartTransferCount.updateAndGet { previous -> maxOf(previous, activeParts) }
+                activePartTransfersByPath
+                    .computeIfAbsent(path) { AtomicInteger() }
+                    .incrementAndGet()
+                    .also { pathActive ->
+                        peakPartTransfersByPath
+                            .computeIfAbsent(path) { AtomicInteger() }
+                            .updateAndGet { previous -> maxOf(previous, pathActive) }
+                    }
+            } else {
+                null
+            }
             try {
                 exchange.responseHeaders.add("Content-Type", contentType)
                 exchange.sendResponseHeaders(status, bytes.size.toLong())
@@ -1337,6 +1469,10 @@ class ActualRestoredRetryJobTest {
                     }
                 }
             } finally {
+                if (activeForPath != null) {
+                    activePartTransfers.decrementAndGet()
+                    activePartTransfersByPath.getValue(path).decrementAndGet()
+                }
                 activeTransfers.decrementAndGet()
                 exchange.close()
             }
