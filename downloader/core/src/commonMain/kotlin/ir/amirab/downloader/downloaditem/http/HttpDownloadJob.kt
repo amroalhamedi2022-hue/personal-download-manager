@@ -328,13 +328,12 @@ class HttpDownloadJob(
         jobThrottler.bytesPerSecond(bytesPerSecond = downloadItem.speedLimit)
     }
 
-    fun onLinkChanged() {
-        scope.launch {
-            if (activeDownloadScope?.isActive == true) {
-                pause()
-                resume()
-            }
-
+    suspend fun onLinkChanged() {
+        if (activeDownloadScope?.isActive == true) {
+            // Keep link replacement inside DownloadManager's per-item lifecycle lock.
+            // Returning early would let a following Reset/Resume overlap this restart.
+            pause()
+            resume()
         }
     }
 

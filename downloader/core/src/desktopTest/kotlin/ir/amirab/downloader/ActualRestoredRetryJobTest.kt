@@ -573,6 +573,107 @@ class ActualRestoredRetryJobTest {
     }
 
     @Test
+    fun concurrentResumeResetAndLinkUpdateKeepOneActualHttpLifecycle() = withRetryServer { fixture ->
+        runBlocking {
+            val output = createTempDir("concurrent-lifecycle-output-")
+            val data = createTempDir("concurrent-lifecycle-data-")
+            val item = HttpDownloadItem(
+                link = "${fixture.baseUrl}/file/91.bin",
+                id = 91,
+                folder = output.path,
+                name = "lifecycle.bin",
+                dateAdded = 91,
+                preferredConnectionCount = 1,
+            )
+            val manager = createHttpManager(listOf(item), fixture.client, data)
+            manager.configureHostLimits("127.0.0.1", maxConnections = 1)
+
+            try {
+                manager.boot()
+                manager.resume(item.id)
+                val job = manager.downloadJobs.single()
+                withTimeout(10_000) {
+                    while (
+                        job.status.value != DownloadJobStatus.Downloading ||
+                        fixture.requestsFor("/file/91.bin") < 2
+                    ) {
+                        delay(5)
+                    }
+                }
+
+                manager.updateDownloadItem(item.id, null) { updated ->
+                    updated.link = "${fixture.baseUrl}/file/92.bin"
+                }
+                assertTrue(
+                    fixture.requestsFor("/file/92.bin") >= 1,
+                    "link update returned before the replacement lifecycle reached the server",
+                )
+
+                val startTogether = CompletableDeferred<Unit>()
+                coroutineScope {
+                    listOf(
+                        async(Dispatchers.Default) {
+                            startTogether.await()
+                            manager.resume(item.id)
+                        },
+                        async(Dispatchers.Default) {
+                            startTogether.await()
+                            manager.reset(item.id)
+                        },
+                        async(Dispatchers.Default) {
+                            startTogether.await()
+                            manager.updateDownloadItem(item.id, null) { updated ->
+                                updated.link = "${fixture.baseUrl}/file/91.bin"
+                            }
+                        },
+                    ).also { startTogether.complete(Unit) }.awaitAll()
+                }
+
+                // Establish a deterministic final generation after the contested commands.
+                manager.reset(item.id)
+                withTimeout(5_000) {
+                    while (fixture.activeTransferCount() != 0) delay(5)
+                }
+                assertFalse(job.isDownloadActive.value)
+                assertEquals(DownloadStatus.Added, item.status)
+                assertEquals(0, manager.hostLimitRegistry.activeConnections("127.0.0.1"))
+                assertEquals(1, manager.downloadJobs.count { it.id == item.id })
+
+                manager.updateDownloadItem(item.id, null) { updated ->
+                    updated.link = "${fixture.baseUrl}/file/92.bin"
+                }
+                val completed = CompletableDeferred<Unit>()
+                val completionJob = manager.scope.launch {
+                    manager.listOfJobsEvents
+                        .filterIsInstance<DownloadManagerEvents.OnJobCompleted>()
+                        .first { it.downloadItem.id == item.id }
+                    completed.complete(Unit)
+                }
+                try {
+                    withTimeout(5_000) {
+                        manager.listOfJobsEvents.subscriptionCount.first { it >= 1 }
+                    }
+                    manager.resume(item.id)
+                    withTimeout(20_000) { completed.await() }
+                } finally {
+                    completionJob.cancel()
+                }
+
+                assertContentEquals(
+                    fixture.fileBytes(92),
+                    File(item.folder, item.name).readBytes(),
+                )
+                assertFalse(job.isDownloadActive.value)
+                assertEquals(0, manager.hostLimitRegistry.activeConnections("127.0.0.1"))
+            } finally {
+                closeManager(manager)
+                output.deleteRecursively()
+                data.deleteRecursively()
+            }
+        }
+    }
+
+    @Test
     fun restoredHttpRetryStopsBeforeMovingDestinationAndCanResumeSafely() = withRetryServer { fixture ->
         runBlocking {
             val oldOutput = createTempDir("move-http-old-")
@@ -1298,7 +1399,7 @@ class ActualRestoredRetryJobTest {
         fun fileBytes(id: Long): ByteArray = ByteArray(
             when (id) {
                 71L, 72L -> 2 * 1024 * 1024
-                41L, 61L -> 512 * 1024
+                41L, 61L, 91L, 92L -> 512 * 1024
                 else -> 4_096
             }
         ) { index ->
