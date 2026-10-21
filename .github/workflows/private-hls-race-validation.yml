@@ -1,0 +1,60 @@
+name: Targeted HLS lifecycle race regression
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/repair-rf00-rf01]
+    paths:
+      - ".github/workflows/private-hls-race-validation.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hls-race-targeted-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  repeated-hls:
+    name: Repeat HLS concurrent resume (3 isolated executions)
+    runs-on: windows-2022
+    timeout-minutes: 60
+    env:
+      SKIP_ANDROID_BUILD: "true"
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up JetBrains Runtime 25
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: jetbrains
+          java-package: jdk
+          java-version: "25"
+          check-latest: true
+          cache: gradle
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Repeat exact test without suppressing failures
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p hls-race-evidence
+          for iteration in 1 2 3; do
+            echo "HLS_RACE_ITERATION_BEGIN=$iteration"
+            ./gradlew --no-daemon --stacktrace --dependency-verification strict \
+              :downloader:core:desktopTest \
+              --tests '*concurrentResumeCommandsStartOneActualHlsLifecycle*' \
+              --rerun-tasks
+            report="downloader/core/build/test-results/desktopTest/TEST-ir.amirab.downloader.ActualRestoredRetryJobTest.xml"
+            test -s "$report"
+            cp "$report" "hls-race-evidence/iteration-$iteration.xml"
+            echo "HLS_RACE_ITERATION_END=$iteration"
+          done
+      - name: Upload per-iteration XML
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: hls-race-three-executions
+          path: hls-race-evidence/*.xml
+          if-no-files-found: warn
+          retention-days: 7
