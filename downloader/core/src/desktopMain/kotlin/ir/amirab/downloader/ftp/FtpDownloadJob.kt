@@ -60,11 +60,13 @@ class FtpDownloadJob(
     override suspend fun resume() {
         boot()
         if (!tryActivateDownload()) return
+        // Publish Resuming before scheduling the lazy worker so Stop All can
+        // never miss an already-accepted FTP start command.
+        onDownloadResuming()
         val runningScope = newScopeBasedOn(scope)
         activeDownloadScope = runningScope
         val newWorker = runningScope.launch(Dispatchers.IO, start = CoroutineStart.LAZY) {
             try {
-                onDownloadResuming()
                 // Never silently persist passwords in JSON or start a non-anonymous
                 // connection without Windows Credential Manager integration.
                 if (downloadItem.username != "anonymous") {
