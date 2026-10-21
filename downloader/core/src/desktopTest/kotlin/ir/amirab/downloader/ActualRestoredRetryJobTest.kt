@@ -755,8 +755,8 @@ class ActualRestoredRetryJobTest {
                     "HLS lifecycle did not emit completion: itemStatus=${item.status}, " +
                         "jobStatus=${manager.getJobStatusOf(item.id)}, " +
                         "active=${manager.downloadJobs.find { it.id == item.id }?.isDownloadActive?.value}, " +
-                        "playlistRequests=${fixture.requestsFor(\"/playlist/52.m3u8\")}, " +
-                        "segmentRequests=${fixture.requestsFor(\"/segment/52.ts\")}, " +
+                        "playlistRequests=${fixture.requestsFor("/playlist/52.m3u8")}, " +
+                        "segmentRequests=${fixture.requestsFor("/segment/52.ts")}, " +
                         "bytes=${File(item.folder, item.name).length()}, " +
                         "peakTransfers=${fixture.peakTransfers.get()}",
                 )
