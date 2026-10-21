@@ -25,6 +25,7 @@ import ir.amirab.downloader.queue.ScheduleTimes
 import ir.amirab.downloader.part.RangedParts
 import ir.amirab.downloader.utils.EmptyFileCreator
 import ir.amirab.downloader.utils.IDiskStat
+import ir.amirab.downloader.utils.ISparseFile
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -52,6 +53,7 @@ import java.net.ProxySelector
 import java.time.ZonedDateTime
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
@@ -473,6 +475,192 @@ class ActualRestoredRetryJobTest {
                 )
             } finally {
                 eventJob.cancel()
+                closeManager(manager)
+                output.deleteRecursively()
+                data.deleteRecursively()
+            }
+        }
+    }
+
+    @Test
+    fun stopAllWaitsForActualHttpResumingThenLeavesNoLateWorker() = withRetryServer { fixture ->
+        runBlocking {
+            val output = createTempDir("stop-resuming-output-")
+            val data = createTempDir("stop-resuming-data-")
+            val item = HttpDownloadItem(
+                link = "${fixture.baseUrl}/file/101.bin",
+                id = 101,
+                folder = output.path,
+                name = "101.bin",
+                dateAdded = 101,
+                preferredConnectionCount = 1,
+            )
+            val manager = createHttpManager(listOf(item), fixture.client, data)
+
+            try {
+                manager.boot()
+                val job = manager.downloadJobs.single()
+                val resume = async(Dispatchers.Default) { manager.resume(item.id) }
+                assertTrue(fixture.awaitBlockedInfoRequest())
+                assertTrue(job.status.value is DownloadJobStatus.Resuming)
+                assertTrue(job.isDownloadActive.value)
+
+                val stop = async(Dispatchers.Default) { manager.stopAll() }
+                delay(100)
+                assertFalse(stop.isCompleted, "Stop All returned before the in-flight Resume command drained")
+
+                fixture.releaseBlockedInfoRequest()
+                withTimeout(15_000) {
+                    resume.await()
+                    stop.await()
+                }
+                withTimeout(5_000) {
+                    while (fixture.activeTransferCount() != 0) delay(5)
+                }
+                val requestsAfterStop = fixture.requestsFor("/file/101.bin")
+                delay(200)
+
+                assertTrue(job.status.value is DownloadJobStatus.Canceled)
+                assertFalse(job.isDownloadActive.value)
+                assertEquals(requestsAfterStop, fixture.requestsFor("/file/101.bin"))
+                assertEquals(0, manager.hostLimitRegistry.activeConnections("127.0.0.1"))
+            } finally {
+                fixture.releaseBlockedInfoRequest()
+                closeManager(manager)
+                output.deleteRecursively()
+                data.deleteRecursively()
+            }
+        }
+    }
+
+    @Test
+    fun stopAllWaitsForActualPreparingFileThenLeavesNoLateWorker() = withRetryServer { fixture ->
+        runBlocking {
+            val output = createTempDir("stop-preparing-output-")
+            val data = createTempDir("stop-preparing-data-")
+            val sparseGate = BlockingSparseFile()
+            val item = HttpDownloadItem(
+                link = "${fixture.baseUrl}/file/102.bin",
+                id = 102,
+                folder = output.path,
+                name = "102.bin",
+                dateAdded = 102,
+                preferredConnectionCount = 1,
+            )
+            val manager = createHttpManager(
+                items = listOf(item),
+                client = fixture.client,
+                dataFolder = data,
+                emptyFileCreator = EmptyFileCreator(
+                    diskStat = object : IDiskStat {
+                        override fun getRemainingSpace(path: File): Long = Long.MAX_VALUE
+                    },
+                    useSparseFile = { true },
+                    sparseFile = sparseGate,
+                ),
+            )
+
+            try {
+                manager.boot()
+                val job = manager.downloadJobs.single()
+                val resume = async(Dispatchers.Default) { manager.resume(item.id) }
+                assertTrue(sparseGate.awaitCreate())
+                assertTrue(job.status.value is DownloadJobStatus.PreparingFile)
+                assertTrue(job.isDownloadActive.value)
+
+                val stop = async(Dispatchers.Default) { manager.stopAll() }
+                delay(100)
+                assertFalse(stop.isCompleted, "Stop All returned while file preparation was still in flight")
+
+                sparseGate.releaseCreate()
+                withTimeout(15_000) {
+                    resume.await()
+                    stop.await()
+                }
+                withTimeout(5_000) {
+                    while (fixture.activeTransferCount() != 0) delay(5)
+                }
+                val requestsAfterStop = fixture.requestsFor("/file/102.bin")
+                delay(200)
+
+                assertTrue(job.status.value is DownloadJobStatus.Canceled)
+                assertFalse(job.isDownloadActive.value)
+                assertEquals(requestsAfterStop, fixture.requestsFor("/file/102.bin"))
+                assertEquals(0, manager.hostLimitRegistry.activeConnections("127.0.0.1"))
+            } finally {
+                sparseGate.releaseCreate()
+                closeManager(manager)
+                output.deleteRecursively()
+                data.deleteRecursively()
+            }
+        }
+    }
+
+    @Test
+    fun stoppingActualQueueKeepsQueuedHttpItemFromStartingLater() = withRetryServer { fixture ->
+        runBlocking {
+            val output = createTempDir("stop-queued-output-")
+            val data = createTempDir("stop-queued-data-")
+            val items = listOf(103L, 104L).map { id ->
+                HttpDownloadItem(
+                    link = "${fixture.baseUrl}/file/$id.bin",
+                    id = id,
+                    folder = output.path,
+                    name = "$id.bin",
+                    dateAdded = id,
+                    preferredConnectionCount = 1,
+                )
+            }
+            val manager = createHttpManager(items, fixture.client, data)
+            val persisted = InMemoryQueueData(
+                QueueModel(
+                    id = 79,
+                    name = "Stop All queued coverage",
+                    maxConcurrent = 1,
+                    queueItems = items.map { it.id },
+                )
+            )
+            val queue = DownloadQueue(
+                persistedModel = persisted.model,
+                persistedData = persisted,
+                downloadEvents = manager,
+                onQueueEvent = {},
+            )
+
+            try {
+                manager.boot()
+                queue.boot()
+                withTimeout(5_000) {
+                    manager.listOfJobsEvents.subscriptionCount.first { it >= 1 }
+                }
+                queue.start()
+                withTimeout(10_000) {
+                    while (
+                        manager.getJobStatusOf(103) != DownloadJobStatus.Downloading ||
+                        fixture.requestsFor("/file/103.bin") < 2
+                    ) {
+                        delay(5)
+                    }
+                }
+                assertEquals(0, fixture.requestsFor("/file/104.bin"))
+
+                // Mirrors DownloadSystem.stopAnything(): stop queue admission before manager workers.
+                queue.stopAsync()
+                manager.stopAll()
+                withTimeout(5_000) {
+                    while (fixture.activeTransferCount() != 0) delay(5)
+                }
+                val firstRequestsAfterStop = fixture.requestsFor("/file/103.bin")
+                delay(700) // longer than DownloadQueue's debounced shake
+
+                assertFalse(queue.isQueueActive)
+                assertTrue(manager.downloadJobs.none { it.isDownloadActive.value })
+                assertEquals(0, fixture.requestsFor("/file/104.bin"))
+                assertEquals(firstRequestsAfterStop, fixture.requestsFor("/file/103.bin"))
+                assertEquals(DownloadJobStatus.IDLE, manager.getJobStatusOf(104))
+                assertEquals(0, manager.hostLimitRegistry.activeConnections("127.0.0.1"))
+            } finally {
+                queue.dispose()
                 closeManager(manager)
                 output.deleteRecursively()
                 data.deleteRecursively()
@@ -1284,12 +1472,14 @@ class ActualRestoredRetryJobTest {
         dataFolder: File,
         listDb: MemoryDownloadListDB? = null,
         partDb: MemoryDownloadPartStatesDB? = null,
+        emptyFileCreator: EmptyFileCreator? = null,
     ): DownloadManager = createManager(
         items = items,
         dataFolder = dataFolder,
         registry = DownloaderRegistry().apply { add(HttpDownloader(lazyOf(client))) },
         listDb = listDb,
         partDb = partDb,
+        emptyFileCreator = emptyFileCreator,
     )
 
     private suspend fun createHlsManager(
@@ -1308,6 +1498,7 @@ class ActualRestoredRetryJobTest {
         registry: DownloaderRegistry,
         listDb: MemoryDownloadListDB? = null,
         partDb: MemoryDownloadPartStatesDB? = null,
+        emptyFileCreator: EmptyFileCreator? = null,
     ): DownloadManager {
         val actualListDb = listDb ?: MemoryDownloadListDB()
         items.forEach { item ->
@@ -1320,7 +1511,7 @@ class ActualRestoredRetryJobTest {
                 defaultThreadCount = 1,
                 maxDownloadRetryCount = 2,
             ),
-            emptyFileCreator = EmptyFileCreator(
+            emptyFileCreator = emptyFileCreator ?: EmptyFileCreator(
                 diskStat = object : IDiskStat {
                     override fun getRemainingSpace(path: File): Long = Long.MAX_VALUE
                 },
@@ -1367,6 +1558,8 @@ class ActualRestoredRetryJobTest {
         private val peakPartTransferCount = AtomicInteger()
         private val activePartTransfersByPath = ConcurrentHashMap<String, AtomicInteger>()
         private val peakPartTransfersByPath = ConcurrentHashMap<String, AtomicInteger>()
+        private val blockedInfoEntered = CountDownLatch(1)
+        private val blockedInfoRelease = CountDownLatch(1)
 
         val client = OkHttpHttpDownloaderClient(
             okHttpClient = OkHttpClient.Builder()
@@ -1396,10 +1589,16 @@ class ActualRestoredRetryJobTest {
 
         fun activeTransferCount(): Int = activeTransfers.get()
 
+        fun awaitBlockedInfoRequest(): Boolean = blockedInfoEntered.await(10, TimeUnit.SECONDS)
+
+        fun releaseBlockedInfoRequest() {
+            blockedInfoRelease.countDown()
+        }
+
         fun fileBytes(id: Long): ByteArray = ByteArray(
             when (id) {
                 71L, 72L -> 2 * 1024 * 1024
-                41L, 61L, 91L, 92L -> 512 * 1024
+                41L, 61L, 91L, 92L, 101L, 102L, 103L, 104L -> 512 * 1024
                 else -> 4_096
             }
         ) { index ->
@@ -1420,6 +1619,12 @@ class ActualRestoredRetryJobTest {
             val isPartRequest = path.startsWith("/file/") && range != null && range != "bytes=0-255"
             if (isPartRequest) {
                 partRequests.computeIfAbsent(path) { AtomicInteger() }.incrementAndGet()
+            }
+            if (path == "/file/101.bin" && range == "bytes=0-255") {
+                blockedInfoEntered.countDown()
+                check(blockedInfoRelease.await(10, TimeUnit.SECONDS)) {
+                    "timed out waiting to release blocked metadata response"
+                }
             }
             when {
                 path == "/file/81.bin" && isPartRequest -> {
@@ -1590,6 +1795,27 @@ class ActualRestoredRetryJobTest {
 
         override suspend fun setModel(model: QueueModel) {
             this.model = model
+        }
+    }
+
+    private class BlockingSparseFile : ISparseFile {
+        private val createEntered = CountDownLatch(1)
+        private val createRelease = CountDownLatch(1)
+
+        override fun canWeCreateSparseFile(file: File): Boolean = true
+
+        override fun createSparseFile(file: File): Boolean {
+            createEntered.countDown()
+            check(createRelease.await(10, TimeUnit.SECONDS)) {
+                "timed out waiting to release sparse file creation"
+            }
+            return file.createNewFile() || file.exists()
+        }
+
+        fun awaitCreate(): Boolean = createEntered.await(10, TimeUnit.SECONDS)
+
+        fun releaseCreate() {
+            createRelease.countDown()
         }
     }
 
