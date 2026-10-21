@@ -78,6 +78,7 @@ class FtpDownloadJob(
                 val result = transport.download(
                     url = downloadItem.link,
                     output = outputFile,
+                    speedLimitBytesPerSecond = downloadItem.speedLimit,
                     onProgress = { bytes, total ->
                         progressBytes = bytes
                         // Length is displayed only when it came from the FTP server.
@@ -124,7 +125,6 @@ class FtpDownloadJob(
         destination.cleanUpJunkFiles()
         progressBytes = 0L
         downloadItem.contentLength = IDownloadItem.LENGTH_UNKNOWN
-        downloadItem.dateAdded = downloadItem.dateAdded
         downloadItem.startTime = null
         downloadItem.completeTime = null
         downloadItem.retryAttempt = 0
