@@ -71,10 +71,6 @@ class FtpDownloadJob(
                 // The transient provider must never persist its password in download-item JSON.
                 val login = credentialProvider.resolve(downloadItem)
                 val outputFile = destination.outputFile.toPath()
-                downloadItem.status = DownloadStatus.Downloading
-                if (downloadItem.startTime == null) downloadItem.startTime = System.currentTimeMillis()
-                saveState()
-                onDownloadResumed()
                 // Reuse the same host permit used by HTTP/HLS. Waiting for a
                 // permit is cancellable, and a paused transfer releases it even
                 // when the network read exits with an error.
@@ -82,6 +78,10 @@ class FtpDownloadJob(
                     ?: throw IOException("FTP host is missing")
                 val result = downloadManager.hostLimitRegistry.withConnectionPermit(host) {
                     currentCoroutineContext().ensureActive()
+                    downloadItem.status = DownloadStatus.Downloading
+                    if (downloadItem.startTime == null) downloadItem.startTime = System.currentTimeMillis()
+                    saveState()
+                    onDownloadResumed()
                     transport.download(
                         url = downloadItem.link,
                         output = outputFile,
