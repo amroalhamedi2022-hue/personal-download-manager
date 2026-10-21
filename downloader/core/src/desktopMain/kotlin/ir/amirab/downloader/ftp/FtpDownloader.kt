@@ -10,9 +10,11 @@ import kotlin.reflect.KClass
  * Not registered in production until credential storage, UI, speed limiter
  * and lifecycle acceptance gates are complete.
  */
-class FtpDownloader : Downloader<FtpDownloadItem, FtpDownloadJob, FtpDownloadCredentials> {
+class FtpDownloader(
+    private val credentialProvider: FtpCredentialsProvider = AnonymousFtpCredentialsProvider,
+) : Downloader<FtpDownloadItem, FtpDownloadJob, FtpDownloadCredentials> {
     override fun createJob(item: FtpDownloadItem, downloadManager: DownloadManager) =
-        FtpDownloadJob(item, downloadManager)
+        FtpDownloadJob(item, downloadManager, credentialProvider = credentialProvider)
 
     override fun accept(item: IDownloadItem) = item is FtpDownloadItem
     override val downloadItemClass: KClass<FtpDownloadItem> = FtpDownloadItem::class
