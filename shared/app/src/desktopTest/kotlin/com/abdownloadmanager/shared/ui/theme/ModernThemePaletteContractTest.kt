@@ -1,5 +1,6 @@
 package com.abdownloadmanager.shared.ui.theme
 
+import androidx.compose.ui.graphics.luminance
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -52,4 +53,17 @@ class ModernThemePaletteContractTest {
             assertTrue(light.primary != light.secondary, "Liquid colors must be distinguishable")
         }
     }
+
+    @Test
+    fun modernAccentButtonsMeetMinimumFourPointFiveToOneContrast() {
+        DefaultThemes.getAll()
+            .filter { theme -> families.any { theme.id.startsWith("${it}_") } }
+            .forEach { theme ->
+                val primaryContrast = 1.05f / (theme.primary.luminance() + 0.05f)
+                val secondaryContrast = 1.05f / (theme.secondary.luminance() + 0.05f)
+                assertTrue(primaryContrast >= 4.5f, "${theme.id} primary button has insufficient white-text contrast")
+                assertTrue(secondaryContrast >= 4.5f, "${theme.id} secondary button has insufficient white-text contrast")
+            }
+    }
+
 }
