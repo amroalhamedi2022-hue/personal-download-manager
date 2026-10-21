@@ -173,6 +173,64 @@ object DefaultThemes {
     )
 
 
+    // The seven legacy themes above retain their original IDs for persisted settings.
+    // The eight requested families each expose independent Light/Dark selections.
+    private data class ModernPalette(
+        val id: String,
+        val name: String,
+        val primaryColor: Color,
+        val secondaryColor: Color,
+        val lightBackground: Color,
+        val lightSurface: Color,
+        val darkBackground: Color,
+        val darkSurface: Color,
+    )
+
+    private val modernPaletteFamilies = listOf(
+        ModernPalette("indigo", "Indigo", Color(0xFF4B55BF), Color(0xFF754EC0),
+            Color(0xFFF4F5FF), Color(0xFFE7E9FB), Color(0xFF14182A), Color(0xFF242A44)),
+        ModernPalette("sand", "Sand", Color(0xFF94602F), Color(0xFF80548E),
+            Color(0xFFF8F3EB), Color(0xFFEEE4D5), Color(0xFF241D19), Color(0xFF352921)),
+        ModernPalette("burgundy", "Burgundy", Color(0xFF872D53), Color(0xFF975474),
+            Color(0xFFFFF3F6), Color(0xFFF3DDE6), Color(0xFF251720), Color(0xFF37212F)),
+        ModernPalette("crimson", "Crimson", Color(0xFFA82E49), Color(0xFFB04364),
+            Color(0xFFFFF3F3), Color(0xFFF4DEDF), Color(0xFF26181D), Color(0xFF39212A)),
+        ModernPalette("emerald", "Emerald", Color(0xFF167458), Color(0xFF2E8065),
+            Color(0xFFEFFAF5), Color(0xFFDBF1E6), Color(0xFF11251E), Color(0xFF1D352B)),
+        ModernPalette("mint", "Mint", Color(0xFF147D69), Color(0xFF328F75),
+            Color(0xFFEEFAF7), Color(0xFFDDF3EC), Color(0xFF142A25), Color(0xFF203E35)),
+        ModernPalette("ice", "Ice", Color(0xFF28739F), Color(0xFF437BB1),
+            Color(0xFFF0F8FC), Color(0xFFDFEEF6), Color(0xFF14242D), Color(0xFF203746)),
+        ModernPalette("pearl", "Pearl", Color(0xFF666B94), Color(0xFF7E6899),
+            Color(0xFFFBFAFF), Color(0xFFEEEAF5), Color(0xFF201F2B), Color(0xFF343346)),
+    )
+
+    private fun ModernPalette.toTheme(lightMode: Boolean): MyColors {
+        val base = if (lightMode) light else dark
+        val variant = if (lightMode) "Light" else "Dark"
+        return base.copy(
+            id = "${id}_${variant.lowercase()}",
+            name = "$name $variant",
+            primary = primaryColor,
+            primaryVariant = primaryColor,
+            secondary = secondaryColor,
+            secondaryVariant = secondaryColor,
+            onPrimary = Color.White,
+            onSecondary = Color.White,
+            background = if (lightMode) lightBackground else darkBackground,
+            surface = if (lightMode) lightSurface else darkSurface,
+            onBackground = if (lightMode) Color(0xFF272635) else Color(0xFFEDECF5),
+            onSurface = if (lightMode) Color(0xFF272635) else Color(0xFFEDECF5),
+            isLight = lightMode,
+        )
+    }
+
+    private val modernThemes: List<MyColors> by lazy {
+        modernPaletteFamilies.flatMap { family ->
+            listOf(family.toTheme(lightMode = false), family.toTheme(lightMode = true))
+        }
+    }
+
     fun getAll(): List<MyColors> {
         return listOf(
             dark,
@@ -182,7 +240,7 @@ object DefaultThemes {
             twilight,
             black,
             lightGray,
-        )
+        ) + modernThemes
     }
 
     fun getDefaultDark() = dark
