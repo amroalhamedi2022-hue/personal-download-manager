@@ -868,6 +868,7 @@ class ActualRestoredRetryJobTest {
 
                 try {
                     manager.boot()
+                    assertEquals(items.size, manager.downloadJobs.map { it.id }.distinct().size)
                     queue.boot()
                     withTimeout(5_000) {
                         manager.listOfJobsEvents.subscriptionCount.first { it >= 2 }
@@ -884,7 +885,6 @@ class ActualRestoredRetryJobTest {
                     withTimeout(35_000) { completed.await() }
 
                     assertTrue(queue.isQueueActive)
-                    assertEquals(items.size, manager.downloadJobs.map { it.id }.distinct().size)
                     val perFilePeaks = mutableListOf<Int>()
                     items.forEach { item ->
                         assertContentEquals(
