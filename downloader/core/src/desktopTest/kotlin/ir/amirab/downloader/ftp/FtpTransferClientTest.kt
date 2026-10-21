@@ -172,6 +172,7 @@ class FtpTransferClientTest {
                 speedLimitBytesPerSecond = -1L,
             )
         }
+        Unit // JUnit 4 requires an actual void @Test method, not a Throwable result.
     }
 
     @Test
