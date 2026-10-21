@@ -59,6 +59,7 @@ class FtpTransferClient {
         connectTimeout: Duration = Duration.ofSeconds(15),
         dataTimeout: Duration = Duration.ofSeconds(30),
         speedLimitBytesPerSecond: Long = 0L,
+        sharedSpeedLimiters: List<SpeedLimiter> = emptyList(),
         onProgress: (downloadedBytes: Long, totalBytes: Long?) -> Unit = { _, _ -> },
     ): TransferResult {
         val endpoint = parseEndpoint(url)
@@ -132,7 +133,12 @@ class FtpTransferClient {
                 // Reuse the existing downloader's throttler, rather than inventing
                 // a second speed-control algorithm specific to FTP.
                 val limiter = SpeedLimiter().apply { bytesPerSecond(speedLimitBytesPerSecond) }
-                limiter.source(input.source()).buffer().use { received ->
+                // All FTP reads pass through the same global/host byte budgets as
+                // HTTP/HLS; a file-local throttle is applied on top.
+                val rateLimited = (sharedSpeedLimiters + limiter).fold(input.source()) { source, rate ->
+                    rate.source(source)
+                }
+                rateLimited.buffer().use { received ->
                 Files.newOutputStream(
                     part, StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.APPEND
                 ).buffered().use { outputStream ->
