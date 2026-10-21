@@ -1,5 +1,8 @@
 package ir.amirab.downloader.ftp
 
+import ir.amirab.downloader.utils.speedlimiter.SpeedLimiter
+import okio.buffer
+import okio.source
 import org.apache.commons.net.ftp.FTP
 import org.apache.commons.net.ftp.FTPClient
 import org.apache.commons.net.ftp.FTPReply
@@ -55,6 +58,7 @@ class FtpTransferClient {
         password: String = "anonymous@",
         connectTimeout: Duration = Duration.ofSeconds(15),
         dataTimeout: Duration = Duration.ofSeconds(30),
+        speedLimitBytesPerSecond: Long = 0L,
         onProgress: (downloadedBytes: Long, totalBytes: Long?) -> Unit = { _, _ -> },
     ): TransferResult {
         val endpoint = parseEndpoint(url)
@@ -62,6 +66,7 @@ class FtpTransferClient {
         require(password.none { it == '\r' || it == '\n' || it == '\u0000' })
         require(!connectTimeout.isNegative && !connectTimeout.isZero)
         require(!dataTimeout.isNegative && !dataTimeout.isZero)
+        require(speedLimitBytesPerSecond >= 0L) { "FTP speed limit must not be negative" }
         val absolute = output.toAbsolutePath().normalize()
         val parent = absolute.parent ?: throw IOException("FTP destination has no parent")
         Files.createDirectories(parent)
@@ -124,18 +129,23 @@ class FtpTransferClient {
             }
             var downloaded = existing
             stream.use { input ->
+                // Reuse the existing downloader's throttler, rather than inventing
+                // a second speed-control algorithm specific to FTP.
+                val limiter = SpeedLimiter().apply { bytesPerSecond(speedLimitBytesPerSecond) }
+                limiter.source(input.source()).buffer().use { received ->
                 Files.newOutputStream(
                     part, StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.APPEND
                 ).buffered().use { outputStream ->
                     val buffer = ByteArray(64 * 1024)
                     while (true) {
-                        val n = input.read(buffer)
+                        val n = received.read(buffer)
                         if (n == -1) break
                         outputStream.write(buffer, 0, n)
                         downloaded += n
                         onProgress(downloaded, identity.size)
                     }
                     outputStream.flush()
+                }
                 }
             }
             if (!ftp.completePendingCommand()) {
