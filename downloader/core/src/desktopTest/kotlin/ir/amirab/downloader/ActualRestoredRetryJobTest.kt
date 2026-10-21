@@ -758,7 +758,13 @@ class ActualRestoredRetryJobTest {
                         "playlistRequests=${fixture.requestsFor("/playlist/52.m3u8")}, " +
                         "segmentRequests=${fixture.requestsFor("/segment/52.ts")}, " +
                         "bytes=${File(item.folder, item.name).length()}, " +
-                        "peakTransfers=${fixture.peakTransfers.get()}",
+                        "peakTransfers=${fixture.peakTransfers.get()}, " +
+                        "activeServerTransfers=${fixture.activeTransferCount()}, " +
+                        "segments=${(manager.downloadJobs.find { it.id == item.id } " +
+                            "as? ir.amirab.downloader.downloaditem.hls.HLSDownloadJob)" +
+                            "?.getParts()?.map { part -> " +
+                            "part.segmentIndex.toString() + ':' + part.statusFlow.value.toString() + " +
+                            "':bytes=' + part.current + ':length=' + part.length } }",
                 )
 
                 assertEquals(1, started.get())
