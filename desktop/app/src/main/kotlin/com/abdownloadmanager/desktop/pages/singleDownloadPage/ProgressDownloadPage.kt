@@ -237,13 +237,14 @@ private fun RenderSettings(
 @Composable
 private fun RealSpeedHistoryChart(history: List<Long>, modifier: Modifier = Modifier) {
     val samples = history.toList()
-    val maxSpeed = (samples.maxOrNull() ?: 0L).coerceAtLeast(1L)
+    val observedMaxSpeed = samples.maxOrNull() ?: 0L
+    val maxSpeed = observedMaxSpeed.coerceAtLeast(1L)
     val currentSpeed = samples.lastOrNull() ?: 0L
     val speedUnit = LocalSizeUnit.current
     val graphColor = myColors.primary
     val gridColor = myColors.onBackground / 8
     val currentText = convertPositiveSizeToHumanReadable(currentSpeed, speedUnit).rememberString()
-    val peakText = convertPositiveSizeToHumanReadable(maxSpeed, speedUnit).rememberString()
+    val peakText = convertPositiveSizeToHumanReadable(observedMaxSpeed, speedUnit).rememberString()
 
     Column(modifier.fillMaxWidth()) {
         Text(
