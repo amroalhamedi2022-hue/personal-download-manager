@@ -18,6 +18,13 @@ Use Microsoft **Windows Credential Manager**, generic credentials scoped to the 
 - Microsoft CredReadW: https://learn.microsoft.com/en-us/windows/win32/api/wincred/nf-wincred-credreadw
 - Credential persistence: prefer `CRED_PERSIST_LOCAL_MACHINE` (per-user, same computer) when available; check OS/session policy and handle rejected permissions without storing a fallback plaintext file. Never select `CRED_PERSIST_ENTERPRISE` by default because credentials may roam.
 
+## Updated upstream vetting — 2026-10-22
+
+- **Avoid reimplementing secret cryptography.** Verified the existing [Microsoft credential-secure-storage-for-java](https://github.com/microsoft/credential-secure-storage-for-java) library and its Maven Central release `com.microsoft:credential-secure-storage:1.0.3` (MIT), but Microsoft **archived the repository 2025-03-07**. Do not automatically adopt an unmaintained secret-store adapter in a new security-critical Windows build.
+- Preferred maintained primitive remains [JNA Platform](https://github.com/java-native-access/jna), available as `net.java.dev.jna:jna-platform:5.19.1` (Apache-2.0 OR LGPL-2.1 option), binding Microsoft's official `CredWriteW/CredReadW/CredDeleteW/CredFree`. Reference implementations from the original Microsoft VSTS Java library can be *reviewed* under its MIT terms, not copied blindly.
+- All native probes must run with the **actual Windows runner current-user logon session**; no fabricated success based on Linux/JVM compilation. Treat WinCred read-missing and permissions as distinct failures with no plaintext fallback. Do not log the target reference or credential blobs.
+- This source review **does not satisfy or waive** the Windows write/read/delete and secret-redaction test gates below, and it does not activate the FTP UI.
+
 ## Design/API contract
 
 - `FtpCredentialsProvider.resolve(item)` returns a **transient** login (already implemented in `FtpCredentialsProvider.kt`); production's anonymous-only fallback is intentionally strict.
