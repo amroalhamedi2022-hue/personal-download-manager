@@ -29,6 +29,7 @@ class FtpDownloadJob(
     override val downloadItem: FtpDownloadItem,
     downloadManager: DownloadManager,
     private val transport: FtpTransferClient = FtpTransferClient(),
+    private val credentialProvider: FtpCredentialsProvider = AnonymousFtpCredentialsProvider,
 ) : DownloadJob(downloadManager) {
     private lateinit var destination: FtpDownloadDestination
     private val stateLock = Mutex()
@@ -67,11 +68,8 @@ class FtpDownloadJob(
         activeDownloadScope = runningScope
         val newWorker = runningScope.launch(Dispatchers.IO, start = CoroutineStart.LAZY) {
             try {
-                // Never silently persist passwords in JSON or start a non-anonymous
-                // connection without Windows Credential Manager integration.
-                if (downloadItem.username != "anonymous") {
-                    throw IOException("Authenticated FTP requires a protected Windows credential reference")
-                }
+                // The transient provider must never persist its password in download-item JSON.
+                val login = credentialProvider.resolve(downloadItem)
                 val outputFile = destination.outputFile.toPath()
                 downloadItem.status = DownloadStatus.Downloading
                 if (downloadItem.startTime == null) downloadItem.startTime = System.currentTimeMillis()
@@ -80,6 +78,8 @@ class FtpDownloadJob(
                 val result = transport.download(
                     url = downloadItem.link,
                     output = outputFile,
+                    username = login.username,
+                    password = login.password,
                     speedLimitBytesPerSecond = downloadItem.speedLimit,
                     onProgress = { bytes, total ->
                         progressBytes = bytes
