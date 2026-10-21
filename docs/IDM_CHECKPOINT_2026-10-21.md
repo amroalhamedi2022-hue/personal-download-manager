@@ -72,3 +72,10 @@
 - **تشغيل CI الجاري للتحقق من المكتبة:** Run `39673643097`، SHA `f2029ffe8a8e1564fc3053b98c74a7b170b2bdba`. عند كتابة الملحق كان غير منتهٍ؛ اقرأ النتيجة وLogs/XML، أصلح المشاكل ولا تسمي هذا النجاح مسبقًا. وثائق لاحقة لم تغيّر Gradle/Source ولم تُبنَ ضمن هذا SHA.
 - مصادر محتملة لاحقًا دون تطبيق آلي: Lucide SVG (ISC + أيقونات مشتقة تتطلب MIT)، والإبقاء على yt-dlp من مصدره مع تحديث وإدارة تبعيات FFmpeg وفق ترخيص كل Build. لا تعِد كتابة منظومات قائمة ولا تضف مكتبة بلا ميزة واختبار.
 - **الخطوة القادمة مباشرة:** حسم CI للاختبارات الـFTP، ثم إزالة أي خلل Test/Build، تحديث سجل الأدلة E039، وتنفيذ ربط FTP إلى Job/Registry/LinkChecker/UI بشكل كامل، بعدها اختبارات Password/Anonymous/REST/HostLimit/StopAll وLAN/WAN. قبل ترحيل بيانات سجّل Backup مستقل، لا تعتمد على فرع Git وحده.
+
+### متابعة نتائج تجميع FTP التشخيصية (لا تعتبرها اجتياز FTP)
+
+- `39673643097` فشل قبل بدء الاختبارات: `desktopMain` و`desktopTest` غير محلولين في Gradle DSL؛ أصلح `3f9c72f1` باستخدام `getByName(...)`.
+- `39674929421` فشل عند Compile Test FTP: `PropertiesUserManagerFactory` في package `org.apache.ftpserver.usermanager` وليس `...impl`. الإنتاج `FtpTransferClient.kt` لم يظهر خطأ compile فيه. أصلح `ad0e979c` وأصبح users fixture database داخل root المؤقت.
+- اختبار معرّف بالضبط هو Run `39676264990` برأس كود `ad0e979cd2efd734f3f2cbc98c949491e3d19415` (تحقق منه عند العودة؛ لا تعتبره نجاحًا تلقائيًا). آخر تعديلات docs لا تغيّر كود الاختبار.
+- الاستكمال فورًا: اقرأ نتيجة Run، واحسب اختبارات XML؛ إذا فشل صحح ولا تحذف tests، ثم اربط FTP في نموذج Job/Registry/UI، واختبر Loopback على Windows وLAN.
