@@ -81,3 +81,4 @@
 - الاستكمال فورًا: اقرأ نتيجة Run، واحسب اختبارات XML؛ إذا فشل صحح ولا تحذف tests، ثم اربط FTP في نموذج Job/Registry/UI، واختبر Loopback على Windows وLAN.
 
 - **استرجاع FTP مستقل:** `backup/pre-ftp-open-source-2026-10-21` عند SHA `4eaaea470ec137892ad302c75071d99f870b8f47` (آخر Run ناجح 108/108 قبل مكتبة FTP). فرع المصدر فقط وليس نسخة بيانات مستخدم.\n
+- `39676264990` compiled source/test but 4/4 FTP fixture tests failed before transport because Apache FtpServer PropertiesUserManagerFactory needs users file to already exist. Exact XML failure: `FtpServerConfigurationException: User data file specified but could not be located`. Fixed by `Files.createFile(userDbFile)` in `07f7c97f8ccb049eb5f5a58321502be003b86b91`; new CI `39677806687` in progress at update. Tests not removed or relaxed.
