@@ -750,6 +750,12 @@ class ActualRestoredRetryJobTest {
                     completed.await()
                     true
                 } ?: false
+                val segmentDiagnostics = (manager.downloadJobs.find { it.id == item.id }
+                    as? ir.amirab.downloader.downloaditem.hls.HLSDownloadJob)
+                    ?.getParts()
+                    ?.map { part ->
+                        "${part.segmentIndex}:${part.statusFlow.value}:bytes=${part.current}:length=${part.length}"
+                    }
                 assertTrue(
                     completedInTime,
                     "HLS lifecycle did not emit completion: itemStatus=${item.status}, " +
@@ -760,11 +766,7 @@ class ActualRestoredRetryJobTest {
                         "bytes=${File(item.folder, item.name).length()}, " +
                         "peakTransfers=${fixture.peakTransfers.get()}, " +
                         "activeServerTransfers=${fixture.activeTransferCount()}, " +
-                        "segments=${(manager.downloadJobs.find { it.id == item.id } " +
-                            "as? ir.amirab.downloader.downloaditem.hls.HLSDownloadJob)" +
-                            "?.getParts()?.map { part -> " +
-                            "part.segmentIndex.toString() + ':' + part.statusFlow.value.toString() + " +
-                            "':bytes=' + part.current + ':length=' + part.length } }",
+                        "segments=$segmentDiagnostics",
                 )
 
                 assertEquals(1, started.get())
