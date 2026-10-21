@@ -75,18 +75,30 @@ class FtpDownloadJob(
                 if (downloadItem.startTime == null) downloadItem.startTime = System.currentTimeMillis()
                 saveState()
                 onDownloadResumed()
-                val result = transport.download(
-                    url = downloadItem.link,
-                    output = outputFile,
-                    username = login.username,
-                    password = login.password,
-                    speedLimitBytesPerSecond = downloadItem.speedLimit,
-                    onProgress = { bytes, total ->
-                        progressBytes = bytes
-                        // Length is displayed only when it came from the FTP server.
-                        if (total != null) downloadItem.contentLength = total
-                    },
-                )
+                // Reuse the same host permit used by HTTP/HLS. Waiting for a
+                // permit is cancellable, and a paused transfer releases it even
+                // when the network read exits with an error.
+                val host = java.net.URI(downloadItem.link).host
+                    ?: throw IOException("FTP host is missing")
+                val result = downloadManager.hostLimitRegistry.withConnectionPermit(host) {
+                    currentCoroutineContext().ensureActive()
+                    transport.download(
+                        url = downloadItem.link,
+                        output = outputFile,
+                        username = login.username,
+                        password = login.password,
+                        speedLimitBytesPerSecond = downloadItem.speedLimit,
+                        sharedSpeedLimiters = listOf(
+                            downloadManager.speedLimiter,
+                            downloadManager.hostLimitRegistry.speedLimiterForHost(host),
+                        ),
+                        onProgress = { bytes, total ->
+                            progressBytes = bytes
+                            // Length is displayed only when it came from the FTP server.
+                            if (total != null) downloadItem.contentLength = total
+                        },
+                    )
+                }
                 currentCoroutineContext().ensureActive()
                 progressBytes = result.resumedFrom + result.transferredBytes
                 result.remoteSize?.let { downloadItem.contentLength = it }
