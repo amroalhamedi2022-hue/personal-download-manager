@@ -55,6 +55,7 @@ import ir.amirab.util.compose.asStringSource
 import ir.amirab.util.compose.resources.myStringResource
 import kotlin.math.PI
 import kotlin.math.sin
+import kotlinx.coroutines.delay
 
 enum class SingleDownloadPageSections(
     val title: StringSource,
@@ -87,6 +88,20 @@ fun ProgressDownloadPage(
     val downloadHasError by singleDownloadComponent.lastError.collectAsState()
     val resizingState = LocalSingleDownloadPageSizing.current
     val horizontalPadding = 16.dp
+
+    // Only sample actual monitor speeds while this window is composed.
+    // Bounded at 90 seconds, including zero during pause/retry.
+    val speedHistory = remember(itemState.id) { mutableStateListOf<Long>() }
+    val currentObservedSpeed by rememberUpdatedState(
+        if (itemState.status == DownloadJobStatus.Downloading) itemState.speed.coerceAtLeast(0L) else 0L
+    )
+    LaunchedEffect(itemState.id) {
+        while (true) {
+            speedHistory.add(currentObservedSpeed)
+            if (speedHistory.size > 90) speedHistory.removeAt(0)
+            delay(1_000)
+        }
+    }
 
     LaunchedEffect(resizingState.resizingPartInfo) {
         if (resizingState.partInfoHeight <= 0.dp) {
@@ -136,6 +151,7 @@ fun ProgressDownloadPage(
                         modifier = tabContentModifier.padding(end = 12.dp),
                         horizontalPadding = horizontalPadding,
                         singleDownloadComponent = singleDownloadComponent,
+                        speedHistory = speedHistory,
                     )
 
                     OnCompletion -> RenderOnCompletion(
@@ -195,8 +211,11 @@ private fun RenderSettings(
     modifier: Modifier,
     horizontalPadding: Dp,
     singleDownloadComponent: DesktopSingleDownloadComponent,
+    speedHistory: List<Long>,
 ) {
     Column(modifier) {
+        RealSpeedHistoryChart(speedHistory, Modifier.padding(horizontal = horizontalPadding))
+        Spacer(Modifier.height(8.dp))
         for (configurable in singleDownloadComponent.settings) {
             RenderConfigurable(
                 configurable,
@@ -207,6 +226,54 @@ private fun RenderSettings(
                         .padding(horizontal = (horizontalPadding - 8.dp).coerceAtLeast(0.dp))
                 )
             )
+        }
+    }
+}
+
+/**
+ * Real B/s samples from ProcessingDownloadItemState.speed.
+ * No simulated waveform or unbounded per-download samples.
+ */
+@Composable
+private fun RealSpeedHistoryChart(history: List<Long>, modifier: Modifier = Modifier) {
+    val samples = history.toList()
+    val maxSpeed = (samples.maxOrNull() ?: 0L).coerceAtLeast(1L)
+    val currentSpeed = samples.lastOrNull() ?: 0L
+    val speedUnit = LocalSizeUnit.current
+    val graphColor = myColors.primary
+    val gridColor = myColors.onBackground / 8
+    val currentText = convertPositiveSizeToHumanReadable(currentSpeed, speedUnit).rememberString()
+    val peakText = convertPositiveSizeToHumanReadable(maxSpeed, speedUnit).rememberString()
+
+    Column(modifier.fillMaxWidth()) {
+        Text(
+            "Speed: $currentText/s  •  Peak: $peakText/s  •  Last 90 s",
+            fontSize = myTextSizes.base,
+            color = myColors.onBackground,
+        )
+        Spacer(Modifier.height(4.dp))
+        Canvas(
+            Modifier
+                .fillMaxWidth()
+                .height(80.dp)
+                .clip(myShapes.defaultRounded)
+                .background(myColors.surface)
+        ) {
+            repeat(4) { index ->
+                val y = size.height * (index + 1) / 5f
+                drawLine(gridColor, Offset(0f, y), Offset(size.width, y), strokeWidth = 1f)
+            }
+            if (samples.isEmpty()) return@Canvas
+            val graph = Path()
+            val h = size.height * 0.88f
+            val bottom = size.height * 0.94f
+            samples.forEachIndexed { index, bytesPerSecond ->
+                val x = if (samples.size == 1) 0f else size.width * index / (samples.size - 1).toFloat()
+                val normalized = (bytesPerSecond.toDouble() / maxSpeed.toDouble()).toFloat().coerceIn(0f, 1f)
+                val y = bottom - normalized * h
+                if (index == 0) graph.moveTo(x, y) else graph.lineTo(x, y)
+            }
+            drawPath(graph, color = graphColor, style = Stroke(width = 2.dp.toPx()))
         }
     }
 }
