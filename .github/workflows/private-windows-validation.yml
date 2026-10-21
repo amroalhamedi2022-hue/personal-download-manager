@@ -68,11 +68,30 @@ jobs:
           --dependency-verification strict
           createReleaseFolderForCi
 
+      - name: Stage exactly one installer EXE
+        shell: pwsh
+        run: |
+          $source = Join-Path $PWD "build/ci-release/binaries"
+          $installers = @(Get-ChildItem -LiteralPath $source -Filter "*.exe" -Recurse -File)
+          if ($installers.Count -ne 1) {
+            throw "Expected exactly one installer EXE in $source; found $($installers.Count)."
+          }
+          $delivery = Join-Path $PWD "build/ci-release/single-installer"
+          New-Item -ItemType Directory -Force -Path $delivery | Out-Null
+          Copy-Item -LiteralPath $installers[0].FullName -Destination $delivery
+          $single = @(Get-ChildItem -LiteralPath $delivery -File)
+          if ($single.Count -ne 1 -or $single[0].Extension -ne ".exe") {
+            throw "The delivery folder must contain only one EXE."
+          }
+          $digest = Get-FileHash -Algorithm SHA256 -LiteralPath $single[0].FullName
+          Write-Host "Delivery: $($single[0].Name)"
+          Write-Host "Installer SHA256: $($digest.Hash.ToLowerInvariant())"
+
       - name: Upload Windows package
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: personal-download-manager-windows-x64
-          path: build/ci-release/binaries/**
+          path: build/ci-release/single-installer/*.exe
           if-no-files-found: error
           retention-days: 7
 
