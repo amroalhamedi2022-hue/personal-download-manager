@@ -16,6 +16,7 @@ import ir.amirab.downloader.queue.DownloadQueue
 import ir.amirab.downloader.queue.ManualDownloadQueue
 import ir.amirab.downloader.utils.EmptyFileCreator
 import ir.amirab.downloader.utils.IDiskStat
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -89,6 +90,54 @@ class RestoredRetryAdmissionTest {
             assertFalse(manager.downloadJobs.single().isDownloadActive.value)
         } finally {
             closeManager(manager)
+        }
+    }
+
+    @Test
+    fun stopAllDuringDueCallbackHandoffCancelsStaleAdmissionAcrossRestart() = runBlocking {
+        // C07: force the due timer to reach the callback boundary. No sleeping
+        // to approximate the race: the callback is held on an explicit barrier.
+        val item = retryItem(25, System.currentTimeMillis() - 1)
+        val audit = AdmissionAudit()
+        val enteredHandoff = CompletableDeferred<Unit>()
+        val releaseHandoff = CompletableDeferred<Unit>()
+        val manager = createManager(listOf(item), audit)
+        try {
+            manager.boot()
+            manager.restoreInterruptedRetries { id ->
+                enteredHandoff.complete(Unit)
+                releaseHandoff.await()
+                // Reaching this line would represent a zombie due callback.
+                audit.started.add(id)
+            }
+            withTimeout(5_000) { enteredHandoff.await() }
+            // Must cancel and JOIN the due callback even though its timer fired.
+            withTimeout(5_000) { manager.stopAll() }
+            releaseHandoff.complete(Unit)
+
+            assertEquals(emptyList(), audit.started.toList())
+            assertEquals(emptyList(), audit.finished.toList())
+            assertNull(item.retryAt)
+            assertEquals(0, item.retryAttempt)
+            assertFalse(manager.downloadJobs.single().isDownloadActive.value)
+        } finally {
+            releaseHandoff.complete(Unit)
+            closeManager(manager)
+        }
+
+        // Recreate the actual manager object from the resulting persisted item
+        // values. A separate disk serialization round-trip is tracked by C07.
+        val restartAudit = AdmissionAudit()
+        val restarted = createManager(listOf(item), restartAudit)
+        try {
+            restarted.boot()
+            restarted.restoreInterruptedRetries { restartAudit.started.add(it) }
+            delay(100)
+            assertEquals(emptyList(), restartAudit.started.toList())
+            assertEquals(emptyList(), restartAudit.finished.toList())
+            assertNull(item.retryAt)
+        } finally {
+            closeManager(restarted)
         }
     }
 
