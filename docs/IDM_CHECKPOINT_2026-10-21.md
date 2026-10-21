@@ -23,10 +23,10 @@
 2. `ActualRestoredRetryJobTest.kt` `ec5ef3ca` ثم تصحيح `011413a8`: Timeout 20s نفسه مع حالة/طلبات/بايتات تشخيصية؛ لا رفع للمهلة أو حذف للاختبار.
 3. `.github/workflows/private-windows-validation.yml` `dd54060d`: يفشل إذا لم يوجد Installer EXE واحد، ويحسب SHA256 ويرفع EXE فقط لا Portable ثاني.
 4. `scripts/Measure-WindowsDownloadManager.ps1` `929e7946` و`1f8b6615`: أداة baseline Windows process tree، WorkingSet وPrivateBytes وCPU وHandles/Threads. **لا قياسات حقيقية حتى الآن، وPowerShell نفسه لم يُختبر هنا**.
-5. `docs/IDM_Requirements_Trace_82_2026-10-21.md` `b78ebc47`: حفظ متطلبات P0–P9 كلها.
+5. `docs/IDM_Requirements_Trace_82_2026-10-21.md` `b78ebc47`: حفظ متطلبات P0–P9 كلها. والملحق `docs/IDM_Repair_Addendum_2026-10-21.md` يلخص N01–N26.
 6. `.github/workflows/private-hls-race-validation.yml` `23db0ed7`: إعادة اختبار HLS المستهدف ثلاث مرات باستقلال عبر Actions؛ لا تضع علامة النجاح حتى تقرأ XML.
 7. `desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/singleDownloadPage/ProgressDownloadPage.kt` `77ae67b7`: إيقاف rememberInfiniteTransition عندما يكون شريط السائل غير نشط (Paused/Retry/Finished) مع الحفاظ على الحركة أثناء النقل الحقيقي. **لم يُثبت قياس RAM/CPU أو مطابقة الصورة بعد**.
-8. الخطة الأصلية تم تحديثها مرتين `3af800cf` و`3a640ac5` بنتائج المصدر وRun68 والتسليم. 
+8. الخطة الأصلية حُدثت عدة مرات حتى E036، منها `3af800cf` و`3a640ac5` بنتائج المصدر وRun68. أُضيفت أدلة E034–E036 للـBuild والتكرار والواجهة. 
 
 ## الدليل الآلي المؤكد لهذه الجلسة
 
@@ -36,9 +36,11 @@
 
 ## العمل الجاري عند حفظ Checkpoint
 
-- **Run HLS targeted:** `39600320720` عند Commit `23db0ed7`، بدأ ولم تكن نتيجته نهائية وقت تسجيل هذه النسخة؛ اقرأ Job Logs و`hls-race-three-executions` XML، ولا تخمّن.
-- **Run Windows بعد تعديل Liquid:** `39600504611` عند Commit `77ae67b7`، بدأ ولم تكن نتيجته نهائية وقت تسجيل هذه النسخة؛ اقرأ Logs وXML وSHA للـInstaller.
-- الرجاء التفريق بين SHA المبني في Run68 وبين HEAD أحدث يتضمن توثيقًا وواجهة. لا تستخدم نجاح Run68 شهادة Compile لتعديل Liquid اللاحق.
+- **Run HLS targeted:** `39600320720` عند Commit `23db0ed7`: **نجاح 3/3 تكرارات مستقلة** (1.728/1.641/1.660 ثانية، 0 failure/error/skip)، XML Artifact `12345914124`، Evidence E035. لم تُرفع مهلة 20 ثانية.
+- **Run Windows بعد تعديل Liquid والرسم:** `39601103338` عند Commit `df8db76d20daa3acf38c8f5bd657c672d658140e`: **103/103، 0 failure/error/skip**؛ XML Artifact `12346721424`. نجح Compile وPackage، Installer SHA `8909cb2e0d3cd3b7621ffdf41584e1cd88c58544751b8f15898e9fc905784abe`؛ Evidence E036. لا تدعِ مطابقة UI runtime أو تحسن CPU مقاس.
+- **الدفعة الأحدث غير المختبرة عند كتابة هذا Checkpoint:** `DefaultThemes.kt` أضيفت 16 عائلة Light/Dark (8×2) مع بقاء 7 Legacy IDs، واختبار `ModernThemePaletteContractTest.kt` بأربع حالات تشمل Contrast >= 4.5. آخر Commit كود `862d56a8458e96d73087b943a1ff0279fd0806ed`. GitHub Windows CI Run `39603132182` بدأ/قد يكون جاريًا؛ **تحقق من النتيجة وXML قبل إعلان النجاح**. آثار هذه الدفعة لم تشمل الحزمتي icon packs وأحجامهما بعد.
+- المرجع الإضافي `docs/IDM_Repair_Addendum_2026-10-21.md` يلخص M00–M11 وN01–N26، والمصدر التفصيلي الأصلي محفوظ بالحزمة. لا تستبدله بالمختصر.
+- التمييز ضروري بين SHA المبني في كل Run وHEAD أحدث يحتوي توثيقًا إضافيًا؛ لا تُنسب نتائج Run 68 إلى كود UI أو الثيمات اللاحق.
 
 ## متبقٍ / محجوب
 
@@ -52,7 +54,7 @@
 
 ## أول خطوات دقيقة للجلسة القادمة
 
-1. اقرأ أحدث SHA من `codex/repair-rf00-rf01` ثم نتائج Run `39600320720` و`39600504611`، واحفظ Evidence في `docs/Download_Manager_Execution_Plan_v1.md` (دون إعادة التخطيط).
+1. اقرأ أحدث SHA من `codex/repair-rf00-rf01` ثم نتائج Run `39603132182` على كود الثيمات، وأضف E037 بعد فحص XML؛ لا تعد E034–E036 من الصفر.
 2. إذا فشل HLS المكرر، اقرأ XML التكرار الذي فشل وتشخيص HLS، واصل إصلاح الكود بدل رفع المهلة. إذا نجح، سجّل تكرار 3/3 وأكمل C04/C07.
 3. نفّذ RF04/05 الخاصة بالمصادقة اللازمة لـFTP ثم محرك FTP فعلي مع Server Fixture، ولا تكتفِ بتحرير واجهة New URL.
 4. تحقق عمليًا من Liquid Progress وSpeed Graph/Parts وبقية المطابقة، ثم RAM/CPU، ثم اختيار حزمة Release نهائية فقط بعد القبول.
