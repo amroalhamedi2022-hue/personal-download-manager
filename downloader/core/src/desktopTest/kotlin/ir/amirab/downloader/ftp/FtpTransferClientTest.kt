@@ -141,6 +141,27 @@ class FtpTransferClientTest {
         assertFalse(contents.contains("password", ignoreCase = true), "FTP sidecar must contain only source identity")
     }
 
+    @Test
+    fun boundedFtpDownloadUsesSharedSpeedLimiterWithoutByteLoss() = withFixture { fixture ->
+        val destination = fixture.downloadFolder.resolve("speed-limited.bin")
+        val result = FtpTransferClient().download(
+            url = fixture.url("fixture.bin"),
+            output = destination,
+            username = "test",
+            password = "secret",
+            speedLimitBytesPerSecond = 50L * 1024 * 1024,
+        )
+        assertEquals(fixture.bytes.size.toLong(), result.transferredBytes)
+        assertContentEquals(fixture.bytes, Files.readAllBytes(destination))
+        assertFailsWith<IllegalArgumentException> {
+            FtpTransferClient().download(
+                url = fixture.url("fixture.bin"),
+                output = fixture.downloadFolder.resolve("invalid-speed.bin"),
+                speedLimitBytesPerSecond = -1L,
+            )
+        }
+    }
+
     private class Fixture(
         val root: Path,
         val downloadFolder: Path,
