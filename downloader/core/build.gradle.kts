@@ -25,14 +25,14 @@ kotlin {
                 api("io.lindstrom:m3u8-parser:0.29")
             }
         }
-        desktopMain.dependencies {
+        getByName("desktopMain").dependencies {
             // Apache Commons Net (Apache-2.0), JVM/Windows FTP transport only.
             implementation("commons-net:commons-net:3.13.0")
         }
         commonTest.dependencies {
             implementation(kotlin("test"))
         }
-        desktopTest.dependencies {
+        getByName("desktopTest").dependencies {
             // Real loopback FTP server is test-only, never packaged in the app.
             implementation("org.apache.ftpserver:ftpserver-core:1.2.1")
         }
