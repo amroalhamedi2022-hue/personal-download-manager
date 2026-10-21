@@ -79,3 +79,5 @@
 - `39674929421` فشل عند Compile Test FTP: `PropertiesUserManagerFactory` في package `org.apache.ftpserver.usermanager` وليس `...impl`. الإنتاج `FtpTransferClient.kt` لم يظهر خطأ compile فيه. أصلح `ad0e979c` وأصبح users fixture database داخل root المؤقت.
 - اختبار معرّف بالضبط هو Run `39676264990` برأس كود `ad0e979cd2efd734f3f2cbc98c949491e3d19415` (تحقق منه عند العودة؛ لا تعتبره نجاحًا تلقائيًا). آخر تعديلات docs لا تغيّر كود الاختبار.
 - الاستكمال فورًا: اقرأ نتيجة Run، واحسب اختبارات XML؛ إذا فشل صحح ولا تحذف tests، ثم اربط FTP في نموذج Job/Registry/UI، واختبر Loopback على Windows وLAN.
+
+- **استرجاع FTP مستقل:** `backup/pre-ftp-open-source-2026-10-21` عند SHA `4eaaea470ec137892ad302c75071d99f870b8f47` (آخر Run ناجح 108/108 قبل مكتبة FTP). فرع المصدر فقط وليس نسخة بيانات مستخدم.\n
