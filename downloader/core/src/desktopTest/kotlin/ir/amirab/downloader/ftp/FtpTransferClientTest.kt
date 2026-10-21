@@ -3,7 +3,7 @@ package ir.amirab.downloader.ftp
 import org.apache.ftpserver.FtpServerFactory
 import org.apache.ftpserver.listener.ListenerFactory
 import org.apache.ftpserver.usermanager.impl.BaseUser
-import org.apache.ftpserver.usermanager.impl.PropertiesUserManagerFactory
+import org.apache.ftpserver.usermanager.PropertiesUserManagerFactory
 import java.io.IOException
 import java.net.ServerSocket
 import java.nio.file.Files
@@ -131,7 +131,10 @@ class FtpTransferClientTest {
             password = "secret"
             homeDirectory = root.toAbsolutePath().toString()
         }
-        val userManager = PropertiesUserManagerFactory().createUserManager()
+        val userManager = PropertiesUserManagerFactory().apply {
+            // Real local server uses an isolated user DB inside its own fixture folder.
+            file = root.resolve("ftp-test-users.properties").toFile()
+        }.createUserManager()
         userManager.save(user)
         serverFactory.userManager = userManager
         val server = serverFactory.createServer()
