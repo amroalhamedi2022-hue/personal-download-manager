@@ -345,7 +345,9 @@ class DownloadManager(
 
     fun onDownloadFinished(downloadItem: IDownloadItem) {
         scope.launch {
-            listOfJobsEvents.tryEmit(
+            // Completion is a terminal lifecycle event. Never silently drop it when
+            // progress events temporarily fill the SharedFlow buffer.
+            listOfJobsEvents.emit(
                 DownloadManagerEvents.OnJobCompleted(
                     downloadItem,
                     contextContainer.getContext(downloadItem.id)
