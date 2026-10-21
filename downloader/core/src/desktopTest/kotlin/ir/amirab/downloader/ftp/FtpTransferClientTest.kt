@@ -6,6 +6,7 @@ import ir.amirab.downloader.DownloadSettings
 import ir.amirab.downloader.db.MemoryDownloadListDB
 import ir.amirab.downloader.db.MemoryDownloadPartStatesDB
 import ir.amirab.downloader.downloaditem.DownloadStatus
+import ir.amirab.downloader.downloaditem.DownloadJobStatus
 import ir.amirab.downloader.utils.EmptyFileCreator
 import ir.amirab.downloader.utils.IDiskStat
 import kotlinx.coroutines.cancel
@@ -222,6 +223,64 @@ class FtpTransferClientTest {
                     "FTP persisted item should never contain a password",
                 )
             } finally {
+                manager.downloadJobs.forEach { it.close() }
+                manager.scope.cancel()
+            }
+        }
+    }
+
+    @Test
+    fun stopAllCancelsFtpWaitingOnHostPermitAndNextResumeFinishes() = withFixture { fixture ->
+        runBlocking {
+            val item = FtpDownloadItem(
+                id = 72L,
+                folder = fixture.downloadFolder.toString(),
+                name = "gate.bin",
+                link = fixture.url("fixture.bin"),
+                username = "test",
+                dateAdded = 72L,
+            )
+            val database = MemoryDownloadListDB()
+            database.add(item)
+            val manager = DownloadManager(
+                dlListDb = database,
+                partListDb = MemoryDownloadPartStatesDB(),
+                settings = DownloadSettings(),
+                emptyFileCreator = EmptyFileCreator(
+                    diskStat = object : IDiskStat {
+                        override fun getRemainingSpace(path: java.io.File) = Long.MAX_VALUE
+                    },
+                    useSparseFile = { false },
+                ),
+                downloaderRegistry = DownloaderRegistry().apply {
+                    add(FtpDownloader(FtpCredentialsProvider {
+                        FtpSessionCredentials("test", "secret")
+                    }))
+                },
+                downloadDataFolder = fixture.downloadFolder.toFile(),
+            )
+            manager.configureHostLimits("127.0.0.1", maxConnections = 1)
+            val heldPermit = manager.hostLimitRegistry.acquireForHost("127.0.0.1")
+            try {
+                manager.boot()
+                val job = manager.downloadJobs.single()
+                manager.resume(item.id)
+                assertTrue(job.status.value is DownloadJobStatus.Resuming)
+                delay(150)
+                assertEquals(1, manager.hostLimitRegistry.activeConnections("127.0.0.1"))
+                assertFalse(Files.exists(fixture.downloadFolder.resolve("gate.bin.ftp-part")))
+                withTimeout(5_000) { manager.stopAll() }
+                assertTrue(job.status.value is DownloadJobStatus.Canceled)
+                assertFalse(job.isDownloadActive.value)
+                heldPermit.close()
+                manager.resume(item.id)
+                withTimeout(25_000) {
+                    while (item.status != DownloadStatus.Completed) delay(20)
+                }
+                assertContentEquals(fixture.bytes, Files.readAllBytes(fixture.downloadFolder.resolve("gate.bin")))
+                assertEquals(0, manager.hostLimitRegistry.activeConnections("127.0.0.1"))
+            } finally {
+                heldPermit.close()
                 manager.downloadJobs.forEach { it.close() }
                 manager.scope.cancel()
             }
