@@ -167,3 +167,32 @@
 - Added simulated restart regression at `84aca13ad7bc16db99480207b9b3cdd3ab08d7bf`: persist FTP DTO JSON, recreate WinCred provider/vault, resolve login, remove reference and assert hard failure without fallback. Added local real FTP integration regression at `ded98e55f77cfa972f3d14c67a049e1f7b85aea7`: resumed manager job using fresh WinCred on genuine Apache FTP test server. Both newly added tests require their later Windows CI XML before any pass claim.
 - Added non-activating `LinkChecker` protocol validator hook at `ee871c4199f677bfa6177042131ece5785bd434e`. HTTP/HLS continue using their prior OkHttp URL validation; an eventual desktop FTP checker can override it. **No FTP UI/production registration is enabled by these changes**.
 - Next: examine latest non-cancelled Windows CI run and test result XML, repair only demonstrated failures; then safely integrate desktop FTP protocol UI, credentials prompt/lifecycle, registry and on-disk restart under tests, with HTTP/HLS regression. Keep torrent entirely out of scope. Preserve installer single-EXE requirement and later Windows CPU/RAM before-after measurements.
+
+
+## E044 — Desktop FTP integration and acceptance gate (2026-10-22)
+
+### Verified earlier Windows baseline
+
+- Windows run [39706900920](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/39706900920), SHA `24d7356a7b8a`, **success**, including :downloader:core:desktopTest, :downloader:monitor:desktopTest, :shared:app:desktopTest, desktop Kotlin compile and one Windows installer EXE. Inspected JUnit totals from the results artifact: **131 tests passed / 0 failures / 0 errors / 0 skipped**. The installed GUI was not manually exercised on an end-user Windows session.
+- M04 production wiring changed in that build: FTP desktop transport in DownloaderRegistry; authenticated FTP via Windows Credential Manager; native desktop Add URL form and standard liquid download-progress dialog; HTTP/HLS defaults maintained. The baseline above predates later Edit FTP and folder-picker improvements.
+
+### Implementation after the green baseline — not yet accepted
+
+- Added native Edit FTP window with username/password rotation, protected reference cleanup after item deletion, fail-closed reference cleanup on partial save failures, and on-disk task restoration regression.
+- Added FTP connection test using Apache Commons Net SIZE/MDTM probes; displays size if server supplies it. Testing scope: local integration server; WAN / FTPS / SFTP not implied.
+- Fixed FTP URLs failing the shared HTTP-only clipboard URL predicate, with extractor regression tests.
+- Added Select Folder picker in FTP Add and Edit; corrected FileKit's dialog-parent lifetime by constructing the picker inside the edit CustomWindow's LocalWindow provider.
+- Added **Start immediately: No**, preserving Added state in the list until explicitly resumed. Validates writable folder before closing Add; waits for actual DownloadSystem persistence, preserves form/error on save failure, and does not turn a saved task into a duplicate on transfer-start failure.
+- Added paused FTP partial-file relocation between directories and disks without mandatory ATOMIC_MOVE, with reverse-order rollback of moved partial+identity on failure. Runs destination relocation on Dispatchers.IO, never on the Compose UI dispatcher. Added relocation regression test.
+- Windows run [39709597277](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/39709597277), SHA `f2c3587db488`, **failure**: a new disk-restart test timed out because the test was observing a detached read of persisted data instead of re-reading database state. It did **not** establish a confirmed regression in the actual network transport.
+- Windows run [39741942856](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/39741942856), SHA `0a191683c83d`, **failure**: Kotlin compile error in test code (`afterRestart` referenced in the wrong test). Corrected both the in-memory and disk-backed test polling targets at SHA `d72f3782f146`.
+- Current consolidated source through `813c07bd0e761ff93c90b0c373ed1bd42dc378a3`; Windows validation [39744027565](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/39744027565) **pending/in progress at this checkpoint**. DO NOT mark M04 production UI or the latest EXE accepted until the latest run succeeds and local GUI acceptance is done.
+- No torrent functionality in scope.
+
+### Gates and plan order
+
+1. **M04**: latest Windows CI Kotlin/JUnit and installer green, then real GUI tests on Windows: anonymous/auth FTP Add URL (OK enabled), password secrecy, Check FTP, folder picker, start-now/start-later, progress, pause/resume, relocation, Edit, delete credential cleanup, restart.
+2. **M06–M08**: compare actual Windows UI/settings against supplied original IDM image references, close functional/visual mismatches, preserve Liquid Progress design and theme behavior.
+3. **M09**: acquire before/after Windows CPU/RAM measurements under idle, active 1/4/16 transfers and completed/closed dialogs, fix specific hotspots rather than treating the CPU/RAM monitor as a performance optimizer.
+4. **M10**: extension/browser/media/link handling and accepted features, excluding torrent.
+5. **M11**: verified Windows single installer EXE and a complete clean-machine regression/acceptance pass.
