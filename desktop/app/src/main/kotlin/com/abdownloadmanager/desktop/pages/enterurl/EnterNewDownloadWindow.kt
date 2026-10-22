@@ -1,6 +1,8 @@
 package com.abdownloadmanager.desktop.pages.enterurl
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.key
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.v2.WindowBoundsProvider
@@ -31,10 +33,12 @@ fun EnterNewDownloadWindow(
 private fun EnterNewDownloadWindow(
     component: DesktopEnterNewURLComponent,
 ) {
+    val isFtp = component.isFtpUrl.collectAsState().value
+    key(isFtp) {
     val windowState = rememberWindowState(
         initialBoundsProvider = WindowBoundsProvider(
             sizeProvider = WindowSizeProvider.Fixed(
-                size = DpSize(400.dp, 150.dp)
+                size = (if (isFtp) DpSize(520.dp, 360.dp) else DpSize(400.dp, 150.dp))
                     .applyUiScale(LocalUiScale.current),
             ),
             positionProvider = WindowPositionProvider.CenteredOnScreen
@@ -59,6 +63,7 @@ private fun EnterNewDownloadWindow(
         EnterNewURLPage(
             component,
         )
+    }
     }
 }
 

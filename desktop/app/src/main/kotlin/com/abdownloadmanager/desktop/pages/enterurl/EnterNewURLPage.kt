@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import com.abdownloadmanager.shared.ui.widget.MyTextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -59,6 +61,8 @@ fun EnterNewURLPage(component: DesktopEnterNewURLComponent) {
         component.onPageOpen()
     }
     val text by component.url.collectAsState()
+    val isFtp by component.isFtpUrl.collectAsState()
+    LaunchedEffect(text) { if (isFtp) component.suggestFtpFileName() }
     Column {
         Column(
             Modifier
@@ -73,6 +77,29 @@ fun EnterNewURLPage(component: DesktopEnterNewURLComponent) {
                     .focusRequester(linkFocus)
                     .fillMaxWidth()
             )
+        }
+        if (isFtp) {
+            val username by component.ftpUsername.collectAsState()
+            val password by component.ftpPassword.collectAsState()
+            val folder by component.ftpFolder.collectAsState()
+            val fileName by component.ftpFileName.collectAsState()
+            Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+                MyTextField(username, component::setFtpUsername, "FTP username (anonymous)", Modifier.fillMaxWidth())
+                Spacer(Modifier.height(6.dp))
+                if (username != "anonymous") {
+                    MyTextField(
+                        password, component::setFtpPassword, "FTP password",
+                        Modifier.fillMaxWidth(),
+                        visualTransformation = PasswordVisualTransformation(),
+                    )
+                    Spacer(Modifier.height(6.dp))
+                }
+                MyTextField(fileName, component::setFtpFileName, "File name", Modifier.fillMaxWidth())
+                Spacer(Modifier.height(6.dp))
+                MyTextField(folder, component::setFtpFolder, "Save folder", Modifier.fillMaxWidth())
+                Spacer(Modifier.height(6.dp))
+                Text("FTP is unencrypted on the network. Saved passwords use Windows Credential Manager.")
+            }
         }
         Spacer(Modifier.weight(1f))
         Column {
@@ -90,7 +117,7 @@ fun EnterNewURLPage(component: DesktopEnterNewURLComponent) {
                     .padding(vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                DownloaderSelectionSection(component)
+                if (!isFtp) DownloaderSelectionSection(component)
                 Spacer(Modifier.weight(1f))
                 Actions(component)
             }
@@ -219,11 +246,16 @@ private fun rememberDownloaderSelectionItemString(
 private fun Actions(
     component: DesktopEnterNewURLComponent,
 ) {
+    val isFtp by component.isFtpUrl.collectAsState()
+    val ftpUsername by component.ftpUsername.collectAsState()
+    val ftpPassword by component.ftpPassword.collectAsState()
+    val ftpFolder by component.ftpFolder.collectAsState()
+    val ftpName by component.ftpFileName.collectAsState()
     ActionButton(
         myStringResource(Res.string.ok),
-        enabled = component.canAdd.collectAsState().value,
+        enabled = if (isFtp) component.canSubmitFtp() else component.canAdd.collectAsState().value,
         onClick = {
-            component.newDownloadEntered()
+            if (isFtp) component.newFtpDownloadEntered() else component.newDownloadEntered()
         }
     )
     Spacer(Modifier.width(8.dp))

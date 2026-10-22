@@ -17,6 +17,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
@@ -42,6 +43,7 @@ fun MyTextFieldWithIcons(
     singleLine: Boolean = true,
     start: @Composable (() -> Unit)? = null,
     end: @Composable (() -> Unit)? = null,
+    visualTransformation: VisualTransformation = VisualTransformation.None,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
@@ -62,6 +64,7 @@ fun MyTextFieldWithIcons(
             shape = myShapes.defaultRounded,
             singleLine = singleLine,
             enabled = enabled,
+            visualTransformation = visualTransformation,
             start = start?.let {
                 {
                     WithContentAlpha(0.5f) {
