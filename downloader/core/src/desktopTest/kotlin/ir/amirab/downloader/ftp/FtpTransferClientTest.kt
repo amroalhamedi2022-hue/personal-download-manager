@@ -68,7 +68,6 @@ class FtpTransferClientTest {
         }
         assertTrue(missing.message.orEmpty().contains("not found"))
     }
-
     @Test
     fun realFtpFileWithLiteralSpacesAndBracketsCanBeInspectedAndDownloaded() = withFixture { fixture ->
         val unusualName = "photo archive [final] (2).bin"
