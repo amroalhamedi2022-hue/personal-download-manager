@@ -11,6 +11,8 @@ import androidx.compose.ui.window.v2.WindowPositionProvider
 import androidx.compose.ui.window.v2.WindowSizeProvider
 import androidx.compose.ui.window.v2.rememberWindowState
 import com.abdownloadmanager.desktop.AppComponent
+import com.abdownloadmanager.desktop.ui.util.rememberMyDirectoryPickerLauncher
+import java.io.File
 import com.abdownloadmanager.desktop.pages.enterurl.FtpDownloadRequest
 import com.abdownloadmanager.desktop.window.custom.CustomWindow
 import com.abdownloadmanager.desktop.window.custom.rememberWindowController
@@ -35,6 +37,13 @@ fun FtpEditDownloadWindow(appComponent: AppComponent) {
     var folder by remember(entry.id) { mutableStateOf(entry.folder) }
     var username by remember(entry.id) { mutableStateOf(entry.username) }
     var newPassword by remember(entry.id) { mutableStateOf("") }
+    val folderPicker = rememberMyDirectoryPickerLauncher(
+        title = "Select FTP download folder",
+        initialDirectory = remember(folder) {
+            runCatching { File(folder).canonicalPath }.getOrNull()
+        },
+        attachToWindow = true,
+    ) { chosen -> chosen?.let { folder = it } }
 
     CustomWindow(
         state = rememberWindowState(
@@ -52,7 +61,11 @@ fun FtpEditDownloadWindow(appComponent: AppComponent) {
             Spacer(Modifier.height(8.dp))
             MyTextField(name, { name = it }, "File name", Modifier.fillMaxWidth(), enabled = !busy)
             Spacer(Modifier.height(8.dp))
-            MyTextField(folder, { folder = it }, "Save folder", Modifier.fillMaxWidth(), enabled = !busy)
+            Row {
+                MyTextField(folder, { folder = it }, "Save folder", Modifier.weight(1f), enabled = !busy)
+                Spacer(Modifier.width(8.dp))
+                ActionButton("Browse", enabled = !busy, onClick = folderPicker::launch)
+            }
             Spacer(Modifier.height(8.dp))
             MyTextField(username, { username = it }, "FTP username (anonymous)", Modifier.fillMaxWidth(), enabled = !busy)
             Spacer(Modifier.height(8.dp))
