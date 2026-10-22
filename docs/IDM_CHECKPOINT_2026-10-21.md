@@ -196,3 +196,13 @@
 3. **M09**: acquire before/after Windows CPU/RAM measurements under idle, active 1/4/16 transfers and completed/closed dialogs, fix specific hotspots rather than treating the CPU/RAM monitor as a performance optimizer.
 4. **M10**: extension/browser/media/link handling and accepted features, excluding torrent.
 5. **M11**: verified Windows single installer EXE and a complete clean-machine regression/acceptance pass.
+
+
+## E045 — FTP integrated Windows CI green (2026-10-22)
+
+- Source build commit `2e3ae2bc600dc1490006dad3c680ebd35184390c`. Windows [Run 39745420289](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/39745420289): all workflow stages completed **success**, including desktop app compilation, tests, packaging, exact-one-installer check, and artifact uploads.
+- Downloaded artifact `windows-validation-test-results` ID `12411493172`. Parsed the actual JUnit XML: **15 suites, 139 tests, 0 failures, 0 errors, 0 skipped**. Earlier failing HTTP concurrency test `concurrentResumeResetAndLinkUpdateKeepOneActualHttpLifecycle` passed following precise completion-subscription ordering and added timeout diagnostics. No deadline relaxation.
+- FTP-specific suites on preceding run's XML were 31/31 green: 4 destination, 5 model, 15 transfer/real-server, 4 WinCred, 3 clipboard extraction. The final build has all 139/139 green.
+- Downloaded Windows artifact `personal-download-manager-windows-x64` ID `12411413459` (ZIP), verified **exactly one file and one EXE** inside. Extracted `DownloadManager_1.0.0-codex-repair-rf00-rf01-snapshot_windows_x64.exe`, **79,311,875 bytes**, SHA-256 `3c17d894c33efe1d5ffdeefa7c897903714fc4e3120b186802118836970f564a`. This is a validated build artifact, **not a manually GUI-tested stable release**.
+- Remaining M04 gate: Windows human/UI acceptance for Add URL, login, Check Connection, Browse, Start Later, Liquid Progress, pause/resume, folder move and WinCred edits/restart. Keep network FTP confidentiality warning visible (FTP is plaintext, Windows credential vault only protects at rest).
+- Next sequential phases unchanged: **M06–M08** visual/function IDM reference comparison, **M09** measured CPU/RAM + targeted optimization, **M10** browser/media/extension work excluding torrent, **M11** stable one-EXE acceptance.
