@@ -331,7 +331,15 @@ class AppComponent(
                 ftpEditItem.value = null
             } catch (failure: Exception) {
                 newReference?.let { ref ->
-                    withContext(Dispatchers.IO) {
+                    // A database write may have committed before a later resume
+                    // or UI operation failed. Never delete a still-referenced
+                    // WinCred secret even on an exception.
+                    val persistedUse = runCatching {
+                        downloadSystem.getDownloadItemsBy {
+                            it is FtpDownloadItem && it.credentialRef == ref
+                        }.isNotEmpty()
+                    }.getOrDefault(true) // fail closed when the DB is unreadable
+                    if (!persistedUse) withContext(Dispatchers.IO) {
                         runCatching { WindowsFtpCredentialVault().delete(ref) }
                     }
                 }

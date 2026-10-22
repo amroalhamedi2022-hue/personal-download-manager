@@ -79,7 +79,13 @@ fun FtpEditDownloadWindow(appComponent: AppComponent) {
                 Spacer(Modifier.width(8.dp))
                 ActionButton("Save", enabled = !busy && link.isNotBlank() && name.isNotBlank(), onClick = {
                     appComponent.saveFtpEdit(
-                        FtpDownloadRequest(link.trim(), username.trim(), newPassword, folder, name)
+                        FtpDownloadRequest(
+                            link.trim(),
+                            username.trim(),
+                            if (username.trim() == "anonymous") "" else newPassword,
+                            folder,
+                            name,
+                        )
                     )
                 })
             }
