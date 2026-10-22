@@ -1,5 +1,7 @@
 package ir.amirab.downloader.ftp
 
+import ir.amirab.downloader.downloaditem.DownloadStatus
+import kotlinx.serialization.json.Json
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -58,6 +60,47 @@ class WindowsFtpCredentialVaultTest {
             }
         } finally {
             vault.delete(reference)
+        }
+    }
+
+
+    @Test
+    fun serializedFtpTaskReopensWithFreshWindowsVaultWithoutPersistingItsPassword() {
+        if (!System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) return
+        val initialVault = WindowsFtpCredentialVault()
+        val username = "synthetic-restart-account"
+        val password = "Synthetic-Restart-Only-Δ-4682"
+        val reference = initialVault.save(username, password)
+        val pausedTask = FtpDownloadItem(
+            id = 923L,
+            folder = "C:/Downloads",
+            name = "restart-test.bin",
+            link = "ftp://example.com/pub/restart-test.bin",
+            username = username,
+            credentialRef = reference,
+            status = DownloadStatus.Paused,
+        )
+        val persistedTaskJson = Json.encodeToString(FtpDownloadItem.serializer(), pausedTask)
+        assertFalse(persistedTaskJson.contains(password), "FTP item must never persist secrets")
+        assertFalse(persistedTaskJson.contains("\"password\"", ignoreCase = true))
+        try {
+            // A freshly constructed vault/provider must reopen the already-persisted
+            // credential, exactly as the app would after restarting on Windows.
+            val restoredTask = Json.decodeFromString(FtpDownloadItem.serializer(), persistedTaskJson)
+            assertEquals(DownloadStatus.Paused, restoredTask.status)
+            assertEquals(reference, restoredTask.credentialRef)
+            assertEquals(username, restoredTask.username)
+            val freshProvider = WindowsCredentialFtpProvider(WindowsFtpCredentialVault())
+            assertEquals(username, freshProvider.resolve(restoredTask).username)
+            assertEquals(password, freshProvider.resolve(restoredTask).password)
+        } finally {
+            initialVault.delete(reference)
+        }
+        // Delete must invalidate a persisted reference rather than falling back
+        // to anonymous credentials or embedding a substitute password.
+        val restoredTask = Json.decodeFromString(FtpDownloadItem.serializer(), persistedTaskJson)
+        assertFailsWith<java.io.IOException> {
+            WindowsCredentialFtpProvider(WindowsFtpCredentialVault()).resolve(restoredTask)
         }
     }
 
