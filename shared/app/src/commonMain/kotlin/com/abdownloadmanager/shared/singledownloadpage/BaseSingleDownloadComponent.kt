@@ -254,10 +254,17 @@ abstract class BaseSingleDownloadComponent<
             }.launchIn(scope)
 
 
+        val isSingleConnectionFtp = dItem?.link?.startsWith("ftp://", ignoreCase = true) == true
         threadCount
             .drop(1)
             .debounce(500.milliseconds)
             .onEach { count ->
+                // The FTP transport is single-connection. Do not let the generic
+                // desktop settings slider persist unsupported >1 settings.
+                if (isSingleConnectionFtp) {
+                    if (count != 1) threadCount.value = 1
+                    return@onEach
+                }
                 downloadManager.updateDownloadItem(
                     id = downloadId,
                     downloadJobExtraConfig = null

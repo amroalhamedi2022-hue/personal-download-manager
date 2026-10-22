@@ -884,15 +884,6 @@ class AppComponent(
 
     override fun openDownloadDialog(id: Long) {
         scope.launch {
-            if (downloadSystem.getDownloadItemById(id) is FtpDownloadItem) {
-                sendNotification(
-                    "ftp-detail-$id",
-                    "FTP transfer".asStringSource(),
-                    "FTP progress is available in the main download list.".asStringSource(),
-                    NotificationType.Info,
-                )
-                return@launch
-            }
             val component = openedDownloadDialogs.value.find {
                 it.downloadId == id
             }
