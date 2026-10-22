@@ -304,8 +304,13 @@ class FtpTransferClientTest {
                     manager.boot()
                     assertEquals(1, manager.downloadJobs.size)
                     manager.resume(restored.id)
+                    // The manager loads its own FTP item instance from the file
+                    // database at boot. Poll the persisted state, not a detached
+                    // snapshot returned from the earlier read.
                     withTimeout(25_000) {
-                        while (restored.status != DownloadStatus.Completed) delay(20)
+                        while (afterRestart.getById(restored.id)?.status != DownloadStatus.Completed) {
+                            delay(20)
+                        }
                     }
                     val output = fixture.downloadFolder.resolve("credential-restored.bin")
                     assertTrue(Files.isRegularFile(output))
