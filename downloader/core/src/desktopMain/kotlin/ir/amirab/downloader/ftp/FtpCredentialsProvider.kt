@@ -24,3 +24,28 @@ object AnonymousFtpCredentialsProvider : FtpCredentialsProvider {
         return FtpSessionCredentials("anonymous", "anonymous@")
     }
 }
+
+/**
+ * Credential Manager-backed provider for desktop FTP. No network password is
+ * serialized with an item: only a random opaque local credential reference.
+ * It is intentionally NOT registered in the user-facing UI until the full
+ * Add URL / credential lifecycle and backup/restore safety tests pass.
+ */
+class WindowsCredentialFtpProvider(
+    private val vault: WindowsFtpCredentialVault = WindowsFtpCredentialVault(),
+) : FtpCredentialsProvider {
+    override fun resolve(item: FtpDownloadItem): FtpSessionCredentials {
+        item.validateItem()
+        if (item.username == "anonymous" && item.credentialRef == null) {
+            return AnonymousFtpCredentialsProvider.resolve(item)
+        }
+        val reference = item.credentialRef
+            ?: throw IOException("Authenticated FTP requires a saved Windows credential reference")
+        val saved = vault.read(reference)
+            ?: throw IOException("Windows credential for FTP account is missing or unavailable")
+        if (saved.username != item.username) {
+            throw IOException("Windows FTP credential does not match selected username")
+        }
+        return saved
+    }
+}
