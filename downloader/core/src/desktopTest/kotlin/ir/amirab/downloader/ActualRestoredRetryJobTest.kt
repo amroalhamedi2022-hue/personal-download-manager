@@ -1798,11 +1798,23 @@ class ActualRestoredRetryJobTest {
                 exchange.responseHeaders.add("Content-Type", contentType)
                 exchange.sendResponseHeaders(status, bytes.size.toLong())
                 exchange.responseBody.use { output ->
-                    val chunkSize = if (bytes.size >= 512 * 1024) 2_048 else 512
-                    bytes.asList().chunked(chunkSize).forEach { chunk ->
-                        output.write(chunk.toByteArray())
+                    // Real 2 KiB flushes can trigger Windows TCP delayed-ACK
+                    // on every write (~40-80 ms), pushing 256 tiny HLS chunks
+                    // beyond the fixed 20 s lifecycle test even while receiving.
+                    // Still stream in many chunks with the original 2 ms pacing;
+                    // avoid Byte boxing and use larger 8 KiB HLS frames.
+                    val chunkSize = when {
+                        path.startsWith("/segment/") && bytes.size >= 512 * 1024 -> 8 * 1024
+                        bytes.size >= 512 * 1024 -> 2_048
+                        else -> 512
+                    }
+                    var offset = 0
+                    while (offset < bytes.size) {
+                        val length = minOf(chunkSize, bytes.size - offset)
+                        output.write(bytes, offset, length)
                         output.flush()
                         Thread.sleep(2)
+                        offset += length
                     }
                 }
             } finally {
