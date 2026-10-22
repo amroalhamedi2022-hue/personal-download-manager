@@ -26,6 +26,7 @@ import ir.amirab.downloader.part.RangedParts
 import ir.amirab.downloader.utils.EmptyFileCreator
 import ir.amirab.downloader.utils.IDiskStat
 import ir.amirab.downloader.utils.ISparseFile
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -852,7 +853,7 @@ class ActualRestoredRetryJobTest {
                     updated.link = "${fixture.baseUrl}/file/92.bin"
                 }
                 val completed = CompletableDeferred<Unit>()
-                val completionJob = manager.scope.launch {
+                val completionJob = manager.scope.launch(start = CoroutineStart.UNDISPATCHED) {
                     manager.listOfJobsEvents
                         .filterIsInstance<DownloadManagerEvents.OnJobCompleted>()
                         .first { it.downloadItem.id == item.id }
@@ -863,7 +864,20 @@ class ActualRestoredRetryJobTest {
                         manager.listOfJobsEvents.subscriptionCount.first { it >= 1 }
                     }
                     manager.resume(item.id)
-                    withTimeout(20_000) { completed.await() }
+                    val completedInTime = withTimeoutOrNull(20_000) {
+                        completed.await()
+                        true
+                    } ?: false
+                    assertTrue(
+                        completedInTime,
+                        "HTTP lifecycle did not emit completion: " +
+                            "status=${job.status.value}, itemStatus=${item.status}, " +
+                            "active=${job.isDownloadActive.value}, " +
+                            "requests91=${fixture.requestsFor("/file/91.bin")}, " +
+                            "requests92=${fixture.requestsFor("/file/92.bin")}, " +
+                            "activeTransfers=${fixture.activeTransferCount()}, " +
+                            "hostConnections=${manager.hostLimitRegistry.activeConnections("127.0.0.1")}",
+                    )
                 } finally {
                     completionJob.cancel()
                 }
