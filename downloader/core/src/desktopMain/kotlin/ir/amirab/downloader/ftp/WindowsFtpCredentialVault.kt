@@ -122,7 +122,7 @@ class WindowsFtpCredentialVault {
         IOException("Windows Credential Manager $action failed (code ${Native.getLastError()})")
 }
 
-private interface WinCredApi : StdCallLibrary {
+interface WinCredApi : StdCallLibrary {
     fun CredWriteW(credential: NativeCredential, flags: Int): Boolean
     fun CredReadW(target: WString, type: Int, flags: Int, result: PointerByReference): Boolean
     fun CredDeleteW(target: WString, type: Int, flags: Int): Boolean
@@ -138,7 +138,7 @@ private interface WinCredApi : StdCallLibrary {
     "CredentialBlobSize", "CredentialBlob", "Persist", "AttributeCount",
     "Attributes", "TargetAlias", "UserName"
 )
-private class NativeCredential : Structure {
+class NativeCredential : Structure {
     @JvmField var Flags: Int = 0
     @JvmField var Type: Int = 0
     @JvmField var TargetName: WString? = null
