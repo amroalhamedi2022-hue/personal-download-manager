@@ -61,6 +61,10 @@ jobs:
           :shared:app:desktopTest
           :desktop:app:compileKotlin
 
+      - name: Verify JUnit XML completeness and zero skipped tests
+        shell: pwsh
+        run: ./scripts/Validate-WindowsJUnit.ps1 -MinimumTests 150
+
       - name: Create Windows package
         shell: bash
         run: >-
