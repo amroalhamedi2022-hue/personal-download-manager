@@ -35,6 +35,33 @@ class WindowsFtpCredentialVaultTest {
     }
 
     @Test
+    fun providerRestoresSavedWindowsCredentialsWithoutPuttingPasswordInTask() {
+        if (!System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) return
+        val vault = WindowsFtpCredentialVault()
+        val username = "synthetic-account"
+        val password = "Synthetic🧪FTP-Only-2468"
+        val reference = vault.save(username, password)
+        try {
+            val item = FtpDownloadItem(
+                id = 91L,
+                folder = "C:/Temp",
+                name = "synthetic.bin",
+                link = "ftp://example.com/files/synthetic.bin",
+                username = username,
+                credentialRef = reference,
+            )
+            val provider = WindowsCredentialFtpProvider(vault)
+            assertEquals(password, provider.resolve(item).password)
+            assertFalse(item.toString().contains(password))
+            assertFailsWith<java.io.IOException> {
+                provider.resolve(item.copy(username = "wrong-account"))
+            }
+        } finally {
+            vault.delete(reference)
+        }
+    }
+
+    @Test
     fun anonymousAndInvalidCredentialsNeverWriteSecrets() {
         if (!System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) return
         val vault = WindowsFtpCredentialVault()
