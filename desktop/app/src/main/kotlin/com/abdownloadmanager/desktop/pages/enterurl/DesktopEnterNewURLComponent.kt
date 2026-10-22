@@ -52,13 +52,17 @@ class DesktopEnterNewURLComponent(
         val message: String? = null,
     )
     val ftpCheckState = MutableStateFlow(FtpCheckState())
+    private var ftpCheckVersion: Long = 0L
 
     fun clearFtpCheck() {
-        if (!ftpCheckState.value.checking) ftpCheckState.value = FtpCheckState()
+        // Invalidates any result from a check started for old URL/login fields.
+        ftpCheckVersion += 1
+        ftpCheckState.value = FtpCheckState()
     }
 
     fun checkFtpConnection() {
         if (ftpCheckState.value.checking) return
+        val checkVersion = ++ftpCheckVersion
         val credentials = runCatching {
             FtpDownloadCredentials(url.value.trim(), username = ftpUsername.value).also {
                 it.validateCredentials()
@@ -80,6 +84,7 @@ class DesktopEnterNewURLComponent(
                     FtpTransferClient().inspectRemote(credentials.link, user, password)
                 }
             }
+            if (checkVersion != ftpCheckVersion) return@launch
             ftpCheckState.value = outcome.fold(
                 onSuccess = {
                     FtpCheckState(
