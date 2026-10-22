@@ -175,6 +175,8 @@ class FtpDownloadJob(
         downloadItem.folder = proposed.folder
         downloadItem.name = proposed.name
         downloadItem.downloadPage = proposed.downloadPage
+        downloadItem.username = proposed.username
+        downloadItem.credentialRef = proposed.credentialRef
         downloadItem.contentLength = proposed.contentLength
         downloadItem.preferredConnectionCount = proposed.preferredConnectionCount
         downloadItem.speedLimit = proposed.speedLimit
