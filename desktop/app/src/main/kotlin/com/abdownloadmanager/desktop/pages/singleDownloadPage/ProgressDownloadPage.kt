@@ -77,6 +77,12 @@ enum class SingleDownloadPageSections(
 
 private val tabs = entries.toList()
 
+// All visible liquid tracks share one animation clock rather than running a
+// separate infinite transition for each active connection/part.
+// Read the State in the Canvas draw phase to avoid recomposing the entire page
+// at the animation frame rate.
+private val LocalLiquidAnimationPhase = compositionLocalOf<State<Float>> { mutableFloatStateOf(0f) }
+
 @Composable
 fun ProgressDownloadPage(
     singleDownloadComponent: DesktopSingleDownloadComponent,
@@ -95,7 +101,17 @@ fun ProgressDownloadPage(
     val currentObservedSpeed by rememberUpdatedState(
         if (itemState.status == DownloadJobStatus.Downloading) itemState.speed.coerceAtLeast(0L) else 0L
     )
-    LaunchedEffect(itemState.id) {
+    val samplingActive = itemState.status == DownloadJobStatus.Downloading
+    LaunchedEffect(itemState.id, samplingActive) {
+        if (!samplingActive) {
+            // Preserve a final zero reading in the graph, without running a
+            // forever-idle one-second timer after pause, retry, or completion.
+            if (speedHistory.lastOrNull() != 0L) {
+                speedHistory.add(0L)
+                if (speedHistory.size > 90) speedHistory.removeAt(0)
+            }
+            return@LaunchedEffect
+        }
         while (true) {
             speedHistory.add(currentObservedSpeed)
             if (speedHistory.size > 90) speedHistory.removeAt(0)
@@ -103,11 +119,34 @@ fun ProgressDownloadPage(
         }
     }
 
+    val transferStatus = itemState.status
+    val hasMovingLiquid = transferStatus == DownloadJobStatus.Downloading ||
+        transferStatus == DownloadJobStatus.Resuming ||
+        transferStatus is DownloadJobStatus.PreparingFile ||
+        itemState.parts.any { part ->
+            part.status == PartDownloadStatus.ReceivingData ||
+                part.status == PartDownloadStatus.Connecting
+        }
+    val liquidPhaseState: State<Float> = if (hasMovingLiquid) {
+        val sharedTransition = rememberInfiniteTransition()
+        sharedTransition.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(2400, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart,
+            )
+        )
+    } else {
+        remember { mutableFloatStateOf(0f) }
+    }
+
     LaunchedEffect(resizingState.resizingPartInfo) {
         if (resizingState.partInfoHeight <= 0.dp) {
             setShowPartInfo(false)
         }
     }
+    CompositionLocalProvider(LocalLiquidAnimationPhase provides liquidPhaseState) {
     Column(
         Modifier.fillMaxSize()
     ) {
@@ -151,7 +190,6 @@ fun ProgressDownloadPage(
                         modifier = tabContentModifier.padding(end = 12.dp),
                         horizontalPadding = horizontalPadding,
                         singleDownloadComponent = singleDownloadComponent,
-                        speedHistory = speedHistory,
                     )
 
                     OnCompletion -> RenderOnCompletion(
@@ -184,6 +222,10 @@ fun ProgressDownloadPage(
                 Spacer(Modifier.size(8.dp))
                 RenderProgressBar(itemState)
                 Spacer(Modifier.size(8.dp))
+                // Keep the real measured speed chart visible in the primary
+                // transfer window, not hidden behind the Settings tab.
+                RealSpeedHistoryChart(speedHistory, Modifier.fillMaxWidth())
+                Spacer(Modifier.size(8.dp))
                 RenderActions(
                     itemState = itemState,
                     singleDownloadComponent = singleDownloadComponent,
@@ -203,6 +245,7 @@ fun ProgressDownloadPage(
             }
         }
     }
+    }
 }
 
 
@@ -211,11 +254,8 @@ private fun RenderSettings(
     modifier: Modifier,
     horizontalPadding: Dp,
     singleDownloadComponent: DesktopSingleDownloadComponent,
-    speedHistory: List<Long>,
 ) {
     Column(modifier) {
-        RealSpeedHistoryChart(speedHistory, Modifier.padding(horizontal = horizontalPadding))
-        Spacer(Modifier.height(8.dp))
         for (configurable in singleDownloadComponent.settings) {
             RenderConfigurable(
                 configurable,
@@ -361,22 +401,9 @@ private fun LiquidProgressTrack(
         targetValue = progress?.coerceIn(0f, 1f) ?: 0f,
         animationSpec = tween(180, easing = LinearEasing),
     )
-    // Do not keep a perpetual Compose animation running while paused, retrying,
-    // completed or otherwise inactive. Hidden dialogs are not composed at all.
-    val phase = if (active) {
-        val liquidAnimation = rememberInfiniteTransition()
-        val animatedPhase by liquidAnimation.animateFloat(
-            initialValue = 0f,
-            targetValue = 1f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(2400, easing = LinearEasing),
-                repeatMode = RepeatMode.Restart,
-            )
-        )
-        animatedPhase
-    } else {
-        0f
-    }
+    // Read the shared phase only inside Canvas. An idle track stays static;
+    // the sole infinite transition is disposed when no track is active.
+    val sharedPhase = LocalLiquidAnimationPhase.current
     val shape = myShapes.defaultRounded
 
     Box(
@@ -387,6 +414,7 @@ private fun LiquidProgressTrack(
     ) {
         Canvas(Modifier.fillMaxSize()) {
             if (progress == null && !active) return@Canvas
+            val phase = if (active) sharedPhase.value else 0f
 
             val isIndeterminate = progress == null
             val nominalEnd = if (isIndeterminate) {
