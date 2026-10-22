@@ -175,7 +175,7 @@ fun ProgressDownloadPage(
             Spacer(Modifier.fillMaxWidth().height(1.dp).background(myColors.surface))
             Box(
                 Modifier
-                    .height(150.dp)
+                    .height(220.dp)
                     .background(myColors.background)
                     .verticalScroll(scrollState)
             ) {
@@ -319,7 +319,7 @@ private fun RealSpeedHistoryChart(history: List<Long>, modifier: Modifier = Modi
         Canvas(
             Modifier
                 .fillMaxWidth()
-                .height(80.dp)
+                .height(132.dp)
                 .clip(myShapes.defaultRounded)
                 .background(myColors.surface)
         ) {
