@@ -21,9 +21,9 @@ import java.io.File
 import java.io.IOException
 
 /**
- * Desktop-only FTP adapter. The registry/UI is deliberately not enabled yet:
- * authentication storage, host/speed limits, and shared processing monitor must
- * be integrated and regression-tested before FTP can be offered in Add URL.
+ * Desktop FTP job integrated with the existing manager, host/speed limits and
+ * the transient WinCred-backed credential provider. GUI and LAN/WAN acceptance
+ * remain separate gates; a green local transfer is not a public-network test.
  */
 class FtpDownloadJob(
     override val downloadItem: FtpDownloadItem,
@@ -74,7 +74,7 @@ class FtpDownloadJob(
                 // Reuse the same host permit used by HTTP/HLS. Waiting for a
                 // permit is cancellable, and a paused transfer releases it even
                 // when the network read exits with an error.
-                val host = java.net.URI(downloadItem.link).host
+                val host = parseFtpFileUri(downloadItem.link).host
                     ?: throw IOException("FTP host is missing")
                 val result = downloadManager.hostLimitRegistry.withConnectionPermit(host) {
                     currentCoroutineContext().ensureActive()

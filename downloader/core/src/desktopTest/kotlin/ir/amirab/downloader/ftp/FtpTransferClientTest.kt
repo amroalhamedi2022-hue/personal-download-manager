@@ -65,6 +65,65 @@ class FtpTransferClientTest {
         assertTrue(missing.message.orEmpty().contains("not found"))
     }
 
+
+    @Test
+    fun realFtpFileWithLiteralSpacesAndBracketsCanBeInspectedAndDownloaded() = withFixture { fixture ->
+        val unusualName = "photo archive [final] (2).bin"
+        Files.write(fixture.root.resolve(unusualName), fixture.bytes)
+        val rawUrl = fixture.url(unusualName)
+        val escapedUrl = fixture.url("photo%20archive%20%5Bfinal%5D%20(2).bin")
+        val client = FtpTransferClient()
+        assertEquals(fixture.bytes.size.toLong(), client.inspectRemote(rawUrl, "test", "secret").size)
+        val output = fixture.downloadFolder.resolve("real-special-name.bin")
+        val result = client.download(escapedUrl, output, username = "test", password = "secret")
+        assertEquals(fixture.bytes.size.toLong(), result.transferredBytes)
+        assertContentEquals(fixture.bytes, Files.readAllBytes(output))
+        assertFalse(Files.exists(output.resolveSibling(output.fileName.toString() + ".ftp-part")))
+    }
+
+    @Test
+    fun ftpJobHostAdmissionAlsoHandlesSpacesInSavedSourceLink() = withFixture { fixture ->
+        runBlocking {
+            val sourceName = "shared folder [2].bin"
+            Files.write(fixture.root.resolve(sourceName), fixture.bytes)
+            val item = FtpDownloadItem(
+                id = 728L,
+                folder = fixture.downloadFolder.toString(),
+                name = "saved-name.bin",
+                link = fixture.url(sourceName),
+                username = "test",
+            )
+            val database = MemoryDownloadListDB()
+            database.add(item)
+            val manager = DownloadManager(
+                dlListDb = database,
+                partListDb = MemoryDownloadPartStatesDB(),
+                settings = DownloadSettings(),
+                emptyFileCreator = EmptyFileCreator(
+                    diskStat = object : IDiskStat {
+                        override fun getRemainingSpace(path: java.io.File) = Long.MAX_VALUE
+                    },
+                    useSparseFile = { false },
+                ),
+                downloaderRegistry = DownloaderRegistry().apply {
+                    add(FtpDownloader(FtpCredentialsProvider { FtpSessionCredentials("test", "secret") }))
+                },
+                downloadDataFolder = fixture.downloadFolder.toFile(),
+            )
+            try {
+                manager.boot()
+                manager.resume(item.id)
+                withTimeout(25_000) {
+                    while (database.getById(item.id)?.status != DownloadStatus.Completed) delay(20)
+                }
+                assertContentEquals(fixture.bytes, Files.readAllBytes(fixture.downloadFolder.resolve("saved-name.bin")))
+            } finally {
+                manager.downloadJobs.forEach { it.close() }
+                manager.scope.cancel()
+            }
+        }
+    }
+
     @Test
     fun binaryFtpTransfersAllBytesAndCommitsOnlyCompletedFile() = withFixture { fixture ->
         val destination = fixture.downloadFolder.resolve("binary.bin")

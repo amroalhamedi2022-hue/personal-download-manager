@@ -44,6 +44,30 @@ class FtpModelTest {
         assertFailsWith<IllegalArgumentException> { FtpDownloadCredentials("ftp://example.com:65536/a").validateCredentials() }
     }
 
+
+    @Test
+    fun ftpLiteralSpacesBracketsAndEscapedNamesShareOneSafeParser() {
+        val raw = "ftp://127.0.0.1:2121/pub/report [final] (2).zip"
+        val encoded = "ftp://127.0.0.1:2121/pub/report%20%5Bfinal%5D%20(2).zip"
+        assertEquals(
+            parseFtpFileUri(encoded).path,
+            parseFtpFileUri(raw).path,
+        )
+        assertEquals("/pub/report [final] (2).zip", parseFtpFileUri(raw).path)
+        FtpDownloadCredentials(raw).validateCredentials()
+        FtpDownloadCredentials(encoded).validateCredentials()
+        assertEquals("127.0.0.1", parseFtpFileUri(raw).host)
+        assertFailsWith<IllegalArgumentException> {
+            FtpDownloadCredentials("ftp://host/pub/%0Aevil.bin").validateCredentials()
+        }
+        assertFailsWith<IllegalArgumentException> {
+            FtpDownloadCredentials("ftp://user:secret@host/pub/a%20b.bin").validateCredentials()
+        }
+        assertFailsWith<IllegalArgumentException> {
+            FtpDownloadCredentials("ftp://ho st/pub/a.bin").validateCredentials()
+        }
+    }
+
     @Test
     fun oldFtpRecordWithoutCredentialRefStillDecodesAndNewReferenceDoesNotContainPassword() {
         val legacy = Json.encodeToString(FtpDownloadItem.serializer(), sample())

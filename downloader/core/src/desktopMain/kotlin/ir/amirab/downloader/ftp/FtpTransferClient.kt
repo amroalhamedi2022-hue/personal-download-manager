@@ -7,7 +7,6 @@ import org.apache.commons.net.ftp.FTP
 import org.apache.commons.net.ftp.FTPClient
 import org.apache.commons.net.ftp.FTPReply
 import java.io.IOException
-import java.net.URI
 import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.Path
@@ -231,21 +230,9 @@ class FtpTransferClient {
         }
 
         private fun parseEndpoint(value: String): Endpoint {
-            val uri = try {
-                URI(value.trim())
-            } catch (_: Exception) {
-                throw IllegalArgumentException("Invalid FTP URL")
-            }
-            require(uri.scheme.equals("ftp", ignoreCase = true)) { "Only ftp:// is supported" }
-            require(uri.host?.isNotBlank() == true) { "FTP URL requires a host" }
-            require(uri.userInfo == null) { "Pass FTP credentials separately; do not embed passwords in URL" }
-            require(uri.query == null && uri.fragment == null) { "FTP URLs cannot include query/fragment" }
-            val path = uri.path.orEmpty()
-            require(path.startsWith("/") && path.length > 1) { "FTP URL requires a file path" }
-            require(path.none { it == '\r' || it == '\n' || it == '\u0000' }) { "Unsafe FTP path" }
+            val uri = parseFtpFileUri(value)
             val port = if (uri.port == -1) 21 else uri.port
-            require(port in 1..65535) { "Invalid FTP port" }
-            return Endpoint(uri.host, port, path)
+            return Endpoint(uri.host, port, uri.path)
         }
 
         private fun responseValue(client: FTPClient, command: String, path: String): String? {

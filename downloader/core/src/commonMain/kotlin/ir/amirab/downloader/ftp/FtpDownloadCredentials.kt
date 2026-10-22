@@ -5,7 +5,6 @@ import arrow.core.getOrElse
 import ir.amirab.downloader.downloaditem.IDownloadCredentials
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import java.net.URI
 
 /**
  * FTP credentials are a URL and a username only. Never persist the password in
@@ -39,13 +38,5 @@ internal fun validateFtpCredentialReference(reference: String) {
 }
 
 internal fun validateFtpLink(url: String) {
-    val uri = runCatching { URI(url.trim()) }.getOrNull()
-        ?: throw IllegalArgumentException("Invalid FTP URL")
-    require(uri.scheme.equals("ftp", ignoreCase = true)) { "Only ftp:// links are accepted" }
-    require(!uri.host.isNullOrBlank()) { "FTP host is missing" }
-    require(uri.userInfo == null) { "Do not embed FTP passwords in URLs" }
-    require(uri.query == null && uri.fragment == null) { "Unsupported FTP URL query/fragment" }
-    require(uri.path?.startsWith("/") == true && uri.path.length > 1) { "FTP path is missing" }
-    require(uri.path.none { it == '\r' || it == '\n' || it == '\u0000' }) { "Unsafe FTP path" }
-    require(uri.port == -1 || uri.port in 1..65535) { "Invalid FTP port" }
+    parseFtpFileUri(url)
 }
