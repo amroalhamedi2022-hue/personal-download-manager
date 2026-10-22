@@ -56,7 +56,14 @@ jobs:
           $digest = (Get-FileHash -Algorithm SHA256 -LiteralPath $installers[0].FullName).Hash.ToLowerInvariant()
           Write-Host "Installer SHA256: $digest"
           # NSIS: /S silent; /D=destination must be the FINAL argument.
-          $installation = Start-Process -FilePath $installers[0].FullName -ArgumentList @('/S', "/D=$isolated") -Wait -PassThru
+          $installation = Start-Process -FilePath $installers[0].FullName -ArgumentList @('/S', "/D=$isolated") -PassThru
+          # Start-Process -Wait waits for the entire descendant process tree.
+          # Some installers auto-launch the desktop app, so use an explicit
+          # bounded wait for the installer process itself instead.
+          if (-not $installation.WaitForExit(180000)) {
+            Stop-Process -Id $installation.Id -Force -ErrorAction SilentlyContinue
+            throw 'Silent installer did not exit within 180 seconds.'
+          }
           if ($installation.ExitCode -ne 0) { throw "Installer exit code: $($installation.ExitCode)" }
           if (-not (Test-Path -LiteralPath $isolated -PathType Container)) {
             throw 'Installer did not create the isolated destination.'
