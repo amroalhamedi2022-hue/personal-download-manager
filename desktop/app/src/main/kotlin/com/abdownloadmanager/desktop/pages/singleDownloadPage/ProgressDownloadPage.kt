@@ -260,7 +260,7 @@ private fun RenderTransferSummary(itemState: ProcessingDownloadItemState) {
     } ?: "Unknown"
     val currentSpeed = if (itemState.status == DownloadJobStatus.Downloading) itemState.speed.coerceAtLeast(0L) else 0L
     val speed = convertPositiveSizeToHumanReadable(currentSpeed, units).rememberString()
-    val remaining = itemState.remainingTime?.takeIf { it >= 0L }?.let { seconds ->
+    val remaining = itemState.remainingTime?.takeIf { it >= 0L && itemState.status == DownloadJobStatus.Downloading }?.let { seconds ->
         val hours = seconds / 3600
         val mins = (seconds % 3600 / 60).toString().padStart(2, '0')
         val secs = (seconds % 60).toString().padStart(2, '0')
@@ -299,45 +299,60 @@ private fun RenderSettings(
  */
 @Composable
 private fun RealSpeedHistoryChart(history: List<Long>, modifier: Modifier = Modifier) {
+    // Actual monitor byte deltas; sampled once per second with a hard 90-s cap.
     val samples = history.toList()
     val observedMaxSpeed = samples.maxOrNull() ?: 0L
     val maxSpeed = observedMaxSpeed.coerceAtLeast(1L)
     val currentSpeed = samples.lastOrNull() ?: 0L
     val speedUnit = LocalSizeUnit.current
-    val graphColor = myColors.primary
-    val gridColor = myColors.onBackground / 8
+    val lineColor = myColors.primary
+    val fillColor = myColors.primary.copy(alpha = 0.27f)
+    val gridColor = myColors.onBackground / 10
     val currentText = convertPositiveSizeToHumanReadable(currentSpeed, speedUnit).rememberString()
     val peakText = convertPositiveSizeToHumanReadable(observedMaxSpeed, speedUnit).rememberString()
-
     Column(modifier.fillMaxWidth()) {
-        Text(
-            "Speed: $currentText/s  •  Peak: $peakText/s  •  Last 90 s",
-            fontSize = myTextSizes.base,
-            color = myColors.onBackground,
-        )
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("Transfer rate", fontSize = myTextSizes.base, color = myColors.onBackground)
+            Text("$currentText/s", fontSize = myTextSizes.base, color = myColors.onBackground)
+        }
+        Text("Peak: $peakText/s  •  Last 90 seconds", fontSize = myTextSizes.base, color = myColors.onBackground / 0.7f)
         Spacer(Modifier.height(4.dp))
-        Canvas(
-            Modifier
-                .fillMaxWidth()
-                .height(132.dp)
-                .clip(myShapes.defaultRounded)
-                .background(myColors.surface)
-        ) {
+        Canvas(Modifier.fillMaxWidth().height(132.dp).clip(myShapes.defaultRounded).background(myColors.surface)) {
             repeat(4) { index ->
                 val y = size.height * (index + 1) / 5f
+                val x = size.width * (index + 1) / 5f
                 drawLine(gridColor, Offset(0f, y), Offset(size.width, y), strokeWidth = 1f)
+                drawLine(gridColor, Offset(x, 0f), Offset(x, size.height), strokeWidth = 1f)
             }
             if (samples.isEmpty()) return@Canvas
-            val graph = Path()
-            val h = size.height * 0.88f
+            val top = size.height * 0.08f
             val bottom = size.height * 0.94f
-            samples.forEachIndexed { index, bytesPerSecond ->
+            val points = samples.mapIndexed { index, bytes ->
                 val x = if (samples.size == 1) 0f else size.width * index / (samples.size - 1).toFloat()
-                val normalized = (bytesPerSecond.toDouble() / maxSpeed.toDouble()).toFloat().coerceIn(0f, 1f)
-                val y = bottom - normalized * h
-                if (index == 0) graph.moveTo(x, y) else graph.lineTo(x, y)
+                val fraction = (bytes.toDouble() / maxSpeed.toDouble()).toFloat().coerceIn(0f, 1f)
+                Offset(x, bottom - fraction * (bottom - top))
             }
-            drawPath(graph, color = graphColor, style = Stroke(width = 2.dp.toPx()))
+            if (points.size == 1) {
+                drawCircle(lineColor, 2.dp.toPx(), points.first())
+                return@Canvas
+            }
+            val curve = Path().apply {
+                moveTo(points.first().x, points.first().y)
+                for (index in 1 until points.size) {
+                    val left = points[index - 1]
+                    val right = points[index]
+                    quadraticBezierTo(left.x, left.y, (left.x + right.x) / 2f, (left.y + right.y) / 2f)
+                }
+                lineTo(points.last().x, points.last().y)
+            }
+            val area = Path().apply {
+                addPath(curve)
+                lineTo(points.last().x, bottom)
+                lineTo(points.first().x, bottom)
+                close()
+            }
+            drawPath(area, brush = Brush.verticalGradient(listOf(fillColor, Color.Transparent), startY = top, endY = bottom))
+            drawPath(curve, color = lineColor, style = Stroke(width = 2.dp.toPx()))
         }
     }
 }
@@ -527,6 +542,8 @@ private fun RenderPartInfo(
     horizontalPadding: Dp,
 ) {
     Column(modifier) {
+        // The approved reference displays completed and waiting parts by default.
+        var onlyActiveParts by rememberSaveable(itemState.id) { mutableStateOf(false) }
         Row(
             Modifier.fillMaxWidth().padding(horizontal = horizontalPadding, vertical = 6.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -535,6 +552,14 @@ private fun RenderPartInfo(
             Text("Connections and downloaded parts", fontSize = myTextSizes.base)
             val connected = itemState.parts.count { it.status == PartDownloadStatus.ReceivingData }
             Text("${itemState.parts.size} parts • $connected connected", fontSize = myTextSizes.base)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.onClick { onlyActiveParts = !onlyActiveParts },
+            ) {
+                Text("Only active", fontSize = myTextSizes.base)
+                Spacer(Modifier.width(4.dp))
+                CheckBox(onlyActiveParts, { onlyActiveParts = it })
+            }
         }
         val singleDownloadPageSizing = LocalSingleDownloadPageSizing.current
         val mutableInteractionSource = remember { MutableInteractionSource() }
@@ -556,28 +581,8 @@ private fun RenderPartInfo(
             Box(
                 Modifier.weight(1f)
             ) {
-                val (onlyActiveParts, setOnlyActiveParts) = rememberSaveable {
-                    mutableStateOf(true)
-                }
-                val listToShow = remember(itemState, onlyActiveParts) {
-                    itemState.parts
-                        .let { parts ->
-                            if (onlyActiveParts) {
-                                parts.filter {
-                                    when (it.status) {
-                                        is PartDownloadStatus.Canceled -> true
-                                        PartDownloadStatus.Completed -> false
-                                        PartDownloadStatus.IDLE -> false
-                                        PartDownloadStatus.ReceivingData -> true
-                                        PartDownloadStatus.Connecting -> true
-                                    }
-                                }
-                            } else {
-                                parts
-                            }
-                        }
-                        .withIndex()
-                        .toList()
+                val listToShow = remember(itemState.parts, onlyActiveParts) {
+                    selectVisibleDownloadParts(itemState.parts, onlyActiveParts)
                 }
                 Table(
                     list = listToShow,
@@ -646,19 +651,6 @@ private fun RenderPartInfo(
                                 } ?: myStringResource(Res.string.unknown),
                             )
                         }
-                    }
-                }
-                if (useIsInDebugMode()) {
-                    Row(
-                        modifier = Modifier
-                            .align(Alignment.BottomEnd)
-                            .padding(bottom = 8.dp, end = 8.dp)
-                            .onClick { setOnlyActiveParts(!onlyActiveParts) },
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Only Actives")
-                        Spacer(Modifier.width(4.dp))
-                        CheckBox(onlyActiveParts, { setOnlyActiveParts(it) })
                     }
                 }
             }

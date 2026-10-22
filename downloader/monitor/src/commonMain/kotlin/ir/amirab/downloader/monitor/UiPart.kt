@@ -77,3 +77,16 @@ data class UiDurationBasedPart(
         }
     }
 }
+
+
+/**
+ * Keep each part's original index after filtering; part row numbers must
+ * never change simply because some completed connections are hidden.
+ * Default mode shows all active, idle, completed and canceled parts.
+ */
+fun selectVisibleDownloadParts(
+    parts: List<UiPart>,
+    onlyActive: Boolean,
+): List<IndexedValue<UiPart>> = parts.withIndex().filter { part ->
+    !onlyActive || part.value.status is PartDownloadStatus.IsActive
+}
