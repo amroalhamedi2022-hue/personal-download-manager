@@ -21,7 +21,9 @@ data class FtpDownloadItem(
     override var name: String,
     override var link: String,
     override var downloadPage: String? = null,
-    val username: String = "anonymous",
+    var username: String = "anonymous",
+    /** Opaque Windows Credential Manager reference; never a password. */
+    var credentialRef: String? = null,
     override var contentLength: Long = IDownloadItem.LENGTH_UNKNOWN,
     override var dateAdded: Long = 0L,
     override var startTime: Long? = null,
@@ -38,6 +40,7 @@ data class FtpDownloadItem(
 
     override fun validateItem() {
         validateCredentials()
+        credentialRef?.let(::validateFtpCredentialReference)
         require(speedLimit >= 0L) { "Negative FTP speed limit" }
         require(preferredConnectionCount == null || preferredConnectionCount == 1) {
             "FTP transfer currently supports a single connection only"
@@ -50,6 +53,7 @@ data class FtpDownloadItem(
                 link = credentials.link,
                 downloadPage = credentials.downloadPage,
                 username = credentials.username,
+                credentialRef = credentials.credentialRef,
             )
         } else this
 
