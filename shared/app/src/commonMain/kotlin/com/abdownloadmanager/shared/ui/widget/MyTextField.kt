@@ -34,6 +34,7 @@ import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
@@ -64,6 +65,7 @@ fun MyTextField(
     minLines: Int = 1,
     start: @Composable (RowScope.() -> Unit)? = null,
     end: @Composable (RowScope.() -> Unit)? = null,
+    visualTransformation: VisualTransformation = VisualTransformation.None,
 ) {
     val focusRequester = remember { FocusRequester() }
     val fm = LocalFocusManager.current
@@ -118,6 +120,7 @@ fun MyTextField(
             maxLines = maxLines,
             minLines = minLines,
             onValueChange = onTextChange,
+            visualTransformation = visualTransformation,
             interactionSource = interactionSource,
             enabled = enabled,
             modifier = Modifier

@@ -8,6 +8,10 @@ import com.abdownloadmanager.desktop.pages.category.DesktopCategoryDialogManager
 import com.abdownloadmanager.desktop.pages.checksum.DesktopFileChecksumComponent
 import com.abdownloadmanager.desktop.pages.editdownload.DesktopEditDownloadComponent
 import com.abdownloadmanager.desktop.pages.enterurl.DesktopEnterNewURLComponent
+import ir.amirab.downloader.ftp.FtpDownloadItem
+import ir.amirab.downloader.ftp.WindowsFtpCredentialVault
+import ir.amirab.downloader.downloaditem.EmptyContext
+import ir.amirab.downloader.utils.OnDuplicateStrategy
 import com.abdownloadmanager.desktop.pages.home.HomeComponent
 import com.abdownloadmanager.desktop.pages.perhostsettings.DesktopPerHostSettingsComponent
 import com.abdownloadmanager.desktop.pages.poweractionalert.PowerActionComponent
@@ -880,6 +884,15 @@ class AppComponent(
 
     override fun openDownloadDialog(id: Long) {
         scope.launch {
+            if (downloadSystem.getDownloadItemById(id) is FtpDownloadItem) {
+                sendNotification(
+                    "ftp-detail-$id",
+                    "FTP transfer".asStringSource(),
+                    "FTP progress is available in the main download list.".asStringSource(),
+                    NotificationType.Info,
+                )
+                return@launch
+            }
             val component = openedDownloadDialogs.value.find {
                 it.downloadId == id
             }
@@ -1156,6 +1169,52 @@ class AppComponent(
                                 )
                             ),
                         )
+                    }
+                },
+                initialFtpFolder = appSettings.defaultDownloadFolder.value,
+                onRequestFtp = { request ->
+                    scope.launch {
+                        var credentialRef: String? = null
+                        var addedId: Long? = null
+                        try {
+                            if (request.username != "anonymous") {
+                                credentialRef = withContext(Dispatchers.IO) {
+                                    WindowsFtpCredentialVault().save(request.username, request.password)
+                                }
+                            }
+                            addedId = downloadSystem.addDownload(
+                                newDownload = NewDownloadItemProps(
+                                    downloadItem = FtpDownloadItem(
+                                        id = -1L,
+                                        folder = request.folder,
+                                        name = request.name,
+                                        link = request.link,
+                                        username = request.username,
+                                        credentialRef = credentialRef,
+                                    ),
+                                    extraConfig = null,
+                                    onDuplicateStrategy = OnDuplicateStrategy.AddNumbered,
+                                    context = EmptyContext,
+                                ),
+                                queueId = null,
+                                categoryId = null,
+                            )
+                            downloadSystem.userManualResume(requireNotNull(addedId))
+                        } catch (failure: Exception) {
+                            if (addedId == null) {
+                                credentialRef?.let { ref ->
+                                    withContext(Dispatchers.IO) {
+                                        runCatching { WindowsFtpCredentialVault().delete(ref) }
+                                    }
+                                }
+                            }
+                            sendNotification(
+                                "ftp-add-error",
+                                "FTP download could not start".asStringSource(),
+                                (failure.localizedMessage ?: "Check the FTP address and save folder.").asStringSource(),
+                                NotificationType.Error,
+                            )
+                        }
                     }
                 }
             )

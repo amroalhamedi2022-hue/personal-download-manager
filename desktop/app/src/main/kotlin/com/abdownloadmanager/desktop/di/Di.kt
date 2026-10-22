@@ -127,6 +127,8 @@ import ir.amirab.downloader.downloaditem.IDownloadItem
 import ir.amirab.downloader.downloaditem.hls.HLSDownloader
 import ir.amirab.downloader.downloaditem.http.HttpDownloadCredentials
 import ir.amirab.downloader.downloaditem.http.HttpDownloadItem
+import ir.amirab.downloader.ftp.FtpDownloader
+import ir.amirab.downloader.ftp.WindowsCredentialFtpProvider
 import ir.amirab.downloader.downloaditem.http.HttpDownloader
 import ir.amirab.downloader.monitor.DownloadItemStateFactory
 import ir.amirab.downloader.monitor.IDownloadMonitor
@@ -236,6 +238,8 @@ val downloaderModule = module {
     single {
         HttpDownloader(inject())
     }
+    // Desktop FTP resolves secrets from the current Windows user's vault.
+    single { FtpDownloader(WindowsCredentialFtpProvider()) }
     single {
         HttpDownloaderInUi(get(), get())
     }
@@ -249,6 +253,7 @@ val downloaderModule = module {
         DownloaderRegistry().apply {
             add(get<HttpDownloader>())
             add(get<HLSDownloader>())
+            add(get<FtpDownloader>())
         }
     }
     single {

@@ -7,6 +7,9 @@ import ir.amirab.downloader.connection.IResponseInfo
 import ir.amirab.downloader.downloaditem.DownloadJob
 import ir.amirab.downloader.downloaditem.IDownloadCredentials
 import ir.amirab.downloader.downloaditem.IDownloadItem
+import ir.amirab.downloader.part.PartDownloadStatus
+import ir.amirab.downloader.monitor.UiRangedPart
+import ir.amirab.downloader.monitor.RangeBasedProcessingDownloadItemState
 import ir.amirab.downloader.monitor.CompletedDownloadItemState
 import ir.amirab.downloader.monitor.DownloadItemStateFactory
 import ir.amirab.downloader.monitor.ProcessingDownloadItemFactoryInputs
@@ -79,15 +82,48 @@ class DownloaderInUiRegistry
         props: ProcessingDownloadItemFactoryInputs<DownloadJob>,
     ): ProcessingDownloadItemState {
         val downloadJob = props.downloadJob
-        return requireNotNull(getDownloaderOf(downloadJob)) {
-            "there is no downloader in UI registered for this download job: ${downloadJob::class.qualifiedName}"
-        }.createProcessingDownloadItemState(props)
+        val ui = getDownloaderOf(downloadJob)
+        if (ui != null) return ui.createProcessingDownloadItemState(props)
+        // FTP uses a separate desktop Add URL flow. Show the real job in the
+        // existing download list while its specialized detail UI is developed.
+        val item = downloadJob.downloadItem
+        if (item.link.startsWith("ftp://", ignoreCase = true)) {
+            val transferred = downloadJob.getDownloadedSize().coerceAtLeast(0L)
+            return RangeBasedProcessingDownloadItemState(
+                id = item.id,
+                folder = item.folder,
+                name = item.name,
+                downloadLink = item.link,
+                contentLength = item.contentLength,
+                saveLocation = item.name,
+                dateAdded = item.dateAdded,
+                startTime = item.startTime ?: -1L,
+                completeTime = item.completeTime ?: -1L,
+                status = downloadJob.status.value,
+                speed = props.speed,
+                parts = listOf(UiRangedPart(
+                    id = 0L,
+                    status = if (downloadJob.isDownloadActive.value)
+                        PartDownloadStatus.ReceivingData else PartDownloadStatus.IDLE,
+                    howMuchProceed = transferred,
+                    percent = null,
+                    length = item.contentLength.takeIf { it > 0L },
+                    partSpace = 1f,
+                )),
+                supportResume = null,
+                isWaiting = props.isWaiting,
+            )
+        }
+        error("there is no downloader in UI registered for this download job: ${downloadJob::class.qualifiedName}")
     }
 
     override fun createCompletedDownloadItemState(downloadItem: IDownloadItem): CompletedDownloadItemState {
-        return requireNotNull(getDownloaderOf(downloadItem)) {
-            "there is no downloader in UI registered for this download item: ${downloadItem::class.qualifiedName}"
-        }.createCompletedDownloadItemState(downloadItem)
+        val ui = getDownloaderOf(downloadItem)
+        if (ui != null) return ui.createCompletedDownloadItemState(downloadItem)
+        if (downloadItem.link.startsWith("ftp://", ignoreCase = true)) {
+            return CompletedDownloadItemState.fromDownloadItem(downloadItem)
+        }
+        error("there is no downloader in UI registered for this download item: ${downloadItem::class.qualifiedName}")
     }
 
     companion object {
