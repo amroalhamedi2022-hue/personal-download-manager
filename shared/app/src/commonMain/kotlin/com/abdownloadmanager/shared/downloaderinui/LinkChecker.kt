@@ -54,10 +54,18 @@ abstract class LinkChecker<
         _isValid.update { isValid }
     }
 
+    /**
+     * Existing HTTP/HLS checkers keep OkHttp URL validation by default.
+     * Desktop FTP must override this hook when its protocol-specific checker
+     * is registered, rather than passing ftp:// through the HTTP parser.
+     */
+    protected open fun isLinkSupportedForCheck(link: String): Boolean =
+        HttpUrlUtils.isValidUrl(link)
+
     suspend fun check() {
         val downloadCredentials = credentials.value
         val link = downloadCredentials.link
-        val isValidUrl = HttpUrlUtils.isValidUrl(link)
+        val isValidUrl = isLinkSupportedForCheck(link)
         setResult(null)
         if (link.isBlank() || !isValidUrl) {
             return
