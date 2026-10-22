@@ -27,6 +27,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.abdownloadmanager.shared.ui.configurable.RenderConfigurableGroup
+import com.abdownloadmanager.shared.settings.filterSettingsGroups
+import com.abdownloadmanager.shared.ui.widget.MyTextField
+import com.abdownloadmanager.shared.ui.widget.ActionButton
+import androidx.compose.runtime.saveable.rememberSaveable
 import com.abdownloadmanager.shared.util.div
 import com.abdownloadmanager.shared.util.ui.MultiplatformVerticalScrollbar
 import com.abdownloadmanager.shared.util.ui.needScroll
@@ -157,67 +161,94 @@ fun SettingsPage(
     settingsComponent: DesktopSettingsComponent,
     onDismissRequest: () -> Unit,
 ) {
-//    WindowIcon(MyIcons.settings)
     WindowIcon(MyIcons.appIcon)
+    var search by rememberSaveable { mutableStateOf("") }
+    val searching = search.isNotBlank()
+    val currentPage by settingsComponent.currentPage.collectAsState()
+    val currentConfigurables by settingsComponent.configurables.collectAsState()
+
+    // A search spans Appearance, Download Engine and Browser Integration.
+    // Reuse real backedBy controls; the search itself never mutates a setting.
+    val displayedSections = if (searching) {
+        settingsComponent.allSettingsSections().mapNotNull { (section, groups) ->
+            val matchingGroups = if (section.name.getString().contains(search.trim(), ignoreCase = true)) {
+                groups
+            } else {
+                filterSettingsGroups(groups, search)
+            }
+            if (matchingGroups.isEmpty()) null else section to matchingGroups
+        }
+    } else {
+        listOf(currentPage to currentConfigurables)
+    }
+
     Column {
-        Spacer(
-            Modifier
-                .fillMaxWidth()
-                .height(1.dp)
-                .background(myColors.surface)
-        )
+        Spacer(Modifier.fillMaxWidth().height(1.dp).background(myColors.surface))
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            MyTextField(
+                search,
+                { search = it },
+                "Search all settings by name or description",
+                Modifier.weight(1f),
+            )
+            if (searching) {
+                Spacer(Modifier.width(8.dp))
+                ActionButton("Clear", onClick = { search = "" })
+            }
+        }
+        Spacer(Modifier.fillMaxWidth().height(1.dp).background(myColors.onBackground / 0.12f))
         Row {
             var sideBarWidth by remember { mutableStateOf(250.dp) }
             SideBar(
                 settingsComponent,
-                Modifier
-                    .fillMaxHeight()
-                    .width(sideBarWidth)
-                    .padding(8.dp)
+                Modifier.fillMaxHeight().width(sideBarWidth).padding(8.dp),
             )
-            val currentConfigurables by settingsComponent.configurables.collectAsState()
-            Handle(
-                Modifier.width(5.dp).fillMaxHeight(),
-                orientation = Orientation.Horizontal
-            ) {
+            Handle(Modifier.width(5.dp).fillMaxHeight(), orientation = Orientation.Horizontal) {
                 sideBarWidth = (sideBarWidth + it).coerceIn(150.dp..300.dp)
             }
-            AnimatedContent(currentConfigurables) { configurableGroups ->
-                val scrollState = rememberScrollState()
-                val scrollbarAdapter = rememberScrollbarAdapter(scrollState)
-                Row {
-                    Column(
-                        Modifier
-                            .weight(1f)
-                            .verticalScroll(scrollState)
-                            .padding(
-                                horizontal = 8.dp,
-                                vertical = 8.dp
-                            ),
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        for (cfgGroup in configurableGroups) {
+            val scrollState = rememberScrollState()
+            val scrollbarAdapter = rememberScrollbarAdapter(scrollState)
+            Row {
+                Column(
+                    Modifier.weight(1f).verticalScroll(scrollState)
+                        .padding(horizontal = 8.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    if (displayedSections.isEmpty()) {
+                        Text(
+                            "No settings match your search.",
+                            Modifier.padding(16.dp),
+                            color = myColors.onBackground,
+                        )
+                    }
+                    for ((section, groups) in displayedSections) {
+                        if (searching) {
+                            Text(
+                                section.name.rememberString(),
+                                Modifier.padding(start = 8.dp, top = 4.dp, bottom = 4.dp),
+                                fontSize = myTextSizes.lg,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        }
+                        for (cfgGroup in groups) {
                             RenderConfigurableGroup(
                                 cfgGroup,
                                 Modifier,
-                                itemPadding = PaddingValues(
-                                    vertical = 8.dp,
-                                    horizontal = 16.dp
-                                )
+                                itemPadding = PaddingValues(vertical = 8.dp, horizontal = 16.dp),
                             )
                         }
                     }
-                    if (scrollbarAdapter.needScroll()) {
-                        MultiplatformVerticalScrollbar(
-                            adapter = scrollbarAdapter,
-                            modifier = Modifier
-                                .padding(vertical = 8.dp)
-                                .padding(end = 2.dp),
-                        )
-                    }
+                }
+                if (scrollbarAdapter.needScroll()) {
+                    MultiplatformVerticalScrollbar(
+                        adapter = scrollbarAdapter,
+                        modifier = Modifier.padding(vertical = 8.dp).padding(end = 2.dp),
+                    )
                 }
             }
-
         }
     }
 }
