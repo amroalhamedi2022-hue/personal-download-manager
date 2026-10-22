@@ -45,7 +45,7 @@ val LocalSingleDownloadPageSizing =
 @Stable
 class SingleProgressDownloadPageSizing {
     var resizingPartInfo by mutableStateOf(false)
-    var partInfoHeight by mutableStateOf(150.dp)
+    var partInfoHeight by mutableStateOf(230.dp)
 }
 
 @Composable
@@ -168,7 +168,7 @@ private fun ProgressWindow(
         singleDownloadComponent.close()
     }
     val uiScale = LocalUiScale.current
-    val defaultHeight = 290f.applyUiScale(uiScale)
+    val defaultHeight = 410f.applyUiScale(uiScale)
     val defaultWidth = 760f.applyUiScale(uiScale)
 
     val showPartInfo by singleDownloadComponent.showPartInfo.collectAsState()
