@@ -58,6 +58,7 @@ import ir.amirab.util.ifThen
 fun EditDownloadWindow(
     appComponent: AppComponent,
 ) {
+    FtpEditDownloadWindow(appComponent)
     appComponent.editDownloadSlot.rememberChild()?.let {
         EditDownloadWindow(it)
     }

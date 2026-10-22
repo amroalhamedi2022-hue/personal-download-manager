@@ -12,6 +12,10 @@ import ir.amirab.downloader.ftp.FtpDownloadItem
 import ir.amirab.downloader.ftp.WindowsFtpCredentialVault
 import ir.amirab.downloader.downloaditem.EmptyContext
 import ir.amirab.downloader.utils.OnDuplicateStrategy
+import ir.amirab.downloader.ftp.FtpDownloadCredentials
+import com.abdownloadmanager.desktop.pages.enterurl.FtpDownloadRequest
+import ir.amirab.util.FileNameValidator
+import ir.amirab.util.PathValidator
 import com.abdownloadmanager.desktop.pages.home.HomeComponent
 import com.abdownloadmanager.desktop.pages.perhostsettings.DesktopPerHostSettingsComponent
 import com.abdownloadmanager.desktop.pages.poweractionalert.PowerActionComponent
@@ -261,16 +265,97 @@ class AppComponent(
         }
     ).subscribeAsStateFlow()
 
+    val ftpEditItem = MutableStateFlow<FtpDownloadItem?>(null)
+    val ftpEditError = MutableStateFlow<String?>(null)
+    val ftpEditBusy = MutableStateFlow(false)
+
     override fun openEditDownloadDialog(id: Long) {
-        val currentComponent = editDownloadSlot.value.child?.instance
-        if (currentComponent != null && currentComponent.downloadId == id) {
-            currentComponent.bringToFront()
-        } else {
-            editDownload.activate(id)
+        scope.launch {
+            val item = downloadSystem.getDownloadItemById(id)
+            if (item is FtpDownloadItem) {
+                ftpEditError.value = null
+                ftpEditItem.value = item.copy()
+                return@launch
+            }
+            val currentComponent = editDownloadSlot.value.child?.instance
+            if (currentComponent != null && currentComponent.downloadId == id) {
+                currentComponent.bringToFront()
+            } else {
+                editDownload.activate(id)
+            }
+        }
+    }
+
+    fun saveFtpEdit(request: FtpDownloadRequest) {
+        if (ftpEditBusy.value) return
+        val original = ftpEditItem.value ?: return
+        scope.launch {
+            ftpEditBusy.value = true
+            ftpEditError.value = null
+            var newReference: String? = null
+            try {
+                FtpDownloadCredentials(request.link, username = request.username).validateCredentials()
+                require(FileNameValidator.isValidFileName(request.name)) { "Invalid FTP file name" }
+                require(PathValidator.isValidPath(request.folder) &&
+                    PathValidator.canWriteToThisPath(request.folder)) { "Choose an accessible save folder" }
+                require(request.username != "anonymous" || request.password.isEmpty()) {
+                    "Anonymous FTP does not need a password"
+                }
+                val reference = when {
+                    request.username == "anonymous" -> null
+                    request.password.isNotEmpty() -> withContext(Dispatchers.IO) {
+                        WindowsFtpCredentialVault().save(request.username, request.password).also {
+                            newReference = it
+                        }
+                    }
+                    request.username == original.username && original.credentialRef != null ->
+                        original.credentialRef
+                    else -> throw IllegalArgumentException("Enter a password for the new FTP account")
+                }
+                downloadSystem.editDownload(
+                    id = original.id,
+                    applyUpdate = { item ->
+                        val ftp = item as? FtpDownloadItem
+                            ?: throw IllegalStateException("FTP task is no longer available")
+                        ftp.link = request.link
+                        ftp.folder = request.folder
+                        ftp.name = request.name
+                        ftp.username = request.username
+                        ftp.credentialRef = reference
+                    },
+                    downloadJobExtraConfig = null,
+                )
+                if (original.credentialRef != null && original.credentialRef != reference) {
+                    releaseUnusedFtpReference(original.credentialRef!!)
+                }
+                ftpEditItem.value = null
+            } catch (failure: Exception) {
+                newReference?.let { ref ->
+                    withContext(Dispatchers.IO) {
+                        runCatching { WindowsFtpCredentialVault().delete(ref) }
+                    }
+                }
+                ftpEditError.value = failure.localizedMessage ?: "Could not update the FTP task."
+            } finally {
+                ftpEditBusy.value = false
+            }
+        }
+    }
+
+    private suspend fun releaseUnusedFtpReference(reference: String) {
+        val inUse = downloadSystem.getDownloadItemsBy {
+            it is FtpDownloadItem && it.credentialRef == reference
+        }.isNotEmpty()
+        if (!inUse) withContext(Dispatchers.IO) {
+            runCatching { WindowsFtpCredentialVault().delete(reference) }
         }
     }
 
     override fun closeEditDownloadDialog() {
+        if (!ftpEditBusy.value) {
+            ftpEditItem.value = null
+            ftpEditError.value = null
+        }
         editDownload.dismiss()
     }
 
@@ -583,8 +668,18 @@ class AppComponent(
     init {
         downloadSystem
             .downloadEvents
-            .onEach {
-                onNewDownloadEvent(it)
+            .onEach { event ->
+                // Credential ownership is reference-based; never delete a
+                // Windows secret still needed by another persisted FTP item.
+                if (event is DownloadManagerEvents.OnJobRemoved) {
+                    val removed = event.downloadItem
+                    if (removed is FtpDownloadItem) {
+                        removed.credentialRef?.let { ref ->
+                            releaseUnusedFtpReference(ref)
+                        }
+                    }
+                }
+                onNewDownloadEvent(event)
             }
             .launchIn(scope)
 //        IntegrationPortBroadcaster.cleanOnClose()
