@@ -37,6 +37,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.collect
@@ -1192,9 +1193,19 @@ class ActualRestoredRetryJobTest {
                     onQueueEvent = {},
                 )
                 val completed = CompletableDeferred<Unit>()
-                val completionJob = manager.scope.launch {
+                val expectedIds = items.map { it.id }.toSet()
+                val observedCompletions = CopyOnWriteArrayList<Long>()
+                // A count of completion EVENTS is not a count of completed
+                // FILES. A duplicate terminal event could satisfy take(2)
+                // while the second file is still sparse/preallocated.
+                val completionJob = manager.scope.launch(start = CoroutineStart.UNDISPATCHED) {
+                    val seen = mutableSetOf<Long>()
                     manager.listOfJobsEvents
                         .filterIsInstance<DownloadManagerEvents.OnJobCompleted>()
+                        .onEach { observedCompletions.add(it.downloadItem.id) }
+                        .filter { event ->
+                            event.downloadItem.id in expectedIds && seen.add(event.downloadItem.id)
+                        }
                         .take(items.size)
                         .collect()
                     completed.complete(Unit)
@@ -1216,14 +1227,35 @@ class ActualRestoredRetryJobTest {
                         assertEquals(0, fixture.requestsFor("/file/${item.id}.bin"))
                     }
 
-                    withTimeout(35_000) { completed.await() }
+                    val bothFinished = withTimeoutOrNull(35_000) {
+                        completed.await()
+                        true
+                    } ?: false
+                    assertTrue(
+                        bothFinished,
+                        "Scheduled HTTP retry missing a distinct completion: observed=$observedCompletions, " +
+                            "statuses=${manager.downloadJobs.map { it.id to it.status.value }}, " +
+                            "requests=${items.map { it.id to fixture.requestsFor("/file/${it.id}.bin") }}",
+                    )
+                    assertEquals(expectedIds, observedCompletions.toSet(), "Every scheduled file must complete")
+                    assertEquals(items.size, observedCompletions.size, "Duplicate completion event detected")
 
                     assertTrue(queue.isQueueActive)
                     val perFilePeaks = mutableListOf<Int>()
                     items.forEach { item ->
-                        assertContentEquals(
-                            fixture.fileBytes(item.id),
-                            File(item.folder, item.name).readBytes(),
+                        val path = File(item.folder, item.name)
+                        assertTrue(path.isFile, "Completed file is missing: id=${item.id}")
+                        val expected = fixture.fileBytes(item.id)
+                        val actual = path.readBytes()
+                        assertEquals(expected.size, actual.size, "Completed output length wrong: id=${item.id}")
+                        // Exact bytes, but concise diagnostics rather than a 17 MB
+                        // JUnit failure XML listing entire byte arrays.
+                        val mismatch = expected.indices.firstOrNull { expected[it] != actual[it] }
+                        assertNull(
+                            mismatch,
+                            "Corrupt HTTP output: id=${item.id}, firstDifference=$mismatch, " +
+                                "partRequests=${fixture.partRequestsFor("/file/${item.id}.bin")}, " +
+                                "status=${manager.downloadJobs.first { it.id == item.id }.status.value}",
                         )
                         assertTrue(fixture.partRequestsFor("/file/${item.id}.bin") >= 2)
                         perFilePeaks += fixture.peakPartTransfersFor("/file/${item.id}.bin")
