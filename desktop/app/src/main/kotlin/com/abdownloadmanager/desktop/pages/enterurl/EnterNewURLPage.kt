@@ -52,6 +52,8 @@ import com.abdownloadmanager.shared.util.ui.theme.myShapes
 import com.abdownloadmanager.shared.util.ui.widget.MyIcon
 import ir.amirab.util.compose.resources.myStringResource
 import java.awt.MouseInfo
+import java.io.File
+import com.abdownloadmanager.desktop.ui.util.rememberMyDirectoryPickerLauncher
 
 @Composable
 fun EnterNewURLPage(component: DesktopEnterNewURLComponent) {
@@ -86,6 +88,13 @@ fun EnterNewURLPage(component: DesktopEnterNewURLComponent) {
             val password by component.ftpPassword.collectAsState()
             val folder by component.ftpFolder.collectAsState()
             val fileName by component.ftpFileName.collectAsState()
+            val ftpFolderPicker = rememberMyDirectoryPickerLauncher(
+                title = "Select FTP download folder",
+                initialDirectory = remember(folder) {
+                    runCatching { File(folder).canonicalPath }.getOrNull()
+                },
+                attachToWindow = true,
+            ) { chosen -> chosen?.let(component::setFtpFolder) }
             Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
                 MyTextField(username, component::setFtpUsername, "FTP username (anonymous)", Modifier.fillMaxWidth())
                 Spacer(Modifier.height(6.dp))
@@ -99,7 +108,11 @@ fun EnterNewURLPage(component: DesktopEnterNewURLComponent) {
                 }
                 MyTextField(fileName, component::setFtpFileName, "File name", Modifier.fillMaxWidth())
                 Spacer(Modifier.height(6.dp))
-                MyTextField(folder, component::setFtpFolder, "Save folder", Modifier.fillMaxWidth())
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    MyTextField(folder, component::setFtpFolder, "Save folder", Modifier.weight(1f))
+                    Spacer(Modifier.width(8.dp))
+                    ActionButton("Browse", onClick = ftpFolderPicker::launch)
+                }
                 Spacer(Modifier.height(6.dp))
                 val inspection by component.ftpCheckState.collectAsState()
                 Row(verticalAlignment = Alignment.CenterVertically) {
