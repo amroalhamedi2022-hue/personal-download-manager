@@ -184,6 +184,7 @@ fun ProgressDownloadPage(
                         tabContentModifier,
                         horizontalPadding,
                         singleDownloadComponent,
+                        speedHistory,
                     )
 
                     Settings -> RenderSettings(
@@ -222,9 +223,7 @@ fun ProgressDownloadPage(
                 Spacer(Modifier.size(8.dp))
                 RenderProgressBar(itemState)
                 Spacer(Modifier.size(8.dp))
-                // Keep the real measured speed chart visible in the primary
-                // transfer window, not hidden behind the Settings tab.
-                RealSpeedHistoryChart(speedHistory, Modifier.fillMaxWidth())
+                RenderTransferSummary(itemState)
                 Spacer(Modifier.size(8.dp))
                 RenderActions(
                     itemState = itemState,
@@ -248,6 +247,30 @@ fun ProgressDownloadPage(
     }
 }
 
+
+/**
+ * Match the approved transfer strip; percentage is in the native title only.
+ */
+@Composable
+private fun RenderTransferSummary(itemState: ProcessingDownloadItemState) {
+    val units = LocalSizeUnit.current
+    val downloaded = convertPositiveSizeToHumanReadable(itemState.progress.coerceAtLeast(0L), units).rememberString()
+    val total = itemState.contentLength.takeIf { it > 0L }?.let {
+        convertPositiveSizeToHumanReadable(it, units).rememberString()
+    } ?: "Unknown"
+    val currentSpeed = if (itemState.status == DownloadJobStatus.Downloading) itemState.speed.coerceAtLeast(0L) else 0L
+    val speed = convertPositiveSizeToHumanReadable(currentSpeed, units).rememberString()
+    val remaining = itemState.remainingTime?.takeIf { it >= 0L }?.let { seconds ->
+        val hours = seconds / 3600
+        val mins = (seconds % 3600 / 60).toString().padStart(2, '0')
+        val secs = (seconds % 60).toString().padStart(2, '0')
+        if (hours > 0) "${hours}:${mins}:${secs}" else "${mins}:${secs}"
+    } ?: "—"
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text("${downloaded} of ${total}", fontSize = myTextSizes.base)
+        Text("${remaining} remaining (${speed}/s)", fontSize = myTextSizes.base)
+    }
+}
 
 @Composable
 private fun RenderSettings(
@@ -397,7 +420,7 @@ private fun LiquidProgressTrack(
     bubbleCount: Int,
     showCompletionIcon: Boolean = false,
 ) {
-    val animatedProgress by animateFloatAsState(
+    val animatedProgress = animateFloatAsState(
         targetValue = progress?.coerceIn(0f, 1f) ?: 0f,
         animationSpec = tween(180, easing = LinearEasing),
     )
@@ -415,12 +438,13 @@ private fun LiquidProgressTrack(
         Canvas(Modifier.fillMaxSize()) {
             if (progress == null && !active) return@Canvas
             val phase = if (active) sharedPhase.value else 0f
+            val currentProgress = animatedProgress.value
 
             val isIndeterminate = progress == null
             val nominalEnd = if (isIndeterminate) {
                 size.width * (phase * 1.45f)
             } else {
-                size.width * animatedProgress
+                size.width * currentProgress
             }
             val startX = if (isIndeterminate) {
                 (nominalEnd - size.width * 0.38f).coerceAtLeast(0f)
@@ -430,7 +454,7 @@ private fun LiquidProgressTrack(
             val endX = nominalEnd.coerceIn(0f, size.width)
             if (endX <= startX) return@Canvas
 
-            val amplitude = if (!isIndeterminate && animatedProgress >= 0.995f) {
+            val amplitude = if (!isIndeterminate && currentProgress >= 0.995f) {
                 0f
             } else {
                 size.height * 0.16f
@@ -503,6 +527,15 @@ private fun RenderPartInfo(
     horizontalPadding: Dp,
 ) {
     Column(modifier) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = horizontalPadding, vertical = 6.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("Connections and downloaded parts", fontSize = myTextSizes.base)
+            val connected = itemState.parts.count { it.status == PartDownloadStatus.ReceivingData }
+            Text("${itemState.parts.size} parts • $connected connected", fontSize = myTextSizes.base)
+        }
         val singleDownloadPageSizing = LocalSingleDownloadPageSizing.current
         val mutableInteractionSource = remember { MutableInteractionSource() }
         val isDraggingHandle by mutableInteractionSource.collectIsDraggedAsState()
@@ -734,16 +767,22 @@ private fun RenderInfo(
     modifier: Modifier,
     horizontalPadding: Dp,
     singleDownloadComponent: DesktopSingleDownloadComponent,
+    speedHistory: List<Long>,
 ) {
-    Column(
-        modifier
-            .padding(horizontal = horizontalPadding)
-            .padding(top = 8.dp)
+    // Approved Liquid window: file details on the left and a real chart on
+    // the right, without hiding the transfer rate behind the Settings tab.
+    Row(
+        modifier.padding(horizontal = horizontalPadding).padding(top = 8.dp),
+        verticalAlignment = Alignment.Top,
     ) {
-        for (propertyItem in singleDownloadComponent.extraDownloadProgressInfo.collectAsState().value) {
-            Spacer(Modifier.height(2.dp))
-            RenderPropertyItem(propertyItem)
+        Column(Modifier.weight(0.59f)) {
+            for (propertyItem in singleDownloadComponent.extraDownloadProgressInfo.collectAsState().value) {
+                Spacer(Modifier.height(2.dp))
+                RenderPropertyItem(propertyItem)
+            }
         }
+        Spacer(Modifier.width(12.dp))
+        RealSpeedHistoryChart(speedHistory, Modifier.weight(0.41f))
     }
 }
 
@@ -756,8 +795,9 @@ private fun RenderActions(
     downloadErrorReason: DownloadErrorReason?,
     onRequestShowDownloadError: () -> Unit,
 ) {
-    Row {
-        PartInfoButton(showingPartInfo, onRequestShowPartInfo)
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+            PartInfoButton(showingPartInfo, onRequestShowPartInfo)
         downloadErrorReason?.let {
             Spacer(Modifier.width(mySpacings.smallSpace))
             DownloadErrorInfoButton(
@@ -765,7 +805,8 @@ private fun RenderActions(
                 onClick = onRequestShowDownloadError,
             )
         }
-        Spacer(Modifier.weight(1f))
+        }
+        Row(Modifier.weight(2f), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
         ToggleButton(
             itemState = itemState,
             toggle = singleDownloadComponent::toggle,
@@ -780,6 +821,8 @@ private fun RenderActions(
                 null
             },
         )
+        }
+        Spacer(Modifier.weight(1f))
     }
 }
 

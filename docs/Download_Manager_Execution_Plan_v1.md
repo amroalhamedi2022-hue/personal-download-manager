@@ -965,3 +965,12 @@ Commit/نسخة المصدر:
 ## 15. تعليمات متابعة جاهزة للنموذج
 
 اقرأ Download_Manager_Execution_Plan_v1.md كاملًا واعتمده كمرجع المشروع. لا تبدأ البرمجة إن لم توجد موافقة صريحة أحدث. عند الإذن، ابدأ من أول مرحلة غير مكتملة، وحافظ على Windows أولًا وواجهة شبيهة جدًا بـIDM. لا تغيّر الأساس أو النطاق أو تتجاوز بوابة اعتماد الواجهة دون الرجوع للمستخدم. اختبر كل جزء وسجل الأدلة وحدّث الملف نفسه. لا تعلن اكتمالًا غير مثبت ولا تعِد اختبارات منجزة بلا سبب، لكن أعد الاختبارات المتأثرة بأي تغيير. اشرح دائمًا أين وصلنا وما تم وما التالي.
+
+
+## E046 — Liquid Progress layout/performance source (2026-10-22; Windows validation OPEN)
+
+- Source E045 prior proven 139/139 on SHA `2e3ae2bc600dc1490006dad3c680ebd35184390c`. The new E046 source builds on `39c568a94bd85a4a6addf8f4782bd1e6d5d2a5af`: one infinite Liquid animation phase State shared across all active parts (draw-phase reads), no recurring speed sample timer after transfer stops, finite 90-s history, and animated-progress draw-phase reads.
+- M06 fidelity: the actual rate chart was moved beside properties in the Info panel exactly as the approved reference, with downloaded/total and ETA/rate beneath the main track, centered Pause/Cancel, a labeled part/connection row, and a 760dp default desktop window width. No second percentage at the right of the bar, no torrent, no protocol or credential-schema edits.
+- M09 measured before/after CPU/RAM is NOT done. The implementation reduces animation clocks and avoids known always-on UI timers by source inspection only.
+- CI Run `39755461898` on code SHA `39c568a`, attempt 1 and rerun 2, failed *before runner assignment* (runner_id=0, steps=[], billed Windows 0ms); **no compile/JUnit/installer executed**. This does not establish a Kotlin error or successful build. Exact admission failure reason still unknown; verify GitHub Actions account/runner availability/status.
+- Next gate: Windows compile + JUnit XML on E046 commit, single-EXE package, interactive Windows GUI matching screenshot with identical scaling, network FTP acceptance; then 3 rounds idle/1/4/16 transfers M09 measurement and targeted optimization. Do NOT declare E046 complete until evidence exists.

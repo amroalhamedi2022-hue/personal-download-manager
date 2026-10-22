@@ -169,7 +169,7 @@ private fun ProgressWindow(
     }
     val uiScale = LocalUiScale.current
     val defaultHeight = 290f.applyUiScale(uiScale)
-    val defaultWidth = 450f.applyUiScale(uiScale)
+    val defaultWidth = 760f.applyUiScale(uiScale)
 
     val showPartInfo by singleDownloadComponent.showPartInfo.collectAsState()
     val singleDownloadPageSizing = remember(showPartInfo) { SingleProgressDownloadPageSizing() }
