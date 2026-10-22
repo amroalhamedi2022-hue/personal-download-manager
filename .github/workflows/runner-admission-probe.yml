@@ -1,0 +1,30 @@
+name: Runner admission probe (diagnostics only)
+
+# This workflow performs no compilation, downloads, or repository writes.
+# Trigger automatically only when this file changes; manually re-run it to
+# distinguish Windows runner provisioning from account-wide Actions failures.
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/repair-rf00-rf01]
+    paths:
+      - ".github/workflows/runner-admission-probe.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Prove Linux runner accepted a step
+        run: echo "Linux runner allocated; GitHub Actions is executing steps."
+
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 5
+    steps:
+      - name: Prove Windows runner accepted a step
+        shell: pwsh
+        run: Write-Host "Windows runner allocated; GitHub Actions is executing steps."
