@@ -3,6 +3,9 @@ package ir.amirab.downloader.ftp
 import ir.amirab.downloader.DownloadManager
 import ir.amirab.downloader.DownloaderRegistry
 import ir.amirab.downloader.DownloadSettings
+import ir.amirab.downloader.db.DownloadListFileStorage
+import ir.amirab.downloader.db.TransactionalFileSaver
+import ir.amirab.downloader.downloaditem.IDownloadItem
 import ir.amirab.downloader.db.MemoryDownloadListDB
 import ir.amirab.downloader.db.MemoryDownloadPartStatesDB
 import ir.amirab.downloader.downloaditem.DownloadStatus
@@ -14,6 +17,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.modules.SerializersModule
+import kotlinx.serialization.modules.polymorphic
+import kotlinx.serialization.modules.subclass
 import org.apache.ftpserver.FtpServerFactory
 import org.apache.ftpserver.listener.ListenerFactory
 import org.apache.ftpserver.usermanager.impl.BaseUser
@@ -314,6 +320,81 @@ class FtpTransferClientTest {
             }
         } finally {
             originalVault.delete(reference)
+        }
+    }
+
+
+    @Test
+    fun persistedFtpTaskRestartsFromRealDiskAndResolvesWindowsVaultWithoutStoredPassword() = withFixture { fixture ->
+        if (!System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) return@withFixture
+        val vault = WindowsFtpCredentialVault()
+        val reference = vault.save("test", "secret")
+        val storeFolder = Files.createTempDirectory("ftp-disk-restart-")
+        val json = Json {
+            serializersModule = SerializersModule {
+                polymorphic(IDownloadItem::class) {
+                    subclass(FtpDownloadItem::class, FtpDownloadItem.serializer())
+                }
+            }
+        }
+        try {
+            runBlocking {
+                // First instance persists a task, like a full app shutdown.
+                val beforeRestart = DownloadListFileStorage(storeFolder.toFile(), TransactionalFileSaver(json))
+                val item = FtpDownloadItem(
+                    id = 881L,
+                    folder = fixture.downloadFolder.toString(),
+                    name = "disk-restored.bin",
+                    link = fixture.url("fixture.bin"),
+                    username = "test",
+                    credentialRef = reference,
+                    status = DownloadStatus.Paused,
+                )
+                beforeRestart.add(item)
+                val record = Files.readString(beforeRestart.getDownloadItemFile(881L).toPath())
+                assertFalse(record.contains("\"secret\""))
+                assertTrue(record.contains(reference))
+                // A new database and WinCred instance resolve the same paused
+                // task, and the real DownloadManager resumes the real FTP server.
+                val afterRestart = DownloadListFileStorage(storeFolder.toFile(), TransactionalFileSaver(json))
+                val restored = afterRestart.getById(881L) as FtpDownloadItem
+                assertEquals(DownloadStatus.Paused, restored.status)
+                assertEquals(reference, restored.credentialRef)
+                val manager = DownloadManager(
+                    dlListDb = afterRestart,
+                    partListDb = MemoryDownloadPartStatesDB(),
+                    settings = DownloadSettings(),
+                    emptyFileCreator = EmptyFileCreator(
+                        diskStat = object : IDiskStat {
+                            override fun getRemainingSpace(path: java.io.File) = Long.MAX_VALUE
+                        },
+                        useSparseFile = { false },
+                    ),
+                    downloaderRegistry = DownloaderRegistry().apply {
+                        add(FtpDownloader(WindowsCredentialFtpProvider(WindowsFtpCredentialVault())))
+                    },
+                    downloadDataFolder = fixture.downloadFolder.toFile(),
+                )
+                try {
+                    manager.boot()
+                    assertEquals(1, manager.downloadJobs.size)
+                    manager.resume(restored.id)
+                    withTimeout(25_000) {
+                        while (restored.status != DownloadStatus.Completed) delay(20)
+                    }
+                    assertEquals(
+                        sha256(fixture.bytes),
+                        sha256(Files.readAllBytes(fixture.downloadFolder.resolve("disk-restored.bin"))),
+                    )
+                    assertEquals(DownloadStatus.Completed, afterRestart.getById(881L)?.status)
+                } finally {
+                    manager.downloadJobs.forEach { it.close() }
+                    manager.scope.cancel()
+                }
+            }
+        } finally {
+            vault.delete(reference)
+            storeFolder.toFile().deleteRecursively()
         }
     }
 
