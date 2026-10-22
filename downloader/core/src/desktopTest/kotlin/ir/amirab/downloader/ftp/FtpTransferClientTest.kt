@@ -33,6 +33,31 @@ import kotlin.test.assertTrue
 /** Integration tests, using a genuine local Apache FTP server (not a mocked protocol). */
 class FtpTransferClientTest {
     @Test
+    fun ftpConnectionCheckReportsRemoteSizeWithoutCreatingDownloadedFiles() = withFixture { fixture ->
+        val original = fixture.bytes.size.toLong()
+        val result = FtpTransferClient().inspectRemote(
+            fixture.url("fixture.bin"),
+            username = "test",
+            password = "secret",
+        )
+        assertEquals(original, result.size)
+        assertTrue(Files.list(fixture.downloadFolder).use { !it.findAny().isPresent })
+    }
+
+    @Test
+    fun ftpConnectionCheckRejectsInvalidLoginAndMissingRemoteFile() = withFixture { fixture ->
+        val client = FtpTransferClient()
+        val denied = assertFailsWith<IOException> {
+            client.inspectRemote(fixture.url("fixture.bin"), username = "test", password = "wrong-password")
+        }
+        assertTrue(denied.message.orEmpty().contains("login rejected"))
+        val missing = assertFailsWith<IOException> {
+            client.inspectRemote(fixture.url("missing.bin"), username = "test", password = "secret")
+        }
+        assertTrue(missing.message.orEmpty().contains("not found"))
+    }
+
+    @Test
     fun binaryFtpTransfersAllBytesAndCommitsOnlyCompletedFile() = withFixture { fixture ->
         val destination = fixture.downloadFolder.resolve("binary.bin")
         val client = FtpTransferClient()

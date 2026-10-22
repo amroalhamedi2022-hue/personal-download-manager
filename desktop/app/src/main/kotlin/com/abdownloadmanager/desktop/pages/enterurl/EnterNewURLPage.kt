@@ -62,7 +62,10 @@ fun EnterNewURLPage(component: DesktopEnterNewURLComponent) {
     }
     val text by component.url.collectAsState()
     val isFtp by component.isFtpUrl.collectAsState()
-    LaunchedEffect(text) { if (isFtp) component.suggestFtpFileName() }
+    LaunchedEffect(text) {
+        component.clearFtpCheck()
+        if (isFtp) component.suggestFtpFileName()
+    }
     Column {
         Column(
             Modifier
@@ -98,6 +101,19 @@ fun EnterNewURLPage(component: DesktopEnterNewURLComponent) {
                 Spacer(Modifier.height(6.dp))
                 MyTextField(folder, component::setFtpFolder, "Save folder", Modifier.fillMaxWidth())
                 Spacer(Modifier.height(6.dp))
+                val inspection by component.ftpCheckState.collectAsState()
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    ActionButton(
+                        "Check FTP connection",
+                        enabled = !inspection.checking,
+                        onClick = component::checkFtpConnection,
+                    )
+                }
+                inspection.message?.let {
+                    Spacer(Modifier.height(4.dp))
+                    Text(it, color = if (inspection.success) myColors.success else myColors.onBackground)
+                }
+                Spacer(Modifier.height(4.dp))
                 Text("FTP is unencrypted on the network. Saved passwords use Windows Credential Manager.")
             }
         }

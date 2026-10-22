@@ -40,6 +40,55 @@ class FtpTransferClient {
 
     data class RemoteIdentity(val size: Long?, val modificationTime: String?)
 
+    /**
+     * Probe a single FTP file without opening an output file or downloading
+     * file contents. Invoke off the Compose/UI thread. FTP is plain-text on
+     * the wire; do not use it as a secure login transport.
+     */
+    fun inspectRemote(
+        url: String,
+        username: String = "anonymous",
+        password: String = "anonymous@",
+        connectTimeout: Duration = Duration.ofSeconds(8),
+    ): RemoteIdentity {
+        val endpoint = parseEndpoint(url)
+        require(username.isNotBlank() && username.none { it == '\\r' || it == '\\n' || it == '\\u0000' })
+        require(password.none { it == '\\r' || it == '\\n' || it == '\\u0000' })
+        require(!connectTimeout.isNegative && !connectTimeout.isZero)
+        val ftp = FTPClient()
+        try {
+            ftp.setAutodetectUTF8(true)
+            ftp.setControlEncoding("UTF-8")
+            ftp.setConnectTimeout(connectTimeout.toMillis().coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
+            ftp.setDefaultTimeout(connectTimeout.toMillis().coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
+            ftp.setDataTimeout(connectTimeout)
+            ftp.connect(endpoint.host, endpoint.port)
+            if (!FTPReply.isPositiveCompletion(ftp.replyCode)) {
+                throw IOException("FTP connection rejected (code ${ftp.replyCode})")
+            }
+            if (!ftp.login(username, password)) {
+                throw IOException("FTP login rejected (code ${ftp.replyCode})")
+            }
+            ftp.enterLocalPassiveMode()
+            if (!ftp.setFileType(FTP.BINARY_FILE_TYPE)) {
+                throw IOException("FTP binary mode unavailable (code ${ftp.replyCode})")
+            }
+            val sizeCode = ftp.sendCommand("SIZE", endpoint.path)
+            if (sizeCode == 550) throw IOException("FTP file not found or access denied (code 550)")
+            val size = if (sizeCode == 213) {
+                ftp.replyString?.lineSequence()?.firstOrNull()
+                    ?.trim()?.removePrefix("213")?.trim()?.toLongOrNull()
+            } else null
+            val timestamp = responseValue(ftp, "MDTM", endpoint.path)
+            return RemoteIdentity(size = size, modificationTime = timestamp)
+        } finally {
+            if (ftp.isConnected) {
+                runCatching { ftp.logout() }
+                runCatching { ftp.disconnect() }
+            }
+        }
+    }
+
     fun cancel() {
         // Closing the socket interrupts blocking read() on the worker thread.
         val client = activeConnection.get()

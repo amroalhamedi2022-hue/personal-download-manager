@@ -38,7 +38,7 @@ private fun EnterNewDownloadWindow(
     val windowState = rememberWindowState(
         initialBoundsProvider = WindowBoundsProvider(
             sizeProvider = WindowSizeProvider.Fixed(
-                size = (if (isFtp) DpSize(520.dp, 360.dp) else DpSize(400.dp, 150.dp))
+                size = (if (isFtp) DpSize(520.dp, 420.dp) else DpSize(400.dp, 150.dp))
                     .applyUiScale(LocalUiScale.current),
             ),
             positionProvider = WindowPositionProvider.CenteredOnScreen
