@@ -28,6 +28,9 @@ kotlin {
         getByName("desktopMain").dependencies {
             // Apache Commons Net (Apache-2.0), JVM/Windows FTP transport only.
             implementation("commons-net:commons-net:3.13.0")
+            // JNA is already used by the Windows app: reuse it for native WinCred.
+            // No home-grown password encryption or new credential-store library.
+            implementation(libs.jna.platform)
         }
         commonTest.dependencies {
             implementation(kotlin("test"))
