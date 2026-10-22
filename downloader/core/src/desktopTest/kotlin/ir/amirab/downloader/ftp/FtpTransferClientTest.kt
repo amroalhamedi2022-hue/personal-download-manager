@@ -13,6 +13,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlinx.serialization.json.Json
 import org.apache.ftpserver.FtpServerFactory
 import org.apache.ftpserver.listener.ListenerFactory
 import org.apache.ftpserver.usermanager.impl.BaseUser
@@ -226,6 +227,68 @@ class FtpTransferClientTest {
                 manager.downloadJobs.forEach { it.close() }
                 manager.scope.cancel()
             }
+        }
+    }
+
+
+    @Test
+    fun restoredWindowsCredentialDownloadsThroughRealFtpManager() = withFixture { fixture ->
+        if (!System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) return@withFixture
+        val originalVault = WindowsFtpCredentialVault()
+        val reference = originalVault.save("test", "secret")
+        try {
+            runBlocking {
+                val initial = FtpDownloadItem(
+                    id = 73L,
+                    folder = fixture.downloadFolder.toString(),
+                    name = "credential-restored.bin",
+                    link = fixture.url("fixture.bin"),
+                    username = "test",
+                    credentialRef = reference,
+                    status = DownloadStatus.Paused,
+                    dateAdded = 73L,
+                )
+                val record = Json.encodeToString(FtpDownloadItem.serializer(), initial)
+                assertFalse(record.contains("\"secret\""), "Persisted FTP task must not contain a password")
+                val restored = Json.decodeFromString(FtpDownloadItem.serializer(), record)
+                val database = MemoryDownloadListDB()
+                database.add(restored)
+                // Never use the vault instance that originally wrote the secret:
+                // this exercises WinCred lookup after task serialization/restart.
+                val manager = DownloadManager(
+                    dlListDb = database,
+                    partListDb = MemoryDownloadPartStatesDB(),
+                    settings = DownloadSettings(),
+                    emptyFileCreator = EmptyFileCreator(
+                        diskStat = object : IDiskStat {
+                            override fun getRemainingSpace(path: java.io.File) = Long.MAX_VALUE
+                        },
+                        useSparseFile = { false },
+                    ),
+                    downloaderRegistry = DownloaderRegistry().apply {
+                        add(FtpDownloader(WindowsCredentialFtpProvider(WindowsFtpCredentialVault())))
+                    },
+                    downloadDataFolder = fixture.downloadFolder.toFile(),
+                )
+                try {
+                    manager.boot()
+                    assertEquals(1, manager.downloadJobs.size)
+                    manager.resume(restored.id)
+                    withTimeout(25_000) {
+                        while (restored.status != DownloadStatus.Completed) delay(20)
+                    }
+                    val output = fixture.downloadFolder.resolve("credential-restored.bin")
+                    assertTrue(Files.isRegularFile(output))
+                    assertEquals(sha256(fixture.bytes), sha256(Files.readAllBytes(output)))
+                    assertEquals(DownloadStatus.Completed, database.getById(restored.id)?.status)
+                    assertFalse(restored.toString().contains("\"secret\""))
+                } finally {
+                    manager.downloadJobs.forEach { it.close() }
+                    manager.scope.cancel()
+                }
+            }
+        } finally {
+            originalVault.delete(reference)
         }
     }
 
