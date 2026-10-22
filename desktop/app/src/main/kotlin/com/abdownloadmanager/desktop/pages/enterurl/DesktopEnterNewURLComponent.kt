@@ -141,16 +141,15 @@ class DesktopEnterNewURLComponent(
         val filenameSnapshot = ftpFileName.value
         val startSnapshot = ftpStartImmediately.value
         scope.launch {
-            val validDestination = withContext(Dispatchers.IO) {
-                PathValidator.isValidPath(folderSnapshot) &&
-                    PathValidator.canWriteToThisPath(folderSnapshot)
-            }
-            if (!validDestination) {
-                ftpSubmitInProgress.value = false
-                ftpFormError.value = "Select an existing writable folder before adding the FTP download."
-                return@launch
-            }
             try {
+                val validDestination = withContext(Dispatchers.IO) {
+                    PathValidator.isValidPath(folderSnapshot) &&
+                        PathValidator.canWriteToThisPath(folderSnapshot)
+                }
+                if (!validDestination) {
+                    ftpFormError.value = "Select an existing writable folder before adding the FTP download."
+                    return@launch
+                }
                 onRequestFtp(
                     FtpDownloadRequest(
                         link = linkSnapshot,

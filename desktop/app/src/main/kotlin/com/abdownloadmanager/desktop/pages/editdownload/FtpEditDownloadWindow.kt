@@ -37,14 +37,6 @@ fun FtpEditDownloadWindow(appComponent: AppComponent) {
     var folder by remember(entry.id) { mutableStateOf(entry.folder) }
     var username by remember(entry.id) { mutableStateOf(entry.username) }
     var newPassword by remember(entry.id) { mutableStateOf("") }
-    val folderPicker = rememberMyDirectoryPickerLauncher(
-        title = "Select FTP download folder",
-        initialDirectory = remember(folder) {
-            runCatching { File(folder).canonicalPath }.getOrNull()
-        },
-        attachToWindow = true,
-    ) { chosen -> chosen?.let { folder = it } }
-
     CustomWindow(
         state = rememberWindowState(
             initialBoundsProvider = WindowBoundsProvider(
@@ -56,6 +48,14 @@ fun FtpEditDownloadWindow(appComponent: AppComponent) {
         onCloseRequest = appComponent::closeEditDownloadDialog,
         windowController = rememberWindowController(title = "Edit FTP download"),
     ) {
+        // FileKit's LocalWindow is supplied inside CustomWindow, not outside.
+        val folderPicker = rememberMyDirectoryPickerLauncher(
+            title = "Select FTP download folder",
+            initialDirectory = remember(folder) {
+                runCatching { File(folder).canonicalPath }.getOrNull()
+            },
+            attachToWindow = true,
+        ) { chosen -> chosen?.let { folder = it } }
         Column(Modifier.fillMaxSize().padding(16.dp)) {
             MyTextField(link, { link = it }, "ftp://server/path/file", Modifier.fillMaxWidth(), enabled = !busy)
             Spacer(Modifier.height(8.dp))
