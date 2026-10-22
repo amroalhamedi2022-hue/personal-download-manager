@@ -105,6 +105,14 @@ jobs:
               $target = Join-Path $PWD 'build/ci-release/installed-gui-smoke.png'
               $bitmap.Save($target, [System.Drawing.Imaging.ImageFormat]::Png)
               Write-Host "GUI screenshot: $target"
+              # Collect an actual process-tree CPU/RAM baseline while the
+              # installed app is open and idle. This measures hardware behavior,
+              # not the predicted effect of source-level animation changes.
+              $metrics = Join-Path $PWD 'build/ci-release/installed-idle-metrics.csv'
+              & ./scripts/Measure-WindowsDownloadManager.ps1 -RootProcessName DownloadManager -Scenario installed-idle-warm -SourceSha $env:GITHUB_SHA -OutputCsv $metrics -DurationSeconds 30 -SampleIntervalMs 1000 -WarmupSeconds 5 -RunLabel hosted-windows-1
+              if (-not (Test-Path -LiteralPath $metrics -PathType Leaf)) {
+                throw 'Installed application idle benchmark did not write CSV.'
+              }
             } finally {
               $graphics.Dispose()
               $bitmap.Dispose()
@@ -115,6 +123,15 @@ jobs:
               Stop-Process -Id $started.Id -Force -ErrorAction SilentlyContinue
             }
           }
+
+      - name: Upload actual installed-app idle CPU/RAM baseline
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-installed-idle-process-metrics
+          path: build/ci-release/installed-idle-metrics.csv
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Upload installed GUI screenshot when available
         if: always()
