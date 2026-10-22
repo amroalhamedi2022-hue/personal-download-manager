@@ -307,11 +307,8 @@ class FtpTransferClientTest {
                     manager.boot()
                     assertEquals(1, manager.downloadJobs.size)
                     manager.resume(restored.id)
-                    // The manager loads its own FTP item instance from the file
-                    // database at boot. Poll the persisted state, not a detached
-                    // snapshot returned from the earlier read.
                     withTimeout(25_000) {
-                        while (afterRestart.getById(restored.id)?.status != DownloadStatus.Completed) {
+                        while (database.getById(restored.id)?.status != DownloadStatus.Completed) {
                             delay(20)
                         }
                     }
@@ -386,8 +383,12 @@ class FtpTransferClientTest {
                     manager.boot()
                     assertEquals(1, manager.downloadJobs.size)
                     manager.resume(restored.id)
+                    // The disk DB deserializes a fresh instance per read.
+                    // Poll the file-backed state, not the detached snapshot.
                     withTimeout(25_000) {
-                        while (restored.status != DownloadStatus.Completed) delay(20)
+                        while (afterRestart.getById(restored.id)?.status != DownloadStatus.Completed) {
+                            delay(20)
+                        }
                     }
                     assertEquals(
                         sha256(fixture.bytes),
