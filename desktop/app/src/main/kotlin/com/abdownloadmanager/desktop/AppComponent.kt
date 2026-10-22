@@ -1297,7 +1297,9 @@ class AppComponent(
                                 queueId = null,
                                 categoryId = null,
                             )
-                            downloadSystem.userManualResume(requireNotNull(addedId))
+                            if (request.startImmediately) {
+                                downloadSystem.userManualResume(requireNotNull(addedId))
+                            }
                         } catch (failure: Exception) {
                             if (addedId == null) {
                                 credentialRef?.let { ref ->

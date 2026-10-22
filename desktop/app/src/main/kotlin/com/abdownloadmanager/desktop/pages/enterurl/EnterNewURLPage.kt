@@ -88,6 +88,8 @@ fun EnterNewURLPage(component: DesktopEnterNewURLComponent) {
             val password by component.ftpPassword.collectAsState()
             val folder by component.ftpFolder.collectAsState()
             val fileName by component.ftpFileName.collectAsState()
+            val startImmediately by component.ftpStartImmediately.collectAsState()
+            val submitError by component.ftpFormError.collectAsState()
             val ftpFolderPicker = rememberMyDirectoryPickerLauncher(
                 title = "Select FTP download folder",
                 initialDirectory = remember(folder) {
@@ -125,6 +127,15 @@ fun EnterNewURLPage(component: DesktopEnterNewURLComponent) {
                 inspection.message?.let {
                     Spacer(Modifier.height(4.dp))
                     Text(it, color = if (inspection.success) myColors.success else myColors.onBackground)
+                }
+                Spacer(Modifier.height(4.dp))
+                ActionButton(
+                    if (startImmediately) "Start immediately: Yes" else "Start immediately: No (add to list)",
+                    onClick = component::toggleFtpStartImmediately,
+                )
+                submitError?.let {
+                    Spacer(Modifier.height(4.dp))
+                    Text(it, color = myColors.error)
                 }
                 Spacer(Modifier.height(4.dp))
                 Text("FTP is unencrypted on the network. Saved passwords use Windows Credential Manager.")
@@ -280,9 +291,10 @@ private fun Actions(
     val ftpPassword by component.ftpPassword.collectAsState()
     val ftpFolder by component.ftpFolder.collectAsState()
     val ftpName by component.ftpFileName.collectAsState()
+    val ftpSubmitting by component.ftpSubmitInProgress.collectAsState()
     ActionButton(
         myStringResource(Res.string.ok),
-        enabled = if (isFtp) component.canSubmitFtp() else component.canAdd.collectAsState().value,
+        enabled = if (isFtp) component.canSubmitFtp() && !ftpSubmitting else component.canAdd.collectAsState().value,
         onClick = {
             if (isFtp) component.newFtpDownloadEntered() else component.newDownloadEntered()
         }

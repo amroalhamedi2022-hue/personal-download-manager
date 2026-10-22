@@ -10,6 +10,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import ir.amirab.util.FileNameValidator
+import ir.amirab.util.PathValidator
 import ir.amirab.util.flow.mapStateFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import java.net.URI
@@ -40,6 +41,9 @@ class DesktopEnterNewURLComponent(
     val ftpPassword = MutableStateFlow("")
     val ftpFolder = MutableStateFlow(initialFtpFolder)
     val ftpFileName = MutableStateFlow("")
+    val ftpStartImmediately = MutableStateFlow(true)
+    val ftpSubmitInProgress = MutableStateFlow(false)
+    val ftpFormError = MutableStateFlow<String?>(null)
     private var fileNameEdited = false
 
     data class FtpCheckState(
@@ -101,7 +105,10 @@ class DesktopEnterNewURLComponent(
 
     fun setFtpUsername(value: String) { clearFtpCheck(); ftpUsername.value = value }
     fun setFtpPassword(value: String) { clearFtpCheck(); ftpPassword.value = value }
-    fun setFtpFolder(value: String) { ftpFolder.value = value }
+    fun setFtpFolder(value: String) { ftpFormError.value = null; ftpFolder.value = value }
+    fun toggleFtpStartImmediately() {
+        ftpStartImmediately.value = !ftpStartImmediately.value
+    }
     fun setFtpFileName(value: String) { fileNameEdited = true; ftpFileName.value = value }
 
     fun suggestFtpFileName() {
@@ -120,17 +127,48 @@ class DesktopEnterNewURLComponent(
     }.getOrDefault(false)
 
     fun newFtpDownloadEntered() {
-        if (!canSubmitFtp()) return
-        val request = FtpDownloadRequest(
-            link = url.value.trim(),
-            username = ftpUsername.value,
-            password = if (ftpUsername.value == "anonymous") "" else ftpPassword.value,
-            folder = ftpFolder.value,
-            name = ftpFileName.value,
-        )
-        ftpPassword.value = ""
-        onRequestFtp(request)
-        close()
+        if (ftpSubmitInProgress.value) return
+        if (!canSubmitFtp()) {
+            ftpFormError.value = "Enter a valid FTP URL, file name, folder, and account details."
+            return
+        }
+        ftpSubmitInProgress.value = true
+        ftpFormError.value = null
+        val linkSnapshot = url.value.trim()
+        val userSnapshot = ftpUsername.value
+        val passwordSnapshot = if (userSnapshot == "anonymous") "" else ftpPassword.value
+        val folderSnapshot = ftpFolder.value
+        val filenameSnapshot = ftpFileName.value
+        val startSnapshot = ftpStartImmediately.value
+        scope.launch {
+            val validDestination = withContext(Dispatchers.IO) {
+                PathValidator.isValidPath(folderSnapshot) &&
+                    PathValidator.canWriteToThisPath(folderSnapshot)
+            }
+            if (!validDestination) {
+                ftpSubmitInProgress.value = false
+                ftpFormError.value = "Select an existing writable folder before adding the FTP download."
+                return@launch
+            }
+            try {
+                onRequestFtp(
+                    FtpDownloadRequest(
+                        link = linkSnapshot,
+                        username = userSnapshot,
+                        password = passwordSnapshot,
+                        folder = folderSnapshot,
+                        name = filenameSnapshot,
+                        startImmediately = startSnapshot,
+                    )
+                )
+                ftpPassword.value = ""
+                close()
+            } catch (error: Exception) {
+                ftpFormError.value = error.localizedMessage ?: "Could not create FTP download."
+            } finally {
+                ftpSubmitInProgress.value = false
+            }
+        }
     }
 
     fun bringToFront() {
@@ -146,4 +184,5 @@ class FtpDownloadRequest(
     val password: String,
     val folder: String,
     val name: String,
+    val startImmediately: Boolean = true,
 )
