@@ -1,0 +1,119 @@
+name: Windows installed GUI smoke (non-release)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/repair-rf00-rf01]
+    paths:
+      - ".github/workflows/windows-installed-ui-smoke.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-installed-ui-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  install-launch-and-capture:
+    name: Clean silent NSIS install and GUI launch
+    runs-on: windows-2022
+    timeout-minutes: 90
+    env:
+      SKIP_ANDROID_BUILD: "true"
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up JetBrains Runtime 25
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: jetbrains
+          java-package: jdk
+          java-version: "25"
+          check-latest: true
+          cache: gradle
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build Windows installer from same source SHA
+        shell: bash
+        run: >-
+          ./gradlew --no-daemon --stacktrace
+          --dependency-verification strict
+          createReleaseFolderForCi
+
+      - name: Install single NSIS EXE in isolated runner directory
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $packages = Join-Path $PWD 'build/ci-release/binaries'
+          $installers = @(Get-ChildItem -LiteralPath $packages -File -Filter '*.exe' -Recurse)
+          if ($installers.Count -ne 1) { throw "Expected 1 installer, found $($installers.Count)" }
+          $isolated = Join-Path $env:RUNNER_TEMP 'idm-smoke'
+          if (Test-Path -LiteralPath $isolated) { throw "Test installation already exists: $isolated" }
+          $digest = (Get-FileHash -Algorithm SHA256 -LiteralPath $installers[0].FullName).Hash.ToLowerInvariant()
+          Write-Host "Installer SHA256: $digest"
+          # NSIS: /S silent; /D=destination must be the FINAL argument.
+          $installation = Start-Process -FilePath $installers[0].FullName -ArgumentList @('/S', "/D=$isolated") -Wait -PassThru
+          if ($installation.ExitCode -ne 0) { throw "Installer exit code: $($installation.ExitCode)" }
+          if (-not (Test-Path -LiteralPath $isolated -PathType Container)) {
+            throw 'Installer did not create the isolated destination.'
+          }
+          $apps = @(Get-ChildItem -LiteralPath $isolated -Recurse -File -Filter '*.exe' |
+            Where-Object { $_.BaseName -match 'DownloadManager' -and $_.BaseName -notmatch 'Cli|NativeMessagingHost|Uninstall' })
+          if ($apps.Count -lt 1) { throw 'Installed desktop executable not found.' }
+          $main = $apps | Sort-Object FullName | Select-Object -First 1
+          Write-Host "Installed app: $($main.FullName)"
+          "IDM_SMOKE_EXECUTABLE=$($main.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Launch installed desktop app and capture Windows GUI
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = $env:IDM_SMOKE_EXECUTABLE
+          if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw 'Installed app missing.' }
+          $started = Start-Process -FilePath $exe -PassThru
+          $visible = @()
+          try {
+            for ($attempt = 0; $attempt -lt 20; $attempt++) {
+              Start-Sleep -Seconds 1
+              $visible = @(Get-Process -ErrorAction SilentlyContinue | Where-Object {
+                $_.ProcessName -match 'DownloadManager' -and $_.MainWindowHandle -ne [IntPtr]::Zero
+              })
+              if ($visible.Count -gt 0) { break }
+            }
+            if ($visible.Count -eq 0) {
+              throw 'Installed app started but no main window was detected in 20 seconds.'
+            }
+            Write-Host "Detected $($visible.Count) GUI process(es)."
+            Add-Type -AssemblyName System.Drawing
+            Add-Type -AssemblyName System.Windows.Forms
+            $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+            $bitmap = [System.Drawing.Bitmap]::new($bounds.Width, $bounds.Height)
+            $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+            try {
+              $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
+              $target = Join-Path $PWD 'build/ci-release/installed-gui-smoke.png'
+              $bitmap.Save($target, [System.Drawing.Imaging.ImageFormat]::Png)
+              Write-Host "GUI screenshot: $target"
+            } finally {
+              $graphics.Dispose()
+              $bitmap.Dispose()
+            }
+          } finally {
+            $visible | ForEach-Object { Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue }
+            if ($started -and -not $started.HasExited) {
+              Stop-Process -Id $started.Id -Force -ErrorAction SilentlyContinue
+            }
+          }
+
+      - name: Upload installed GUI screenshot when available
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-installed-gui-smoke
+          path: build/ci-release/installed-gui-smoke.png
+          if-no-files-found: ignore
+          retention-days: 7
