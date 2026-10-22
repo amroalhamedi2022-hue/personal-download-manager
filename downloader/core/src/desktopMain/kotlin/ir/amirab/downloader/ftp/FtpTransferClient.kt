@@ -52,8 +52,8 @@ class FtpTransferClient {
         connectTimeout: Duration = Duration.ofSeconds(8),
     ): RemoteIdentity {
         val endpoint = parseEndpoint(url)
-        require(username.isNotBlank() && username.none { it == '\\r' || it == '\\n' || it == '\\u0000' })
-        require(password.none { it == '\\r' || it == '\\n' || it == '\\u0000' })
+        require(username.isNotBlank() && username.none { it == '\r' || it == '\n' || it == '\u0000' })
+        require(password.none { it == '\r' || it == '\n' || it == '\u0000' })
         require(!connectTimeout.isNegative && !connectTimeout.isZero)
         val ftp = FTPClient()
         try {
