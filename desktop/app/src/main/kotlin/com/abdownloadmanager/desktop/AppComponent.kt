@@ -1271,53 +1271,61 @@ class AppComponent(
                 },
                 initialFtpFolder = appSettings.defaultDownloadFolder.value,
                 onRequestFtp = { request ->
-                    scope.launch {
-                        var credentialRef: String? = null
-                        var addedId: Long? = null
-                        try {
-                            if (request.username != "anonymous") {
-                                credentialRef = withContext(Dispatchers.IO) {
-                                    WindowsFtpCredentialVault().save(request.username, request.password)
-                                }
+                    var credentialRef: String? = null
+                    var addedId: Long? = null
+                    try {
+                        if (request.username != "anonymous") {
+                            credentialRef = withContext(Dispatchers.IO) {
+                                WindowsFtpCredentialVault().save(request.username, request.password)
                             }
-                            addedId = downloadSystem.addDownload(
-                                newDownload = NewDownloadItemProps(
-                                    downloadItem = FtpDownloadItem(
-                                        id = -1L,
-                                        folder = request.folder,
-                                        name = request.name,
-                                        link = request.link,
-                                        username = request.username,
-                                        credentialRef = credentialRef,
-                                    ),
-                                    extraConfig = null,
-                                    onDuplicateStrategy = OnDuplicateStrategy.AddNumbered,
-                                    context = EmptyContext,
+                        }
+                        addedId = downloadSystem.addDownload(
+                            newDownload = NewDownloadItemProps(
+                                downloadItem = FtpDownloadItem(
+                                    id = -1L,
+                                    folder = request.folder,
+                                    name = request.name,
+                                    link = request.link,
+                                    username = request.username,
+                                    credentialRef = credentialRef,
                                 ),
-                                queueId = null,
-                                categoryId = null,
-                            )
-                            if (request.startImmediately) {
-                                downloadSystem.userManualResume(requireNotNull(addedId))
+                                extraConfig = null,
+                                onDuplicateStrategy = OnDuplicateStrategy.AddNumbered,
+                                context = EmptyContext,
+                            ),
+                            queueId = null,
+                            categoryId = null,
+                        )
+                    } catch (failure: Exception) {
+                        credentialRef?.let { ref ->
+                            // A failed storage call can still have persisted
+                            // the item before raising an exception.
+                            val stillInUse = runCatching {
+                                downloadSystem.getDownloadItemsBy {
+                                    it is FtpDownloadItem && it.credentialRef == ref
+                                }.isNotEmpty()
+                            }.getOrDefault(true)
+                            if (!stillInUse) withContext(Dispatchers.IO) {
+                                runCatching { WindowsFtpCredentialVault().delete(ref) }
                             }
+                        }
+                        // The caller keeps the form open, including its password,
+                        // so users can fix the problem without starting again.
+                        throw failure
+                    }
+                    // Save and start are independent operations. A failed start
+                    // must not turn a successfully persisted task into a duplicate.
+                    val savedId = requireNotNull(addedId)
+                    if (request.startImmediately) {
+                        try {
+                            downloadSystem.userManualResume(savedId)
                         } catch (failure: Exception) {
-                            if (addedId == null) {
-                                credentialRef?.let { ref ->
-                                    val stillInUse = runCatching {
-                                        downloadSystem.getDownloadItemsBy {
-                                            it is FtpDownloadItem && it.credentialRef == ref
-                                        }.isNotEmpty()
-                                    }.getOrDefault(true)
-                                    if (!stillInUse) withContext(Dispatchers.IO) {
-                                        runCatching { WindowsFtpCredentialVault().delete(ref) }
-                                    }
-                                }
-                            }
+                            if (failure is CancellationException) throw failure
                             sendNotification(
-                                "ftp-add-error",
-                                "FTP download could not start".asStringSource(),
-                                (failure.localizedMessage ?: "Check the FTP address and save folder.").asStringSource(),
-                                NotificationType.Error,
+                                "ftp-start-error-$savedId",
+                                "FTP task saved but could not start".asStringSource(),
+                                (failure.localizedMessage ?: "Resume it from the download list.").asStringSource(),
+                                NotificationType.Warning,
                             )
                         }
                     }

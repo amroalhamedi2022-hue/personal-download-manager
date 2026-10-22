@@ -21,7 +21,7 @@ class DesktopEnterNewURLComponent(
     downloaderInUiRegistry: DownloaderInUiRegistry,
     onCloseRequest: () -> Unit,
     onRequestFinished: (IDownloadCredentials) -> Unit,
-    private val onRequestFtp: (FtpDownloadRequest) -> Unit,
+    private val onRequestFtp: suspend (FtpDownloadRequest) -> Unit,
     initialFtpFolder: String,
 ) : BaseEnterNewURLComponent(
     ctx = ctx,
