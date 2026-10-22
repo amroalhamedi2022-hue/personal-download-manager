@@ -18,9 +18,11 @@ data class FtpDownloadCredentials(
     override val link: String,
     override val downloadPage: String? = null,
     val username: String = "anonymous",
+    val credentialRef: String? = null,
 ) : IDownloadCredentials {
     override fun validateCredentials() {
         validateFtpLink(link)
+        credentialRef?.let(::validateFtpCredentialReference)
         require(username.isNotBlank() && username.none { it == '\r' || it == '\n' || it == '\u0000' }) {
             "Invalid FTP username"
         }
@@ -28,6 +30,12 @@ data class FtpDownloadCredentials(
 
     override fun copy(link: Option<String>, downloadPage: Option<String?>): FtpDownloadCredentials =
         copy(link = link.getOrElse { this.link }, downloadPage = downloadPage.getOrElse { this.downloadPage })
+}
+
+internal fun validateFtpCredentialReference(reference: String) {
+    require(Regex("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$").matches(reference)) {
+        "Invalid FTP credential reference"
+    }
 }
 
 internal fun validateFtpLink(url: String) {
