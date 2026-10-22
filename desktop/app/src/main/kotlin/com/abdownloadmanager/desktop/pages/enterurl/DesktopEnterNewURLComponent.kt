@@ -5,6 +5,10 @@ import com.abdownloadmanager.shared.pages.enterurl.BaseEnterNewURLComponent
 import com.arkivanov.decompose.ComponentContext
 import ir.amirab.downloader.downloaditem.IDownloadCredentials
 import ir.amirab.downloader.ftp.FtpDownloadCredentials
+import ir.amirab.downloader.ftp.FtpTransferClient
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import ir.amirab.util.FileNameValidator
 import ir.amirab.util.flow.mapStateFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -38,8 +42,60 @@ class DesktopEnterNewURLComponent(
     val ftpFileName = MutableStateFlow("")
     private var fileNameEdited = false
 
-    fun setFtpUsername(value: String) { ftpUsername.value = value }
-    fun setFtpPassword(value: String) { ftpPassword.value = value }
+    data class FtpCheckState(
+        val checking: Boolean = false,
+        val success: Boolean = false,
+        val message: String? = null,
+    )
+    val ftpCheckState = MutableStateFlow(FtpCheckState())
+
+    fun clearFtpCheck() {
+        if (!ftpCheckState.value.checking) ftpCheckState.value = FtpCheckState()
+    }
+
+    fun checkFtpConnection() {
+        if (ftpCheckState.value.checking) return
+        val credentials = runCatching {
+            FtpDownloadCredentials(url.value.trim(), username = ftpUsername.value).also {
+                it.validateCredentials()
+            }
+        }.getOrElse {
+            ftpCheckState.value = FtpCheckState(message = "Invalid FTP address or user name")
+            return
+        }
+        val user = credentials.username
+        val password = if (user == "anonymous") "anonymous@" else ftpPassword.value
+        if (user != "anonymous" && password.isEmpty()) {
+            ftpCheckState.value = FtpCheckState(message = "Enter the FTP password before checking")
+            return
+        }
+        ftpCheckState.value = FtpCheckState(checking = true, message = "Checking FTP connection...")
+        scope.launch {
+            val outcome = runCatching {
+                withContext(Dispatchers.IO) {
+                    FtpTransferClient().inspectRemote(credentials.link, user, password)
+                }
+            }
+            ftpCheckState.value = outcome.fold(
+                onSuccess = {
+                    FtpCheckState(
+                        success = true,
+                        message = "FTP connection succeeded. Remote size: " +
+                            (it.size?.let { bytes -> "$bytes bytes" } ?: "not provided by server"),
+                    )
+                },
+                onFailure = {
+                    FtpCheckState(
+                        success = false,
+                        message = it.localizedMessage ?: "FTP connection failed",
+                    )
+                },
+            )
+        }
+    }
+
+    fun setFtpUsername(value: String) { clearFtpCheck(); ftpUsername.value = value }
+    fun setFtpPassword(value: String) { clearFtpCheck(); ftpPassword.value = value }
     fun setFtpFolder(value: String) { ftpFolder.value = value }
     fun setFtpFileName(value: String) { fileNameEdited = true; ftpFileName.value = value }
 
