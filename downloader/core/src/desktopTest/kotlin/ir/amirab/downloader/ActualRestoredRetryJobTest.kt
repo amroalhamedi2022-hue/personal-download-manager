@@ -1255,7 +1255,7 @@ class ActualRestoredRetryJobTest {
                             mismatch,
                             "Corrupt HTTP output: id=${item.id}, firstDifference=$mismatch, " +
                                 "partRequests=${fixture.partRequestsFor("/file/${item.id}.bin")}, " +
-                                "status=${manager.downloadJobs.first { it.id == item.id }.status.value}",
+                                "status=${manager.downloadJobs.firstOrNull { it.id == item.id }?.status?.value ?: "removed-after-completion"}",
                         )
                         assertTrue(fixture.partRequestsFor("/file/${item.id}.bin") >= 2)
                         perFilePeaks += fixture.peakPartTransfersFor("/file/${item.id}.bin")
