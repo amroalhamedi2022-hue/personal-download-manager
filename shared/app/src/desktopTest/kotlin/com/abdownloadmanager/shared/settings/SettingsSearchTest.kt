@@ -41,7 +41,9 @@ class SettingsSearchTest {
         val match = filterSettingsGroups(listOf(original), "ERROR").single()
         assertSame(main, match.mainConfigurable)
         assertEquals(listOf(error), match.nestedConfigurable)
-        match.mainConfigurable!!.set(true)
+        // The matched row reuses the original BooleanConfigurable instance.
+        // Avoid calling a star-projected Configurable<*>.set() in this test.
+        main.set(true)
         assertTrue(enabled.value)
     }
 
