@@ -1,6 +1,6 @@
 # M04 FTP authentication — secure Windows credential storage review
 
-**Status:** design decision and upstream-source review; no real Windows Credential Manager adapter has yet been implemented or tested. Production FTP credentials provider currently allows anonymous sessions only. Do not enable password-auth FTP in Add URL before these gates pass.
+**Status (2026-10-22):** WinCred native adapter and an opt-in FTP credential provider are implemented, and Windows CI XML verifies native synthetic-credential tests at SHA `56719e3dfe60` (Run `39702021922`: 129/129 tests across all suites). The production UI and downloader registry still deliberately do **not** expose FTP; `AnonymousFtpCredentialsProvider` remains the default. Further restart/integration tests and credential UI safety gates must pass before activation.
 
 ## Why this exists
 
@@ -28,7 +28,7 @@ Use Microsoft **Windows Credential Manager**, generic credentials scoped to the 
 ## Design/API contract
 
 - `FtpCredentialsProvider.resolve(item)` returns a **transient** login (already implemented in `FtpCredentialsProvider.kt`); production's anonymous-only fallback is intentionally strict.
-- `FtpDownloadItem.credentialReference: String?` should be a random opaque ID, never a reversible password. Map `application namespace + credentialReference` to `CRED_TYPE_GENERIC`; do not use bare URL containing user info as a target.
+- `FtpDownloadItem.credentialRef: String?` is a random opaque ID, never a reversible password. Map `application namespace + credentialReference` to `CRED_TYPE_GENERIC`; do not use bare URL containing user info as a target.
 - Username may persist in the FTP item. Password should be read from WinCred **only on resume**; handle credential deletion, Windows logoff, auth 530, profile mismatch, and interrupted updates by a clear UI state rather than infinite retries.
 - On password changes, write new WinCred entry before updating the item reference; if item update fails, garbage-collect orphaned reference safely. On item deletion, do not delete a shared credential still needed by another task.
 - Avoid logging WinCred structures or errors that contain secrets, minimize secret lifetime in RAM, wipe native buffers where possible; no embedded API keys or test user credentials beyond local synthetic fixtures.
@@ -44,3 +44,11 @@ Use Microsoft **Windows Credential Manager**, generic credentials scoped to the 
 6. Windows clean installation of one EXE, live LAN and WAN regression where environment permits; record source SHAs and actual test XML evidence in master plan, not optimistic checkboxes.
 
 **Until all gates are verified:** do not register FTP in the live UI or claim authenticated FTP ready.
+
+## Verified implementation versus remaining gates (2026-10-22)
+
+- The app reuses its existing JNA Platform dependency for a current-user Windows generic credential vault. The native `CREDENTIALW` structure was made reflectively visible after Windows XML revealed a JNA access error; no plaintext fallback was introduced.
+- Native tests in [Run 39702021922](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/39702021922) passed on a Windows runner: 129 total across the current suites (0 failures/errors/skips), including 3 WindowsFtpCredentialVaultTest cases.
+- The persisted FTP DTO accepts an optional UUID `credentialRef` and retains old-JSON compatibility. The secret is resolved only at download time by the unregistered `WindowsCredentialFtpProvider`.
+- The native vault test does **not** prove GUI prompts, actual disk-process restart, Windows logoff/profile behavior, secure reference garbage collection, external FTP or secure transport; newer serialized-task and local FTP end-to-end tests are staged and await their own CI.
+- FTP remains explicitly **unencrypted** at the protocol layer. Do not confuse OS-protected password storage with TLS-protected credentials in transit; verified FTPS/SFTP would require separate transports.
