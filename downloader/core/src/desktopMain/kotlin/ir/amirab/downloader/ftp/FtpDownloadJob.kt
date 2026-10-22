@@ -170,7 +170,9 @@ class FtpDownloadJob(
         if (isDownloadActive.value) pause()
         val oldOutput = downloadManager.calculateOutputFile(downloadItem)
         val newOutput = downloadManager.calculateOutputFile(proposed)
-        if (oldOutput != newOutput) destination.moveOutput(newOutput)
+        if (oldOutput != newOutput) kotlinx.coroutines.withContext(Dispatchers.IO) {
+            destination.moveOutput(newOutput)
+        }
         downloadItem.link = proposed.link
         downloadItem.folder = proposed.folder
         downloadItem.name = proposed.name

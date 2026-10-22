@@ -31,6 +31,28 @@ class FtpDownloadDestinationTest {
     }
 
     @Test
+    fun movingPausedTransferToDifferentFolderKeepsFileAndMetadataPaired() {
+        val root = Files.createTempDirectory("ftp-relocate-")
+        try {
+            val source = Files.createDirectory(root.resolve("source"))
+            val target = Files.createDirectory(root.resolve("target"))
+            val bytes = ByteArray(16384) { (it % 251).toByte() }
+            val metadata = "endpoint=ftp://example.com:21/large.bin"
+            Files.write(source.resolve("large.bin.ftp-part"), bytes)
+            Files.writeString(source.resolve("large.bin.ftp-part.properties"), metadata)
+            val old = source.resolve("large.bin")
+            val moved = target.resolve("large.bin")
+            FtpDownloadDestination(old.toFile()).moveOutput(moved.toFile())
+            assertFalse(Files.exists(source.resolve("large.bin.ftp-part")))
+            assertFalse(Files.exists(source.resolve("large.bin.ftp-part.properties")))
+            assertContentEquals(bytes, Files.readAllBytes(target.resolve("large.bin.ftp-part")))
+            assertEquals(metadata, Files.readString(target.resolve("large.bin.ftp-part.properties")))
+        } finally {
+            root.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
     fun targetConflictCannotOverwriteACompletedFileOrPartial() {
         val dir = Files.createTempDirectory("ftp-destination-conflict-")
         try {

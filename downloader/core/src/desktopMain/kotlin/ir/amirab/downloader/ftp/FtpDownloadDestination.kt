@@ -5,7 +5,6 @@ import ir.amirab.downloader.destination.DownloadDestination
 import ir.amirab.downloader.part.DownloadPart
 import java.io.File
 import java.nio.file.Files
-import java.nio.file.StandardCopyOption
 
 /**
  * An FTP transfer writes through FtpTransferClient into a staged .ftp-part file.
@@ -44,12 +43,29 @@ class FtpDownloadDestination(file: File) : DownloadDestination(file) {
             "The FTP destination or partial file already exists"
         }
         // Moves occur only with the transfer paused. Keep the sidecar paired with its data.
-        if (partial.exists()) {
-            Files.move(partial.toPath(), newPartial.toPath(), StandardCopyOption.ATOMIC_MOVE)
+        // A paused FTP download can move between different disks. Requiring
+        // ATOMIC_MOVE rejects cross-volume paths on Windows. Keep the partial
+        // and its resume identity together, and roll both back on failure.
+        val moved = mutableListOf<Pair<java.nio.file.Path, java.nio.file.Path>>()
+        try {
+            if (partial.exists()) {
+                Files.move(partial.toPath(), newPartial.toPath())
+                moved.add(partial.toPath() to newPartial.toPath())
+            }
+            if (identity.exists()) {
+                Files.move(identity.toPath(), newIdentity.toPath())
+                moved.add(identity.toPath() to newIdentity.toPath())
+            }
+            super.moveOutput(newOutput)
+        } catch (failure: Exception) {
+            for ((source, target) in moved.asReversed()) {
+                try {
+                    Files.move(target, source)
+                } catch (rollback: Exception) {
+                    failure.addSuppressed(rollback)
+                }
+            }
+            throw failure
         }
-        if (identity.exists()) {
-            Files.move(identity.toPath(), newIdentity.toPath(), StandardCopyOption.ATOMIC_MOVE)
-        }
-        super.moveOutput(newOutput)
     }
 }
