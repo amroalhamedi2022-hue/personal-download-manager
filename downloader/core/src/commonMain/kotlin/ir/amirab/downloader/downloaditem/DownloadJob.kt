@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Duration.Companion.seconds
 
 abstract class DownloadJob(
@@ -41,6 +42,10 @@ abstract class DownloadJob(
     protected fun markDownloadInactive() {
         _isDownloadActive.value = false
     }
+
+    // A single active download may report its final part(s) concurrently.
+    // Claim finalization atomically before launching the terminal coroutine.
+    private val finalizationClaimed = AtomicBoolean(false)
 
     private val scheduledRetryLock = Any()
     private var scheduledRetryGeneration = 0L
@@ -206,6 +211,8 @@ abstract class DownloadJob(
     }
 
     protected fun onDownloadResuming() {
+        // A new download lifecycle may retry a previously failed finalization.
+        finalizationClaimed.set(false)
         _status.update {
             DownloadJobStatus.Resuming
         }
@@ -226,26 +233,33 @@ abstract class DownloadJob(
         }
         markDownloadInactive()
         saveState()
+        finalizationClaimed.set(false)
         downloadManager.onDownloadCanceled(downloadItem, throwable)
     }
 
     protected fun onDownloadFinished() {
+        // Multiple part completion notifications can arrive simultaneously.
+        // Without this CAS they can finalize the same output and publish more
+        // than one OnJobCompleted event for one file. Keep the claim until a
+        // genuine new resume/cancellation resets it.
+        if (!finalizationClaimed.compareAndSet(false, true)) return
         scope.launch {
             try {
                 getDestination().onAllPartsCompleted {
                     _status.value = DownloadJobStatus.PreparingFile(it)
                 }
+                downloadItem.status = DownloadStatus.Completed
+                downloadItem.completeTime = System.currentTimeMillis()
+                _status.value = DownloadJobStatus.Finished
+                markDownloadInactive()
+                onDownloadFinishedBeforeSave()
+                saveState()
+                downloadManager.onDownloadFinished(downloadItem)
             } catch (e: Exception) {
+                // A failed finalization must be reported, never marked complete.
+                // pause() resets the claim after persisting the canceled state.
                 pause(e)
-                return@launch
             }
-            downloadItem.status = DownloadStatus.Completed
-            downloadItem.completeTime = System.currentTimeMillis()
-            _status.value = DownloadJobStatus.Finished
-            markDownloadInactive()
-            onDownloadFinishedBeforeSave()
-            saveState()
-            downloadManager.onDownloadFinished(downloadItem)
         }
     }
 
