@@ -45,6 +45,25 @@ class FtpModelTest {
     }
 
     @Test
+    fun oldFtpRecordWithoutCredentialRefStillDecodesAndNewReferenceDoesNotContainPassword() {
+        val legacy = Json.encodeToString(FtpDownloadItem.serializer(), sample())
+        assertFalse(legacy.contains("credentialRef"))
+        val oldLoaded = Json.decodeFromString(FtpDownloadItem.serializer(), legacy)
+        assertEquals(null, oldLoaded.credentialRef)
+        val withReference = sample().copy(
+            username = "synthetic-user",
+            credentialRef = "01234567-89ab-4cde-8fab-0123456789ab",
+        )
+        val json = Json.encodeToString(FtpDownloadItem.serializer(), withReference)
+        assertTrue(json.contains(withReference.credentialRef!!))
+        assertFalse(json.contains("password"))
+        assertEquals(withReference, Json.decodeFromString(FtpDownloadItem.serializer(), json))
+        assertFailsWith<IllegalArgumentException> {
+            sample().copy(credentialRef = "../../credential-target").validateItem()
+        }
+    }
+
+    @Test
     fun itemRejectsUnsupportedMultiConnectionMode() {
         val item = sample().copy(preferredConnectionCount = 3)
         assertFailsWith<IllegalArgumentException> { item.validateItem() }
