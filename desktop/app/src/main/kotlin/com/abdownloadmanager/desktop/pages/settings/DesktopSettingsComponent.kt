@@ -187,6 +187,13 @@ class DesktopSettingsComponent(
 
     suspend fun importNonSecretSettings(text: String) = appSettings.importNonSecretSettings(text)
 
+    // Build the three sections once: regenerating their Configurable flows on
+    // each typed search character would allocate new mapped settings observers.
+    private val settingsCatalog by lazy { pages.associateWith { allConfigs[it] } }
+
+    fun allSettingsSections(): List<Pair<SettingSection, List<ConfigurableGroup>>> =
+        pages.map { section -> section to settingsCatalog.getValue(section) }
+
     fun toFront() {
         sendEffect(Effects.BringToFront)
     }
@@ -227,11 +234,11 @@ class DesktopSettingsComponent(
     val currentPage: StateFlow<SettingSection> = _currentPage.asStateFlow()
     fun setCurrentPage(section: SettingSection) {
         _currentPage.value = section
-        _configurables.value = allConfigs[section]
+        _configurables.value = settingsCatalog.getValue(section)
     }
 
     private val _configurables = MutableStateFlow(
-        allConfigs[currentPage.value]
+        settingsCatalog.getValue(currentPage.value)
     )
     override val configurables = _configurables.asStateFlow()
 
