@@ -1,0 +1,114 @@
+name: Windows installed HTTP real network E2E
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/repair-rf00-rf01]
+    paths:
+      - ".github/workflows/windows-installed-http-e2e.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  install-download-verify:
+    runs-on: windows-2022
+    timeout-minutes: 90
+    env:
+      SKIP_ANDROID_BUILD: "true"
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up JetBrains Runtime 25
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: jetbrains
+          java-package: jdk
+          java-version: "25"
+          check-latest: true
+          cache: gradle
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build one Windows installer
+        shell: bash
+        run: >-
+          ./gradlew --no-daemon --stacktrace
+          --dependency-verification strict
+          createReleaseFolderForCi
+      - name: Install and download 16 MiB with actual GUI process and CLI
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installers = @(Get-ChildItem -LiteralPath 'build/ci-release/binaries' -Filter '*.exe' -Recurse -File)
+          if ($installers.Count -ne 1) { throw 'Expected exactly one installer.' }
+          $root = Join-Path $env:RUNNER_TEMP 'installed-http-e2e'
+          $appDir = Join-Path $root 'application'
+          $downloadDir = Join-Path $root 'downloaded'
+          $fixtureDir = Join-Path $root 'fixture'
+          New-Item -ItemType Directory -Path $root,$downloadDir,$fixtureDir -Force | Out-Null
+          $installer = Start-Process -FilePath $installers[0].FullName -ArgumentList @('/S', "/D=$appDir") -PassThru
+          if (-not $installer.WaitForExit(180000)) {
+            Stop-Process -Id $installer.Id -Force -ErrorAction SilentlyContinue
+            throw 'Silent installer timed out'
+          }
+          if ($installer.ExitCode -ne 0) { throw "Installer exit=$($installer.ExitCode)" }
+          $exe = @(Get-ChildItem -LiteralPath $appDir -Filter '*.exe' -Recurse -File)
+          $gui = $exe | Where-Object { $_.BaseName -eq 'DownloadManager' } | Select-Object -First 1
+          $cli = $exe | Where-Object { $_.BaseName -match 'DownloadManagerCli$' } | Select-Object -First 1
+          if (-not $gui -or -not $cli) {
+            Write-Host "Installed executable names: $($exe.Name -join ', ')"
+            throw 'Installed GUI or CLI launcher is missing.'
+          }
+          $fixture = Join-Path $fixtureDir 'fixture.bin'
+          & python -c 'import pathlib,sys; pathlib.Path(sys.argv[1]).write_bytes(bytes(range(256))*65536)' $fixture
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to create deterministic 16 MiB HTTP fixture.' }
+          $expectedSha = (Get-FileHash -LiteralPath $fixture -Algorithm SHA256).Hash
+          $portPath = Join-Path $fixtureDir 'port.txt'
+          $server = Start-Process -FilePath python -ArgumentList @('scripts/LocalHttpRangeFixture.py','--file',$fixture,'--port-file',$portPath,'--chunk-delay-ms','15') -PassThru
+          $guiProcess = $null
+          try {
+            for ($i=0; $i -lt 40 -and -not (Test-Path -LiteralPath $portPath); $i++) {
+              Start-Sleep -Milliseconds 250
+            }
+            if (-not (Test-Path -LiteralPath $portPath)) { throw 'Local HTTP server never opened its port.' }
+            $port = [int](Get-Content -LiteralPath $portPath -Raw)
+            $url = "http://127.0.0.1:$port/fixture.bin"
+            $guiProcess = Start-Process -FilePath $gui.FullName -PassThru
+            Start-Sleep -Seconds 5
+            $output = & $cli.FullName download add http --link $url --folder $downloadDir --name 'installed-e2e.bin' --start 2>&1
+            $status = $LASTEXITCODE
+            $output | ForEach-Object { Write-Host $_ }
+            if ($status -ne 0) { throw "Desktop CLI returned exit=$status" }
+            $download = Join-Path $downloadDir 'installed-e2e.bin'
+            $success = $false
+            for ($i=0; $i -lt 120; $i++) {
+              Start-Sleep -Milliseconds 500
+              if ((Test-Path -LiteralPath $download) -and (Get-Item -LiteralPath $download).Length -eq 16777216) {
+                if ((Get-FileHash -LiteralPath $download -Algorithm SHA256).Hash -eq $expectedSha) {
+                  $success = $true
+                  break
+                }
+              }
+            }
+            if (-not $success) { throw 'Installed HTTP task failed byte-for-byte SHA256 verification.' }
+            New-Item -ItemType Directory -Path 'build/ci-release' -Force | Out-Null
+            "SourceSha=$env:GITHUB_SHA" | Set-Content 'build/ci-release/installed-http-e2e.txt'
+            "ExpectedSHA256=$expectedSha" | Add-Content 'build/ci-release/installed-http-e2e.txt'
+            "ActualSHA256=$((Get-FileHash -LiteralPath $download -Algorithm SHA256).Hash)" | Add-Content 'build/ci-release/installed-http-e2e.txt'
+            Write-Host 'Real installed Windows HTTP transfer passed: 16 MiB exact SHA256.'
+          } finally {
+            if ($guiProcess -and -not $guiProcess.HasExited) {
+              Stop-Process -Id $guiProcess.Id -Force -ErrorAction SilentlyContinue
+            }
+            if ($server -and -not $server.HasExited) {
+              Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue
+            }
+          }
+      - name: Upload installed HTTP E2E evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: installed-http-e2e
+          path: build/ci-release/installed-http-e2e.txt
+          if-no-files-found: ignore
+          retention-days: 7
