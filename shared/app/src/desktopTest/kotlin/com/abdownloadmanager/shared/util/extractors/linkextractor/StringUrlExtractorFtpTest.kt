@@ -19,7 +19,6 @@ class StringUrlExtractorFtpTest {
         assertTrue(StringUrlExtractor.extract("ftp://host.test/file.zip?bad=query").isEmpty())
     }
 
-
     @Test
     fun pastedSingleLineFtpWithSpacesAndBracketsRetainsWholeLink() {
         val ftpLink = "ftp://127.0.0.1:2121/archive/photo [final] (2).bin"
