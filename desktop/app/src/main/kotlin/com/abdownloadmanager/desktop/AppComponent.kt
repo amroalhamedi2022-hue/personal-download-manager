@@ -293,6 +293,7 @@ class AppComponent(
             ftpEditBusy.value = true
             ftpEditError.value = null
             var newReference: String? = null
+            var updatedInDatabase = false
             try {
                 FtpDownloadCredentials(request.link, username = request.username).validateCredentials()
                 require(FileNameValidator.isValidFileName(request.name)) { "Invalid FTP file name" }
@@ -325,12 +326,15 @@ class AppComponent(
                     },
                     downloadJobExtraConfig = null,
                 )
+                updatedInDatabase = true
+                // A failure during old-vault garbage collection must never
+                // invalidate the newly persisted credential reference.
                 if (original.credentialRef != null && original.credentialRef != reference) {
-                    releaseUnusedFtpReference(original.credentialRef!!)
+                    runCatching { releaseUnusedFtpReference(original.credentialRef!!) }
                 }
                 ftpEditItem.value = null
             } catch (failure: Exception) {
-                newReference?.let { ref ->
+                if (!updatedInDatabase) newReference?.let { ref ->
                     withContext(Dispatchers.IO) {
                         runCatching { WindowsFtpCredentialVault().delete(ref) }
                     }
@@ -675,7 +679,7 @@ class AppComponent(
                     val removed = event.downloadItem
                     if (removed is FtpDownloadItem) {
                         removed.credentialRef?.let { ref ->
-                            releaseUnusedFtpReference(ref)
+                            runCatching { releaseUnusedFtpReference(ref) }
                         }
                     }
                 }
