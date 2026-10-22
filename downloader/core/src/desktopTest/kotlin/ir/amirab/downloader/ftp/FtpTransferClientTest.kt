@@ -1,5 +1,8 @@
 package ir.amirab.downloader.ftp
 
+import ir.amirab.downloader.NewDownloadItemProps
+import ir.amirab.downloader.downloaditem.EmptyContext
+import ir.amirab.downloader.utils.OnDuplicateStrategy
 import ir.amirab.downloader.DownloadManager
 import ir.amirab.downloader.DownloaderRegistry
 import ir.amirab.downloader.DownloadSettings
@@ -399,6 +402,65 @@ class FtpTransferClientTest {
         } finally {
             vault.delete(reference)
             storeFolder.toFile().deleteRecursively()
+        }
+    }
+
+
+    @Test
+    fun ftpAddedForLaterDoesNotDownloadUntilManuallyResumed() = withFixture { fixture ->
+        runBlocking {
+            val database = MemoryDownloadListDB()
+            val manager = DownloadManager(
+                dlListDb = database,
+                partListDb = MemoryDownloadPartStatesDB(),
+                settings = DownloadSettings(),
+                emptyFileCreator = EmptyFileCreator(
+                    diskStat = object : IDiskStat {
+                        override fun getRemainingSpace(path: java.io.File) = Long.MAX_VALUE
+                    },
+                    useSparseFile = { false },
+                ),
+                downloaderRegistry = DownloaderRegistry().apply {
+                    add(FtpDownloader(FtpCredentialsProvider { FtpSessionCredentials("test", "secret") }))
+                },
+                downloadDataFolder = fixture.downloadFolder.toFile(),
+            )
+            try {
+                manager.boot()
+                val id = manager.addDownload(
+                    NewDownloadItemProps(
+                        downloadItem = FtpDownloadItem(
+                            id = -1L,
+                            folder = fixture.downloadFolder.toString(),
+                            name = "start-later.bin",
+                            link = fixture.url("fixture.bin"),
+                            username = "test",
+                        ),
+                        extraConfig = null,
+                        onDuplicateStrategy = OnDuplicateStrategy.AddNumbered,
+                        context = EmptyContext,
+                    )
+                )
+                assertEquals(DownloadStatus.Added, database.getById(id)?.status)
+                assertFalse(Files.exists(fixture.downloadFolder.resolve("start-later.bin")))
+                assertFalse(Files.exists(fixture.downloadFolder.resolve("start-later.bin.ftp-part")))
+                // The UI's optional Start immediately flag is deliberately false:
+                // a saved task must not open FTP sockets before manual Resume.
+                delay(100)
+                assertEquals(DownloadStatus.Added, database.getById(id)?.status)
+
+                manager.resume(id)
+                withTimeout(25_000) {
+                    while (database.getById(id)?.status != DownloadStatus.Completed) delay(20)
+                }
+                assertContentEquals(
+                    fixture.bytes,
+                    Files.readAllBytes(fixture.downloadFolder.resolve("start-later.bin")),
+                )
+            } finally {
+                manager.downloadJobs.forEach { it.close() }
+                manager.scope.cancel()
+            }
         }
     }
 
