@@ -6,12 +6,17 @@ import java.io.InputStream
 import java.io.OutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.nio.charset.CharacterCodingException
+import java.nio.charset.CodingErrorAction
 
 /**
  * A malformed length prefix cannot be recovered by reading the next frame:
  * the following bytes may belong to the rejected payload, not a new header.
  */
 class InvalidNativeMessagingFrameException(message: String) : IOException(message)
+
+/** A complete frame with invalid UTF-8 may be rejected without losing framing. */
+class InvalidNativeMessagingPayloadException(message: String, cause: Throwable) : IllegalArgumentException(message, cause)
 
 /**
  * Native Messaging Protocol implementation for stdio communication.
@@ -37,6 +42,7 @@ class StdioProtocol(
      * @return The JSON message as a string, or null if EOF is reached
      * @throws EOFException if stream ends unexpectedly
      * @throws InvalidNativeMessagingFrameException if the length prefix is invalid; the host must close the connection
+     * @throws InvalidNativeMessagingPayloadException if a fully received frame contains malformed UTF-8
      */
     fun readMessage(): String {
         val messageLength = readLength(input)
@@ -59,7 +65,20 @@ class StdioProtocol(
             )
         }
 
-        return String(messageBytes, Charsets.UTF_8)
+        // The String(byte[], UTF_8) constructor silently replaces malformed
+        // sequences with U+FFFD. Native messaging is UTF-8 JSON: reject such
+        // payloads instead of changing browser-supplied request bytes.
+        // Unlike a bad length prefix, the complete frame was consumed and
+        // the host may report this error and safely read the next frame.
+        return try {
+            Charsets.UTF_8.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT)
+                .decode(ByteBuffer.wrap(messageBytes))
+                .toString()
+        } catch (e: CharacterCodingException) {
+            throw InvalidNativeMessagingPayloadException("Native messaging payload is not valid UTF-8", e)
+        }
     }
 
     /**
