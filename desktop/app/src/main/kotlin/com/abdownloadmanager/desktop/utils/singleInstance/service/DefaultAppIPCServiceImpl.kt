@@ -6,6 +6,7 @@ import com.abdownloadmanager.integration.IntegrationHandler
 import com.abdownloadmanager.integration.model.AddDownloadsFromIntegration
 import com.abdownloadmanager.integration.model.ApiQueueModel
 import com.abdownloadmanager.integration.model.NewDownloadTask
+import com.abdownloadmanager.desktop.pages.enterurl.FtpDownloadRequest
 import com.abdownloadmanager.shared.storage.appsettings.requireSupportedMaxConcurrentDownloads
 import ir.amirab.downloader.downloaditem.contexts.RemovedBy
 import ir.amirab.downloader.downloaditem.contexts.User
@@ -33,6 +34,20 @@ class DefaultAppIPCServiceImpl : IDefaultAppIPCService, KoinComponent {
     override suspend fun addDownload(request: NewDownloadTask): Long {
         awaitAppBoot()
         return integrationHandler.addDownload(request)
+    }
+
+    override suspend fun addFtpDownload(request: AddFtpDownloadIPC): Long {
+        awaitAppBoot()
+        return appComponent.addFtpDownload(
+            FtpDownloadRequest(
+                link = request.link,
+                username = request.username,
+                password = request.password,
+                folder = request.folder,
+                name = request.name,
+                startImmediately = request.startImmediately,
+            )
+        )
     }
 
     override suspend fun pauseDownload(ids: List<Long>) {
