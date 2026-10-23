@@ -51,6 +51,24 @@ $expectedSha = (Get-FileHash -LiteralPath $fixture -Algorithm SHA256).Hash.ToLow
 $records = [System.Collections.Generic.List[object]]::new()
 $server = $null
 $gui = $null
+$originalMaxConcurrentDownloads = $null
+function Invoke-MaxConcurrentDownloadsSetting {
+    param([Nullable[int]] $SetValue = $null)
+    $arguments = @('settings', 'max-concurrent-downloads')
+    if ($null -ne $SetValue) {
+        $arguments += @('--set', "$SetValue")
+    }
+    $output = @(& $cliPath @arguments 2>&1)
+    $exit = $LASTEXITCODE
+    if ($exit -ne 0) {
+        throw "Installed CLI concurrency setting failed ($exit): $($output -join ' ')"
+    }
+    $values = @($output | ForEach-Object { "$_".Trim() } | Where-Object { $_ -match '^\d+$' })
+    if ($values.Count -ne 1) {
+        throw "Concurrency setting did not return exactly one integer: $($output -join ' ')"
+    }
+    return [int]$values[0]
+}
 try {
     $serverArgs = @(
         ('"' + $fixtureScript + '"'), '--file', ('"' + $fixture + '"'),
@@ -77,6 +95,17 @@ try {
         }
     }
     if (-not $foundApp) { throw 'Installed GUI did not stay running.' }
+    $originalMaxConcurrentDownloads = Invoke-MaxConcurrentDownloadsSetting
+    $appliedMaxConcurrentDownloads = Invoke-MaxConcurrentDownloadsSetting -SetValue 16
+    if ($appliedMaxConcurrentDownloads -ne 16) {
+        throw "Persistent concurrent-download setting returned $appliedMaxConcurrentDownloads after setting 16."
+    }
+    Start-Sleep -Milliseconds 750
+    $verifiedMaxConcurrentDownloads = Invoke-MaxConcurrentDownloadsSetting
+    if ($verifiedMaxConcurrentDownloads -ne 16) {
+        throw "Persistent concurrent-download setting did not survive a separate CLI read: $verifiedMaxConcurrentDownloads."
+    }
+    Write-Host "Benchmark temporarily raised max concurrent downloads from $originalMaxConcurrentDownloads to 16."
     foreach ($jobs in @(1, 4, 16)) {
         for ($round = 1; $round -le $Rounds; $round++) {
             $scenario = "active-$jobs"
@@ -203,6 +232,18 @@ try {
     }
     Write-Host "SUCCESS: $expectedTaskCount verified HTTP downloads; $($metricFiles.Count) CPU/RAM CSVs."
 } finally {
+    if ($null -ne $originalMaxConcurrentDownloads -and $gui -and -not $gui.HasExited) {
+        try {
+            $restored = Invoke-MaxConcurrentDownloadsSetting -SetValue $originalMaxConcurrentDownloads
+            if ($restored -ne $originalMaxConcurrentDownloads) {
+                Write-Warning "Concurrency setting restore returned $restored instead of $originalMaxConcurrentDownloads."
+            } else {
+                Write-Host "Restored max concurrent downloads to $restored."
+            }
+        } catch {
+            Write-Warning "Failed to restore max concurrent downloads: $($_.Exception.Message)"
+        }
+    }
     if ($gui -and -not $gui.HasExited) {
         Stop-Process -Id $gui.Id -Force -ErrorAction SilentlyContinue
     }

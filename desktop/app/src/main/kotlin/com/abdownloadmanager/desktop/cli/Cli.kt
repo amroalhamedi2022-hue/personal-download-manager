@@ -4,6 +4,7 @@ import com.abdownloadmanager.desktop.AppArguments
 import com.abdownloadmanager.desktop.cli.download.Download
 import com.abdownloadmanager.desktop.cli.gui.Gui
 import com.abdownloadmanager.desktop.cli.nativemessaging.NativeMessagingCommand
+import com.abdownloadmanager.desktop.cli.settings.Settings
 import com.abdownloadmanager.desktop.utils.AppInfo
 import com.abdownloadmanager.desktop.utils.AppProperties
 import com.abdownloadmanager.desktop.utils.EntryType
@@ -25,6 +26,7 @@ class Cli : SuspendingCliktCommand("ABDownloadManagerCli") {
         subcommands(
             Gui(),
             Download(),
+            Settings(),
             NativeMessagingCommand(),
         )
     }

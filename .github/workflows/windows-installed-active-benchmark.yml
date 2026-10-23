@@ -11,6 +11,8 @@ on:
       - "scripts/Measure-WindowsDownloadManager.ps1"
       - "scripts/LocalHttpRangeFixture.py"
       - "desktop/app/resources/installer/nsis-script-template.nsi"
+      - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/cli/settings/**"
+      - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/singleInstance/service/**"
 
 permissions:
   contents: read

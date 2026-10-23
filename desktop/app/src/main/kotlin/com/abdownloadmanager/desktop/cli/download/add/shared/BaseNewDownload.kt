@@ -60,7 +60,7 @@ abstract class BaseNewDownload(
 
     // utilities
     fun ParameterHolder.headersOption() = option("--header", "-h")
-        .convert(::parseDownloadHeaderOption)
+        .convert(conversion = { raw -> parseDownloadHeaderOption(raw) })
         .multiple()
 
     fun ParameterHolder.linkOption() = option("--link")
