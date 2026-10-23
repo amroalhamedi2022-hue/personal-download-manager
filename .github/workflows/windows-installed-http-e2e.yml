@@ -84,9 +84,17 @@ jobs:
             for ($i=0; $i -lt 120; $i++) {
               Start-Sleep -Milliseconds 500
               if ((Test-Path -LiteralPath $download) -and (Get-Item -LiteralPath $download).Length -eq 16777216) {
-                if ((Get-FileHash -LiteralPath $download -Algorithm SHA256).Hash -eq $expectedSha) {
-                  $success = $true
-                  break
+                # Full size is NOT proof the downloader closed the destination.
+                # Wait out transient Windows sharing violations, then compare
+                # all bytes; do not accept a missing/partial/wrong hash.
+                try {
+                  $actualHash = (Get-FileHash -LiteralPath $download -Algorithm SHA256 -ErrorAction Stop).Hash
+                  if ($actualHash -eq $expectedSha) {
+                    $success = $true
+                    break
+                  }
+                } catch {
+                  Write-Host 'Completed-size file is not yet readable; retrying SHA256 after the download closes it.'
                 }
               }
             }
