@@ -4,6 +4,7 @@ import com.abdownloadmanager.resources.Res
 import com.abdownloadmanager.shared.pagemanager.PerHostSettingsPageManager
 import com.abdownloadmanager.shared.repository.BaseAppRepository
 import com.abdownloadmanager.shared.storage.appsettings.BaseAppSettingsStorage
+import com.abdownloadmanager.shared.storage.appsettings.MIN_MAX_CONCURRENT_DOWNLOADS
 import com.abdownloadmanager.shared.storage.IDNSSettingsStorage
 import com.abdownloadmanager.shared.storage.SpeedLimitMode
 import com.abdownloadmanager.shared.storage.asLongStringSource
@@ -81,7 +82,7 @@ object CommonSettings {
             title = Res.string.settings_download_max_concurrent_downloads.asStringSource(),
             description = Res.string.settings_download_max_concurrent_downloads_description.asStringSource(),
             backedBy = appRepository.maxConcurrentDownloads,
-            range = 0..Int.MAX_VALUE,
+            range = MIN_MAX_CONCURRENT_DOWNLOADS..Int.MAX_VALUE,
             renderMode = IntConfigurable.RenderMode.TextField,
             describe = {
                 if (it == 0) {

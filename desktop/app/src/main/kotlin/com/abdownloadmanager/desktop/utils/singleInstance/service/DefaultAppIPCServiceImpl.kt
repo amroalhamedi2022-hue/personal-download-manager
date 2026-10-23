@@ -6,6 +6,7 @@ import com.abdownloadmanager.integration.IntegrationHandler
 import com.abdownloadmanager.integration.model.AddDownloadsFromIntegration
 import com.abdownloadmanager.integration.model.ApiQueueModel
 import com.abdownloadmanager.integration.model.NewDownloadTask
+import com.abdownloadmanager.shared.storage.appsettings.requireSupportedMaxConcurrentDownloads
 import ir.amirab.downloader.downloaditem.contexts.RemovedBy
 import ir.amirab.downloader.downloaditem.contexts.User
 import ir.amirab.downloader.monitor.CompletedDownloadItemState
@@ -46,6 +47,18 @@ class DefaultAppIPCServiceImpl : IDefaultAppIPCService, KoinComponent {
         for (id in ids) {
             downloadSystem.userManualResume(id)
         }
+    }
+
+    override suspend fun getMaxConcurrentDownloads(): Int {
+        awaitAppBoot()
+        return appComponent.appSettings.maxConcurrentDownloads.value
+    }
+
+    override suspend fun setMaxConcurrentDownloads(value: Int): Int {
+        awaitAppBoot()
+        appComponent.appSettings.maxConcurrentDownloads.value =
+            requireSupportedMaxConcurrentDownloads(value)
+        return appComponent.appSettings.maxConcurrentDownloads.value
     }
 
     override suspend fun removeDownload(ids: List<Long>, alsoRemoveFile: Boolean) {
