@@ -72,3 +72,14 @@ Production commits on this same existing draft PR (no new PR, no merge):
 4. Preserve the separation of the browser-integration repository, exclude Torrent, and continue the remaining original plan/visual acceptance. Only after all acceptance gates pass may a separate agent perform the final independent recheck.
 
 No paid API, new workflow, public release, repository visibility change, automatic merge or other-project modification was made.
+
+
+## 2026-10-23 — Follow-up: refill a vacated manual queue slot (PATCH UNTESTED)
+
+**Production change:** [`f8b81550`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/f8b81550f275eff8c01588572b83dfd3dd815c78) changes `ManualDownloadQueue.removeFromQueue(ids)`: when a queued/active ID is removed, the queue now schedules a **debounced** admission pass after releasing `admissionLock`. Before this fix, the `OnJobRemoved` listener simply removed the ID without calling `shake()`; if that ID occupied an active slot, pending jobs could remain stranded indefinitely until an unrelated queue event. Existing completion/cancellation flows continue to work and the configured concurrency cap is unchanged. Empty/repeated removal is idempotent.
+
+**Regression test:** [`38e40674`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/38e40674679e683839f417824de5acc19e03fd48) extends `ManualDownloadQueueBatchResumeTest.kt` with `removingAnActiveJobAdmitsNextPendingJobWithoutCompletionEvent`: start three IDs with max concurrent=1, remove the active ID without a completion event, require admission of the next queued ID, confirm duplicate removal does not double-start, then remove that ID and require the third. This test would time out against the prior source because no scheduling was triggered.
+
+**Actual verification in this run:** Source and test were written to existing draft PR #3. The GitHub connector returned the above commit SHAs. No Kotlin compiler, Gradle/JUnit or Windows benchmark was executed on this patch; `fetch_commit_workflow_runs` returned **zero PR workflow runs** for test commit `38e40674` and the combined commit status had **zero reported checks** when queried. Mark **PATCH UNTESTED**, not PASS. The historical active-16 13/16 failure remains unresolved, and this slot-refill fix must not be represented as a proven root-cause fix for it.
+
+**Required exact-SHA verification:** Run `./gradlew --no-daemon --dependency-verification strict :downloader:core:desktopTest :desktop:app:compileKotlin` including both queue tests; then Windows 1/4/16 x 3 installed HTTP concurrency + 63 SHA-256 files + process-tree CPU/RAM and FTP pause/REST resume, using a build of this PR head. Do not relax socket-count assertions or the user's max-concurrent setting. Keep the browser extension in its own repository, exclude Torrent and do not release/merge automatically. No paid API or new workflow was created.
