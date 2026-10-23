@@ -1,5 +1,6 @@
 package com.abdownloadmanager.desktop.nativemessaging.host
 
+import com.abdownloadmanager.desktop.nativemessaging.host.stdio.InvalidNativeMessagingFrameException
 import com.abdownloadmanager.desktop.nativemessaging.host.stdio.NativeMessagingFinished
 import com.abdownloadmanager.desktop.nativemessaging.host.stdio.TypeSafeStdioProtocol
 import com.abdownloadmanager.desktop.utils.EntryType
@@ -64,7 +65,9 @@ class NativeMessagingHost(
             val request = try {
                 channel.receive()
             } catch (e: Exception) {
-                if (e is NativeMessagingFinished) {
+                // A corrupt frame length leaves stdin out of sync. Never reinterpret
+                // its payload as subsequent headers or send a reply to that stream.
+                if (e is NativeMessagingFinished || e is InvalidNativeMessagingFrameException) {
                     throw e
                 }
                 appLogger.e(e) {
