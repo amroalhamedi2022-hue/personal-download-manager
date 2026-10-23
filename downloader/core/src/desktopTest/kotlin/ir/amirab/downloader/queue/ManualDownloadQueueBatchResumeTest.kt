@@ -164,10 +164,61 @@ class ManualDownloadQueueBatchResumeTest {
         }
     }
 
+    @Test
+    fun reducingConcurrencyDoesNotReuseSlotsBeforeAsynchronousStopsFinish() = runBlocking {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val downloads = RecordingDownloads()
+        val queue = ManualDownloadQueue(downloads, scope)
+        try {
+            queue.boot()
+            queue.setMaxConcurrent(3)
+            queue.resumeAll(listOf(81L, 82L, 83L, 84L))
+            withTimeout(5.seconds) {
+                while (downloads.started.size < 3) delay(10)
+            }
+            assertEquals(setOf(81L, 82L, 83L), downloads.started.toSet())
+
+            // stopJob deliberately emits NO cancellation event. A real network
+            // transfer may keep its socket open until asynchronous shutdown.
+            queue.setMaxConcurrent(1)
+            withTimeout(5.seconds) {
+                while (downloads.stopped.size < 2) delay(10)
+            }
+            assertEquals(setOf(82L, 83L), downloads.stopped.toSet())
+            // A second shake must not schedule duplicate stop calls.
+            queue.setMaxConcurrent(1)
+            delay(700)
+            assertEquals(2, downloads.stopped.size)
+
+            // The only non-trimmed job finishes, but both stop requests are
+            // still in flight. Neither reserved slot may admit job 84 yet.
+            queue.removeFromQueue(81L)
+            delay(700)
+            assertEquals(
+                setOf(81L, 82L, 83L), downloads.started.toSet(),
+                "A stop request must not free a live download slot",
+            )
+            queue.removeFromQueue(82L)
+            delay(700)
+            assertEquals(setOf(81L, 82L, 83L), downloads.started.toSet())
+
+            // Once the final stopping job is explicitly removed, the next
+            // pending download can start within the one-job limit.
+            queue.removeFromQueue(83L)
+            withTimeout(5.seconds) {
+                while (downloads.started.size < 4) delay(10)
+            }
+            assertEquals(listOf(81L, 82L, 83L, 84L), downloads.started.toList())
+        } finally {
+            scope.cancel()
+        }
+    }
+
     private class RecordingDownloads(
         private val failStartIds: Set<Long> = emptySet(),
     ) : DownloadManagerMinimalControl {
         val started = ConcurrentLinkedQueue<Long>()
+        val stopped = ConcurrentLinkedQueue<Long>()
         override val listOfJobsEvents: SharedFlow<DownloadManagerEvents> =
             MutableSharedFlow(extraBufferCapacity = 32)
 
@@ -176,7 +227,9 @@ class ManualDownloadQueueBatchResumeTest {
             if (id in failStartIds) throw java.io.IOException("Simulated start failure before lifecycle event")
         }
 
-        override suspend fun stopJob(id: Long, context: DownloadItemContext) = Unit
+        override suspend fun stopJob(id: Long, context: DownloadItemContext) {
+            stopped.add(id)
+        }
 
         override fun canActivateJob(id: Long): Boolean = true
     }
