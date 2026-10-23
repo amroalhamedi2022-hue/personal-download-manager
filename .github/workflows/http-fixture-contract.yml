@@ -23,3 +23,25 @@ jobs:
         run: python3 -m py_compile scripts/LocalHttpRangeFixture.py scripts/test_local_http_range_fixture.py
       - name: Verify socket-level HEAD, Range, rejection and task overlap
         run: python3 -m unittest discover -s scripts -p test_local_http_range_fixture.py -v
+      - name: PowerShell AST syntax audit for all active Windows benchmark scripts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          foreach ($path in @(
+            'scripts/Run-WindowsActiveBenchmarkMatrix.ps1',
+            'scripts/Summarize-WindowsActiveBenchmark.ps1',
+            'scripts/Measure-WindowsDownloadManager.ps1',
+            'scripts/Run-WindowsIdleBenchmarkMatrix.ps1'
+          )) {
+            $tokens = $null
+            $errors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path -LiteralPath $path).Path,
+              [ref] $tokens, [ref] $errors
+            )
+            if ($errors.Count -gt 0) {
+              $errors | ForEach-Object { Write-Error "$path : $_" }
+              throw "Invalid PowerShell syntax in $path."
+            }
+            Write-Host "PowerShell AST parser passed: $path"
+          }
