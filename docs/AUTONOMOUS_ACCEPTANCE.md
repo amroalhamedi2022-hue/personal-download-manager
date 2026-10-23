@@ -125,3 +125,27 @@ No paid API, new workflow, public release, repository visibility change, automat
 - **FAIL historically / CURRENT NOT TESTED:** 16-active Windows benchmark (13/16 in round 2 on [39929246748](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/39929246748)), FTP Pause/REST resume ([39929246815](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/39929246815)), external FTP and GUI, SHA-256 + CPU/RAM matrix, one-EXE packaging and full visual parity. This specific pause fix is **not** claimed to solve the separate active-16 issue.
 
 **Next mandatory gate:** validate PR #3's exact head (including this patch) on authorized Windows CI: `./gradlew --no-daemon --dependency-verification strict :downloader:core:desktopTest :desktop:app:compileKotlin`; then installed FTP pause/resume and strict 1/4/16 × 3 benchmarks with SHA-256 and CPU/RAM artifacts, without weakening assertions. Inspect the actual output and failures before any merge. Keep browser extension in its own repository, and exclude Torrent.
+
+
+## 2026-10-23 — Lowering concurrency must not reuse a slot before asynchronous stop completes
+
+**Production commit:** [`2f542a76`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/2f542a76c28e817fc57d0bc630a61eaf14ded0a2)  
+**Regression test commit:** [`767c2275`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/767c227503a045d841b4ae654929b18c6f03553a)  
+**PR:** [#3](https://github.com/amroalhamedi2022-hue/personal-download-manager/pull/3) (existing Draft, no merge). **Production source changed: YES.**
+
+**Failure mode:** `ManualDownloadQueue.trim()` previously called `removeActiveItem(id)` immediately before launching suspendable `stopJob(id)`. The socket could still be transferring when that slot was declared free. If another active download then finished, `shake()` could admit a new job even though the configured concurrency limit had already been reduced (e.g. 3 → 1). The fix keeps each stop-requested ID in `activeItemsFlow` until a confirmed `OnJobCanceled`/`OnJobCompleted` or explicit removal, and tracks it in `trimmedItems` so repeat shakes do not send duplicate stop requests. It does not change the user's persisted limit or add a new queue implementation.
+
+**Regression:** `ManualDownloadQueueBatchResumeTest.reducingConcurrencyDoesNotReuseSlotsBeforeAsynchronousStopsFinish` starts three jobs at maxConcurrent=3, reduces the limit to 1, records two asynchronous stop requests that intentionally emit **no** cancellation events, removes the only untrimmed job and confirms no fourth job starts while stopping sockets still occupy reservations. After explicit removals confirm the remaining stops, the fourth job may start. The recording fixture now tracks `stopJob` calls.
+
+| Gate | Result | Evidence |
+| --- | --- | --- |
+| Production source + JUnit regression committed to isolated PR | PASS | `2f542a76` + `767c2275` |
+| Re-fetch source/test and check eight exact invariants | PASS — STATIC ONLY | 8/8 checks; confirmed no `removeActiveItem` inside trim request, pending cancellation path still releases reservation |
+| Isolated Kotlin/JVM trim-state behavioral reproduction | PASS — ISOLATED MODEL ONLY | `kotlinc /tmp/idm_trim_regression.kt -include-runtime -d /tmp/idm_trim_regression.jar && java -jar /tmp/idm_trim_regression.jar`: reproduced pre-fix premature admission of ID 84 and verified post-fix no early admission/duplicate stop; **not actual production compilation or JUnit** |
+| `:downloader:core:desktopTest` and `:desktop:app:compileKotlin` on exact PR SHA | NOT TESTED | No full Gradle project/dependency cache here. `fetch_commit_workflow_runs` returned zero PR runs and `get_commit_combined_status` returned zero statuses for `767c2275`. |
+| Installed Windows 1/4/16 × 3 + SHA-256 + CPU/RAM | HISTORICAL FAIL / CURRENT NOT TESTED | Prior [39929246748](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/39929246748) recorded 13/16 in one round; this trim fix **does not prove** that issue resolved. |
+| FTP Pause/REST Resume, external FTP, GUI OK, browser/HTTP/HTTPS/HLS, Liquid Progress and one Windows EXE | CURRENT NOT TESTED | No Windows runner, real transfer, screenshot comparison or packaging performed on new SHA. |
+
+**Research:** Compared with the official Apache-2.0 `kotlinx.coroutines` Semaphore/withPermit model: a permit is held until work actually completes. A wholesale Semaphore replacement is inappropriate for this dynamically resizable existing queue; preserve its architecture and enforce the same lifecycle-based reservation principle.
+
+**Next action:** Authorize/obtain an exact-PR-SHA Windows CI run of `./gradlew --no-daemon --dependency-verification strict :downloader:core:desktopTest :desktop:app:compileKotlin`, then run installed strict 1/4/16 × 3 benchmark and FTP pause/REST resume. Investigate any failed JUnit first. **No workflow edit, paid API, browser repo change, Torrent, merge or release.** Independent Windows recheck remains mandatory.
