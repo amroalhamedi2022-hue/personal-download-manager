@@ -1,0 +1,25 @@
+name: HTTP Range fixture contract
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/repair-rf00-rf01]
+    paths:
+      - "scripts/LocalHttpRangeFixture.py"
+      - "scripts/test_local_http_range_fixture.py"
+      - ".github/workflows/http-fixture-contract.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  hermetic-range-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Compile fixture and contract tests
+        run: python3 -m py_compile scripts/LocalHttpRangeFixture.py scripts/test_local_http_range_fixture.py
+      - name: Verify socket-level HEAD, Range, rejection and task overlap
+        run: python3 -m unittest discover -s scripts -p test_local_http_range_fixture.py -v
