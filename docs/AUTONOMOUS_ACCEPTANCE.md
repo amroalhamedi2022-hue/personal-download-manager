@@ -1,3 +1,15 @@
+## HyperGet renaming acceptance gates — 2026-10-23
+
+**Approved brand:** HyperGet. This is an administrative plan update only, **no production code/icon/installer changed yet**. [Detailed plan](HYPERGET_REBRAND_PLAN.md). All earlier acceptance/evidence applies to this same project under the new name, without implying rename was implemented.
+
+| Gate | Status | Proof required |
+|---|---|---|
+| HG-01 User-visible HyperGet name across Windows app/UI, settings, dialogs and system integration | NOT TESTED | Source changes + exact-head Windows screenshots and string audit |
+| HG-02 Upgrade-safe persistence: settings, credentials, downloads, database and Windows registrations | NOT TESTED | Previous-to-new version migration/rollback and data integrity tests |
+| HG-03 HyperGet.exe + installer/uninstaller/shortcuts + separately maintained browser integration | NOT TESTED | Genuine EXE + clean/upgrade Windows UI, functional extension IPC tests |
+| HG-04 Original modern HyperGet icon, not IDM/other app copy | NOT TESTED | Actual embedded ICO resources and Windows icon review |
+| HG-05 Full independent final regression (1/4/16 download SHA, CPU/RAM, FTP/HTTP/HLS, resumed installs) | NOT TESTED | Exact-SHA Windows CI, real device/process tests and recheck report |
+
 # Personal Download Manager — autonomous acceptance ledger
 
 AUTOMATION_COMPLETE: IN_PROGRESS
