@@ -6,6 +6,7 @@ import java.io.InputStream
 import java.io.OutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.nio.CharBuffer
 import java.nio.charset.CharacterCodingException
 import java.nio.charset.CodingErrorAction
 
@@ -24,15 +25,16 @@ class InvalidNativeMessagingPayloadException(message: String, cause: Throwable) 
  * The protocol uses a 4-byte unsigned integer (in native byte order) to indicate 
  * the message length, followed by the JSON message content.
  * 
- * Chrome limit: 1MB
- * Firefox limit: 4MB
+ * Browser-to-host messages are capped locally at 4 MiB to limit allocations.
+ * Host-to-browser messages must not exceed 1 MiB (Chrome, Edge and Firefox).
  */
 class StdioProtocol(
     private val input: InputStream,
     private val output: OutputStream,
 ) {
     companion object {
-        private const val MAX_MESSAGE_SIZE = 1024 * 1024 * 4 // 4MB (Firefox limit)
+        private const val MAX_INBOUND_MESSAGE_SIZE = 1024 * 1024 * 4
+        private const val MAX_OUTBOUND_MESSAGE_SIZE = 1024 * 1024
         private const val MESSAGE_LENGTH_SIZE = 4
     }
 
@@ -48,9 +50,9 @@ class StdioProtocol(
         val messageLength = readLength(input)
 
         // Validate message size
-        if (messageLength !in 1..MAX_MESSAGE_SIZE) {
+        if (messageLength !in 1..MAX_INBOUND_MESSAGE_SIZE) {
             throw InvalidNativeMessagingFrameException(
-                "Invalid message size: $messageLength (max: $MAX_MESSAGE_SIZE)"
+                "Invalid message size: $messageLength (max: $MAX_INBOUND_MESSAGE_SIZE)"
             )
         }
 
@@ -85,18 +87,31 @@ class StdioProtocol(
      * Writes a message to stdout.
      * 
      * @param message The JSON message to send
-     * @throws IllegalArgumentException if message exceeds size limit
+     * @throws IllegalArgumentException if the encoded message exceeds the browser limit
+     * or the input contains malformed UTF-16 (such as an unpaired surrogate)
      */
     fun writeMessage(message: String) {
-        val messageBytes = message.toByteArray(Charsets.UTF_8)
-        val messageLength = messageBytes.size
-
-        // Validate message size
-        if (messageLength > MAX_MESSAGE_SIZE) {
-            throw IllegalArgumentException(
-                "Message size exceeds limit: $messageLength (max: $MAX_MESSAGE_SIZE)"
-            )
+        // Even ASCII would exceed the browser's outbound limit. Reject before
+        // allocating an encoded buffer; multibyte content is checked below.
+        require(message.length <= MAX_OUTBOUND_MESSAGE_SIZE) {
+            "Message character count exceeds browser limit: ${message.length}"
         }
+        // String.toByteArray(UTF_8) silently replaces unpaired surrogates.
+        // Never mutate a native-messaging JSON response on its way to a browser.
+        val encoded = try {
+            Charsets.UTF_8.newEncoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT)
+                .encode(CharBuffer.wrap(message))
+        } catch (e: CharacterCodingException) {
+            throw IllegalArgumentException("Native messaging response is not valid UTF-16", e)
+        }
+        val messageLength = encoded.remaining()
+        require(messageLength <= MAX_OUTBOUND_MESSAGE_SIZE) {
+            "Message size exceeds browser limit: $messageLength (max: $MAX_OUTBOUND_MESSAGE_SIZE)"
+        }
+        val messageBytes = ByteArray(messageLength)
+        encoded.get(messageBytes)
 
         // Write 4-byte length prefix in native byte order
         val lengthBuffer = ByteBuffer.allocate(4)
