@@ -3,6 +3,7 @@
 // kotlinc desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/nativemessaging/host/stdio/{NativeMessagingFinished,StdioProtocol}.kt scripts/tests/HyperGetNativeMessagingFramingSmoke.kt -include-runtime -d /tmp/hyperget-native-framing-test.jar
 // java -jar /tmp/hyperget-native-framing-test.jar
 import com.abdownloadmanager.desktop.nativemessaging.host.stdio.InvalidNativeMessagingFrameException
+import com.abdownloadmanager.desktop.nativemessaging.host.stdio.InvalidNativeMessagingPayloadException
 import com.abdownloadmanager.desktop.nativemessaging.host.stdio.NativeMessagingFinished
 import com.abdownloadmanager.desktop.nativemessaging.host.stdio.StdioProtocol
 import java.io.ByteArrayInputStream
@@ -88,6 +89,23 @@ fun main() {
         reader(byteArrayOf()).readMessage()
     }
     pass()
+
+    // An invalid UTF-8 payload must not be silently replaced with U+FFFD.
+    // The frame boundary is still intact, so the next valid frame is readable.
+    val invalidUtf8Payloads = listOf(
+        byteArrayOf(0xC3.toByte(), 0x28), // bad continuation byte
+        byteArrayOf(0xE2.toByte(), 0x82.toByte()), // truncated multibyte sequence
+        byteArrayOf(0xED.toByte(), 0xA0.toByte(), 0x80.toByte()), // UTF-8 surrogate
+    )
+    for ((index, payload) in invalidUtf8Payloads.withIndex()) {
+        val framedStream = reader(frame("before") + header(payload.size) + payload + frame("after"))
+        check(framedStream.readMessage() == "before")
+        expectFailure<InvalidNativeMessagingPayloadException>("invalid UTF-8 payload $index") {
+            framedStream.readMessage()
+        }
+        check(framedStream.readMessage() == "after")
+        pass()
+    }
 
     println("PASS: $cases HyperGet native-messaging framing cases (isolated Kotlin/JVM)")
 }
