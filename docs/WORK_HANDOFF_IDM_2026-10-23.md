@@ -69,3 +69,14 @@ Before leaving any Work session, especially when near credits limits:
 - Commit and push ALL code and tests to `codex/repair-rf00-rf01` (or explicitly name another feature branch / PR).
 - Update `docs/WORK_HANDOFF_IDM_2026-10-23.md` (or a date-stamped successor) with exact latest SHA, work done, commands executed, green and red Actions run IDs + failure excerpts, unverified claims, pending queue and the first next action.
 - Give the user a concise Arabic status report and link the latest handoff. They can paste it into normal Chat to continue, without losing source state.
+
+## 2026-10-23 — Automated source-state reconciliation (NOT a new CI pass)
+
+The earlier handoff above describes the historical failing commit `51a4658`. It is **not** the current source state on `codex/repair-rf00-rf01`. A read-only comparison of `51a465881dd494200d6ecd1f0ca71d0d4ceeb767` against branch HEAD `8ca703673339c06a0ae34329bc8d23cb885e1b61` showed **5 additional commits** and production-code changes. Verified by fetching the files on that branch:
+
+- `BaseNewDownload.kt` now uses `.convert(conversion = { raw -> parseDownloadHeaderOption(raw) })`, addressing the original Clikt call-site compile complaint **in source**.
+- `DefaultAppIPCServiceImpl.kt` now implements both `getMaxConcurrentDownloads()` and `setMaxConcurrentDownloads(value)`, waits for app boot, uses `appComponent.appSettings.maxConcurrentDownloads.value` and calls `requireSupportedMaxConcurrentDownloads`. The corresponding settings CLI and tests were added in this branch.
+- `scripts/Run-WindowsInstalledFtpE2E.ps1`, `scripts/LocalFtpFixture.py`, `scripts/test_local_ftp_fixture.py` and FTP-related workflow code were added or modified. This is evidence of source implementation, **not** evidence that Windows FTP end-to-end, external LAN/WAN or real GUI acceptance passed.
+- The last explicitly inspected historical failed Windows run is [39921472032](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/39921472032) on `51a4658`, which is **older** than these source changes. Do not cite that failure as proof the new branch is broken, nor claim the new branch green until its own Windows validation, 1/4/16 active benchmarks, FTP tests and JUnit/artifact checks have completed successfully.
+
+**Next step:** Check for CI results on the **current branch SHA**, not only main or the older run. If none, request one authorized Windows CI run. Fix only failures proven on the new SHA. Keep 1/4/16 active task and SHA256 assertions strict; do not alter the legitimate default concurrency value merely to pass benchmarks. Reconcile this dated appendix into the main handoff after review. This appendix does not modify production code or claim any build/test execution.
