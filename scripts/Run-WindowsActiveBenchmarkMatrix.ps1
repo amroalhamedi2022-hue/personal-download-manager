@@ -15,8 +15,8 @@ param(
     [Parameter(Mandatory = $true)][string] $OutputDirectory,
     [ValidateRange(1, 5)][int] $Rounds = 3,
     [ValidateRange(5, 60)][int] $SampleSeconds = 8,
-    [ValidateRange(10, 500)][int] $ServerChunkDelayMs = 120,
-    [ValidateRange(8, 128)][int] $FileSizeMiB = 16
+    [ValidateRange(10, 500)][int] $ServerChunkDelayMs = 500,
+    [ValidateRange(8, 128)][int] $FileSizeMiB = 32
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -80,6 +80,11 @@ try {
     foreach ($jobs in @(1, 4, 16)) {
         for ($round = 1; $round -le $Rounds; $round++) {
             $scenario = "active-$jobs"
+            $statsUrl = "http://127.0.0.1:$port/stats"
+            $prior = Invoke-RestMethod -Uri "${statsUrl}?reset=1" -TimeoutSec 10
+            if ([int]$prior.active_requests -ne 0 -or [int]$prior.total_requests -ne 0) {
+                throw 'Fixture statistics reset failed before the workload.'
+            }
             $taskFiles = [System.Collections.Generic.List[object]]::new()
             Write-Host "Running $scenario round $round/$Rounds on installed Windows app"
             for ($index = 1; $index -le $jobs; $index++) {
@@ -88,7 +93,8 @@ try {
                 if (Test-Path -LiteralPath $outputPath) {
                     throw "Destination existed before starting: $filename"
                 }
-                $cliOutput = @(& $cliPath download add http --link $url --folder $downloadFolder --name $filename --start 2>&1)
+                $taskUrl = "${url}?task=$filename"
+                $cliOutput = @(& $cliPath download add http --link $taskUrl --folder $downloadFolder --name $filename --start 2>&1)
                 $exit = $LASTEXITCODE
                 if ($exit -ne 0) {
                     throw "Installed CLI add failed ($exit): $($cliOutput -join ' ')"
@@ -99,8 +105,8 @@ try {
                 }
                 $taskFiles.Add([pscustomobject]@{ Id = $ids[0]; Name = $filename; Path = $outputPath })
             }
-            # Deterministic 16 MiB / 64 KiB * 120 ms ~= 31 seconds
-            # minimum transfer duration per active task, before checking hashes.
+            # Slow loopback source ensures the test samples real in-flight transfers,
+            # even with the downloader's parallel HTTP Range segments.
             $csvPath = Join-Path $metricFolder "$scenario-round-$round.csv"
             & $sampler -RootProcessName 'DownloadManager' -Scenario $scenario -SourceSha $SourceSha -OutputCsv $csvPath -DurationSeconds $SampleSeconds -WarmupSeconds 1 -SampleIntervalMs 1000 -RunLabel "round-$round"
             if (-not (Test-Path -LiteralPath $csvPath)) {
@@ -109,6 +115,10 @@ try {
             $samples = @(Import-Csv -LiteralPath $csvPath)
             if ($samples.Count -lt 5 -or @($samples | Where-Object { [int]$_.ProcessCount -lt 1 }).Count -gt 0) {
                 throw "Process-tree measurements are missing/invalid: $scenario round $round"
+            }
+            $during = Invoke-RestMethod -Uri $statsUrl -TimeoutSec 10
+            if ([int]$during.peak_distinct_tasks -lt $jobs) {
+                throw "$scenario exposed only $($during.peak_distinct_tasks) simultaneously transferring tasks; expected $jobs."
             }
             $pending = [System.Collections.Generic.HashSet[string]]::new([string[]]@($taskFiles | ForEach-Object { $_.Path }), [System.StringComparer]::OrdinalIgnoreCase)
             $deadline = [DateTime]::UtcNow.AddSeconds(150)
@@ -125,6 +135,10 @@ try {
                 throw "Timed out or SHA mismatch for $scenario round $round: $($pending -join ', ')"
             }
             Start-Sleep -Seconds 2
+            $after = Invoke-RestMethod -Uri $statsUrl -TimeoutSec 10
+            if ([int]$after.active_requests -ne 0 -or [int]$after.peak_distinct_tasks -lt $jobs -or [int]$after.unique_tasks_seen -ne $jobs) {
+                throw "HTTP concurrency counters invalid for $scenario round $round."
+            }
             foreach ($task in $taskFiles) {
                 $actualLength = (Get-Item -LiteralPath $task.Path).Length
                 $actualSha = (Get-FileHash -LiteralPath $task.Path -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -135,6 +149,8 @@ try {
                     SourceSha = $SourceSha; Scenario = $scenario; Round = $round
                     TaskId = $task.Id; OutputName = $task.Name
                     Bytes = $actualLength; SHA256 = $actualSha; Verified = $true
+                    PeakDistinctTasks = [int]$after.peak_distinct_tasks
+                    PeakHttpConnections = [int]$after.peak_requests
                 })
             }
             Write-Host "$scenario round $round: $jobs/$jobs installed HTTP downloads verified."
