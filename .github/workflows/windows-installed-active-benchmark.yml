@@ -1,0 +1,97 @@
+name: Windows installed active HTTP 1-4-16 benchmark
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/repair-rf00-rf01]
+    paths:
+      - ".github/workflows/windows-installed-active-benchmark.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-installed-active-benchmark-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  real-windows-active-transfers:
+    name: Install once; 63 SHA256-verified downloads and 9 real CPU/RAM runs
+    runs-on: windows-2022
+    timeout-minutes: 90
+    env:
+      SKIP_ANDROID_BUILD: "true"
+    steps:
+      - name: Check out exact tested source SHA
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up JetBrains Runtime 25
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: jetbrains
+          java-package: jdk
+          java-version: "25"
+          cache: gradle
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build exactly one NSIS Windows installer
+        shell: bash
+        run: >-
+          ./gradlew --no-daemon --stacktrace
+          --dependency-verification strict
+          createReleaseFolderForCi
+
+      - name: Install real GUI and CLI into clean isolated directory
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installers = @(Get-ChildItem -LiteralPath 'build/ci-release/binaries' -File -Recurse -Filter '*.exe')
+          if ($installers.Count -ne 1) { throw "Expected one NSIS installer, got $($installers.Count)." }
+          $installDir = Join-Path $env:RUNNER_TEMP 'idm-active-benchmark-installed'
+          if (Test-Path -LiteralPath $installDir) { throw 'Benchmark install directory unexpectedly exists.' }
+          $installer = Start-Process -FilePath $installers[0].FullName -ArgumentList @('/S', "/D=$installDir") -PassThru
+          if (-not $installer.WaitForExit(180000)) {
+            Stop-Process -Id $installer.Id -Force -ErrorAction SilentlyContinue
+            throw 'Real Windows installer timed out.'
+          }
+          if ($installer.ExitCode -ne 0) { throw "Installer exit code $($installer.ExitCode)." }
+          $exe = @(Get-ChildItem -LiteralPath $installDir -File -Recurse -Filter '*.exe')
+          $gui = @($exe | Where-Object { $_.BaseName -eq 'DownloadManager' })
+          $cli = @($exe | Where-Object { $_.BaseName -match 'DownloadManagerCli$' })
+          if ($gui.Count -ne 1 -or $cli.Count -ne 1) {
+            throw "Expected one installed GUI and CLI: GUI=$($gui.Count), CLI=$($cli.Count)"
+          }
+          "IDM_BENCH_GUI=$($gui[0].FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "IDM_BENCH_CLI=$($cli[0].FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          $digest = (Get-FileHash -LiteralPath $installers[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          Write-Host "Installed NSIS installer SHA256: $digest"
+
+      - name: Measure 1 / 4 / 16 simultaneous real installed Windows transfers
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & ./scripts/Run-WindowsActiveBenchmarkMatrix.ps1 -GuiExecutable $env:IDM_BENCH_GUI -CliExecutable $env:IDM_BENCH_CLI -SourceSha $env:GITHUB_SHA -OutputDirectory 'build/ci-release/active-transfer-bench' -Rounds 3 -SampleSeconds 8 -FileSizeMiB 32 -ServerChunkDelayMs 500
+
+      - name: Audit hashes, concurrent requests, process samples, and render report
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & ./scripts/Summarize-WindowsActiveBenchmark.ps1 -Directory 'build/ci-release/active-transfer-bench' -SourceSha $env:GITHUB_SHA -Rounds 3
+          $report = 'build/ci-release/active-transfer-bench/benchmark-report.md'
+          if (-not (Test-Path -LiteralPath $report -PathType Leaf)) { throw 'Verified report missing' }
+          Get-Content -LiteralPath $report
+
+      - name: Upload reproducible Windows metrics and SHA-verified task manifest
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-active-http-1-4-16-evidence
+          path: |
+            build/ci-release/active-transfer-bench/measurements/*.csv
+            build/ci-release/active-transfer-bench/verified-transfers.csv
+            build/ci-release/active-transfer-bench/round-summary.csv
+            build/ci-release/active-transfer-bench/benchmark-report.md
+            build/ci-release/active-transfer-bench/server-stderr.txt
+          if-no-files-found: warn
+          retention-days: 7
