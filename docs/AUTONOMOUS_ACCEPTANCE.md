@@ -189,3 +189,22 @@ No paid API, new workflow, public release, repository visibility change, automat
 **Next bounded action:** Execute the two new tests in `:downloader:core:desktopTest` and `:desktop:app:compileKotlin` on PR #3's **exact source SHA** with JUnit XML, then strict Windows installed FTP Pause/REST and 1/4/16 × 3 socket/SHA/CPU/RAM acceptance. Investigate actual failures rather than relaxing limits. Follow with real-browser, visual, upgrade and independent security recheck. Do not mark CANDIDATE/VERIFIED, merge, release or disable this recurring task.
 
 **Scope:** Torrent excluded. No other repository, main branch, ChatGPT Library, paid API or workflow changed.
+
+
+## 2026-10-23 — HyperGet HG-01 display brand, first non-breaking source slice
+
+**Product name:** HyperGet only. **Existing draft PR:** [#3](https://github.com/amroalhamedi2022-hue/personal-download-manager/pull/3), base `codex/repair-rf00-rf01`, head `automation/idm-ftp-cancel-and-category-flush`. **Production source changed: YES.**
+
+- **Source commit:** [`1a84fee4`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/1a84fee483351e4d21dbb0a3857c6facc684bb5e). In `shared/app/build.gradle.kts`, only the generated `APP_DISPLAY_NAME` is now `HyperGet`. This flows through `SharedConstants.appDisplayName` → desktop `AppInfo.displayName` → `HomeWindow` title, tray tooltip and other existing display-name consumers. No storage migration or executable rename was attempted.
+- **Regression source:** [`90668d62`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/90668d6278156dfcaca69233266a773d1bd86ffa) adds `HyperGetBrandingCompatibilityTest` under `shared/app/src/commonTest`. It asserts the visible name and keeps technical runtime/storage IDs distinct from the display brand.
+- **Upstream/license/security:** Existing codebase is derived from AB Download Manager under Apache-2.0 (repository `LICENSE`). Reused the already-present BuildConfig → SharedConstants → AppInfo display-name pipeline; no third-party code copied, no new dependencies, no credential/IPC/registry mutations, no new service or cost.
+
+| HyperGet acceptance gate | Status | Exact evidence / remaining work |
+| --- | --- | --- |
+| HG-01: main Windows window/tray name wiring | **PASS STATIC ONLY; WINDOWS NOT TESTED** | Re-fetched committed build config and `AppInfo`/`HomeWindow`: 10/10 static invariants passed. Actual rendered window/tray/About/settings/notifications need Windows inspection. |
+| HG-02: preserve existing technical identity | **PASS SOURCE DIFF; UPGRADE NOT TESTED** | `APP_NAME`, `PACKAGE_NAME`, `DATA_DIR_NAME`, `getAppName()`, NSIS `upgradeUuid`, installer package name and data-dir configuration unchanged by this round. Existing downloads, credentials, registry and rollback need old→new Windows E2E. |
+| HG-03: HyperGet.exe, installer, shortcuts and separate browser extension | **NOT TESTED / NOT IMPLEMENTED** | Deliberately retained legacy binary, host and registry identities until migration tests; extension repo untouched. |
+| HG-04: original liquid-style HyperGet icon | **NOT IMPLEMENTED** | No icon/image was generated or installed in this round. |
+| HG-05: complete feature/Windows/security/independent double recheck | **NOT TESTED** | Exact PR test SHA `90668d6278156dfcaca69233266a773d1bd86ffa` had **0 PR workflow runs and 0 commit statuses** when checked. No Gradle/JUnit, Windows build, GUI, FTP/HTTP/HLS, 1/4/16 SHA-256 or CPU/RAM measurements were executed on this source. Historical 13/16 benchmark and FTP failures are unresolved for current SHA. |
+
+**Next bounded action:** Run `./gradlew --no-daemon --dependency-verification strict :shared:app:desktopTest :downloader:core:desktopTest :desktop:app:compileKotlin` and inspect JUnit XML on this PR's exact head; then run Windows installed FTP REST and strict 1/4/16 x3 socket/SHA/resource matrix. Proceed with HG-01 Settings/About/notifications and HG-03 NSIS/shortcut/browser compatibility only with old-version upgrade/rollback evidence. Do not mark CANDIDATE or VERIFIED, change `main`, auto-merge, publish a release, rename the repo/IPC/credentials, reintroduce Torrent, or use paid APIs.
