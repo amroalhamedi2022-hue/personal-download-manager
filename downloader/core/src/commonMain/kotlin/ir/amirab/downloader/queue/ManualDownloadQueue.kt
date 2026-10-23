@@ -237,7 +237,12 @@ class ManualDownloadQueue(
     }
 
     private fun trim() {
-        while (activeItems.size > maxConcurrent) {
+        // stopJob is asynchronous: requesting a stop does NOT free a live
+        // download slot. Keep the reservation until OnJobCanceled/Completed
+        // (or explicit removal) confirms that the transfer is no longer live.
+        // Count only jobs not already asked to stop, so a second shake cannot
+        // issue duplicate stop requests while cancellations are in flight.
+        while (activeItems.count { it !in trimmedItems } > maxConcurrent) {
             if (!removeAnActiveQueueItemForTrimming()) {
                 return
             }
@@ -246,11 +251,12 @@ class ManualDownloadQueue(
 
     private val me = User
     private fun removeAnActiveQueueItemForTrimming(): Boolean {
-        val id = activeItems.lastOrNull() ?: return false
+        val id = activeItems.lastOrNull { it !in trimmedItems } ?: return false
         trimmedItems.add(id)
-        val result = removeActiveItem(id)
+        // Do not release the reserved slot here. The stop is suspendable and
+        // the socket can still be transferring until its lifecycle event.
         scope.launch { downloadEvents.stopJob(id, StoppedBy(me)) }
-        return result
+        return true
     }
 
     private fun extend() {
