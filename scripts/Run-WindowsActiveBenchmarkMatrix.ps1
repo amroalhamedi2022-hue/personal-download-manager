@@ -105,6 +105,20 @@ try {
                 }
                 $taskFiles.Add([pscustomobject]@{ Id = $ids[0]; Name = $filename; Path = $outputPath })
             }
+            # Poll real on-wire requests, not queue state: the measured
+            # sample window starts only once ALL distinct tasks have sockets.
+            $allActive = $false
+            for ($attempt = 0; $attempt -lt 60; $attempt++) {
+                $ready = Invoke-RestMethod -Uri $statsUrl -TimeoutSec 10
+                if ([int]$ready.active_distinct_tasks -ge $jobs) {
+                    $allActive = $true
+                    break
+                }
+                Start-Sleep -Milliseconds 250
+            }
+            if (-not $allActive) {
+                throw "Only $($ready.active_distinct_tasks) of $jobs tasks were active; cannot label this sample a $jobs-concurrent workload."
+            }
             # Slow loopback source ensures the test samples real in-flight transfers,
             # even with the downloader's parallel HTTP Range segments.
             $csvPath = Join-Path $metricFolder "$scenario-round-$round.csv"
@@ -126,7 +140,13 @@ try {
                 foreach ($path in @($pending)) {
                     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { continue }
                     if ((Get-Item -LiteralPath $path).Length -ne $expectedBytes) { continue }
-                    $actual = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+                    # A full-length destination can still be held by an active
+                    # downloader flush; retry transient sharing violations.
+                    try {
+                        $actual = (Get-FileHash -LiteralPath $path -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant()
+                    } catch [System.IO.IOException] {
+                        continue
+                    }
                     if ($actual -eq $expectedSha) { [void]$pending.Remove($path) }
                 }
                 if ($pending.Count -gt 0) { Start-Sleep -Milliseconds 500 }
