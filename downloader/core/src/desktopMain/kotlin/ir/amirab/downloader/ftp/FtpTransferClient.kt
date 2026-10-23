@@ -7,6 +7,7 @@ import org.apache.commons.net.ftp.FTP
 import org.apache.commons.net.ftp.FTPClient
 import org.apache.commons.net.ftp.FTPReply
 import java.io.IOException
+import java.io.InputStream
 import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.Path
@@ -14,6 +15,7 @@ import java.nio.file.StandardCopyOption
 import java.nio.file.StandardOpenOption
 import java.time.Duration
 import java.util.Properties
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
 /**
@@ -27,7 +29,29 @@ import java.util.concurrent.atomic.AtomicReference
  * schema; FtpDownloadJob is the reviewed adapter used by GUI, queue and CLI.
  */
 class FtpTransferClient {
-    private val activeConnection = AtomicReference<FTPClient?>(null)
+    /**
+     * RETR uses a separate data socket. Disconnecting only the FTP control
+     * connection does not reliably interrupt a live data-stream read.
+     * Keep cancellation state per transfer so an old Pause cannot cancel
+     * a later Resume on the same FtpTransferClient.
+     */
+    private class ActiveTransfer(val client: FTPClient) {
+        val cancelled = AtomicBoolean(false)
+        val dataStream = AtomicReference<InputStream?>(null)
+
+        fun ensureNotCancelled() {
+            if (cancelled.get()) throw IOException("FTP transfer cancelled")
+        }
+
+        fun cancel() {
+            cancelled.set(true)
+            // Closing retrieveFileStream's input also closes its data socket.
+            runCatching { dataStream.get()?.close() }
+            runCatching { client.disconnect() }
+        }
+    }
+
+    private val activeTransfer = AtomicReference<ActiveTransfer?>(null)
 
     data class TransferResult(
         val destination: Path,
@@ -89,9 +113,7 @@ class FtpTransferClient {
     }
 
     fun cancel() {
-        // Closing the socket interrupts blocking read() on the worker thread.
-        val client = activeConnection.get()
-        runCatching { client?.disconnect() }
+        activeTransfer.get()?.cancel()
     }
 
     /**
@@ -126,7 +148,8 @@ class FtpTransferClient {
         }
 
         val ftp = FTPClient()
-        if (!activeConnection.compareAndSet(null, ftp)) {
+        val transfer = ActiveTransfer(ftp)
+        if (!activeTransfer.compareAndSet(null, transfer)) {
             throw IllegalStateException("An FTP transfer is already in progress on this client")
         }
         try {
@@ -136,12 +159,14 @@ class FtpTransferClient {
             ftp.setDefaultTimeout(connectTimeout.toMillis().coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
             ftp.setDataTimeout(dataTimeout)
             ftp.connect(endpoint.host, endpoint.port)
+            transfer.ensureNotCancelled()
             if (!FTPReply.isPositiveCompletion(ftp.replyCode)) {
                 throw IOException("FTP connection rejected (code ${ftp.replyCode})")
             }
             if (!ftp.login(username, password)) {
                 throw IOException("FTP login rejected (code ${ftp.replyCode})")
             }
+            transfer.ensureNotCancelled()
             ftp.enterLocalPassiveMode()
             if (!ftp.setFileType(FTP.BINARY_FILE_TYPE)) {
                 throw IOException("FTP binary mode unavailable (code ${ftp.replyCode})")
@@ -171,13 +196,16 @@ class FtpTransferClient {
             }
             val stream = ftp.retrieveFileStream(endpoint.path)
                 ?: throw IOException("FTP RETR rejected (code ${ftp.replyCode})")
+            transfer.dataStream.set(stream)
+            transfer.ensureNotCancelled()
             // A server may advertise metadata for a path that is not readable.
             // Don't leave a misleading resume sidecar unless RETR was accepted.
             if (existing == 0L) {
                 storeIdentity(meta, endpoint.identity, identity)
             }
             var downloaded = existing
-            stream.use { input ->
+            try {
+                stream.use { input ->
                 // Reuse the existing downloader's throttler, rather than inventing
                 // a second speed-control algorithm specific to FTP.
                 val limiter = SpeedLimiter().apply { bytesPerSecond(speedLimitBytesPerSecond) }
@@ -193,21 +221,28 @@ class FtpTransferClient {
                     val buffer = ByteArray(64 * 1024)
                     while (true) {
                         val n = received.read(buffer)
+                        transfer.ensureNotCancelled()
                         if (n == -1) break
                         outputStream.write(buffer, 0, n)
                         downloaded += n
                         onProgress(downloaded, identity.size)
+                        transfer.ensureNotCancelled()
                     }
                     outputStream.flush()
                 }
                 }
+                }
+            } finally {
+                transfer.dataStream.compareAndSet(stream, null)
             }
+            transfer.ensureNotCancelled()
             if (!ftp.completePendingCommand()) {
                 throw IOException("FTP transfer did not receive successful completion (code ${ftp.replyCode})")
             }
             if (identity.size != null && downloaded != identity.size) {
                 throw IOException("FTP byte-count mismatch: expected ${identity.size}, got $downloaded")
             }
+            transfer.ensureNotCancelled()
             try {
                 Files.move(part, absolute, StandardCopyOption.ATOMIC_MOVE)
             } catch (_: AtomicMoveNotSupportedException) {
@@ -216,7 +251,7 @@ class FtpTransferClient {
             Files.deleteIfExists(meta)
             return TransferResult(absolute, downloaded - existing, existing, identity.size, identity.modificationTime)
         } finally {
-            activeConnection.compareAndSet(ftp, null)
+            activeTransfer.compareAndSet(transfer, null)
             if (ftp.isConnected) {
                 runCatching { ftp.logout() }
                 runCatching { ftp.disconnect() }
