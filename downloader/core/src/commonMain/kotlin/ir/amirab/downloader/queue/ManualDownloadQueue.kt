@@ -268,10 +268,23 @@ class ManualDownloadQueue(
     private fun downloadAQueueItemIfPossible(): Boolean {
         val downloadableItemFromQueue = getAnInactiveITemFromTheQueue()
 
-        return downloadableItemFromQueue?.let {
-            addAnActiveItem(it)
+        return downloadableItemFromQueue?.let { id ->
+            // Admission reserves a slot before the suspendable startJob call.
+            // If startJob fails before emitting a lifecycle event, that slot
+            // would otherwise remain occupied forever and strand pending jobs.
+            addAnActiveItem(id)
             scope.launch {
-                downloadEvents.startJob(it, ResumedBy(me))
+                try {
+                    downloadEvents.startJob(id, ResumedBy(me))
+                } catch (cancelled: CancellationException) {
+                    // Cancelling the owning scope is not a download failure.
+                    throw cancelled
+                } catch (_: Exception) {
+                    // A failed start must not be retried in a tight loop. Drop
+                    // just this admission and let the normal debounced refill
+                    // consider the remaining queued downloads.
+                    removeFromQueue(id)
+                }
             }
             true
         } ?: false
