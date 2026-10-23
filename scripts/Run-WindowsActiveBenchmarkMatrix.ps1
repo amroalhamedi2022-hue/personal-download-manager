@@ -144,7 +144,10 @@ try {
                     # downloader flush; retry transient sharing violations.
                     try {
                         $actual = (Get-FileHash -LiteralPath $path -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant()
-                    } catch [System.IO.IOException] {
+                    } catch {
+                        # Get-FileHash may surface a PowerShell error record
+                        # wrapping Win32 sharing violations, not IOException.
+                        # Strict SHA256 + overall completion deadline remain.
                         continue
                     }
                     if ($actual -eq $expectedSha) { [void]$pending.Remove($path) }
