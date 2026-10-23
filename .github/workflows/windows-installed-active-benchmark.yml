@@ -6,6 +6,10 @@ on:
     branches: [codex/repair-rf00-rf01]
     paths:
       - ".github/workflows/windows-installed-active-benchmark.yml"
+      - "scripts/Run-WindowsActiveBenchmarkMatrix.ps1"
+      - "scripts/Summarize-WindowsActiveBenchmark.ps1"
+      - "scripts/Measure-WindowsDownloadManager.ps1"
+      - "scripts/LocalHttpRangeFixture.py"
 
 permissions:
   contents: read
