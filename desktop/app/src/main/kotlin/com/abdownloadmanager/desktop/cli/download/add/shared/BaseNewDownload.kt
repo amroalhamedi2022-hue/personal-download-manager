@@ -3,6 +3,7 @@ package com.abdownloadmanager.desktop.cli.download.add.shared
 import com.abdownloadmanager.desktop.utils.singleInstance.SingleInstanceManager
 import com.abdownloadmanager.integration.model.IDownloadCredentialsFromIntegration
 import com.abdownloadmanager.integration.model.NewDownloadTask
+import com.abdownloadmanager.shared.util.parseDownloadHeaderOption
 import com.github.ajalt.clikt.command.SuspendingCliktCommand
 import com.github.ajalt.clikt.core.ParameterHolder
 import com.github.ajalt.clikt.core.PrintCompletionMessage
@@ -59,10 +60,7 @@ abstract class BaseNewDownload(
 
     // utilities
     fun ParameterHolder.headersOption() = option("--header", "-h")
-        .convert {
-            val (key, value) = it.split('=', ':')
-            key to value
-        }
+        .convert(::parseDownloadHeaderOption)
         .multiple()
 
     fun ParameterHolder.linkOption() = option("--link")
