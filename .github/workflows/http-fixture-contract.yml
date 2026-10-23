@@ -7,6 +7,10 @@ on:
     paths:
       - "scripts/LocalHttpRangeFixture.py"
       - "scripts/test_local_http_range_fixture.py"
+      - "scripts/Run-WindowsActiveBenchmarkMatrix.ps1"
+      - "scripts/Summarize-WindowsActiveBenchmark.ps1"
+      - "scripts/Measure-WindowsDownloadManager.ps1"
+      - "scripts/Run-WindowsIdleBenchmarkMatrix.ps1"
       - ".github/workflows/http-fixture-contract.yml"
 
 permissions:
