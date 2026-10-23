@@ -11,6 +11,7 @@ on:
       - "scripts/Summarize-WindowsActiveBenchmark.ps1"
       - "scripts/Measure-WindowsDownloadManager.ps1"
       - "scripts/Run-WindowsInstalledResumeE2E.ps1"
+      - "scripts/Run-WindowsInstallerLifecycleE2E.ps1"
       - "scripts/Run-WindowsIdleBenchmarkMatrix.ps1"
       - ".github/workflows/http-fixture-contract.yml"
 
@@ -37,6 +38,7 @@ jobs:
             'scripts/Summarize-WindowsActiveBenchmark.ps1',
             'scripts/Measure-WindowsDownloadManager.ps1',
             'scripts/Run-WindowsInstalledResumeE2E.ps1',
+            'scripts/Run-WindowsInstallerLifecycleE2E.ps1',
             'scripts/Run-WindowsIdleBenchmarkMatrix.ps1'
           )) {
             $tokens = $null
