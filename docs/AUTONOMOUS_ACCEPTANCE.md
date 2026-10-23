@@ -1,3 +1,22 @@
+## HyperGet 2026-10-23 — Native browser-messaging frame desynchronization repair (SOURCE + TEST)
+
+**Production SHAs:** `94114937c1d2e67af121ef699bbb46f9b0c668ef` (`StdioProtocol.kt`), `e8929d0b2116a5b269ea0acfcd5214c22db52f9c` (`NativeMessagingHost.kt`). **Regression source SHA:** `6a66b4a20d567fc0a382dc7857f908f35bc6a9c6` (`scripts/tests/HyperGetNativeMessagingFramingSmoke.kt`). Existing draft [PR #3](https://github.com/amroalhamedi2022-hue/personal-download-manager/pull/3); no merge or direct main changes.
+
+**Defect:** The original Apache-2.0-based native-messaging parser rejected a zero/negative/>4-MiB frame length as `IllegalArgumentException`; the browser host treated that exception as recoverable and read the next four bytes as a new length. Those bytes may actually be the malformed frame's payload, causing a desynchronized error loop. **Fix:** A dedicated `InvalidNativeMessagingFrameException` terminates the host read loop for unrecoverable framing errors, without consuming or reinterpreting attacker-controlled payload. Ordinary JSON serialization/argument errors after a valid frame retain the previous recoverable behavior. Existing native host names, extension IDs, registry keys, IPC, stored downloads and credential keys are unchanged. Reviewed the existing upstream AB Download Manager v1.11.1 implementation and this repository's Apache-2.0 LICENSE; reused existing framing code, no new dependency.
+
+| Gate | Status | Exact evidence |
+| --- | --- | --- |
+| Kotlin/JVM isolated source framing test | **PASS 12/12** | `kotlinc StdioProtocol.kt NativeMessagingFinished.kt HyperGetNativeMessagingFramingSmoke.kt -include-runtime -d /tmp/hyperget-native-framing-test.jar && java -jar /tmp/hyperget-native-framing-test.jar`; cases cover valid ASCII/UTF-8, consecutive frames, output framing, invalid 0/-1/>4-MiB prefixes, exact 4-MiB boundary, outbound oversize, truncated header/body, clean EOF. Compiled source Git blob hashes `e18907902697ab70fb9ac5f15814796dcafa5a67`, `2b9958f9e5625cf8069fde7cd1b75b88c61b30d9`, test `d744b276d98bfe0a102387f285c6bdee6b4510f3` match the GitHub files exactly. This is NOT full app compilation. |
+| GitHub-source guard/static assertions | **PASS 8/8** | Re-fetched exact production/host/test and checked fatal-frame propagation, recoverable JSON behavior, 4-MiB limit, test presence and branch workflow trigger scope. Static only; host as a whole was NOT compiled. |
+| GitHub Actions on exact source+test SHA `6a66b4a2` | **NOT TESTED** | 0 PR workflow runs and 0 commit statuses at check. Existing `private-windows-validation.yml` push trigger lists base branch but NOT the isolated PR branch; no Actions requested. |
+| Browser extension on real Chrome/Firefox, native-host end-to-end | **NOT TESTED** | No real browser/Windows execution; separate browser repository unchanged. |
+| Full Gradle/JUnit, app compile, installer, HyperGet.exe | **DEFERRED / NOT TESTED** | Binding user NO-BUILD gate. No Gradle, packaging, EXE, installer or executable-producing Actions invoked. The temporary isolated JVM test JAR is not a HyperGet application build. |
+| HTTP(S)/HLS, FTP/REST, 1/4/16, SHA-256, CPU/RAM, Liquid Progress, upgrade/rollback, icon, independent double recheck | **NOT TESTED on this SHA** | Existing historical failures/gates below remain open. No change to Torrent exclusion. |
+
+**Next bounded action:** Continue HG-01–HG-05 and functional source fixes without building; add a source-only host-loop integration regression when the full serialization dependency is available, then verify extension manifest/identity and Windows migration readiness. After ALL source/readiness gates pass, perform the first final Windows build and strict installed acceptance, including browser framing and actual sockets. Do not mark HyperGet complete, merge, publish, or disable the recurring task.
+
+---
+
 ## HyperGet renaming acceptance gates — 2026-10-23
 
 **Approved brand:** HyperGet. This is an administrative plan update only, **no production code/icon/installer changed yet**. [Detailed plan](HYPERGET_REBRAND_PLAN.md). All earlier acceptance/evidence applies to this same project under the new name, without implying rename was implemented.
