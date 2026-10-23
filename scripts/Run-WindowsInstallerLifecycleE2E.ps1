@@ -15,8 +15,8 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $installer = [IO.Path]::GetFullPath($InstallerExecutable)
-$installDir = [IO.Path]::GetFullPath($InstallDirectory).TrimEnd('\','/')
-$runnerTemp = [IO.Path]::GetFullPath($env:RUNNER_TEMP).TrimEnd('\','/')
+$installDir = [IO.Path]::GetFullPath($InstallDirectory).TrimEnd([char[]]@('\','/'))
+$runnerTemp = [IO.Path]::GetFullPath($env:RUNNER_TEMP).TrimEnd([char[]]@('\','/'))
 if (-not $installDir.StartsWith($runnerTemp + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
     throw 'Safety gate: lifecycle test may only operate below RUNNER_TEMP.'
 }
