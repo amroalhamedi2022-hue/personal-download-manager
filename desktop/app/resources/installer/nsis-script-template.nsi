@@ -169,13 +169,9 @@ FunctionEnd
 	Delete "$DESKTOP\${APP_DISPLAY_NAME}.lnk"
 !macroend
 
-Function .onInstSuccess
-    ; Check if the installer is running in silent mode
-    ${If} ${Silent}
-        ; In silent mode, always run the app
-        Call RunMainBinary
-    ${Endif}
-FunctionEnd
+; Do not launch the GUI after /S: scripted/enterprise installs should stay silent.
+; Interactive users retain the existing MUI_FINISHPAGE_RUN option.
+; This also prevents a second, unintended GUI during CPU/RAM benchmarks.
 
 Section "${APP_DISPLAY_NAME}"
     SectionInstType RO
