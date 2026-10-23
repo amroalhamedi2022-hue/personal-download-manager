@@ -90,13 +90,50 @@ class ManualDownloadQueueBatchResumeTest {
         }
     }
 
-    private class RecordingDownloads : DownloadManagerMinimalControl {
+    @Test
+    fun failedAsynchronousStartReleasesItsSlotAndAdmitsTheNextJob() = runBlocking {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val downloads = RecordingDownloads(failStartIds = setOf(61L))
+        val queue = ManualDownloadQueue(downloads, scope)
+        try {
+            queue.boot()
+            queue.setMaxConcurrent(1)
+            queue.resumeAll(listOf(61L, 62L, 63L))
+
+            // startJob(61) throws *before* any OnJobCanceled/Completed
+            // event. The reserved slot must be released, allowing 62 to
+            // start without changing the configured one-task limit.
+            withTimeout(5.seconds) {
+                while (downloads.started.size < 2) delay(10)
+            }
+            assertEquals(listOf(61L, 62L), downloads.started.toList())
+            delay(700)
+            assertEquals(
+                listOf(61L, 62L),
+                downloads.started.toList(),
+                "The failed job must not spin/retry or admit the third job over the limit",
+            )
+
+            queue.removeFromQueue(62L)
+            withTimeout(5.seconds) {
+                while (downloads.started.size < 3) delay(10)
+            }
+            assertEquals(listOf(61L, 62L, 63L), downloads.started.toList())
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    private class RecordingDownloads(
+        private val failStartIds: Set<Long> = emptySet(),
+    ) : DownloadManagerMinimalControl {
         val started = ConcurrentLinkedQueue<Long>()
         override val listOfJobsEvents: SharedFlow<DownloadManagerEvents> =
             MutableSharedFlow(extraBufferCapacity = 32)
 
         override suspend fun startJob(id: Long, context: DownloadItemContext) {
             started.add(id)
+            if (id in failStartIds) throw java.io.IOException("Simulated start failure before lifecycle event")
         }
 
         override suspend fun stopJob(id: Long, context: DownloadItemContext) = Unit
