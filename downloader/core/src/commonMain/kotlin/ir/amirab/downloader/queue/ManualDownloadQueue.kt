@@ -333,16 +333,25 @@ class ManualDownloadQueue(
         return removeFromQueue(setOf(id))
     }
 
-    fun resume(item: Long) {
+    fun resume(item: Long) = resumeAll(listOf(item))
+
+    /**
+     * Admits a user-requested batch as one queue transaction. IPC callers used
+     * to resume each ID separately, shaking the scheduler after every item.
+     * With 16 downloads that repeatedly scheduled partial batches while the
+     * remaining items had not yet been admitted. Preserve the user's existing
+     * maxConcurrent setting and perform one admission pass for the whole batch.
+     */
+    fun resumeAll(items: Collection<Long>) {
+        if (items.isEmpty()) return
         synchronized(admissionLock) {
-            totalItemsFlow.update {
-                (it + item).distinct()
+            totalItemsFlow.update { existing ->
+                (existing + items).distinct()
             }
+            // Both membership and admission are serialized against completion,
+            // trimming and other user resume calls by admissionLock.
+            shake(delayed = false)
         }
-        shake(
-            // immediately shake the queue
-            delayed = false
-        )
     }
 
     // called by user
