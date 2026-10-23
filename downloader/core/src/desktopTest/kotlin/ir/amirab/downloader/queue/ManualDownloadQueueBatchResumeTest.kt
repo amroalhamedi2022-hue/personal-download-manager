@@ -124,6 +124,46 @@ class ManualDownloadQueueBatchResumeTest {
         }
     }
 
+    @Test
+    fun pausingPendingJobPreventsUnexpectedStartAfterSlotIsFreed() = runBlocking {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val downloads = RecordingDownloads()
+        val queue = ManualDownloadQueue(downloads, scope)
+        try {
+            queue.boot()
+            queue.setMaxConcurrent(1)
+            queue.resumeAll(listOf(71L, 72L, 73L))
+            withTimeout(5.seconds) {
+                while (downloads.started.size < 1) delay(10)
+            }
+            assertEquals(listOf(71L), downloads.started.toList())
+
+            // stopJob(72) emits no OnJobCanceled: it never started.
+            // Before the fix, 72 remained queued and started when 71 left.
+            queue.pause(72L)
+            queue.removeFromQueue(71L)
+            withTimeout(5.seconds) {
+                while (downloads.started.size < 2) delay(10)
+            }
+            assertEquals(
+                listOf(71L, 73L), downloads.started.toList(),
+                "An explicitly paused pending job must not be auto-admitted",
+            )
+
+            // Explicit Resume is still allowed, but must respect the cap.
+            queue.resumeAll(listOf(72L))
+            delay(700)
+            assertEquals(listOf(71L, 73L), downloads.started.toList())
+            queue.removeFromQueue(73L)
+            withTimeout(5.seconds) {
+                while (downloads.started.size < 3) delay(10)
+            }
+            assertEquals(listOf(71L, 73L, 72L), downloads.started.toList())
+        } finally {
+            scope.cancel()
+        }
+    }
+
     private class RecordingDownloads(
         private val failStartIds: Set<Long> = emptySet(),
     ) : DownloadManagerMinimalControl {
