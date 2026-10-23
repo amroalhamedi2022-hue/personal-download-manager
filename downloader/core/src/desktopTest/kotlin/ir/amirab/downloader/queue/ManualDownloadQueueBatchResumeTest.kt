@@ -52,6 +52,44 @@ class ManualDownloadQueueBatchResumeTest {
         }
     }
 
+    @Test
+    fun removingAnActiveJobAdmitsNextPendingJobWithoutCompletionEvent() = runBlocking {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val downloads = RecordingDownloads()
+        val queue = ManualDownloadQueue(downloads, scope)
+        try {
+            queue.boot()
+            queue.setMaxConcurrent(1)
+            queue.resumeAll(listOf(41L, 42L, 43L))
+            withTimeout(5.seconds) {
+                while (downloads.started.size < 1) delay(10)
+            }
+            assertEquals(listOf(41L), downloads.started.toList())
+
+            // A deleted job may never send OnJobCompleted/OnJobCanceled.
+            // Removing it must refill its active slot instead of stranding
+            // the remaining downloads until another unrelated event arrives.
+            queue.removeFromQueue(41L)
+            withTimeout(5.seconds) {
+                while (downloads.started.size < 2) delay(10)
+            }
+            assertEquals(listOf(41L, 42L), downloads.started.toList())
+
+            // Repeated removals must not double-start the same pending job.
+            queue.removeFromQueue(41L)
+            delay(700)
+            assertEquals(listOf(41L, 42L), downloads.started.toList())
+
+            queue.removeFromQueue(42L)
+            withTimeout(5.seconds) {
+                while (downloads.started.size < 3) delay(10)
+            }
+            assertEquals(listOf(41L, 42L, 43L), downloads.started.toList())
+        } finally {
+            scope.cancel()
+        }
+    }
+
     private class RecordingDownloads : DownloadManagerMinimalControl {
         val started = ConcurrentLinkedQueue<Long>()
         override val listOfJobsEvents: SharedFlow<DownloadManagerEvents> =
