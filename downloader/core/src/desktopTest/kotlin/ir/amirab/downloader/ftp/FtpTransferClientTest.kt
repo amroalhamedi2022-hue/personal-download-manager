@@ -216,7 +216,7 @@ class FtpTransferClientTest {
         assertFalse(Files.exists(destination), "Cancelled FTP transfer must not commit the final file")
         assertTrue(Files.isRegularFile(partial), "Cancelled transfer must preserve resumable partial data")
         val pausedBytes = Files.size(partial)
-        assertTrue(pausedBytes in 1 until fixture.bytes.size.toLong(), "Pause must preserve a genuinely partial file")
+        assertTrue(pausedBytes > 0L && pausedBytes < fixture.bytes.size.toLong(), "Pause must preserve a genuinely partial file")
 
         val resumed = FtpTransferClient().download(
             fixture.url("fixture.bin"), destination,
