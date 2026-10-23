@@ -176,8 +176,8 @@ class DesktopEnterNewURLComponent(
 }
 
 
-/** In-memory only: never serialize a password from the Add URL form. */
-class FtpDownloadRequest(
+/** Transient GUI request. Never persist or log its password. */
+data class FtpDownloadRequest(
     val link: String,
     val username: String,
     val password: String,

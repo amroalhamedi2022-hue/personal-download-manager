@@ -363,6 +363,82 @@ class AppComponent(
         }
     }
 
+    /**
+     * Validates, securely stores credentials for, persists, and optionally
+     * starts one FTP task. The password exists only in this transient request
+     * and Windows Credential Manager; it is never written to the task JSON.
+     */
+    suspend fun addFtpDownload(request: FtpDownloadRequest): Long {
+        FtpDownloadCredentials(request.link, username = request.username).validateCredentials()
+        require(FileNameValidator.isValidFileName(request.name)) { "Invalid FTP file name" }
+        require(withContext(Dispatchers.IO) {
+            PathValidator.isValidPath(request.folder) && PathValidator.canWriteToThisPath(request.folder)
+        }) { "Choose an accessible save folder" }
+        require(request.username != "anonymous" || request.password.isEmpty()) {
+            "Anonymous FTP does not need a password"
+        }
+        require(request.username == "anonymous" || request.password.isNotEmpty()) {
+            "Enter a password for the FTP account"
+        }
+
+        var credentialRef: String? = null
+        var addedId: Long? = null
+        try {
+            if (request.username != "anonymous") {
+                credentialRef = withContext(Dispatchers.IO) {
+                    WindowsFtpCredentialVault().save(request.username, request.password)
+                }
+            }
+            addedId = downloadSystem.addDownload(
+                newDownload = NewDownloadItemProps(
+                    downloadItem = FtpDownloadItem(
+                        id = -1L,
+                        folder = request.folder,
+                        name = request.name,
+                        link = request.link,
+                        username = request.username,
+                        credentialRef = credentialRef,
+                    ),
+                    extraConfig = null,
+                    onDuplicateStrategy = OnDuplicateStrategy.AddNumbered,
+                    context = EmptyContext,
+                ),
+                queueId = null,
+                categoryId = null,
+            )
+        } catch (failure: Exception) {
+            credentialRef?.let { ref ->
+                // The storage operation may have committed before raising.
+                // Fail closed if the task database cannot be queried.
+                val stillInUse = runCatching {
+                    downloadSystem.getDownloadItemsBy {
+                        it is FtpDownloadItem && it.credentialRef == ref
+                    }.isNotEmpty()
+                }.getOrDefault(true)
+                if (!stillInUse) withContext(Dispatchers.IO) {
+                    runCatching { WindowsFtpCredentialVault().delete(ref) }
+                }
+            }
+            throw failure
+        }
+
+        val savedId = requireNotNull(addedId)
+        if (request.startImmediately) {
+            try {
+                downloadSystem.userManualResume(savedId)
+            } catch (failure: Exception) {
+                if (failure is CancellationException) throw failure
+                sendNotification(
+                    "ftp-start-error-$savedId",
+                    "FTP task saved but could not start".asStringSource(),
+                    (failure.localizedMessage ?: "Resume it from the download list.").asStringSource(),
+                    NotificationType.Warning,
+                )
+            }
+        }
+        return savedId
+    }
+
     override fun closeEditDownloadDialog() {
         if (!ftpEditBusy.value) {
             ftpEditItem.value = null
@@ -1271,64 +1347,7 @@ class AppComponent(
                 },
                 initialFtpFolder = appSettings.defaultDownloadFolder.value,
                 onRequestFtp = { request ->
-                    var credentialRef: String? = null
-                    var addedId: Long? = null
-                    try {
-                        if (request.username != "anonymous") {
-                            credentialRef = withContext(Dispatchers.IO) {
-                                WindowsFtpCredentialVault().save(request.username, request.password)
-                            }
-                        }
-                        addedId = downloadSystem.addDownload(
-                            newDownload = NewDownloadItemProps(
-                                downloadItem = FtpDownloadItem(
-                                    id = -1L,
-                                    folder = request.folder,
-                                    name = request.name,
-                                    link = request.link,
-                                    username = request.username,
-                                    credentialRef = credentialRef,
-                                ),
-                                extraConfig = null,
-                                onDuplicateStrategy = OnDuplicateStrategy.AddNumbered,
-                                context = EmptyContext,
-                            ),
-                            queueId = null,
-                            categoryId = null,
-                        )
-                    } catch (failure: Exception) {
-                        credentialRef?.let { ref ->
-                            // A failed storage call can still have persisted
-                            // the item before raising an exception.
-                            val stillInUse = runCatching {
-                                downloadSystem.getDownloadItemsBy {
-                                    it is FtpDownloadItem && it.credentialRef == ref
-                                }.isNotEmpty()
-                            }.getOrDefault(true)
-                            if (!stillInUse) withContext(Dispatchers.IO) {
-                                runCatching { WindowsFtpCredentialVault().delete(ref) }
-                            }
-                        }
-                        // The caller keeps the form open, including its password,
-                        // so users can fix the problem without starting again.
-                        throw failure
-                    }
-                    // Save and start are independent operations. A failed start
-                    // must not turn a successfully persisted task into a duplicate.
-                    val savedId = requireNotNull(addedId)
-                    if (request.startImmediately) {
-                        try {
-                            downloadSystem.userManualResume(savedId)
-                        } catch (failure: Exception) {
-                            if (failure is CancellationException) throw failure
-                            sendNotification(
-                                "ftp-start-error-$savedId",
-                                "FTP task saved but could not start".asStringSource(),
-                                (failure.localizedMessage ?: "Resume it from the download list.").asStringSource(),
-                                NotificationType.Warning,
-                            )
-                        }
-                    }
+                    addFtpDownload(request)
                 }
             )
         }

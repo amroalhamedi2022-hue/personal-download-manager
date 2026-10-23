@@ -20,8 +20,8 @@ import java.util.UUID
  * or FTP .part sidecars. The credential reference is a random, opaque UUID.
  * WinCred at-rest security does NOT encrypt FTP itself on the network.
  *
- * This component is not yet wired to UI/production: native round-trip and
- * restart tests must pass on the real Windows runner before activation.
+ * The desktop GUI and local CLI persist only this opaque reference. Native
+ * round-trip, restart, and deletion behavior are exercised on Windows CI.
  */
 class WindowsFtpCredentialVault {
     companion object {

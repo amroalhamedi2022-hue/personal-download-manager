@@ -82,7 +82,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          & ./scripts/Run-WindowsActiveBenchmarkMatrix.ps1 -GuiExecutable $env:IDM_BENCH_GUI -CliExecutable $env:IDM_BENCH_CLI -SourceSha $env:GITHUB_SHA -OutputDirectory 'build/ci-release/active-transfer-bench' -Rounds 3 -SampleSeconds 8 -FileSizeMiB 32 -ServerChunkDelayMs 250 -CompletionTimeoutSeconds 300
+          & ./scripts/Run-WindowsActiveBenchmarkMatrix.ps1 -GuiExecutable $env:IDM_BENCH_GUI -CliExecutable $env:IDM_BENCH_CLI -SourceSha $env:GITHUB_SHA -OutputDirectory 'build/ci-release/active-transfer-bench' -Rounds 3 -SampleSeconds 8 -FileSizeMiB 32 -ServerChunkDelayMs 500 -CompletionTimeoutSeconds 300
 
       - name: Audit hashes, concurrent requests, process samples, and render report
         shell: pwsh

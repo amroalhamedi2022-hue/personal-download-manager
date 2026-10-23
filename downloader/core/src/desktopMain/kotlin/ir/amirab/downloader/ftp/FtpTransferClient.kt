@@ -23,8 +23,8 @@ import java.util.concurrent.atomic.AtomicReference
  * Output is staged in a .ftp-part file, and committed only after a successful 226
  * response and byte-count validation. The metadata sidecar stores no credentials.
  *
- * This is intentionally independent of IDownloadItem and the persisted JSON schema.
- * The UI/queue adapter must be added separately before accepting ftp:// in Add URL.
+ * This transport remains independent of IDownloadItem and the persisted JSON
+ * schema; FtpDownloadJob is the reviewed adapter used by GUI, queue and CLI.
  */
 class FtpTransferClient {
     private val activeConnection = AtomicReference<FTPClient?>(null)
