@@ -11,6 +11,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import org.koin.core.component.KoinComponent
+import java.io.IOException
 import kotlin.system.exitProcess
 
 
@@ -95,6 +96,9 @@ class NativeMessagingHost(
             try {
                 channel.send(response)
             } catch (e: Exception) {
+                // An IOException may mean that only part of the frame reached
+                // stdout. An error reply would corrupt the browser's framing.
+                if (e is IOException) throw e
                 appLogger.e(e) {
                     "channel.send(response) failed"
                 }
@@ -115,6 +119,9 @@ class NativeMessagingHost(
             }
             channel.send(content)
         } catch (exception: Exception) {
+            // The protocol poisons stdout on write/flush IO failure. Abort the
+            // host instead of silently looping on a broken browser pipe.
+            if (exception is IOException) throw exception
             appLogger.e(exception) {
                 "can't send the error to the browser"
             }
