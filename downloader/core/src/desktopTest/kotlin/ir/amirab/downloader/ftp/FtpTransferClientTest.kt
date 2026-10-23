@@ -27,6 +27,10 @@ import org.apache.ftpserver.listener.ListenerFactory
 import org.apache.ftpserver.usermanager.impl.BaseUser
 import org.apache.ftpserver.usermanager.PropertiesUserManagerFactory
 import java.io.IOException
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 import java.net.ServerSocket
 import java.nio.file.Files
 import java.nio.file.Path
@@ -167,6 +171,60 @@ class FtpTransferClientTest {
         assertContentEquals(fixture.bytes, Files.readAllBytes(destination))
         assertFalse(Files.exists(part))
         assertFalse(Files.exists(metadata))
+    }
+
+    @Test
+    fun cancellingActiveFtpDataStreamKeepsPartialAndAllowsVerifiedRestResume() = withFixture { fixture ->
+        val destination = fixture.downloadFolder.resolve("cancelled-stream.bin")
+        val partial = fixture.downloadFolder.resolve("cancelled-stream.bin.ftp-part")
+        val client = FtpTransferClient()
+        val firstChunk = CountDownLatch(1)
+        val releaseChunk = CountDownLatch(1)
+        val signalled = AtomicBoolean(false)
+        val failure = AtomicReference<Throwable?>(null)
+        val worker = Thread {
+            try {
+                client.download(
+                    fixture.url("fixture.bin"), destination,
+                    username = "test", password = "secret",
+                    onProgress = { bytes, _ ->
+                        if (bytes >= 64 * 1024 && signalled.compareAndSet(false, true)) {
+                            firstChunk.countDown()
+                            if (!releaseChunk.await(10, TimeUnit.SECONDS)) {
+                                throw IOException("FTP cancellation test latch timed out")
+                            }
+                        }
+                    },
+                )
+            } catch (error: Throwable) {
+                failure.set(error)
+            }
+        }
+        try {
+            worker.start()
+            assertTrue(firstChunk.await(10, TimeUnit.SECONDS), "FTP did not reach a live data transfer")
+            // Pause is invoked from a different thread while RETR is in flight.
+            // Closing only the FTP control socket must not allow RETR to
+            // consume the remaining bytes and leave a full-size partial file.
+            client.cancel()
+        } finally {
+            releaseChunk.countDown()
+            worker.join(5_000)
+        }
+        assertFalse(worker.isAlive, "FTP data worker did not stop promptly after cancel")
+        assertTrue(failure.get() is IOException, "Cancelled transfer must fail instead of committing")
+        assertFalse(Files.exists(destination), "Cancelled FTP transfer must not commit the final file")
+        assertTrue(Files.isRegularFile(partial), "Cancelled transfer must preserve resumable partial data")
+        val pausedBytes = Files.size(partial)
+        assertTrue(pausedBytes in 1 until fixture.bytes.size.toLong(), "Pause must preserve a genuinely partial file")
+
+        val resumed = FtpTransferClient().download(
+            fixture.url("fixture.bin"), destination,
+            username = "test", password = "secret",
+        )
+        assertEquals(pausedBytes, resumed.resumedFrom)
+        assertContentEquals(fixture.bytes, Files.readAllBytes(destination))
+        assertFalse(Files.exists(partial))
     }
 
     @Test
