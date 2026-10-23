@@ -1,0 +1,160 @@
+<#
+.SYNOPSIS
+Measures the installed Windows downloader while 1, 4 and 16 real HTTP
+transfers are active, three independent rounds per workload by default.
+.DESCRIPTION
+Uses the installed GUI/CLI and a deterministic loopback Range server. Each
+download must pass SHA256. Captures actual app process-tree CPU/RAM; never
+claims an IDM-vs-our-app comparison without matching reference measurements.
+#>
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory = $true)][string] $GuiExecutable,
+    [Parameter(Mandatory = $true)][string] $CliExecutable,
+    [Parameter(Mandatory = $true)][string] $SourceSha,
+    [Parameter(Mandatory = $true)][string] $OutputDirectory,
+    [ValidateRange(1, 5)][int] $Rounds = 3,
+    [ValidateRange(5, 60)][int] $SampleSeconds = 8,
+    [ValidateRange(10, 500)][int] $ServerChunkDelayMs = 120,
+    [ValidateRange(8, 128)][int] $FileSizeMiB = 16
+)
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+$destination = [IO.Path]::GetFullPath($OutputDirectory)
+$guiPath = [IO.Path]::GetFullPath($GuiExecutable)
+$cliPath = [IO.Path]::GetFullPath($CliExecutable)
+$sampler = Join-Path $PSScriptRoot 'Measure-WindowsDownloadManager.ps1'
+$fixtureScript = Join-Path $PSScriptRoot 'LocalHttpRangeFixture.py'
+foreach ($required in @($guiPath, $cliPath, $sampler, $fixtureScript)) {
+    if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
+        throw "Required program or test script missing: $required"
+    }
+}
+if (Test-Path -LiteralPath $destination) {
+    if ((@(Get-ChildItem -LiteralPath $destination -Force)).Count -gt 0) {
+        throw "Benchmark destination must be empty: $destination"
+    }
+}
+New-Item -ItemType Directory -Path $destination -Force | Out-Null
+$fixture = Join-Path $destination 'source-fixture.bin'
+$portPath = Join-Path $destination 'server-port.txt'
+$downloadFolder = Join-Path $destination 'downloads'
+$metricFolder = Join-Path $destination 'measurements'
+New-Item -ItemType Directory -Path $downloadFolder,$metricFolder -Force | Out-Null
+& python -c 'import pathlib,sys; pathlib.Path(sys.argv[1]).write_bytes(bytes(range(256))*(int(sys.argv[2])*4096))' $fixture $FileSizeMiB
+if ($LASTEXITCODE -ne 0) { throw 'Python failed to create the deterministic HTTP fixture.' }
+$expectedBytes = [long]$FileSizeMiB * 1MB
+if ((Get-Item -LiteralPath $fixture).Length -ne $expectedBytes) {
+    throw 'HTTP fixture length differs from the requested workload.'
+}
+$expectedSha = (Get-FileHash -LiteralPath $fixture -Algorithm SHA256).Hash.ToLowerInvariant()
+$records = [System.Collections.Generic.List[object]]::new()
+$server = $null
+$gui = $null
+try {
+    $serverArgs = @(
+        ('"' + $fixtureScript + '"'), '--file', ('"' + $fixture + '"'),
+        '--port-file', ('"' + $portPath + '"'),
+        '--chunk-delay-ms', "$ServerChunkDelayMs"
+    )
+    $server = Start-Process -FilePath 'python' -ArgumentList $serverArgs -PassThru -RedirectStandardOutput (Join-Path $destination 'server-stdout.txt') -RedirectStandardError (Join-Path $destination 'server-stderr.txt')
+    for ($wait = 0; $wait -lt 80 -and -not (Test-Path -LiteralPath $portPath); $wait++) {
+        if ($server.HasExited) { throw "Fixture server exited: $($server.ExitCode)" }
+        Start-Sleep -Milliseconds 250
+    }
+    if (-not (Test-Path -LiteralPath $portPath)) { throw 'Fixture server did not start.' }
+    $port = [int](Get-Content -LiteralPath $portPath -Raw)
+    if ($port -lt 1 -or $port -gt 65535) { throw 'Invalid fixture server port.' }
+    $url = "http://127.0.0.1:$port/fixture.bin"
+    $gui = Start-Process -FilePath $guiPath -PassThru
+    $foundApp = $false
+    for ($wait = 0; $wait -lt 40; $wait++) {
+        Start-Sleep -Milliseconds 500
+        $roots = @(Get-Process -Name 'DownloadManager' -ErrorAction SilentlyContinue)
+        if ($roots.Count -gt 0 -and -not $gui.HasExited) {
+            $foundApp = $true
+            break
+        }
+    }
+    if (-not $foundApp) { throw 'Installed GUI did not stay running.' }
+    foreach ($jobs in @(1, 4, 16)) {
+        for ($round = 1; $round -le $Rounds; $round++) {
+            $scenario = "active-$jobs"
+            $taskFiles = [System.Collections.Generic.List[object]]::new()
+            Write-Host "Running $scenario round $round/$Rounds on installed Windows app"
+            for ($index = 1; $index -le $jobs; $index++) {
+                $filename = "$scenario-round-$round-task-$index.bin"
+                $outputPath = Join-Path $downloadFolder $filename
+                if (Test-Path -LiteralPath $outputPath) {
+                    throw "Destination existed before starting: $filename"
+                }
+                $cliOutput = @(& $cliPath download add http --link $url --folder $downloadFolder --name $filename --start 2>&1)
+                $exit = $LASTEXITCODE
+                if ($exit -ne 0) {
+                    throw "Installed CLI add failed ($exit): $($cliOutput -join ' ')"
+                }
+                $ids = @($cliOutput | ForEach-Object { "$_".Trim() } | Where-Object { $_ -match '^\d+$' })
+                if ($ids.Count -ne 1) {
+                    throw "CLI did not return exactly one task ID: $($cliOutput -join ' ')"
+                }
+                $taskFiles.Add([pscustomobject]@{ Id = $ids[0]; Name = $filename; Path = $outputPath })
+            }
+            # Deterministic 16 MiB / 64 KiB * 120 ms ~= 31 seconds
+            # minimum transfer duration per active task, before checking hashes.
+            $csvPath = Join-Path $metricFolder "$scenario-round-$round.csv"
+            & $sampler -RootProcessName 'DownloadManager' -Scenario $scenario -SourceSha $SourceSha -OutputCsv $csvPath -DurationSeconds $SampleSeconds -WarmupSeconds 1 -SampleIntervalMs 1000 -RunLabel "round-$round"
+            if (-not (Test-Path -LiteralPath $csvPath)) {
+                throw "Missing Windows process-tree CSV for $scenario round $round"
+            }
+            $samples = @(Import-Csv -LiteralPath $csvPath)
+            if ($samples.Count -lt 5 -or @($samples | Where-Object { [int]$_.ProcessCount -lt 1 }).Count -gt 0) {
+                throw "Process-tree measurements are missing/invalid: $scenario round $round"
+            }
+            $pending = [System.Collections.Generic.HashSet[string]]::new([string[]]@($taskFiles | ForEach-Object { $_.Path }), [System.StringComparer]::OrdinalIgnoreCase)
+            $deadline = [DateTime]::UtcNow.AddSeconds(150)
+            while ($pending.Count -gt 0 -and [DateTime]::UtcNow -lt $deadline) {
+                foreach ($path in @($pending)) {
+                    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { continue }
+                    if ((Get-Item -LiteralPath $path).Length -ne $expectedBytes) { continue }
+                    $actual = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+                    if ($actual -eq $expectedSha) { [void]$pending.Remove($path) }
+                }
+                if ($pending.Count -gt 0) { Start-Sleep -Milliseconds 500 }
+            }
+            if ($pending.Count -ne 0) {
+                throw "Timed out or SHA mismatch for $scenario round $round: $($pending -join ', ')"
+            }
+            Start-Sleep -Seconds 2
+            foreach ($task in $taskFiles) {
+                $actualLength = (Get-Item -LiteralPath $task.Path).Length
+                $actualSha = (Get-FileHash -LiteralPath $task.Path -Algorithm SHA256).Hash.ToLowerInvariant()
+                if ($actualLength -ne $expectedBytes -or $actualSha -ne $expectedSha) {
+                    throw "Output mutated after completion: $($task.Name)"
+                }
+                $records.Add([pscustomobject]@{
+                    SourceSha = $SourceSha; Scenario = $scenario; Round = $round
+                    TaskId = $task.Id; OutputName = $task.Name
+                    Bytes = $actualLength; SHA256 = $actualSha; Verified = $true
+                })
+            }
+            Write-Host "$scenario round $round: $jobs/$jobs installed HTTP downloads verified."
+        }
+    }
+    $records | Export-Csv -LiteralPath (Join-Path $destination 'verified-transfers.csv') -NoTypeInformation -Encoding utf8
+    $expectedTaskCount = $Rounds * (1 + 4 + 16)
+    if ($records.Count -ne $expectedTaskCount) {
+        throw "Expected $expectedTaskCount SHA256-verified tasks, observed $($records.Count)"
+    }
+    $metricFiles = @(Get-ChildItem -LiteralPath $metricFolder -Filter '*.csv' -File)
+    if ($metricFiles.Count -ne $Rounds * 3) {
+        throw 'Missing one or more active Windows CPU/RAM benchmark rounds.'
+    }
+    Write-Host "SUCCESS: $expectedTaskCount verified HTTP downloads; $($metricFiles.Count) CPU/RAM CSVs."
+} finally {
+    if ($gui -and -not $gui.HasExited) {
+        Stop-Process -Id $gui.Id -Force -ErrorAction SilentlyContinue
+    }
+    if ($server -and -not $server.HasExited) {
+        Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue
+    }
+}
