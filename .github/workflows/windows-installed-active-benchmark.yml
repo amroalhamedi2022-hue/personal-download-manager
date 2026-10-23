@@ -10,6 +10,7 @@ on:
       - "scripts/Summarize-WindowsActiveBenchmark.ps1"
       - "scripts/Measure-WindowsDownloadManager.ps1"
       - "scripts/LocalHttpRangeFixture.py"
+      - "desktop/app/resources/installer/nsis-script-template.nsi"
 
 permissions:
   contents: read
@@ -60,6 +61,10 @@ jobs:
             throw 'Real Windows installer timed out.'
           }
           if ($installer.ExitCode -ne 0) { throw "Installer exit code $($installer.ExitCode)." }
+          Start-Sleep -Seconds 2
+          if (@(Get-Process -Name 'DownloadManager' -ErrorAction SilentlyContinue).Count -ne 0) {
+            throw 'Silent installer unexpectedly launched an extra GUI process.'
+          }
           $exe = @(Get-ChildItem -LiteralPath $installDir -File -Recurse -Filter '*.exe')
           $gui = @($exe | Where-Object { $_.BaseName -eq 'DownloadManager' })
           $cli = @($exe | Where-Object { $_.BaseName -match 'DownloadManagerCli$' })
