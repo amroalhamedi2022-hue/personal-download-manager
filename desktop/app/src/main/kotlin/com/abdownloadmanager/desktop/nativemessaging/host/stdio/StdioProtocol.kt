@@ -1,10 +1,17 @@
 package com.abdownloadmanager.desktop.nativemessaging.host.stdio
 
 import java.io.EOFException
+import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+
+/**
+ * A malformed length prefix cannot be recovered by reading the next frame:
+ * the following bytes may belong to the rejected payload, not a new header.
+ */
+class InvalidNativeMessagingFrameException(message: String) : IOException(message)
 
 /**
  * Native Messaging Protocol implementation for stdio communication.
@@ -29,14 +36,14 @@ class StdioProtocol(
      * 
      * @return The JSON message as a string, or null if EOF is reached
      * @throws EOFException if stream ends unexpectedly
-     * @throws IllegalArgumentException if message size exceeds limit
+     * @throws InvalidNativeMessagingFrameException if the length prefix is invalid; the host must close the connection
      */
     fun readMessage(): String {
         val messageLength = readLength(input)
 
         // Validate message size
         if (messageLength !in 1..MAX_MESSAGE_SIZE) {
-            throw IllegalArgumentException(
+            throw InvalidNativeMessagingFrameException(
                 "Invalid message size: $messageLength (max: $MAX_MESSAGE_SIZE)"
             )
         }
