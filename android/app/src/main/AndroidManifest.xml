@@ -18,8 +18,8 @@
     <application
             android:name=".ABDMApp"
             android:theme="@style/Theme.ABDownloadManager"
-            android:icon="@mipmap/ic_launcher"
-            android:roundIcon="@mipmap/ic_launcher_round"
+            android:icon="@drawable/ic_brand_launcher"
+            android:roundIcon="@drawable/ic_brand_launcher"
             android:usesCleartextTraffic="true"
             android:requestLegacyExternalStorage="true"
             android:label="@string/app_short_name"
