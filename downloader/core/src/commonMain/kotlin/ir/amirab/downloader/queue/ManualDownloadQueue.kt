@@ -314,7 +314,10 @@ class ManualDownloadQueue(
     }
 
     fun removeFromQueue(ids: Set<Long>) {
-        synchronized(admissionLock) {
+        if (ids.isEmpty()) return
+        val changed = synchronized(admissionLock) {
+            val wasQueued = totalItemsFlow.value.any { it in ids } ||
+                activeItemsFlow.value.any { it in ids }
             totalItemsFlow.update {
                 it.filter { id ->
                     id !in ids
@@ -326,7 +329,13 @@ class ManualDownloadQueue(
                 }
             }
             trimmedItems.removeAll(ids)
+            wasQueued
         }
+        // A user-deleted job or a job resumed outside this queue may have
+        // occupied a concurrency slot. Refill it even when no completion or
+        // cancellation event follows the removal. Debounce to coalesce bursts
+        // of removals and avoid recursively scheduling from actualShake().
+        if (changed) shake()
     }
 
     fun removeFromQueue(id: Long) {
