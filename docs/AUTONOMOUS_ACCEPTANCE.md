@@ -50,3 +50,25 @@ Then execute the existing installed Windows FTP E2E workflow and the installed 1
 5. Only when all requirements have actual end-to-end evidence, mark CANDIDATE and run a separate independent recheck; do not self-certify VERIFIED.
 
 Cost: no OpenAI API or paid CI was enabled; this branch changes no workflows, credentials, repository visibility or releases.
+
+
+## 2026-10-23 — Follow-up autonomous development: atomic 1/4/16 batch admission (UNTESTED)
+
+Production commits on this same existing draft PR (no new PR, no merge):
+- `e5e6ff746b4318e2a8a68a49b2ee8af8e3ffcda5`: `ManualDownloadQueue.resumeAll(Collection<Long>)` now deduplicates and admits the complete user-requested list in one lock-protected queue update and one immediate scheduler pass; existing `resume(id)` delegates to it. The existing user `maxConcurrent` cap is **not** bypassed.
+- `010fc6c2106e1cf20818cc78088bffe92358ee07`: `DownloadSystem.userManualResume(ids)` exposes the batch operation while preserving the single-ID entry point.
+- `1e68b0cca03419e315155930e1f310633575dc6e`: desktop IPC `resumeDownload(ids)` now calls the batch facade once instead of N sequential admissions.
+- `12f42f9728474551ce0b0f5abddacec58752e757`: new `ManualDownloadQueueBatchResumeTest` exercises 16 requested IDs (including duplicates), verifies only 4 are admitted under a 4-task cap, then verifies all 16 are admitted once when the existing cap is raised to 16. Concurrent completion order is not assumed.
+- `105f33859868bd5214871a2851bdc2525e151697`: Windows active benchmark now writes `failure-diagnostics.txt` (live fixture counters, persisted limit, installed CLI task status, output sizes) when the exact 1/4/16 active-socket gate fails. **No assertion, concurrency setting, SHA-256 check, CPU/RAM measurement, or sample duration was relaxed.**
+
+**Motivation, not proof of a root cause:** Windows [run 39929246748](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/39929246748), source `46a17b9e`, showed active-16 round 1 passing 16/16 and round 2 reaching only 13/16 simultaneously. Previously the desktop IPC admitted each of 16 IDs individually, re-shaking the scheduler after every ID. Atomic batch admission removes that unnecessary repeated scheduling, but the 13/16 failure may have additional causes. The new diagnostic artifact will help identify them if it recurs.
+
+**Verification status:** The new source and test were written to the existing PR branch and their GitHub blob/commit SHAs returned. **No Gradle, JUnit, Windows process measurement, FTP socket test, installed-app test, or PowerShell parser was executed on these commits in this automation runtime.** GitHub Actions currently has no run on this isolated PR head. Status remains **PATCH UNTESTED / FAIL historically**; do not claim 16/16, SHA-256, CPU/RAM or installer success on this head.
+
+**Next gates (run on exact PR head after review/authorized CI):**
+1. `./gradlew --no-daemon --dependency-verification strict :downloader:core:desktopTest :downloader:monitor:desktopTest :shared:app:desktopTest :desktop:app:compileKotlin` — including `ManualDownloadQueueBatchResumeTest`, `FtpTransferClientTest` and category restart.
+2. `./gradlew --no-daemon --dependency-verification strict createReleaseFolderForCi`, strict JUnit XML verification and one-EXE check.
+3. Installed Windows FTP Pause → REST Resume + exact SHA-256; installed 1/4/16 x 3 HTTP concurrency benchmark with real process-tree CPU/RAM CSV and 63 verified outputs. Inspect `failure-diagnostics.txt` if the strict 16-task gate still fails.
+4. Preserve the separation of the browser-integration repository, exclude Torrent, and continue the remaining original plan/visual acceptance. Only after all acceptance gates pass may a separate agent perform the final independent recheck.
+
+No paid API, new workflow, public release, repository visibility change, automatic merge or other-project modification was made.
