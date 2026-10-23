@@ -91,6 +91,15 @@ jobs:
               }
             }
             if (-not $success) { throw 'Installed HTTP task failed byte-for-byte SHA256 verification.' }
+            # Verify the finished output remains byte-identical after the
+            # desktop task reports completion; this catches late writes.
+            Start-Sleep -Seconds 2
+            if ((Get-Item -LiteralPath $download).Length -ne 16777216) {
+              throw 'Installed HTTP output length changed after completion.'
+            }
+            if ((Get-FileHash -LiteralPath $download -Algorithm SHA256).Hash -ne $expectedSha) {
+              throw 'Installed HTTP output SHA256 changed after completion.'
+            }
             New-Item -ItemType Directory -Path 'build/ci-release' -Force | Out-Null
             "SourceSha=$env:GITHUB_SHA" | Set-Content 'build/ci-release/installed-http-e2e.txt'
             "ExpectedSHA256=$expectedSha" | Add-Content 'build/ci-release/installed-http-e2e.txt'
