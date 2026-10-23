@@ -1,3 +1,22 @@
+## HyperGet — 2026-10-24: abort browser native-messaging stdout after a partial write (SOURCE + TEST; NO APP BUILD)
+
+**Production commits:** [`d52063bc`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/d52063bc111e8abeac6f021150d2856b096f961a) (poison broken stdout under the existing frame lock), [`df6da92e`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/df6da92e41895245af9c35fc9c7310dfb9ee4b78) (native host propagates write/flush `IOException` instead of sending a second reply); **regression:** [`b98c14e1`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/b98c14e13654f110cf8a75396ba95cfdbd6aa820). Existing draft PR #3, head `automation/idm-ftp-cancel-and-category-flush`, base `codex/repair-rf00-rf01`. No new dependency; existing Apache-2.0/JDK implementation reused. No change to extension IDs, Registry, IPC, user data or credentials.
+
+**Defect:** `StdioProtocol.writeMessage` serialized concurrent frames but a failed prefix/body write or flush left stdout eligible for later frames. `NativeMessagingHost` also attempted `replyError` on a failed response send, which can append a second frame after an incomplete first frame. A native browser pipe has no resynchronization mechanism. **Repair:** store the original `IOException` while holding `outputFrameLock`, refuse every subsequent write without touching the stream, and terminate the native host on outbound `IOException`, including error-reply failure. Recoverable pre-write JSON/argument errors retain their existing behavior.
+
+| Gate | Result | Direct evidence |
+| --- | --- | --- |
+| Production and test files on existing PR | **PASS** | Source Git blobs `95dc3977fe24fb7cfbb21c7c9a3be645e31fbf81` and `5b187768168b9a34f5d552bd6298444ead51830a`; test blob `551720e68f1d53d8318e93cbd6e557cd7f2537c1`. Re-fetched from GitHub; local `git hash-object` matched source and test. |
+| Before-fix Kotlin/JVM reproduction | **FAIL reproduced (expected)** | Isolated prior `StdioProtocol` source accepted a second frame after simulated partial PREFIX write; regression exited 1 with `Broken PREFIX stream accepted another frame`. |
+| After-fix Kotlin/JVM test | **PASS 10/10** | `kotlinc StdioProtocol.kt NativeMessagingFinished.kt HyperGetNativeMessagingBrokenPipeSmoke.kt -d /tmp/hyperget_broken_pipe_test_classes && kotlin -classpath /tmp/hyperget_broken_pipe_test_classes HyperGetNativeMessagingBrokenPipeSmokeKt`. Real GitHub-blob-matched production protocol. Tests partial prefix, partial body, failed flush; no retry, no additional bytes or flush, preserved original cause, and a fresh healthy connection. **Isolated test, not full application build.** |
+| Source/host static guards | **PASS 9/9** | 3 protocol guards + 2 native-host fatal-send guards + 4 regression-presence checks. **Host class was not compiled or integration-tested.** |
+| GitHub Actions on test SHA `b98c14e1` | **NOT TESTED / 0 reported** | 0 PR workflow runs and 0 commit statuses; no CI/build/installer job requested. |
+| Real Windows/browser host, HTTP/HTTPS/HLS, FTP REST, 1/4/16 and CPU/RAM, SHA-256, Liquid Progress, upgrade, `HyperGet.exe`, independent recheck | **NOT TESTED / DEFERRED** | Binding NO-BUILD restriction applies until source/UI/security readiness. No Windows run or final artifact was created. |
+
+**Next bounded source-only action:** Inspect and test the browser extension's native-host error/disconnect handling in its **separate repository** via its own authorized branch/PR; then continue HTTP/FTP and HyperGet identity/UI readiness on the main application's existing PR. Do not run Gradle/packaging/Actions producing installers before final readiness. Do not merge or disable the recurring task. Torrent remains excluded.
+
+---
+
 ## HyperGet — 2026-10-24: browser outbound native-messaging limit and strict encoding (SOURCE + REGRESSION; NO APP BUILD)
 
 **Production commit:** [`02ee41e8`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/02ee41e816a8165a06a85954419e98a4fa3d57ce); **test commit:** [`8282b547`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/8282b5477e33012d19d34930a5b8a0e51c8831cc); existing draft [PR #3](https://github.com/amroalhamedi2022-hue/personal-download-manager/pull/3), head `automation/idm-ftp-cancel-and-category-flush` → base `codex/repair-rf00-rf01`. No main writes, merge, workflow trigger, release or paid service.
