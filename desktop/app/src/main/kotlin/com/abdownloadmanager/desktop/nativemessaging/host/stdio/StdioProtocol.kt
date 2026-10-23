@@ -35,6 +35,9 @@ class StdioProtocol(
     // A native-messaging frame is two writes (length + body). Serialize the
     // complete frame, including flush, so concurrent replies cannot interleave.
     private val outputFrameLock = Any()
+    // A failed write may have emitted a partial frame. Never send more bytes
+    // through that stream: the browser cannot reliably find the next prefix.
+    private var failedOutput: IOException? = null
 
     companion object {
         private const val MAX_INBOUND_MESSAGE_SIZE = 1024 * 1024 * 4
@@ -123,11 +126,17 @@ class StdioProtocol(
             .putInt(messageLength)
 
         synchronized(outputFrameLock) {
-            output.write(lengthBuffer.array())
-
-            // Write message content
-            output.write(messageBytes)
-            output.flush()
+            failedOutput?.let { throw IOException("Native messaging output is unusable after a failed frame", it) }
+            try {
+                output.write(lengthBuffer.array())
+                output.write(messageBytes)
+                output.flush()
+            } catch (e: IOException) {
+                // Even a failed flush may have written a complete-looking frame.
+                // Treat the stream as poisoned rather than retrying/error-replying.
+                failedOutput = e
+                throw e
+            }
         }
     }
 
