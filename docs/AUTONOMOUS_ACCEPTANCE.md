@@ -149,3 +149,31 @@ No paid API, new workflow, public release, repository visibility change, automat
 **Research:** Compared with the official Apache-2.0 `kotlinx.coroutines` Semaphore/withPermit model: a permit is held until work actually completes. A wholesale Semaphore replacement is inappropriate for this dynamically resizable existing queue; preserve its architecture and enforce the same lifecycle-based reservation principle.
 
 **Next action:** Authorize/obtain an exact-PR-SHA Windows CI run of `./gradlew --no-daemon --dependency-verification strict :downloader:core:desktopTest :desktop:app:compileKotlin`, then run installed strict 1/4/16 × 3 benchmark and FTP pause/REST resume. Investigate any failed JUnit first. **No workflow edit, paid API, browser repo change, Torrent, merge or release.** Independent Windows recheck remains mandatory.
+
+
+## 2026-10-23 — Revoke queued-but-undispatched starts (production + regression; full CI pending)
+
+**Production SHA:** `562301225517d74f08ba362285da553688e9f529`
+**Regression SHA:** `237ca04e77dcf7586fd613e708731967ac6e099e`
+**PR:** #3, `automation/idm-ftp-cancel-and-category-flush` → `codex/repair-rf00-rf01` (draft; not merged).
+**License/dependency review:** Existing project LICENSE is Apache-2.0; repair uses only its already-installed Kotlin coroutines/StateFlow/collections, with no copied third-party code, new dependency, new paid service, workflow edit or security permission.
+
+**Production defect:** `ManualDownloadQueue` reserves an active slot before dispatching the coroutine that calls `startJob`. If the dispatcher is occupied, a user Pause could call `stopJob` **before** the scheduled start executes; the stale coroutine could then start a supposedly paused download. Similarly, lowering max concurrency while starts are still queued could call `stopJob` on nonexistent jobs, leaving races and phantom stop requests. Existing active jobs must keep their slots until actual lifecycle cancellation; only never-dispatched reservations may be released early.
+
+**Patch:** `scheduledStarts` holds per-admission identity tokens under `admissionLock`. The coroutine claims its own token immediately before `startJob` and skips a revoked/superseded start. Pending Pause revokes the token and removes its never-started reservation; trim revokes undispatched starts without issuing phantom `stopJob`; removal/clear also invalidates tokens. Running transfers still use the existing stop/cancellation lifecycle and user max-concurrent cap. Fresh tokens prevent stale coroutines from stealing a later re-admission of the same ID. This addresses the pre-dispatch race, **not** every possible pause-vs-startJob in-flight race.
+
+**Repository regression tests added:** `ManualDownloadQueueBatchResumeTest.pausingReservedButNotYetDispatchedStartCannotLaunchAfterPause` and `trimmingUndispatchedStartsDoesNotStopPhantomJobsOrResurrectOldTokens`. Both deliberately occupy a single-thread coroutine dispatcher to force the race, then assert which IDs actually start and that undispatched IDs do not receive phantom stops.
+
+| Gate | Status | Evidence |
+| --- | --- | --- |
+| Production and tests committed on existing PR #3 | PASS | Source `56230122`, tests `237ca04e`; GitHub re-fetch returned expected blobs and 10/10 source/test structural checks passed. |
+| Isolated Kotlin/JVM coroutines behavioral harness | PASS (isolated model only) | Executed `kotlinc -cp kotlinx-coroutines-core-jvm.jar /tmp/idm_queue_admission_harness.kt -include-runtime -d /tmp/idm_queue_admission_harness.jar` and `java -cp ... Idm_queue_admission_harnessKt` locally. Before/after: paused ID `[91]` → `[92]`; trim `[101,102,103]` → `[101]`. This model is **not** the full repository source/JUnit. |
+| Repository Gradle/JUnit and desktop compile | NOT TESTED | Runtime lacks GitHub clone/DNS and full Gradle dependency graph; actual new JUnit tests are committed but not executed. |
+| GitHub PR Actions and commit status on test SHA `237ca04e` | NOT TESTED | `fetch_commit_workflow_runs` returned 0 PR runs; `get_commit_combined_status` returned 0 statuses. No exact-SHA Windows build. |
+| Installed 1/4/16 real sockets, 63 SHA-256 files, CPU/RAM | FAIL historically / CURRENT NOT TESTED | Prior Windows [39929246748](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/39929246748) had 13/16 on active-16 round 2. This race patch is **not** proven to fix that result. |
+| FTP Pause → REST Resume, HTTP/HTTPS/HLS, browser integration | FAIL/PARTIAL historically; CURRENT NOT TESTED | Existing FTP and protocol patches require exact-head Windows CI and real network/browser acceptance. Browser extension remains separate and untouched. |
+| Liquid Progress parity, single EXE, Windows install/upgrade and independent recheck | NOT TESTED | No current Windows artifact, screenshots, device/process-tree measurements or final package delivery. |
+
+**Next bounded action:** Execute the two new tests in `:downloader:core:desktopTest` and `:desktop:app:compileKotlin` on PR #3's **exact source SHA** with JUnit XML, then strict Windows installed FTP Pause/REST and 1/4/16 × 3 socket/SHA/CPU/RAM acceptance. Investigate actual failures rather than relaxing limits. Follow with real-browser, visual, upgrade and independent security recheck. Do not mark CANDIDATE/VERIFIED, merge, release or disable this recurring task.
+
+**Scope:** Torrent excluded. No other repository, main branch, ChatGPT Library, paid API or workflow changed.
