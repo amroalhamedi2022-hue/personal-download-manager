@@ -23,6 +23,12 @@ class ManualDownloadQueue(
 ) {
     private val admissionLock = Any()
 
+    // A reserved slot is not necessarily a running socket: startJob is
+    // dispatched asynchronously. Tokens let Pause/trim revoke an unstarted
+    // admission without releasing a slot belonging to a running transfer.
+    // All access is serialized by admissionLock.
+    private val scheduledStarts = mutableMapOf<Long, Any>()
+
     private var booted = guardedEntry()
 
     // how many downloads can be active at the same time
@@ -252,6 +258,13 @@ class ManualDownloadQueue(
     private val me = User
     private fun removeAnActiveQueueItemForTrimming(): Boolean {
         val id = activeItems.lastOrNull { it !in trimmedItems } ?: return false
+        if (scheduledStarts.remove(id) != null) {
+            // This start has not entered startJob yet. Revoke its token and
+            // reservation without issuing a stop against a nonexistent job.
+            // The queued item remains eligible when the limit rises again.
+            removeActiveItem(id)
+            return true
+        }
         trimmedItems.add(id)
         // Do not release the reserved slot here. The stop is suspendable and
         // the socket can still be transferring until its lifecycle event.
@@ -279,7 +292,18 @@ class ManualDownloadQueue(
             // If startJob fails before emitting a lifecycle event, that slot
             // would otherwise remain occupied forever and strand pending jobs.
             addAnActiveItem(id)
+            val admissionToken = Any()
+            scheduledStarts[id] = admissionToken
             scope.launch {
+                val stillAdmitted = synchronized(admissionLock) {
+                    if (scheduledStarts[id] !== admissionToken) {
+                        false // Paused, trimmed, removed, or superseded.
+                    } else {
+                        scheduledStarts.remove(id)
+                        id in activeItemsFlow.value && id in totalItemsFlow.value
+                    }
+                }
+                if (!stillAdmitted) return@launch
                 try {
                     downloadEvents.startJob(id, ResumedBy(me))
                 } catch (cancelled: CancellationException) {
@@ -327,6 +351,7 @@ class ManualDownloadQueue(
     fun clearQueue() {
         synchronized(admissionLock) {
             trimmedItems.clear()
+            scheduledStarts.clear()
             clearActiveItems()
             clearTotalItems()
         }
@@ -348,6 +373,7 @@ class ManualDownloadQueue(
                 }
             }
             trimmedItems.removeAll(ids)
+            ids.forEach(scheduledStarts::remove)
             wasQueued
         }
         // A user-deleted job or a job resumed outside this queue may have
@@ -391,7 +417,14 @@ class ManualDownloadQueue(
         // so pausing a running transfer cannot temporarily exceed the limit.
         val removedPending = synchronized(admissionLock) {
             trimmedItems.remove(item)
-            if (item in totalItemsFlow.value && item !in activeItemsFlow.value) {
+            if (scheduledStarts.remove(item) != null) {
+                // The dispatcher has not begun this job. Revoke the token and
+                // free only this never-started reservation; its coroutine will
+                // notice the stale token and skip startJob entirely.
+                totalItemsFlow.update { it - item }
+                removeActiveItem(item)
+                true
+            } else if (item in totalItemsFlow.value && item !in activeItemsFlow.value) {
                 totalItemsFlow.update { it - item }
                 true
             } else {
