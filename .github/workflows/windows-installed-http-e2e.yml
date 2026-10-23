@@ -6,6 +6,9 @@ on:
     branches: [codex/repair-rf00-rf01]
     paths:
       - ".github/workflows/windows-installed-http-e2e.yml"
+      - "scripts/Run-WindowsInstalledResumeE2E.ps1"
+      - "scripts/LocalHttpRangeFixture.py"
+      - "desktop/app/resources/installer/nsis-script-template.nsi"
 
 permissions:
   contents: read
@@ -121,11 +124,28 @@ jobs:
               Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue
             }
           }
+      - name: Verify real installed HTTP Pause, socket shutdown, Resume and SHA256
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installed = Join-Path $env:RUNNER_TEMP 'installed-http-e2e/application'
+          $gui = Join-Path $installed 'DownloadManager.exe'
+          $cli = Join-Path $installed 'DownloadManagerCli.exe'
+          if (-not (Test-Path -LiteralPath $gui -PathType Leaf) -or -not (Test-Path -LiteralPath $cli -PathType Leaf)) {
+            throw 'Installed GUI or CLI is missing before Pause/Resume check.'
+          }
+          & ./scripts/Run-WindowsInstalledResumeE2E.ps1 -GuiExecutable $gui -CliExecutable $cli -SourceSha $env:GITHUB_SHA -OutputDirectory (Join-Path $env:RUNNER_TEMP 'installed-resume-e2e')
+          $proof = Join-Path $env:RUNNER_TEMP 'installed-resume-e2e/resume-evidence.txt'
+          if (-not (Test-Path -LiteralPath $proof -PathType Leaf)) { throw 'Resume proof missing.' }
+          Copy-Item -LiteralPath $proof -Destination 'build/ci-release/installed-resume-e2e.txt'
+
       - name: Upload installed HTTP E2E evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: installed-http-e2e
-          path: build/ci-release/installed-http-e2e.txt
+          path: |
+            build/ci-release/installed-http-e2e.txt
+            build/ci-release/installed-resume-e2e.txt
           if-no-files-found: ignore
           retention-days: 7
