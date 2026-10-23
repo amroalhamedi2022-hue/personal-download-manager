@@ -7,14 +7,20 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
 
 class ManualDownloadQueueBatchResumeTest {
@@ -211,6 +217,88 @@ class ManualDownloadQueueBatchResumeTest {
             assertEquals(listOf(81L, 82L, 83L, 84L), downloads.started.toList())
         } finally {
             scope.cancel()
+        }
+    }
+
+    @Test
+    fun pausingReservedButNotYetDispatchedStartCannotLaunchAfterPause() = runBlocking {
+        // Hold the only dispatcher thread so startJob(91) is reserved but has
+        // not executed. This is the exact gap a fast Pause can race with.
+        val dispatcher = Executors.newSingleThreadExecutor().asCoroutineDispatcher()
+        val scope = CoroutineScope(SupervisorJob() + dispatcher)
+        val gate = CountDownLatch(1)
+        val entered = CountDownLatch(1)
+        val downloads = RecordingDownloads()
+        val queue = ManualDownloadQueue(downloads, scope)
+        try {
+            scope.launch {
+                entered.countDown()
+                check(gate.await(10, TimeUnit.SECONDS))
+            }
+            assertTrue(entered.await(5, TimeUnit.SECONDS))
+            queue.boot()
+            queue.setMaxConcurrent(1)
+            queue.resumeAll(listOf(91L, 92L))
+            queue.pause(91L)
+            gate.countDown()
+            withTimeout(5.seconds) {
+                while (downloads.started.size < 1) delay(10)
+            }
+            assertEquals(
+                listOf(92L), downloads.started.toList(),
+                "A start reserved before Pause must never execute afterward",
+            )
+            delay(700)
+            assertEquals(listOf(92L), downloads.started.toList())
+        } finally {
+            gate.countDown()
+            scope.cancel()
+            dispatcher.close()
+        }
+    }
+
+    @Test
+    fun trimmingUndispatchedStartsDoesNotStopPhantomJobsOrResurrectOldTokens() = runBlocking {
+        val dispatcher = Executors.newSingleThreadExecutor().asCoroutineDispatcher()
+        val scope = CoroutineScope(SupervisorJob() + dispatcher)
+        val gate = CountDownLatch(1)
+        val entered = CountDownLatch(1)
+        val downloads = RecordingDownloads()
+        val queue = ManualDownloadQueue(downloads, scope)
+        try {
+            scope.launch {
+                entered.countDown()
+                check(gate.await(10, TimeUnit.SECONDS))
+            }
+            assertTrue(entered.await(5, TimeUnit.SECONDS))
+            queue.boot()
+            queue.setMaxConcurrent(3)
+            queue.resumeAll(listOf(101L, 102L, 103L, 104L))
+            queue.setMaxConcurrent(1)
+            // Force the admission pass under the new limit before the
+            // dispatcher can run any of the three reserved start coroutines.
+            queue.resumeAll(listOf(105L))
+            gate.countDown()
+            withTimeout(5.seconds) {
+                while (downloads.started.size < 1) delay(10)
+            }
+            delay(700)
+            assertEquals(listOf(101L), downloads.started.toList())
+            assertTrue(downloads.stopped.isEmpty(), "Undispatched jobs must not receive phantom stopJob calls")
+
+            // A new admission for 102/103 uses fresh tokens. Stale coroutines
+            // from the trimmed batch must not steal or double-start them.
+            queue.setMaxConcurrent(3)
+            withTimeout(5.seconds) {
+                while (downloads.started.size < 3) delay(10)
+            }
+            assertEquals(setOf(101L, 102L, 103L), downloads.started.toSet())
+            delay(700)
+            assertEquals(3, downloads.started.size)
+        } finally {
+            gate.countDown()
+            scope.cancel()
+            dispatcher.close()
         }
     }
 
