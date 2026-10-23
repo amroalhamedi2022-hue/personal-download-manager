@@ -147,7 +147,11 @@ class DownloadSystem(
     }
 
     suspend fun userManualResume(id: Long): Boolean {
-        manualDownloadQueue.resume(id)
+        return userManualResume(listOf(id))
+    }
+
+    suspend fun userManualResume(ids: List<Long>): Boolean {
+        manualDownloadQueue.resumeAll(ids)
         return true
     }
 
