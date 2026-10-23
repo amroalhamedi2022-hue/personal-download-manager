@@ -378,11 +378,21 @@ class ManualDownloadQueue(
 
     // called by user
     suspend fun pause(item: Long) {
-        // this should be removed here as it indicates that user manually paused it
-        // so the trimmed item list should not contain it anymore
-        synchronized(admissionLock) {
+        // A pending download has no running job to emit OnJobCanceled.
+        // Remove it from the manual queue *before* asking the manager to stop:
+        // otherwise the next freed slot silently starts a download the user
+        // explicitly paused. Keep active jobs reserved until their stop event,
+        // so pausing a running transfer cannot temporarily exceed the limit.
+        val removedPending = synchronized(admissionLock) {
             trimmedItems.remove(item)
+            if (item in totalItemsFlow.value && item !in activeItemsFlow.value) {
+                totalItemsFlow.update { it - item }
+                true
+            } else {
+                false
+            }
         }
+        if (removedPending) shake()
         downloadEvents.stopJob(item, StoppedBy(me))
     }
 }
