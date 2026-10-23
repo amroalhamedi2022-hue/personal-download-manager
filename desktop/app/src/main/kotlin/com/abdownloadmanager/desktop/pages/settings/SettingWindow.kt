@@ -1,5 +1,6 @@
 package com.abdownloadmanager.desktop.pages.settings
 
+import com.abdownloadmanager.desktop.utils.AppInfo
 import com.abdownloadmanager.desktop.window.custom.CustomWindow
 import com.abdownloadmanager.shared.util.mvi.HandleEffects
 import androidx.compose.runtime.Composable
@@ -54,7 +55,7 @@ private fun SettingWindow(
             onRequestCloseWindow()
         },
         windowController = rememberWindowController(
-            title = myStringResource(Res.string.settings),
+            title = "${AppInfo.displayName} — ${myStringResource(Res.string.settings)}",
         ),
     ) {
         HandleEffects(settingsComponent) {
