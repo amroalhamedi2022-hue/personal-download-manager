@@ -1,3 +1,7 @@
+## Canonical brand decision: HyperGet (2026-10-23)
+
+The user approved **HyperGet** as the only current and future user-visible name for this project. **READ [HYPERGET_REBRAND_PLAN.md](HYPERGET_REBRAND_PLAN.md) BEFORE ALL NEW WORK, PR TITLES, ACCEPTANCE WRITING, UI CHANGES AND FINAL DELIVERABLES.** Use HyperGet consistently in all future feature tickets and outputs. “IDM” refers only to the original comparison target or historical source naming. Main repo/branch/PR IDs stay unchanged; browser extension changes must happen in its separate repo without breaking IPC/data. Brand HG-01–HG-05 is future work and cannot be marked done until real Windows upgrade and exact-SHA tests. This note modifies documentation only, not source code.
+
 # Autonomous Developer Contract — Personal Download Manager
 Project repo: amroalhamedi2022-hue/personal-download-manager
 Authoritative working base: `codex/repair-rf00-rf01`
