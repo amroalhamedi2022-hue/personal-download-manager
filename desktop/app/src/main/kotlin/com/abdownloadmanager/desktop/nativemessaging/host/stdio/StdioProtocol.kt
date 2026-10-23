@@ -32,6 +32,10 @@ class StdioProtocol(
     private val input: InputStream,
     private val output: OutputStream,
 ) {
+    // A native-messaging frame is two writes (length + body). Serialize the
+    // complete frame, including flush, so concurrent replies cannot interleave.
+    private val outputFrameLock = Any()
+
     companion object {
         private const val MAX_INBOUND_MESSAGE_SIZE = 1024 * 1024 * 4
         private const val MAX_OUTBOUND_MESSAGE_SIZE = 1024 * 1024
@@ -118,11 +122,13 @@ class StdioProtocol(
             .order(ByteOrder.nativeOrder())
             .putInt(messageLength)
 
-        output.write(lengthBuffer.array())
+        synchronized(outputFrameLock) {
+            output.write(lengthBuffer.array())
 
-        // Write message content
-        output.write(messageBytes)
-        output.flush()
+            // Write message content
+            output.write(messageBytes)
+            output.flush()
+        }
     }
 
     fun readLength(input: InputStream): Int {
