@@ -19,6 +19,10 @@ interface IDefaultAppIPCService {
     suspend fun pauseDownload(ids: List<Long>)
     suspend fun resumeDownload(ids: List<Long>)
 
+    /** Persistent global active-download limit: 0 means unlimited. */
+    suspend fun getMaxConcurrentDownloads(): Int
+    suspend fun setMaxConcurrentDownloads(value: Int): Int
+
     suspend fun removeDownload(ids: List<Long>, alsoRemoveFile: Boolean)
 
     suspend fun showDownload(ids: List<Long>): List<ShowDownloadIPC>
