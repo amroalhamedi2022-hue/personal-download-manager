@@ -198,42 +198,44 @@ class FtpTransferClient {
                 ?: throw IOException("FTP RETR rejected (code ${ftp.replyCode})")
             transfer.dataStream.set(stream)
             transfer.ensureNotCancelled()
-            // A server may advertise metadata for a path that is not readable.
-            // Don't leave a misleading resume sidecar unless RETR was accepted.
-            if (existing == 0L) {
-                storeIdentity(meta, endpoint.identity, identity)
-            }
             var downloaded = existing
             try {
+                // A server may advertise metadata for a path that is not readable.
+                // Don't leave a misleading resume sidecar unless RETR was accepted.
+                if (existing == 0L) {
+                    storeIdentity(meta, endpoint.identity, identity)
+                }
                 stream.use { input ->
-                // Reuse the existing downloader's throttler, rather than inventing
-                // a second speed-control algorithm specific to FTP.
-                val limiter = SpeedLimiter().apply { bytesPerSecond(speedLimitBytesPerSecond) }
-                // All FTP reads pass through the same global/host byte budgets as
-                // HTTP/HLS; a file-local throttle is applied on top.
-                val rateLimited = (sharedSpeedLimiters + limiter).fold(input.source()) { source, rate ->
-                    rate.source(source)
-                }
-                rateLimited.buffer().use { received ->
-                Files.newOutputStream(
-                    part, StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.APPEND
-                ).buffered().use { outputStream ->
-                    val buffer = ByteArray(64 * 1024)
-                    while (true) {
-                        val n = received.read(buffer)
-                        transfer.ensureNotCancelled()
-                        if (n == -1) break
-                        outputStream.write(buffer, 0, n)
-                        downloaded += n
-                        onProgress(downloaded, identity.size)
-                        transfer.ensureNotCancelled()
+                    // Reuse the existing downloader's throttler, rather than inventing
+                    // a second speed-control algorithm specific to FTP.
+                    val limiter = SpeedLimiter().apply { bytesPerSecond(speedLimitBytesPerSecond) }
+                    // All FTP reads pass through the same global/host byte budgets as
+                    // HTTP/HLS; a file-local throttle is applied on top.
+                    val rateLimited = (sharedSpeedLimiters + limiter).fold(input.source()) { source, rate ->
+                        rate.source(source)
                     }
-                    outputStream.flush()
-                }
-                }
+                    rateLimited.buffer().use { received ->
+                        Files.newOutputStream(
+                            part, StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.APPEND
+                        ).buffered().use { outputStream ->
+                            val buffer = ByteArray(64 * 1024)
+                            while (true) {
+                                val n = received.read(buffer)
+                                transfer.ensureNotCancelled()
+                                if (n == -1) break
+                                outputStream.write(buffer, 0, n)
+                                downloaded += n
+                                onProgress(downloaded, identity.size)
+                                transfer.ensureNotCancelled()
+                            }
+                            outputStream.flush()
+                        }
+                    }
                 }
             } finally {
                 transfer.dataStream.compareAndSet(stream, null)
+                // Also close when sidecar creation failed before stream.use began.
+                runCatching { stream.close() }
             }
             transfer.ensureNotCancelled()
             if (!ftp.completePendingCommand()) {
