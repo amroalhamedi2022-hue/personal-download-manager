@@ -94,7 +94,7 @@ try {
                     throw "Destination existed before starting: $filename"
                 }
                 $taskUrl = "${url}?task=$filename"
-                $cliOutput = @(& $cliPath download add http --link $taskUrl --folder $downloadFolder --name $filename --start 2>&1)
+                $cliOutput = @(& $cliPath download add http --link $taskUrl --folder $downloadFolder --name $filename 2>&1)
                 $exit = $LASTEXITCODE
                 if ($exit -ne 0) {
                     throw "Installed CLI add failed ($exit): $($cliOutput -join ' ')"
@@ -104,6 +104,19 @@ try {
                     throw "CLI did not return exactly one task ID: $($cliOutput -join ' ')"
                 }
                 $taskFiles.Add([pscustomobject]@{ Id = $ids[0]; Name = $filename; Path = $outputPath })
+            }
+            # Prepare all task records first, then start the whole set using
+            # ONE installed CLI / IPC call; launching 16 separate CLI processes
+            # with --start would serialize their starts and let early tasks
+            # finish before later ones started (a false concurrency failure).
+            $staged = Invoke-RestMethod -Uri $statsUrl -TimeoutSec 10
+            if ([int]$staged.active_requests -ne 0) {
+                throw 'An Added-only task started HTTP without Resume.'
+            }
+            $startIds = @($taskFiles | ForEach-Object { [long]$_.Id })
+            & $cliPath download resume @startIds
+            if ($LASTEXITCODE -ne 0) {
+                throw "Batch CLI Resume failed for $scenario round $round."
             }
             # Poll real on-wire requests, not queue state: the measured
             # sample window starts only once ALL distinct tasks have sockets.
