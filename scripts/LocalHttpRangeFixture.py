@@ -126,7 +126,7 @@ def main():
                                 stats["bytes_sent"] += len(chunk)
                             if args.chunk_delay_ms > 0:
                                 time.sleep(args.chunk_delay_ms / 1000.0)
-                    except (BrokenPipeError, ConnectionResetError):
+                    except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
                         pass
             finally:
                 with guard:

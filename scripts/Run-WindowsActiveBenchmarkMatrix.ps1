@@ -16,7 +16,8 @@ param(
     [ValidateRange(1, 5)][int] $Rounds = 3,
     [ValidateRange(5, 60)][int] $SampleSeconds = 8,
     [ValidateRange(10, 500)][int] $ServerChunkDelayMs = 500,
-    [ValidateRange(8, 128)][int] $FileSizeMiB = 32
+    [ValidateRange(8, 128)][int] $FileSizeMiB = 32,
+    [ValidateRange(120, 600)][int] $CompletionTimeoutSeconds = 300
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -173,11 +174,11 @@ try {
                 throw "Process-tree measurements are missing/invalid: $scenario round $round"
             }
             $during = Invoke-RestMethod -Uri $statsUrl -TimeoutSec 10
-            if ([int]$during.peak_distinct_tasks -lt $jobs) {
-                throw "$scenario exposed only $($during.peak_distinct_tasks) simultaneously transferring tasks; expected $jobs."
+            if ([int]$during.peak_distinct_tasks -lt $jobs -or [int]$during.active_distinct_tasks -lt $jobs) {
+                throw "$scenario did not keep all $jobs tasks transferring throughout the measurement window: active=$($during.active_distinct_tasks), peak=$($during.peak_distinct_tasks)."
             }
             $pending = [System.Collections.Generic.HashSet[string]]::new([string[]]@($taskFiles | ForEach-Object { $_.Path }), [System.StringComparer]::OrdinalIgnoreCase)
-            $deadline = [DateTime]::UtcNow.AddSeconds(150)
+            $deadline = [DateTime]::UtcNow.AddSeconds($CompletionTimeoutSeconds)
             while ($pending.Count -gt 0 -and [DateTime]::UtcNow -lt $deadline) {
                 foreach ($path in @($pending)) {
                     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { continue }
@@ -197,6 +198,21 @@ try {
                 if ($pending.Count -gt 0) { Start-Sleep -Milliseconds 500 }
             }
             if ($pending.Count -ne 0) {
+                $diagnostics = [System.Collections.Generic.List[string]]::new()
+                $diagnostics.Add("Scenario: $scenario; round: $round; timeout seconds: $CompletionTimeoutSeconds")
+                $diagnostics.Add("Fixture stats: $($during | ConvertTo-Json -Compress)")
+                foreach ($path in @($pending)) {
+                    if (Test-Path -LiteralPath $path -PathType Leaf) {
+                        $file = Get-Item -LiteralPath $path
+                        $diagnostics.Add("Pending file: $path; bytes=$($file.Length)")
+                    } else {
+                        $diagnostics.Add("Pending file missing: $path")
+                    }
+                }
+                $statusOutput = @(& $cliPath download show @startIds 2>&1)
+                $diagnostics.Add('Installed CLI task status:')
+                $diagnostics.AddRange([string[]]@($statusOutput | ForEach-Object { "$_" }))
+                $diagnostics | Set-Content -LiteralPath (Join-Path $destination 'failure-diagnostics.txt') -Encoding utf8
                 throw "Timed out or SHA mismatch for $scenario round ${round}: $($pending -join ', ')"
             }
             Start-Sleep -Seconds 2
@@ -218,10 +234,12 @@ try {
                     PeakHttpConnections = [int]$after.peak_requests
                 })
             }
+            # Preserve a useful, strictly verified partial manifest even if a
+            # later workload fails. The final audit still requires all rows.
+            $records | Export-Csv -LiteralPath (Join-Path $destination 'verified-transfers.csv') -NoTypeInformation -Encoding utf8
             Write-Host "$scenario round ${round}: $jobs/$jobs installed HTTP downloads verified."
         }
     }
-    $records | Export-Csv -LiteralPath (Join-Path $destination 'verified-transfers.csv') -NoTypeInformation -Encoding utf8
     $expectedTaskCount = $Rounds * (1 + 4 + 16)
     if ($records.Count -ne $expectedTaskCount) {
         throw "Expected $expectedTaskCount SHA256-verified tasks, observed $($records.Count)"
@@ -238,6 +256,10 @@ try {
             if ($restored -ne $originalMaxConcurrentDownloads) {
                 Write-Warning "Concurrency setting restore returned $restored instead of $originalMaxConcurrentDownloads."
             } else {
+                # The existing settings store intentionally debounces writes.
+                # Keep the real GUI alive long enough for the restored value to
+                # reach both the live queue and its normal persistent store.
+                Start-Sleep -Milliseconds 750
                 Write-Host "Restored max concurrent downloads to $restored."
             }
         } catch {
