@@ -155,7 +155,7 @@ try {
                 if ($pending.Count -gt 0) { Start-Sleep -Milliseconds 500 }
             }
             if ($pending.Count -ne 0) {
-                throw "Timed out or SHA mismatch for $scenario round $round: $($pending -join ', ')"
+                throw "Timed out or SHA mismatch for $scenario round ${round}: $($pending -join ', ')"
             }
             Start-Sleep -Seconds 2
             $after = Invoke-RestMethod -Uri $statsUrl -TimeoutSec 10
@@ -176,7 +176,7 @@ try {
                     PeakHttpConnections = [int]$after.peak_requests
                 })
             }
-            Write-Host "$scenario round $round: $jobs/$jobs installed HTTP downloads verified."
+            Write-Host "$scenario round ${round}: $jobs/$jobs installed HTTP downloads verified."
         }
     }
     $records | Export-Csv -LiteralPath (Join-Path $destination 'verified-transfers.csv') -NoTypeInformation -Encoding utf8
