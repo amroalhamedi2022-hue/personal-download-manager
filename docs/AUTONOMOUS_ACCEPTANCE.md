@@ -1,3 +1,21 @@
+## HyperGet 2026-10-23 — Strict UTF-8 native browser-message decoding (SOURCE + TEST; NO BUILD)
+
+**Production SHA:** [`09abfe24`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/09abfe24137589d6e374b44af3d61797bd6365fd). **Regression SHA:** [`32a4127d`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/32a4127d9b3a2118df06131ed9b264ae1469af1a). Existing draft [PR #3](https://github.com/amroalhamedi2022-hue/personal-download-manager/pull/3), head `automation/idm-ftp-cancel-and-category-flush`, base `codex/repair-rf00-rf01`; no merge or main write.
+
+**Reproduced defect:** `StdioProtocol.readMessage()` used `String(bytes, UTF_8)`, which silently converted malformed browser-supplied UTF-8 into replacement character U+FFFD. An isolated Kotlin/JVM reproduction on the **unmodified, GitHub-blob-matched production source** confirmed that bytes `C3 28` were accepted as `[FFFD, 28]`. Native messaging requires UTF-8; silently changing request bytes is not safe. The source now uses JDK's strict UTF-8 `CharsetDecoder` (`CodingErrorAction.REPORT`) and throws a distinct **recoverable** `InvalidNativeMessagingPayloadException : IllegalArgumentException` after consuming the complete frame. Invalid *length* prefixes remain fatal via `InvalidNativeMessagingFrameException`, preserving the prior host-loop safety behavior. Existing host catch path treats a bad complete payload as recoverable and can read the next frame. No new dependency; existing repository `LICENSE` is Apache-2.0 and JDK decoder is built in.
+
+| Gate | Status | Evidence |
+| --- | --- | --- |
+| Production source changed and regression committed | **PASS** | Commits `09abfe24` and `32a4127d`; GitHub returned source blob `5a25a27a036fc97fa23fea9f8f9dc62cc0b346e6` and test blob `d7c90fd65b2cb6ef52d7830e102d934f576734cb`, exactly matching locally tested `git hash-object` results. |
+| Isolated Kotlin/JVM source test | **PASS 15/15** | `kotlinc StdioProtocol.kt NativeMessagingFinished.kt HyperGetNativeMessagingFramingSmoke.kt -d /tmp/hyperget-post-fix-classes && kotlin -classpath /tmp/hyperget-post-fix-classes HyperGetNativeMessagingFramingSmokeKt`. 12 existing cases + malformed continuation, truncated multibyte, UTF-8 surrogate. Each invalid payload is framed between two valid messages; rejection and subsequent successful frame read verified. No Gradle or app build. |
+| GitHub PR workflow runs and commit statuses on test SHA `32a4127d` | **NOT TESTED (0 reported)** | Connector returned 0 PR runs and 0 statuses; existing Windows packaging workflow does not push-trigger on this PR head. No CI requested. |
+| Full desktop app, Windows, browser extension and socket integration | **NOT TESTED** | User's NO-BUILD gate remains binding. No Gradle, app compilation, EXE, installer or executable-producing Actions invoked. |
+| FTP/REST, HTTP(S)/HLS, 1/4/16 active downloads, SHA-256, CPU/RAM, UI/identity, HyperGet.exe, migration, independent double recheck | **NOT TESTED on current SHA** | Historical acceptance below remains; no final delivery. Torrent remains excluded. |
+
+**Next bounded action:** Review outbound native-messaging UTF-8 encoding and browser host error-path handling, then continue source-only HG-01–HG-05/functional tests. When all source/readiness requirements are complete, permit first final Windows build and installed acceptance; do not mark VERIFIED or disable the recurring task.
+
+---
+
 ## HyperGet 2026-10-23 — Native browser-messaging frame desynchronization repair (SOURCE + TEST)
 
 **Production SHAs:** `94114937c1d2e67af121ef699bbb46f9b0c668ef` (`StdioProtocol.kt`), `e8929d0b2116a5b269ea0acfcd5214c22db52f9c` (`NativeMessagingHost.kt`). **Regression source SHA:** `6a66b4a20d567fc0a382dc7857f908f35bc6a9c6` (`scripts/tests/HyperGetNativeMessagingFramingSmoke.kt`). Existing draft [PR #3](https://github.com/amroalhamedi2022-hue/personal-download-manager/pull/3); no merge or direct main changes.
