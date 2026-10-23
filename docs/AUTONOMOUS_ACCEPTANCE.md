@@ -107,3 +107,21 @@ No paid API, new workflow, public release, repository visibility change, automat
 
 **Next action:** Obtain an authorized **exact PR-head SHA** Windows test run (without relaxing socket/CRC/SHA assertions or altering normal concurrency settings); first run `:downloader:core:desktopTest` and `:desktop:app:compileKotlin`, then the strict installed FTP and 1/4/16 benchmarks. Inspect any failure-diagnostics file and only then diagnose remaining active-16 discrepancies. Do not merge PR #3 automatically. Browser extension repository untouched, torrent excluded, no API fees or public release.
 
+
+## 2026-10-23 — Pending manual Pause must not start on later queue refill (SOURCE + REGRESSION COMMITTED)
+
+**Production SHA:** [`650f6cd650cf1d8c25e73bb1464c73e740fb4cf1`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/650f6cd650cf1d8c25e73bb1464c73e740fb4cf1)
+**Regression test SHA:** [`62713b1d152a6da845250619aadbd711719d25ac`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/62713b1d152a6da845250619aadbd711719d25ac)
+**PR:** [#3](https://github.com/amroalhamedi2022-hue/personal-download-manager/pull/3), existing draft; no merge or workflow edits.
+
+**Bug and production repair:** `ManualDownloadQueue.pause(id)` used to call `stopJob(id)` without removing an ID that was still **pending** in the manual queue. A pending download may never emit an `OnJobCanceled` event because it has not started, so when another active task vacated its slot the supposedly paused download could start without another user Resume. The fix atomically removes only pending IDs from `totalItemsFlow` under the existing `admissionLock`, schedules the normal debounced refill and then invokes the existing stop path. **Already-active IDs keep their reserved slots until their stop lifecycle event**, preserving the user's concurrency limit. No new permissions, default changes or Torrent code.
+
+**Repository regression:** `ManualDownloadQueueBatchResumeTest.pausingPendingJobPreventsUnexpectedStartAfterSlotIsFreed` queues IDs 71/72/73 under maxConcurrent=1, pauses pending 72 with a manager that emits no stop event, frees active 71, requires 73 (not 72) to start, then explicitly resumes 72 and requires it to start only after 73 leaves.
+
+**Executed verification, carefully scoped:**
+- PASS **isolated Kotlin/JVM behavioral harness** using the installed Kotlin compiler and real bundled kotlinx-coroutines runtime. Reproduced **before** fix: started IDs `[71,72]` (wrong); reproduced **after** fix: `[71,73]` (correct), then explicit Resume started `72` after slot release. This harness reproduces the relevant queue state transitions with minimal shims; **it does not compile the whole actual project and is not JUnit**.
+- PASS **7 GitHub-source static assertions** against the committed production and test files: pending removal under lock, active reservation, ordering before stop, refill, test presence and expected sequences. These are source assertions, not unit-test execution.
+- **NOT TESTED:** project `:downloader:core:desktopTest` and `:desktop:app:compileKotlin`, because this runner cannot clone the repository or download Gradle dependencies. `fetch_commit_workflow_runs` on test SHA `62713b1d` returned **zero PR workflow runs** and combined commit status returned **zero statuses**. Do not mark Windows compile/JUnit PASS.
+- **FAIL historically / CURRENT NOT TESTED:** 16-active Windows benchmark (13/16 in round 2 on [39929246748](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/39929246748)), FTP Pause/REST resume ([39929246815](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/39929246815)), external FTP and GUI, SHA-256 + CPU/RAM matrix, one-EXE packaging and full visual parity. This specific pause fix is **not** claimed to solve the separate active-16 issue.
+
+**Next mandatory gate:** validate PR #3's exact head (including this patch) on authorized Windows CI: `./gradlew --no-daemon --dependency-verification strict :downloader:core:desktopTest :desktop:app:compileKotlin`; then installed FTP pause/resume and strict 1/4/16 × 3 benchmarks with SHA-256 and CPU/RAM artifacts, without weakening assertions. Inspect the actual output and failures before any merge. Keep browser extension in its own repository, and exclude Torrent.
