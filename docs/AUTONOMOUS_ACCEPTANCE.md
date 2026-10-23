@@ -83,3 +83,27 @@ No paid API, new workflow, public release, repository visibility change, automat
 **Actual verification in this run:** Source and test were written to existing draft PR #3. The GitHub connector returned the above commit SHAs. No Kotlin compiler, Gradle/JUnit or Windows benchmark was executed on this patch; `fetch_commit_workflow_runs` returned **zero PR workflow runs** for test commit `38e40674` and the combined commit status had **zero reported checks** when queried. Mark **PATCH UNTESTED**, not PASS. The historical active-16 13/16 failure remains unresolved, and this slot-refill fix must not be represented as a proven root-cause fix for it.
 
 **Required exact-SHA verification:** Run `./gradlew --no-daemon --dependency-verification strict :downloader:core:desktopTest :desktop:app:compileKotlin` including both queue tests; then Windows 1/4/16 x 3 installed HTTP concurrency + 63 SHA-256 files + process-tree CPU/RAM and FTP pause/REST resume, using a build of this PR head. Do not relax socket-count assertions or the user's max-concurrent setting. Keep the browser extension in its own repository, exclude Torrent and do not release/merge automatically. No paid API or new workflow was created.
+
+
+## 2026-10-23 — Manual queue start-failure slot recovery (production patch; CI pending)
+
+**Source commit:** `f30f0d56939ff7c01a84ef398bc20bea0e343fbf`
+**Regression test commit:** `db1281f8528abc4047ae705bd13443374a667708`
+**Existing draft PR:** [#3](https://github.com/amroalhamedi2022-hue/personal-download-manager/pull/3), `automation/idm-ftp-cancel-and-category-flush` → `codex/repair-rf00-rf01`. Base SHA reported by PR: `6c386abeae95e8e0460308d17c033558cbd60f15`.
+
+**Observed source-level defect and correction:** `ManualDownloadQueue.downloadAQueueItemIfPossible()` reserved an active concurrency slot before launching suspendable `downloadEvents.startJob(...)`. When that call threw before the manager emitted any lifecycle event, the reserved ID remained in `activeItemsFlow`, preventing the next pending job from starting. The new code catches ordinary `Exception`, removes the failed ID from the manual queue and lets the existing debounced refill admit the next pending task; `CancellationException` is rethrown so scope cancellation is not mistaken for a task failure. No global concurrency bypass, new storage, change of the default cap (3), or automatic retry loop was introduced.
+
+**Regression test:** `ManualDownloadQueueBatchResumeTest.failedAsynchronousStartReleasesItsSlotAndAdmitsTheNextJob` injects an `IOException` from the first start with **no lifecycle event**, asserts the second ID starts under a max-concurrent limit of **1**, asserts no failed-ID spin and no over-admission of the third, then removes the active second ID and checks that the third starts. This is a separate failure mode from the earlier missing removal-slot refill test.
+
+| Verification gate | Status | Evidence |
+|---|---|---|
+| Production + test code committed on isolated PR | PASS | Source `f30f0d5`, test `db1281f8` |
+| GitHub source-level static invariants | PASS (static only) | Re-fetched both files at `db1281f8`; seven targeted source/test presence assertions passed. **Not a compiler/JUnit result.** |
+| Actual `:downloader:core:desktopTest` including new regression | NOT TESTED | No Gradle dependency cache / full project available in this automation environment. |
+| Windows `:desktop:app:compileKotlin` and JUnit XML gate | NOT TESTED | GitHub `fetch_commit_workflow_runs` on exact test SHA `db1281f8` returned **zero** PR workflow runs; existing validation workflow is scoped to the base branch. |
+| Windows installed active 1/4/16 × 3, 63 SHA-256 files and CPU/RAM CSV | FAIL historically / CURRENT NOT TESTED | [39929246748](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/39929246748) on older source: 16-task round 2 only 13/16 in flight. This patch handles one potential stranded-slot cause; it **does not prove** the benchmark fixed. |
+| FTP Pause → REST Resume and GUI Add URL/OK | FAIL historically / CURRENT NOT TESTED | Older [39929246815](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/39929246815) failure; prior FTP cancellation patch on PR #3 still awaits exact-SHA Windows validation. |
+| Single Windows EXE, UI parity, credentials, upgrade and independent full recheck | NOT TESTED on this SHA | No new Windows artifact or GUI/device evidence. |
+
+**Next action:** Obtain an authorized **exact PR-head SHA** Windows test run (without relaxing socket/CRC/SHA assertions or altering normal concurrency settings); first run `:downloader:core:desktopTest` and `:desktop:app:compileKotlin`, then the strict installed FTP and 1/4/16 benchmarks. Inspect any failure-diagnostics file and only then diagnose remaining active-16 discrepancies. Do not merge PR #3 automatically. Browser extension repository untouched, torrent excluded, no API fees or public release.
+
