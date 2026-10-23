@@ -6,6 +6,7 @@ on:
     branches: [codex/repair-rf00-rf01]
     paths:
       - ".github/workflows/windows-installed-ui-smoke.yml"
+      - "desktop/app/resources/installer/nsis-script-template.nsi"
 
 permissions:
   contents: read
@@ -65,6 +66,13 @@ jobs:
             throw 'Silent installer did not exit within 180 seconds.'
           }
           if ($installation.ExitCode -ne 0) { throw "Installer exit code: $($installation.ExitCode)" }
+          # /S must NEVER auto-start the GUI. If it does, a later explicit
+          # launch would measure two instances and hide installer defects.
+          Start-Sleep -Seconds 2
+          $unexpectedGui = @(Get-Process -Name 'DownloadManager' -ErrorAction SilentlyContinue)
+          if ($unexpectedGui.Count -gt 0) {
+            throw 'Regression: silent NSIS installer started the GUI unexpectedly.'
+          }
           if (-not (Test-Path -LiteralPath $isolated -PathType Container)) {
             throw 'Installer did not create the isolated destination.'
           }
