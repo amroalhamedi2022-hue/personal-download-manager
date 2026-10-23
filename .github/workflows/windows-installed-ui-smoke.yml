@@ -7,6 +7,7 @@ on:
     paths:
       - ".github/workflows/windows-installed-ui-smoke.yml"
       - "desktop/app/resources/installer/nsis-script-template.nsi"
+      - "scripts/Run-WindowsInstallerLifecycleE2E.ps1"
 
 permissions:
   contents: read
@@ -131,6 +132,29 @@ jobs:
               Stop-Process -Id $started.Id -Force -ErrorAction SilentlyContinue
             }
           }
+
+      - name: Verify isolated NSIS same-version reinstall and silent uninstall
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $packages = Join-Path $PWD 'build/ci-release/binaries'
+          $installer = @(Get-ChildItem -LiteralPath $packages -File -Filter '*.exe' -Recurse)
+          if ($installer.Count -ne 1) { throw 'No unique installer for lifecycle acceptance.' }
+          $installDir = Join-Path $env:RUNNER_TEMP 'idm-smoke'
+          $proof = Join-Path $PWD 'build/ci-release/windows-installer-lifecycle.txt'
+          & ./scripts/Run-WindowsInstallerLifecycleE2E.ps1 -InstallerExecutable $installer[0].FullName -InstallDirectory $installDir -SourceSha $env:GITHUB_SHA -ProofFile $proof
+          if (-not (Test-Path -LiteralPath $proof -PathType Leaf)) {
+            throw 'Installer lifecycle acceptance proof was not written.'
+          }
+
+      - name: Upload real Windows reinstall/uninstall acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-installer-lifecycle
+          path: build/ci-release/windows-installer-lifecycle.txt
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Upload actual installed-app idle CPU/RAM baseline
         if: always()
