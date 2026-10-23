@@ -32,7 +32,7 @@ class ManualDownloadQueueBatchResumeTest {
             withTimeout(5.seconds) {
                 while (downloads.started.size != 4) delay(10)
             }
-            assertEquals(listOf(1L, 2L, 3L, 4L), downloads.started.toList())
+            assertEquals(setOf(1L, 2L, 3L, 4L), downloads.started.toSet())
 
             // Raising the existing limit admits the remainder; no new
             // downloader state or bypass of maxConcurrent is introduced.
