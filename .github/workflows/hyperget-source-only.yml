@@ -12,6 +12,9 @@ on:
       - ".github/workflows/hyperget-source-only.yml"
       - "downloader/core/src/desktopMain/kotlin/ir/amirab/downloader/ftp/**"
       - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/downloaditem/hls/**"
+      - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/destination/**"
+      - "scripts/source-tests/HyperGetHlsStagedSegmentSmoke.kt"
+      - "scripts/source-tests/test_hyperget_hls_resume_source.py"
       - "downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/downloaditem/hls/**"
       - "scripts/source-tests/HyperGetHlsReconciliationSmoke.kt"
       - "scripts/source-tests/test_hyperget_hls_playlist_source.py"
@@ -40,6 +43,8 @@ jobs:
         run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_ftp_stage_source.py -v
       - name: Verify HLS playlist refresh source contract
         run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_hls_playlist_source.py -v
+      - name: Verify HLS persisted completion and staged-file source contract
+        run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_hls_resume_source.py -v
       - name: Verify bounded HLS playlist body source contract
         run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_hls_body_source.py -v
       - name: Verify HLS MIME source contract

@@ -1,3 +1,13 @@
+## HyperGet — 2026-10-24: persisted HLS completed-part safety (NO APP BUILD)
+
+**Status: IN_PROGRESS.** On resume, the old HLS fast path finalized a job whenever every persisted part carried `isCompleted=true`, **before** checking whether the corresponding staged files still existed or had the expected length. A deleted, empty or truncated segment could therefore be assembled or cause a late failure.
+
+**Source repair:** `HLSDownloadJob.resumeWithNewScope` now invokes `fetchDownloadInfoAndValidate` before the all-complete fast path. Invalid completed segments lose their completion flag, current-byte counter and completed status-flow state so they can be redownloaded. `SegmentedDownloadDestination.isDownloadPartValid` reads NOFOLLOW_LINKS file attributes, rejects non-regular/zero-byte files and compares actual length with a positive known HLS segment length. Unknown server lengths remain accepted only for nonempty regular files.
+
+**Verification:** The isolated pure Kotlin validation helper and eight standalone regression cases passed locally with `kotlinc`/`kotlin` (8/8); this did not compile or package the application. Six Python source-contract checks are added to the PR-triggered source-only CI, **pending exact-SHA CI result**. No Windows/HLS runtime, JUnit, packaging or EXE test was performed.
+
+**Known limits:** This prevents premature completion for missing/truncated staged segments but does **not** establish that a saved segment's bytes match the latest remote playlist. The existing HLS saved-playlist refresh and stale downloader-instance references remain open. Attribute inspection is not an atomic open/assembly guarantee against concurrent file replacement. Real HLS resume and SHA-256 acceptance remain NOT TESTED. No paid API, new runtime dependency, main change, auto-merge, installer, or Torrent.
+
 ## HyperGet — 2026-10-24: HLS Content-Type parsing compatibility and source-only regression
 
 **Status: IN_PROGRESS; NO APP BUILD.** Existing draft [PR #3](https://github.com/amroalhamedi2022-hue/personal-download-manager/pull/3) on `automation/idm-ftp-cancel-and-category-flush`, targeting `codex/repair-rf00-rf01`. The previous `HLSResponseInfo.expectSuccess` compared `supportedMime.startsWith(rawContentType)`, which rejected a valid HLS `Content-Type: application/vnd.apple.mpegurl; charset=utf-8` when the length was unknown, yet treated a partial MIME prefix as valid. Both cases matter for chunked/unknown-length playlists.

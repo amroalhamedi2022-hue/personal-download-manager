@@ -139,15 +139,16 @@ class HLSDownloadJob(
         return newActiveScope.launch {
             //boot download item from storage!
             boot()
-            // if download item is booted and parts is not empty it means that we resumed that file in some point
-            // but we should check if all parts are already downloaded to finish the job before hitting the server unnecessarily!
-            if (parts.isNotEmpty() && parts.all { it.isCompleted }) {
-                onDownloadFinished()
-                return@launch
-            }
+            // Persisted completion flags are not proof that the staged bytes survived
+            // a crash, external edit, or interrupted flush. Validate on-disk parts
+            // before allowing the fast completion path to assemble them.
             onDownloadResuming()
             try {
                 fetchDownloadInfoAndValidate()
+                if (parts.isNotEmpty() && parts.all { it.isCompleted }) {
+                    onDownloadFinished()
+                    return@launch
+                }
                 createPartDownloaderList()
 //                println("part downloaders created")
                 beginDownloadParts()
@@ -566,6 +567,8 @@ class HLSDownloadJob(
                 // redownload invalid parts
                 if (!destination.isDownloadPartValid(it)) {
                     it.isCompleted = false
+                    it.resetCurrent()
+                    it.statusFlow.update { PartDownloadStatus.IDLE }
                 }
             }
 
