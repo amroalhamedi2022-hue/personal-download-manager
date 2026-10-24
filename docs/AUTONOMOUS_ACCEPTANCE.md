@@ -1,3 +1,9 @@
+## HyperGet — 2026-10-24 HG-HLS-AUTH-01 real loopback HTTP acceptance extension
+
+Added two Windows Kotlin tests using JDK HttpServer and production OkHttpHttpDownloaderClient (not a fake network): a same-origin 302 must carry the explicit Cookie to the final endpoint without leaking an ambient CookieJar cookie, and a cross-port redirect must be rejected before the second server sees any request. No internet, paid runner or additional dependency required. The targeted Windows workflow now requires both JUnit XML suites and at least 12 passing tests; results remain NOT TESTED until the exact new SHA completes. This is a justified network milestone compile/test, not EXE packaging. Real installed-GUI and public HTTPS E2E remain open.
+
+---
+
 ## HyperGet — 2026-10-24 HLS Windows gate failure and SemVer prerequisite repair
 
 **Observed FAIL (not a Kotlin test result):** Windows guarded-HLS workflow Run 40114659012 on the first head b1c1a8e could not configure the root Gradle build. The exact error at build.gradle.kts:33 was `Invalid version: 1.0.0-sha.03710`; the PR synthetic merge commit happened to start with a numeric identifier containing a leading zero, which violates SemVer. No JUnit XML or executable was produced, so the HLS Kotlin tests remain NOT TESTED on that run.

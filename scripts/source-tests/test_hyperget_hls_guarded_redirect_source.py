@@ -44,6 +44,14 @@ class GuardedHlsRedirectSourceTest(unittest.TestCase):
         self.assertIn("MAX_GUARDED_HLS_REDIRECTS = 5", self.guard)
         self.assertIn("!visited.add(target.toString())", self.guard)
 
+    def test_real_loopback_network_regressions_are_present(self):
+        path = ROOT / "downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/downloaditem/hls/HlsGuardedRedirectLoopbackTest.kt"
+        content = path.read_text(encoding="utf-8")
+        self.assertIn("sameOrigin302PreservesExplicitCookieWithoutAmbientJarCookie", content)
+        self.assertIn("crossPort302NeverContactsSecondServer", content)
+        self.assertIn("OkHttpHttpDownloaderClient(", content)
+        self.assertIn("HttpServer.create(", content)
+
     def test_kotlin_behavioral_regressions_are_present(self):
         for name in ("followsRelativeSameOriginRedirectsAndRetainsExplicitCookies",
                      "crossHostRedirectIsRejectedBeforeSecondRequest",
