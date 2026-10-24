@@ -9,3 +9,7 @@ internal fun safeBrowserError(cause: Throwable): SafeBrowserError =
     } else {
         SafeBrowserError("REQUEST_FAILED", "HyperGet could not complete the browser request.")
     }
+
+/** Preserve the browser's correlation ID for an error after a decoded request. */
+internal fun browserReplyId(requestId: String?, newId: () -> String): String =
+    requestId ?: newId()
