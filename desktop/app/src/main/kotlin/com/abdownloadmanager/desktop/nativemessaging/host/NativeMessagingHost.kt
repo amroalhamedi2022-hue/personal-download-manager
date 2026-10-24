@@ -48,8 +48,8 @@ class NativeMessagingHost(
                 logger.d { "Browser closed the input, exiting" }
                 0
             } else {
-                logger.e(e) { "Native messaging host can't finished properly: ${e.message}" }
-                e.printStackTrace(System.err)
+                logger.e { "HyperGet native messaging host stopped after an error" }
+                System.err.println("HyperGet native messaging host stopped after an error")
                 1
             }
         }
