@@ -1,3 +1,23 @@
+## HyperGet — 2026-10-24: FTP RETR Pause/stream-registration cleanup race (SOURCE + TEST; NO APP BUILD)
+
+**Status: IN_PROGRESS. Production source changed: YES.** Existing draft [PR #3](https://github.com/amroalhamedi2022-hue/personal-download-manager/pull/3), head `automation/idm-ftp-cancel-and-category-flush` → base `codex/repair-rf00-rf01`. Production commits: [`05b88c4d`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/05b88c4df4924e3b9411d022c99da9f268c67026) (small stream-lifecycle helper) and [`ee598b4e`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/ee598b4e9596f4ca002259a06c9e3d172e82ac56) (FTP transport integration); regression commit [`f8f3a808`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/f8f3a8081fd3b39faa192104f201e56eae96570d).
+
+**Defect:** After a successful `retrieveFileStream`, `FtpTransferClient` registered the new data stream and called `ensureNotCancelled()` *before* entering its stream-closing `try/finally`. A concurrent Pause in that narrow interval could throw without closing the just-opened RETR data socket, despite closing the control connection. The new `withFtpDataStream` helper checks cancellation **inside** the guarded region and always unregisters/closes the stream, including when cancellation, body execution or unregistering fails. FTP REST identity checks, staged-file semantics and credential storage are unchanged.
+
+| Gate | Status | Exact evidence |
+| --- | --- | --- |
+| Isolated real Kotlin/JVM source test | **PASS 4/4** | `kotlinc FtpDataStreamLifecycle.kt HyperGetFtpDataStreamLifecycleSmoke.kt -d classes && kotlin -classpath classes HyperGetFtpDataStreamLifecycleSmokeKt` (in a temporary source-only folder). Cases: cancellation before body prevents work and closes stream, normal completion, body failure, unregister failure still closes. **Not a full-app compile or live FTP test.** |
+| Exact committed helper/test source identity | **PASS** | GitHub blob SHA `55dcb4b0122b3f8393c6df951a46740a7a86c7f2` and test blob `b4dc98d89190700539f9cbc8779ac87d24fc86ab` match local `git hash-object` on tested source files. Integrated transport blob `f7967951d0b7a340c8d6bdecc401567205a82970` was re-fetched for static review. |
+| Source-only integration invariants | **PASS 10/10** | Re-fetched transport/helper/test; checked RETR registration before guarded check, unconditional close/unregister in `finally`, pre-body cancellation regression, preservation of completion check before final commit, and REST identity guard. Static checks are **not** runtime FTP or Windows evidence. |
+| CI at regression SHA `f8f3a808` | **0 runs, 0 statuses** | Queried commit-associated PR workflow runs and combined status. Existing packaging workflows are push-scoped to `codex/repair-rf00-rf01` or `main`, or manual/tag-triggered; no Actions dispatched and no packaging attempted. |
+| FTP live Pause/REST, HTTP/HTTPS/HLS, Windows build/upgrade, browser integration, 1/4/16 SHA-256 and CPU/RAM, Liquid Progress, HyperGet.exe, icon, independent recheck | **NOT TESTED / DEFERRED** | Binding NO-BUILD rule remains active. No new executable/installer or Windows acceptance evidence. Historical FTP and 13/16 active-benchmark failures remain unresolved for this SHA. |
+
+**Open-source/license/security:** Continued the repository's existing Apache Commons Net FTP transport (Apache-2.0) and Kotlin/JDK primitives; no new dependency, paid API, user data/credential/IPC/registry mutation or Torrent. The helper does not claim FTP server behavior is validated; source-level race closure still needs exact-SHA full build and installed FTP E2E after readiness.
+
+**Next bounded source-only action:** Review remaining FTP cancellation/commit races, HTTP/HLS resume correctness and HG-01–HG-05 installer/identity/icon readiness; add source-only regressions. After *all* source and UI readiness gates, permit first final Windows build, live install/upgrade/FTP/1-4-16/security acceptance and independent double recheck. No direct `main` write, merge, ChatGPT Library update or task disablement.
+
+---
+
 ## HyperGet — 2026-10-24: privacy-safe browser errors, correlated replies, fatal input EOF (SOURCE + TEST; NO BUILD)
 
 **Status:** IN_PROGRESS; source readiness only. Existing draft [PR #3](https://github.com/amroalhamedi2022-hue/personal-download-manager/pull/3), head `automation/idm-ftp-cancel-and-category-flush`, base `codex/repair-rf00-rf01`. **Production source changed:** YES. Last source commit before this ledger entry: [`ef82fba2`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/ef82fba2ad729ec36f0bc373c6503069ea4af448). No main write, merge, build, installer, workflow dispatch, paid API or Torrent.
