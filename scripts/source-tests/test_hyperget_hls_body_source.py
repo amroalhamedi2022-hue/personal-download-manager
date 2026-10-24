@@ -20,7 +20,7 @@ class HlsBodySafetyContract(unittest.TestCase):
     def test_declared_size_checked_unconditionally(self):
         check = "declaredLength != null && declaredLength > MAX_HLS_PLAYLIST_BYTES"
         self.assertIn(check, self.response)
-        self.assertLess(self.response.index(check), self.response.index("val hlsPossibleHeaders"))
+        self.assertLess(self.response.index(check), self.response.index('val contentType = connection.responseInfo.responseHeaders["content-type"]'))
 
     def test_actual_bytes_capped(self):
         self.assertIn("MAX_HLS_PLAYLIST_BYTES: Int = 2 * 1024 * 1024", self.reader)
