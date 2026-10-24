@@ -27,13 +27,32 @@ internal fun ftpStagedBytes(part: Path): Long {
     return attributes.size()
 }
 
+/** The file key identifies the opened stage for a later pre-publish check. */
+internal class FtpStagedOutput internal constructor(
+    private val delegate: OutputStream,
+    val fileKey: Any?,
+) : OutputStream() {
+    override fun write(b: Int) = delegate.write(b)
+    override fun write(b: ByteArray, off: Int, len: Int) = delegate.write(b, off, len)
+    override fun flush() = delegate.flush()
+    override fun close() = delegate.close()
+}
+
 /**
- * Open only the real staged file, without following symbolic links. Recheck its
- * length at the point of opening so a changed/replaced partial cannot silently
- * append bytes at an incorrect REST offset. The returned stream owns the channel.
+ * Open the real staged file without following symbolic links. Recheck its
+ * length and, when the file provider supports it, its file key around opening.
+ * The returned stream owns the channel; keep its fileKey for final publication.
  */
-internal fun openFtpStagedOutput(part: Path, expectedSize: Long): OutputStream {
+internal fun openFtpStagedOutput(part: Path, expectedSize: Long): FtpStagedOutput {
     require(expectedSize >= 0L)
+    val before = try {
+        Files.readAttributes(part, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
+    } catch (_: NoSuchFileException) {
+        null
+    }
+    if (before != null && !before.isRegularFile) {
+        throw IOException("FTP staged path is not a regular file")
+    }
     val options: Set<OpenOption> = setOf(
         StandardOpenOption.CREATE,
         StandardOpenOption.WRITE,
@@ -42,10 +61,14 @@ internal fun openFtpStagedOutput(part: Path, expectedSize: Long): OutputStream {
     )
     val channel = Files.newByteChannel(part, options)
     try {
-        if (channel.size() != expectedSize) {
+        val after = Files.readAttributes(part, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
+        if (!after.isRegularFile || channel.size() != expectedSize || after.size() != expectedSize) {
             throw IOException("FTP staged file changed while opening; refusing unsafe resume")
         }
-        return Channels.newOutputStream(channel)
+        if (before?.fileKey() != null && before.fileKey() != after.fileKey()) {
+            throw IOException("FTP staged file identity changed while opening")
+        }
+        return FtpStagedOutput(Channels.newOutputStream(channel), after.fileKey())
     } catch (failure: Throwable) {
         channel.close()
         throw failure
