@@ -58,6 +58,10 @@ class HLSPartDownloader(
                 connect.close()
                 connect.responseInfo.expectSuccess()
             }
+            // A server's 206 is successful HTTP but not a complete HLS segment.
+            // We do not send Range for media segments, so accepting 206 here
+            // would silently publish a fragment as a finished segment.
+            requireCompleteHlsSegmentResponse(connect.responseInfo.statusCode)
             part.length = connect.responseInfo.contentLength
             val limiters = buildList {
                 addAll(speedLimiters)
@@ -86,6 +90,14 @@ class HLSPartDownloader(
     }
 
     override fun onFinish() {
+        // PartDownloader signals EOF as success even when the server closed
+        // early. Only mark Completed after the entire declared body arrived.
+        try {
+            requireCompleteHlsSegmentBytes(part.length, part.current)
+        } catch (failure: java.io.IOException) {
+            onCanceled(failure)
+            return
+        }
         part.isCompleted = true
         super.onFinish()
     }
