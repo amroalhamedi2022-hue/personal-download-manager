@@ -532,6 +532,7 @@ class HLSDownloadJob(
             return partDownloaderList.getOrPut(part.getID()) {
                 HLSPartDownloader(
                     baseURL = segmentBaseUrl,
+                    playlistCredentials = downloadItem,
                     part = part,
                     getDestWriter = {
                         destination.getWriterFor(part)

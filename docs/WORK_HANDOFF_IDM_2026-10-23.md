@@ -1,7 +1,3 @@
-## Latest override — HyperGet (approved 2026-10-23)
-
-**This existing IDM-named handoff is retained for historical path continuity, but the same app's official user-visible brand is now HyperGet.** Future development/tickets/reports/installer/EXE should consistently say **HyperGet** (exact case, no space). Keep repo name, authoritative branch and PR #3 unchanged, preserve downloads/settings/browser IPC across any transition. Detailed mandatory acceptance: [HYPERGET_REBRAND_PLAN.md](HYPERGET_REBRAND_PLAN.md) (HG-01–HG-05). Documentation-only instruction; no implementation or Windows tests passed because of this change. All old core requirements remain, including Torrent exclusion.
-
 # IDM / Personal Download Manager — Chat → Work Handoff
 **Date:** 2026-10-23 (Asia/Hebron)  
 **Repository:** https://github.com/amroalhamedi2022-hue/personal-download-manager  

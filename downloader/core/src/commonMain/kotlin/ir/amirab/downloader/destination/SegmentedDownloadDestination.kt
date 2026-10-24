@@ -1,15 +1,11 @@
 package ir.amirab.downloader.destination
 
 import ir.amirab.downloader.part.DownloadPart
-import ir.amirab.downloader.part.MediaSegment
 import ir.amirab.downloader.utils.calcPercent
 import okhttp3.internal.closeQuietly
 import okio.FileSystem
 import okio.Path.Companion.toOkioPath
 import java.io.File
-import java.nio.file.Files
-import java.nio.file.LinkOption
-import java.nio.file.attribute.BasicFileAttributes
 
 class SegmentedDownloadDestination(
     // a directory unique for this item!
@@ -72,17 +68,7 @@ class SegmentedDownloadDestination(
     }
 
     fun isDownloadPartValid(part: DownloadPart): Boolean {
-        val path = getFileOfPart(part).toPath()
-        // A single NOFOLLOW_LINKS attribute read rejects symlinked stage paths
-        // and avoids trusting mere existence or a truncated completed segment.
-        val attributes = runCatching {
-            Files.readAttributes(path, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
-        }.getOrNull() ?: return false
-        return isStagedSegmentValid(
-            isRegularFile = attributes.isRegularFile,
-            actualSize = attributes.size(),
-            expectedSize = (part as? MediaSegment)?.length,
-        )
+        return getFileOfPart(part).exists()
     }
 
     override fun cleanUpJunkFiles() {

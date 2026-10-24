@@ -46,15 +46,7 @@ object AppInfo {
     }
 
     val mainExeFile: String? = run {
-        if (platform == Platform.Desktop.Windows) {
-            MainExecutableResolver.resolve(
-                runningExecutablePath = currentExecutable,
-                legacyBaseName = FileNameConstants.mainApp,
-                brandedBaseName = "HyperGet",
-            )
-        } else {
-            calcExecutable(FileNameConstants.mainApp)
-        }
+        calcExecutable(FileNameConstants.mainApp)
     }
     val cliExeFile: String? = run {
         calcExecutable(FileNameConstants.cliApp)

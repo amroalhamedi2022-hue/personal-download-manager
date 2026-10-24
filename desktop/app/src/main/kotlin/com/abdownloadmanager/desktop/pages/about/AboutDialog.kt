@@ -1,6 +1,5 @@
 package com.abdownloadmanager.desktop.pages.about
 
-import com.abdownloadmanager.desktop.utils.AppInfo
 import com.abdownloadmanager.desktop.AppComponent
 import com.abdownloadmanager.desktop.window.custom.CustomWindow
 import androidx.compose.runtime.Composable
@@ -60,7 +59,7 @@ fun AboutDialog(
         ),
         onCloseRequest = onClose,
         windowController = rememberWindowController(
-            title = "${AppInfo.displayName} — ${myStringResource(Res.string.about)}",
+            title = myStringResource(Res.string.about),
         ),
     ) {
         WindowIcon(MyIcons.info)

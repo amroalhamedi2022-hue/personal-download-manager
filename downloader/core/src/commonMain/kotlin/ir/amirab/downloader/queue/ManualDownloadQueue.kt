@@ -23,12 +23,6 @@ class ManualDownloadQueue(
 ) {
     private val admissionLock = Any()
 
-    // A reserved slot is not necessarily a running socket: startJob is
-    // dispatched asynchronously. Tokens let Pause/trim revoke an unstarted
-    // admission without releasing a slot belonging to a running transfer.
-    // All access is serialized by admissionLock.
-    private val scheduledStarts = mutableMapOf<Long, Any>()
-
     private var booted = guardedEntry()
 
     // how many downloads can be active at the same time
@@ -243,12 +237,7 @@ class ManualDownloadQueue(
     }
 
     private fun trim() {
-        // stopJob is asynchronous: requesting a stop does NOT free a live
-        // download slot. Keep the reservation until OnJobCanceled/Completed
-        // (or explicit removal) confirms that the transfer is no longer live.
-        // Count only jobs not already asked to stop, so a second shake cannot
-        // issue duplicate stop requests while cancellations are in flight.
-        while (activeItems.count { it !in trimmedItems } > maxConcurrent) {
+        while (activeItems.size > maxConcurrent) {
             if (!removeAnActiveQueueItemForTrimming()) {
                 return
             }
@@ -257,19 +246,11 @@ class ManualDownloadQueue(
 
     private val me = User
     private fun removeAnActiveQueueItemForTrimming(): Boolean {
-        val id = activeItems.lastOrNull { it !in trimmedItems } ?: return false
-        if (scheduledStarts.remove(id) != null) {
-            // This start has not entered startJob yet. Revoke its token and
-            // reservation without issuing a stop against a nonexistent job.
-            // The queued item remains eligible when the limit rises again.
-            removeActiveItem(id)
-            return true
-        }
+        val id = activeItems.lastOrNull() ?: return false
         trimmedItems.add(id)
-        // Do not release the reserved slot here. The stop is suspendable and
-        // the socket can still be transferring until its lifecycle event.
+        val result = removeActiveItem(id)
         scope.launch { downloadEvents.stopJob(id, StoppedBy(me)) }
-        return true
+        return result
     }
 
     private fun extend() {
@@ -287,34 +268,10 @@ class ManualDownloadQueue(
     private fun downloadAQueueItemIfPossible(): Boolean {
         val downloadableItemFromQueue = getAnInactiveITemFromTheQueue()
 
-        return downloadableItemFromQueue?.let { id ->
-            // Admission reserves a slot before the suspendable startJob call.
-            // If startJob fails before emitting a lifecycle event, that slot
-            // would otherwise remain occupied forever and strand pending jobs.
-            addAnActiveItem(id)
-            val admissionToken = Any()
-            scheduledStarts[id] = admissionToken
+        return downloadableItemFromQueue?.let {
+            addAnActiveItem(it)
             scope.launch {
-                val stillAdmitted = synchronized(admissionLock) {
-                    if (scheduledStarts[id] !== admissionToken) {
-                        false // Paused, trimmed, removed, or superseded.
-                    } else {
-                        scheduledStarts.remove(id)
-                        id in activeItemsFlow.value && id in totalItemsFlow.value
-                    }
-                }
-                if (!stillAdmitted) return@launch
-                try {
-                    downloadEvents.startJob(id, ResumedBy(me))
-                } catch (cancelled: CancellationException) {
-                    // Cancelling the owning scope is not a download failure.
-                    throw cancelled
-                } catch (_: Exception) {
-                    // A failed start must not be retried in a tight loop. Drop
-                    // just this admission and let the normal debounced refill
-                    // consider the remaining queued downloads.
-                    removeFromQueue(id)
-                }
+                downloadEvents.startJob(it, ResumedBy(me))
             }
             true
         } ?: false
@@ -351,17 +308,13 @@ class ManualDownloadQueue(
     fun clearQueue() {
         synchronized(admissionLock) {
             trimmedItems.clear()
-            scheduledStarts.clear()
             clearActiveItems()
             clearTotalItems()
         }
     }
 
     fun removeFromQueue(ids: Set<Long>) {
-        if (ids.isEmpty()) return
-        val changed = synchronized(admissionLock) {
-            val wasQueued = totalItemsFlow.value.any { it in ids } ||
-                activeItemsFlow.value.any { it in ids }
+        synchronized(admissionLock) {
             totalItemsFlow.update {
                 it.filter { id ->
                     id !in ids
@@ -373,65 +326,32 @@ class ManualDownloadQueue(
                 }
             }
             trimmedItems.removeAll(ids)
-            ids.forEach(scheduledStarts::remove)
-            wasQueued
         }
-        // A user-deleted job or a job resumed outside this queue may have
-        // occupied a concurrency slot. Refill it even when no completion or
-        // cancellation event follows the removal. Debounce to coalesce bursts
-        // of removals and avoid recursively scheduling from actualShake().
-        if (changed) shake()
     }
 
     fun removeFromQueue(id: Long) {
         return removeFromQueue(setOf(id))
     }
 
-    fun resume(item: Long) = resumeAll(listOf(item))
-
-    /**
-     * Admits a user-requested batch as one queue transaction. IPC callers used
-     * to resume each ID separately, shaking the scheduler after every item.
-     * With 16 downloads that repeatedly scheduled partial batches while the
-     * remaining items had not yet been admitted. Preserve the user's existing
-     * maxConcurrent setting and perform one admission pass for the whole batch.
-     */
-    fun resumeAll(items: Collection<Long>) {
-        if (items.isEmpty()) return
+    fun resume(item: Long) {
         synchronized(admissionLock) {
-            totalItemsFlow.update { existing ->
-                (existing + items).distinct()
+            totalItemsFlow.update {
+                (it + item).distinct()
             }
-            // Both membership and admission are serialized against completion,
-            // trimming and other user resume calls by admissionLock.
-            shake(delayed = false)
         }
+        shake(
+            // immediately shake the queue
+            delayed = false
+        )
     }
 
     // called by user
     suspend fun pause(item: Long) {
-        // A pending download has no running job to emit OnJobCanceled.
-        // Remove it from the manual queue *before* asking the manager to stop:
-        // otherwise the next freed slot silently starts a download the user
-        // explicitly paused. Keep active jobs reserved until their stop event,
-        // so pausing a running transfer cannot temporarily exceed the limit.
-        val removedPending = synchronized(admissionLock) {
+        // this should be removed here as it indicates that user manually paused it
+        // so the trimmed item list should not contain it anymore
+        synchronized(admissionLock) {
             trimmedItems.remove(item)
-            if (scheduledStarts.remove(item) != null) {
-                // The dispatcher has not begun this job. Revoke the token and
-                // free only this never-started reservation; its coroutine will
-                // notice the stale token and skip startJob entirely.
-                totalItemsFlow.update { it - item }
-                removeActiveItem(item)
-                true
-            } else if (item in totalItemsFlow.value && item !in activeItemsFlow.value) {
-                totalItemsFlow.update { it - item }
-                true
-            } else {
-                false
-            }
         }
-        if (removedPending) shake()
         downloadEvents.stopJob(item, StoppedBy(me))
     }
 }

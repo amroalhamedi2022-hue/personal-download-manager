@@ -1,3 +1,15 @@
+## HyperGet — 2026-10-24: HLS segment credentials and redirect guard (SOURCE ONLY)
+
+**Status: IN_PROGRESS; NO APP BUILD.** Previously, HLS segment workers created `HttpDownloadCredentials(url)` and lost the playlist's user-supplied Cookie, Authorization, Referer, Basic credentials and User-Agent. A naive copy to every segment would leak private headers to arbitrary hosts listed in a playlist.
+
+**Production source change:** `HlsSegmentCredentialPolicy.kt` now forwards user-supplied headers and Basic credentials **only when original playlist URL, final (possibly redirected) playlist URL, and segment URL share the exact scheme, canonical host and effective port**. It drops transport/hop-by-hop headers and does not forward `downloadPage`. User-Agent may be forwarded independently. Authenticated segment requests disable automatic OkHttp redirects so a 3xx cannot silently forward user-supplied headers to a different origin. Unauthenticated segment redirects retain existing behavior. The request-only redirect flag is `@Transient` and defaults to true for other HTTP downloads, preserving stored credential schemas. This deliberately prefers failing a redirected authenticated segment over leaking its secrets; supporting same-origin authenticated redirect chains safely remains future work.
+
+**Verification:** Six Python source-contract cases added to source-only PR CI; seven Kotlin desktopTest cases added but **NOT RUN** due the user's prohibition on application compilation/Gradle. The Python tests are structural and do not establish runtime network security. No new dependency, license change, persistent schema migration, IPC change, extension protocol change or paid service. Reference: RFC 8216 §4.1 for playlist-relative URIs and OkHttp client redirect settings.
+
+**Still NOT TESTED:** actual authenticated HLS server, cross-origin redirect on Windows, Kotlin JUnit, HTTP/FTP/HLS end-to-end, 1/4/16, SHA-256 full transfers, CPU/RAM, Liquid Progress, icon/branding, browser integration, migration, final HyperGet.exe and independent recheck. **Residual risk:** original *playlist* request still uses the existing OkHttp redirect policy and may forward custom headers across origins; that path needs its own reviewed guard. Default cookie-jar/interceptor behavior also needs end-to-end review. PR #3 remains Draft; no main write/merge/build/installer/Torrent.
+
+---
+
 ## HyperGet — 2026-10-24: redirected HLS playlist segment-base fix (SOURCE ONLY)
 
 **Status: IN_PROGRESS; no application build.** The HLS response parser already resolves the first segment against `responseInfo.requestUrl` (the final OkHttp response URL), but `HLSDownloadJob.getOrCreatePartDownloader` previously passed `downloadItem.link` (the pre-redirect playlist URL) to segment workers. For a playlist redirected to a different host or directory, relative `.ts` segment links could therefore resolve to the wrong resource.

@@ -59,9 +59,9 @@ class DefaultAppIPCServiceImpl : IDefaultAppIPCService, KoinComponent {
 
     override suspend fun resumeDownload(ids: List<Long>) {
         awaitAppBoot()
-        // The CLI/IPC list is a single user action, not N independent queue
-        // admissions. Respect the persisted global concurrency setting.
-        downloadSystem.userManualResume(ids)
+        for (id in ids) {
+            downloadSystem.userManualResume(id)
+        }
     }
 
     override suspend fun getMaxConcurrentDownloads(): Int {

@@ -10,7 +10,6 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import org.koin.core.component.KoinComponent
-import java.io.IOException
 import kotlin.system.exitProcess
 
 
@@ -48,8 +47,8 @@ class NativeMessagingHost(
                 logger.d { "Browser closed the input, exiting" }
                 0
             } else {
-                logger.e { "HyperGet native messaging host stopped after an error" }
-                System.err.println("HyperGet native messaging host stopped after an error")
+                logger.e(e) { "Native messaging host can't finished properly: ${e.message}" }
+                e.printStackTrace(System.err)
                 1
             }
         }
@@ -65,12 +64,12 @@ class NativeMessagingHost(
             val request = try {
                 channel.receive()
             } catch (e: Exception) {
-                // A corrupt frame length leaves stdin out of sync. Never reinterpret
-                // its payload as subsequent headers or send a reply to that stream.
-                if (e is NativeMessagingFinished || e is IOException) {
+                if (e is NativeMessagingFinished) {
                     throw e
                 }
-                appLogger.e { "HyperGet native messaging request could not be decoded" }
+                appLogger.e(e) {
+                    "channel.receive() failed with error"
+                }
                 replyError(e)
                 if (e is SerializationException || e is IllegalArgumentException) {
                     //
@@ -83,41 +82,39 @@ class NativeMessagingHost(
             val response = try {
                 router.handle(request)
             } catch (e: Exception) {
-                appLogger.e { "HyperGet native messaging request handler failed" }
-                replyError(e, request.id)
+                appLogger.e(e) {
+                    "router.handle(request) failed"
+                }
+                replyError(e)
                 continue
             }
 
             try {
                 channel.send(response)
             } catch (e: Exception) {
-                // An IOException may mean that only part of the frame reached
-                // stdout. An error reply would corrupt the browser's framing.
-                if (e is IOException) throw e
-                appLogger.e { "HyperGet native messaging response could not be sent" }
-                replyError(e, request.id)
+                appLogger.e(e) {
+                    "channel.send(response) failed"
+                }
+                replyError(e)
             }
         }
     }
 
-    private fun replyError(e: Exception, requestId: String? = null) {
+    private fun replyError(e: Exception) {
         try {
-            val safe = safeBrowserError(e)
             val content = context(json) {
                 NativeMessagingMessage(
-                    id = browserReplyId(requestId) { NativeMessagingMessage.generateId() },
+                    id = NativeMessagingMessage.generateId(),
                     content = NativeMessagingMessage.Content.error(
-                        errorType = safe.errorType,
-                        message = safe.message
+                        message = e.localizedMessage
                     )
                 )
             }
             channel.send(content)
         } catch (exception: Exception) {
-            // The protocol poisons stdout on write/flush IO failure. Abort the
-            // host instead of silently looping on a broken browser pipe.
-            if (exception is IOException) throw exception
-            appLogger.e { "HyperGet could not send a browser error response" }
+            appLogger.e(exception) {
+                "can't send the error to the browser"
+            }
         }
     }
 }

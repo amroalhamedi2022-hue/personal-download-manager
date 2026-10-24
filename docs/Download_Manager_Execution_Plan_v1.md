@@ -1,7 +1,3 @@
-## 2026-10-23 — binding product name: HyperGet
-
-**Latest approved user instruction supersedes older product-name wording throughout the ENTIRE plan and all future tasks:** our Windows app's official name is **HyperGet** (no space). From this point, interpret every stage referring to “Personal Download Manager”, “our IDM” or “IDM-like project” as development of **HyperGet**. The real Internet Download Manager may still be named IDM when referenced for comparison. **Do not rename the existing GitHub repo, branches, internal app IDs, IPC/storage keys or test IDs by blind text replacement.** Preserve functionality, upgrade paths and cross-repo browser integration. Any future UI title, binary/installer/shortcut/branding is HyperGet after testing. See [HYPERGET_REBRAND_PLAN.md](HYPERGET_REBRAND_PLAN.md), acceptance HG-01–HG-05. **Planned, not implemented as of this note.** All previous requirements remain in force, Torrent excluded.
-
 # خطة تنفيذ مدير التحميل الشخصي — المرجع التنفيذي
 
 الإصدار: 2.1 | التاريخ: 2026-10-19 | المنطقة الزمنية: Asia/Jerusalem

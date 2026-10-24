@@ -91,11 +91,9 @@ buildConfig {
             getApplicationPackageName()
         }
     )
-    // HyperGet is the user-visible brand. Keep APP_NAME, PACKAGE_NAME and
-    // DATA_DIR_NAME on their existing values for upgrades and browser IPC.
     buildConfigField(
         "APP_DISPLAY_NAME",
-        provider { "HyperGet" }
+        provider { getPrettifiedAppName() }
     )
     buildConfigField(
         "DATA_DIR_NAME",

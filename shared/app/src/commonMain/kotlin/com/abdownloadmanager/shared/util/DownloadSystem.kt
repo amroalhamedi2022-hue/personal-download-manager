@@ -166,11 +166,7 @@ class DownloadSystem(
     }
 
     suspend fun userManualResume(id: Long): Boolean {
-        return userManualResume(listOf(id))
-    }
-
-    suspend fun userManualResume(ids: List<Long>): Boolean {
-        manualDownloadQueue.resumeAll(ids)
+        manualDownloadQueue.resume(id)
         return true
     }
 
