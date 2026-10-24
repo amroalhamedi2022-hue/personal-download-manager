@@ -11,6 +11,9 @@ on:
     paths:
       - ".github/workflows/hyperget-source-only.yml"
       - "downloader/core/src/desktopMain/kotlin/ir/amirab/downloader/ftp/**"
+      - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/downloaditem/hls/**"
+      - "scripts/source-tests/HyperGetHlsReconciliationSmoke.kt"
+      - "scripts/source-tests/test_hyperget_hls_playlist_source.py"
       - "downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/ftp/FtpStagedIdentityTest.kt"
       - "scripts/source-tests/test_hyperget_ftp_stage_source.py"
       - "scripts/test_local_ftp_fixture.py"
@@ -30,5 +33,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Verify FTP stage source contract
         run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_ftp_stage_source.py -v
+      - name: Verify HLS playlist refresh source contract
+        run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_hls_playlist_source.py -v
       - name: Verify local FTP fixture protocol
         run: python3 -m unittest scripts/test_local_ftp_fixture.py -v
