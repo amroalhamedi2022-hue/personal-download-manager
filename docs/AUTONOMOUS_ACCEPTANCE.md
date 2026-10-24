@@ -1,3 +1,15 @@
+## HyperGet — 2026-10-24: serialize HLS preview edits against active playlist refresh (SOURCE ONLY)
+
+**Status: IN_PROGRESS; NO APP BUILD.** On an existing HLS job, `extraConfigsReceived` previously applied a UI link-checker's `hlsManifest` directly to `parts`, even while segment workers and listeners were active. That could replace in-memory `MediaSegment` objects without retiring old workers, allowing stale status callbacks and staged segment reuse during active transfer.
+
+**Production change:** [`259355bc`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/259355bc4e76140679a626a5b49626fb392944d4) introduces a shared `playlistMutationLock` around remote refresh and preview replacement. UI preview manifests are **ignored while the job or active scope is running**; resume still fetches the authoritative remote playlist. For an inactive job, the preview path now stops/awaits old workers, retires listeners and cached downloader objects, then replaces and saves segments. Explicit `Mutex.lock()/unlock()` in `try/finally` supports suspending stop/join and persistence calls without using `withLock`'s non-suspending action.
+
+**Source verification:** New `test_hyperget_hls_preview_lifecycle_source.py` contains **6 source-contract tests** covering shared lock, remote refresh transaction, preview transaction, active-job guard, old-worker retirement ordering and save ordering. [Source-only CI Run 40092490941](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40092490941) **PASS** at exact code SHA `259355bc4e76140679a626a5b49626fb392944d4`: all **8 substantive Python/FTP source-only steps** succeeded, including the new preview test. Workflow remains PR-scoped, Python-only, without Gradle, app compilation, EXE, installer, artifact upload or paid API. No runtime dependencies or licensing changes; Apache-2.0 baseline unchanged.
+
+**NOT TESTED:** Kotlin/Gradle JUnit, actual HLS simultaneous edit/resume race, HTTP/HTTPS/FTP Windows E2E, 1/4/16, SHA-256 full transfers, CPU/RAM, Liquid Progress, branding/icon migration, browser native messaging, final `HyperGet.exe`, independent recheck. Source contracts are structural and **do not prove all concurrency races are eliminated**; callbacks and playlist updates outside these two paths require later audit. PR #3 stays Draft; no main write, merge, build, installer, release or Torrent.
+
+---
+
 ## HyperGet — 2026-10-24: persisted HLS playlist refresh + stale downloader retirement (SOURCE ONLY)
 
 **Status: IN_PROGRESS; NO APP BUILD.** On restart the HLS job previously fetched a remote playlist only when the persisted part list was empty. Thus a fully persisted old playlist could be assembled after staged-file size validation **without checking whether the server's segment URI/duration changed**. Moreover, `clearPartDownloaderList()` iterated current `parts`, missing cached workers/listeners for segments removed by reconciliation.
