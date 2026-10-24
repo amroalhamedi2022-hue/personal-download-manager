@@ -310,6 +310,18 @@ class FtpTransferClientTest {
     }
 
     @Test
+    fun nonFileFtpStagingPathCannotBeUsedAsOutput() = withFixture { fixture ->
+        val destination = fixture.downloadFolder.resolve("protected-stage.bin")
+        val staged = fixture.downloadFolder.resolve("protected-stage.bin.ftp-part")
+        Files.createDirectory(staged)
+        assertFailsWith<IOException> {
+            FtpTransferClient().download(fixture.url("fixture.bin"), destination, "test", "secret")
+        }
+        assertTrue(Files.isDirectory(staged), "A non-file staging path must be preserved")
+        assertFalse(Files.exists(destination), "Invalid staging must not publish output")
+    }
+
+    @Test
     fun existingDestinationRemainsByteForByteUntouched() = withFixture { fixture ->
         val destination = fixture.downloadFolder.resolve("protected.bin")
         val original = byteArrayOf(1, 2, 3, 4, 5, 6)
