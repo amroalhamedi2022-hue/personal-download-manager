@@ -1,3 +1,19 @@
+## HyperGet — 2026-10-24 HG-HLS-AUTH-01 evidence checkpoint (no release)
+
+**Current functional slice:** Guarded same-origin authenticated redirects are wired into HLS manifest refresh, UI preview and media segment workers. They preserve explicit headers on same-origin hops and reject cross-origin/downgrade/port/userinfo/loop/over-limit hops. No Torrent, new paid dependency or user-data schema change.
+
+**PASS — exact PR head a998156e3d74bc719960f772de931355407c9459:** [source-only CI 40115162196](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40115162196) completed successfully, including 88 Python source/FTP fixture tests across 13 test batches; these are structural/fixture checks, not Windows network evidence. No EXE/installer was produced.
+
+**PASS — earlier exact PR head 68874b2cf56968726ad9119790f4d3bc614f3ad9:** [Windows Kotlin milestone 40114985141](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40114985141) built the relevant Kotlin desktop test target and validated 10/10 fake-transport redirect tests via JUnit XML; no executable distribution was produced. This does not cover the two new real loopback tests added after that SHA.
+
+**IN PROGRESS / NOT TESTED at checkpoint:** [Windows loopback milestone 40115162273](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40115162273) was still running when checked. It must produce two JUnit XML files and >=12 tests with zero failures/skips before real localhost redirect behavior can be marked PASS. No conclusion is inferred from a running job.
+
+**Observed earlier failure and repair:** [Windows 40114659012](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40114659012) failed during root Gradle configuration, not HLS tests, because a synthetic PR merge SHA yielded invalid SemVer `1.0.0-sha.03710`. Production build version now uses `sha.g<7-hex>`, and CI checks out the exact PR head. That repair passed subsequent Windows Kotlin compilation on 68874b2c.
+
+**Remaining acceptance:** Actual full HLS transfer and resume/byte verification, HTTP/HTTPS/FTP Windows E2E, 1/4/16 concurrent sockets and SHA-256, CPU/RAM, Liquid Progress, icon/branding, installer/upgrades, browser extension and final HyperGet.exe plus independent recheck are still NOT TESTED at this head. PR #3 stays Draft, no main write/merge, no packaging or paid runner.
+
+---
+
 ## HyperGet — 2026-10-24 HG-HLS-AUTH-01 real loopback HTTP acceptance extension
 
 Added two Windows Kotlin tests using JDK HttpServer and production OkHttpHttpDownloaderClient (not a fake network): a same-origin 302 must carry the explicit Cookie to the final endpoint without leaking an ambient CookieJar cookie, and a cross-port redirect must be rejected before the second server sees any request. No internet, paid runner or additional dependency required. The targeted Windows workflow now requires both JUnit XML suites and at least 12 passing tests; results remain NOT TESTED until the exact new SHA completes. This is a justified network milestone compile/test, not EXE packaging. Real installed-GUI and public HTTPS E2E remain open.
