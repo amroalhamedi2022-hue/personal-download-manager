@@ -197,6 +197,7 @@ class FtpTransferClient {
                 ?: throw IOException("FTP RETR rejected (code ${ftp.replyCode})")
             transfer.dataStream.set(stream)
             var downloaded = existing
+            var stagedFileKey: Any? = null
             withFtpDataStream(
                 stream = stream,
                 unregister = { transfer.dataStream.compareAndSet(stream, null) },
@@ -217,7 +218,9 @@ class FtpTransferClient {
                         rate.source(source)
                     }
                     rateLimited.buffer().use { received ->
-                        openFtpStagedOutput(part, existing).buffered().use { outputStream ->
+                        val openedStage = openFtpStagedOutput(part, existing)
+                        stagedFileKey = openedStage.fileKey
+                        openedStage.buffered().use { outputStream ->
                             val buffer = ByteArray(64 * 1024)
                             while (true) {
                                 val n = received.read(buffer)
@@ -243,7 +246,7 @@ class FtpTransferClient {
             transfer.ensureNotCancelled()
             // Never use ATOMIC_MOVE here: it can replace a file that appeared
             // while RETR was running, even without REPLACE_EXISTING.
-            publishFtpStagedFile(part, absolute)
+            publishFtpStagedFile(part, absolute, downloaded, stagedFileKey)
             Files.deleteIfExists(meta)
             return TransferResult(absolute, downloaded - existing, existing, identity.size, identity.modificationTime)
         } finally {
