@@ -16,6 +16,7 @@ class StagedFileSourceContract(unittest.TestCase):
         cls.output = (FTP / "FtpStagedOutput.kt").read_text(encoding="utf-8")
         cls.publish = (FTP / "FtpStagedFileCommit.kt").read_text(encoding="utf-8")
         cls.transfer = (FTP / "FtpTransferClient.kt").read_text(encoding="utf-8")
+        cls.resume_identity = (FTP / "FtpResumeIdentity.kt").read_text(encoding="utf-8")
         cls.regression = (
             ROOT / "downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/ftp/FtpStagedIdentityTest.kt"
         ).read_text(encoding="utf-8")
@@ -50,6 +51,18 @@ class StagedFileSourceContract(unittest.TestCase):
     def test_regression_covers_same_size_replacement(self):
         self.assertIn("sameSizeReplacementCannotBePublishedWhenFileKeysAreAvailable", self.regression)
         self.assertIn("assumeTrue(", self.regression)
+
+    def test_resume_identity_is_bounded_and_never_follows_symlinks(self):
+        self.assertIn("Files.readAttributes(path, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)", self.resume_identity)
+        self.assertIn("Files.newInputStream(path, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS)", self.resume_identity)
+        self.assertIn("it.readNBytes(maxBytes + 1)", self.resume_identity)
+        self.assertIn("if (bytes.size > maxBytes)", self.resume_identity)
+        self.assertIn("before.fileKey() != after.fileKey()", self.resume_identity)
+
+    def test_resume_transport_uses_guarded_reader(self):
+        self.assertIn("val old = loadFtpResumeIdentity(meta)", self.transfer)
+        self.assertNotIn("Files.newInputStream(path).use(properties::load)", self.transfer)
+
 
 
 if __name__ == "__main__":
