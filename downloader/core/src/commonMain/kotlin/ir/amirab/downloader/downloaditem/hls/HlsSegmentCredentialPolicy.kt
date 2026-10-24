@@ -18,6 +18,29 @@ private val forbiddenSegmentHeaders = setOf(
     "keep-alive", "te", "trailer", "upgrade",
 )
 
+/**
+ * The initial manifest and UI preview share one conservative redirect policy.
+ * OkHttp otherwise follows cross-origin 302/307 with caller-supplied headers.
+ * Keep ordinary anonymous playlist redirects working; authenticated redirects
+ * require an explicit, origin-checked flow (not implemented yet).
+ *
+ * This request policy is transient and does not change stored HLS credentials.
+ */
+fun credentialsForHlsPlaylist(source: IHLSCredentials): HttpDownloadCredentials {
+    val headers = source.headers
+        ?.filterKeys { it.lowercase() !in forbiddenSegmentHeaders }
+        ?.takeIf { it.isNotEmpty() }
+    val hasBasicAuth = !source.username.isNullOrBlank() && !source.password.isNullOrBlank()
+    return HttpDownloadCredentials(
+        link = source.link,
+        headers = headers,
+        username = source.username,
+        password = source.password,
+        userAgent = source.userAgent,
+        followRedirects = headers.isNullOrEmpty() && !hasBasicAuth,
+    )
+}
+
 internal fun credentialsForHlsSegment(
     source: IHLSCredentials,
     finalPlaylistUrl: String,
