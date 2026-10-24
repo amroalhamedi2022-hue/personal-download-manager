@@ -503,10 +503,13 @@ class HLSDownloadJob(
     }
 
     private fun clearPartDownloaderList() {
-//        thisLogger().info("create part downloaders")
-        parts.forEach {
-            destroyPartDownloader(it)
-        }
+        // Reconciliation replaces MediaSegment instances and may remove old
+        // sequence IDs. Iterating the *current* parts misses obsolete cached
+        // downloaders and their status listeners. Drop every cached reference
+        // only after the corresponding transfers have stopped.
+        listenerJobs.values.forEach { it.cancel() }
+        listenerJobs.clear()
+        partDownloaderList.clear()
     }
 
     private val speedLimiter = SpeedLimiter()
@@ -556,9 +559,11 @@ class HLSDownloadJob(
 
     private suspend fun fetchDownloadInfoAndValidate(
     ) {
-        if (parts.isEmpty()) {
-            initialParts()
-        }
+        // A persisted all-completed playlist is not authoritative: the server
+        // may now serve different bytes under the same media sequence. Refresh
+        // on EVERY resume before the completion fast path, not just when empty.
+        // Retire old downloader/listener objects before replacing segments.
+        initialParts()
         // at this point we have all the parts we need either by hitting remote or they are already in destination
         // before proceed we should check the downloaded parts and remove the "isCompleted" flag if they are missing
         parts
@@ -618,6 +623,10 @@ class HLSDownloadJob(
         ).use {
             HLSResponseInfo.fromConnection(it)
         }
+        // Retry and pause paths should already be idle; explicitly await any
+        // leftover part workers before discarding their cached references.
+        stopAllParts()
+        clearPartDownloaderList()
         updateParts(
             response.hlsManifest
         )
