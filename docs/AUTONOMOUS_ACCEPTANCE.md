@@ -6,8 +6,8 @@
 
 | Gate | Status | Evidence |
 | --- | --- | --- |
-| Isolated Kotlin/JVM reader regression | **PASS 8/8** | Compiled **only** `HlsPlaylistBodyReader.kt` and `HyperGetHlsBodyReaderSmoke.kt` with `kotlinc -J-Xmx384m` and ran the standalone main; exact-size acceptance, 1-byte oversize, >8KiB stream, UTF-8, empty body, invalid limit, and zero-byte read. **No full app compile or packaging.** |
-| Exact GitHub blob identity | **PASS** | `git hash-object` of both locally compiled source files matched remote blobs: helper `cf1f12ed03594888f97f4d5ad4b3e0b9db532ca2`, smoke `06dbb08682d676ca579760b152d6fb15b70fee69`. |
+| Isolated Kotlin/JVM reader regression | **PASS 10/10** | Compiled **only** `HlsPlaylistBodyReader.kt` and `HyperGetHlsBodyReaderSmoke.kt` with `kotlinc -J-Xmx384m` and ran the standalone main; exact-size acceptance, 1-byte oversize, actual 2 MiB boundary and +1 byte, >8KiB stream, UTF-8, empty body, invalid limit, and zero-byte read. **No full app compile or packaging.** |
+| Exact GitHub blob identity | **PASS** | `git hash-object` of both locally compiled source files matched remote blobs: helper `cf1f12ed03594888f97f4d5ad4b3e0b9db532ca2`, smoke `def73a40654681ff1ec6c6b769bacac002c8d907`. |
 | Source-only static contracts | **PASS 9/9 local checks** | Confirmed production wiring, declared/actual caps, oversize rejection, smoke coverage and Python-only CI configuration against fetched GitHub blobs. New Python unittest `test_hyperget_hls_body_source.py` is wired to `.github/workflows/hyperget-source-only.yml`. |
 | Source-only GitHub CI at source SHA `09b7ab388b1e6d0805aaa8513d35dc29312a50e3` | **PASS** | [Run 40076363455](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40076363455) completed successfully: FTP source, HLS reconciliation, new bounded HLS response source, and local FTP fixture. The subsequent acceptance-document commit changes no source. CI invokes Python only, no Gradle or installers. |
 | Full HLS integration/Windows memory, HTTP/HTTPS/FTP, 1/4/16, SHA-256, CPU/RAM, Liquid Progress, HyperGet.exe/icon, migration, browser, independent recheck | **NOT TESTED** | Binding NO-BUILD gate. |
