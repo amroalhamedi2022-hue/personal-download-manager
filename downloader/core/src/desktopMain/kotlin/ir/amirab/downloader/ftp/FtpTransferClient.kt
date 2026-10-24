@@ -177,7 +177,7 @@ class FtpTransferClient {
             )
             val existing = ftpStagedBytes(part)
             if (existing > 0) {
-                val old = loadIdentity(meta)
+                val old = loadFtpResumeIdentity(meta)
                 val canResume = old != null &&
                     old.getProperty("endpoint") == endpoint.identity &&
                     identity.size != null &&
@@ -275,13 +275,6 @@ class FtpTransferClient {
             return client.replyString
                 ?.lineSequence()?.firstOrNull()
                 ?.trim()?.removePrefix("213")?.trim()?.takeIf { it.isNotEmpty() }
-        }
-
-        private fun loadIdentity(path: Path): Properties? {
-            if (!Files.isRegularFile(path)) return null
-            return Properties().also { properties ->
-                Files.newInputStream(path).use(properties::load)
-            }
         }
 
         private fun storeIdentity(path: Path, endpoint: String, identity: RemoteIdentity) {
