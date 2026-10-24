@@ -48,9 +48,14 @@ class OkHttpHttpDownloaderClient(
         }
         .build()
 
-    // Authenticated HLS segments must not automatically follow redirects to a
-    // different origin with user-provided Cookie/Authorization headers.
+    // Authenticated HLS playlist/segment requests carry explicitly supplied
+    // credentials. Do not silently attach ambient cookies from a shared client
+    // CookieJar: the origin policy must cover *all* cookies on these requests.
+    // This client also refuses every redirect, including same-origin redirects.
+    // Ordinary HTTP downloads and anonymous HLS requests retain the supplied
+    // client's CookieJar and existing redirect behavior.
     private val noRedirectClient = singleAttemptClient.newBuilder()
+        .cookieJar(CookieJar.NO_COOKIES)
         .followRedirects(false)
         .followSslRedirects(false)
         .build()
