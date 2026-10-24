@@ -105,7 +105,7 @@ class NativeMessagingHost(
             val safe = safeBrowserError(e)
             val content = context(json) {
                 NativeMessagingMessage(
-                    id = requestId ?: NativeMessagingMessage.generateId(),
+                    id = browserReplyId(requestId) { NativeMessagingMessage.generateId() },
                     content = NativeMessagingMessage.Content.error(
                         errorType = safe.errorType,
                         message = safe.message
