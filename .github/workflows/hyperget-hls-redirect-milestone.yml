@@ -50,7 +50,7 @@ jobs:
         run: |
           & ./gradlew.bat --no-daemon --stacktrace --dependency-verification strict :downloader:core:desktopTest --tests '*HlsGuardedRedirect*Test*' --tests '*HlsSegmentIdentityTest*' --tests '*HlsSegmentTransferLoopbackTest*' --tests '*HlsSegmentAssemblySafetyTest*' --tests '*HlsDownloadJobResumeLoopbackTest*'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Require six JUnit XML suites and zero failures or skips
+      - name: Require six JUnit XML suites, 29 tests and zero failures or skips
         shell: pwsh
         run: |
           $dir = 'downloader/core/build/test-results/desktopTest'
@@ -67,7 +67,7 @@ jobs:
             }
             $total += [int]$suite.GetAttribute('tests')
           }
-          if ($total -lt 27) { throw "Expected at least 23 HLS redirect, identity and transfer tests, got $total" }
+          if ($total -lt 29) { throw "Expected at least 29 HLS milestone tests, got $total" }
       - name: Upload JUnit evidence (no executable)
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
