@@ -12,7 +12,6 @@ import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
-import java.nio.file.StandardOpenOption
 import java.time.Duration
 import java.util.Properties
 import java.util.concurrent.atomic.AtomicBoolean
@@ -176,7 +175,7 @@ class FtpTransferClient {
                 size = responseValue(ftp, "SIZE", endpoint.path)?.toLongOrNull(),
                 modificationTime = responseValue(ftp, "MDTM", endpoint.path)
             )
-            val existing = if (Files.exists(part)) Files.size(part) else 0L
+            val existing = ftpStagedBytes(part)
             if (existing > 0) {
                 val old = loadIdentity(meta)
                 val canResume = old != null &&
@@ -218,9 +217,7 @@ class FtpTransferClient {
                         rate.source(source)
                     }
                     rateLimited.buffer().use { received ->
-                        Files.newOutputStream(
-                            part, StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.APPEND
-                        ).buffered().use { outputStream ->
+                        openFtpStagedOutput(part, existing).buffered().use { outputStream ->
                             val buffer = ByteArray(64 * 1024)
                             while (true) {
                                 val n = received.read(buffer)
