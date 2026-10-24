@@ -1,3 +1,22 @@
+## HyperGet — 2026-10-24: HLS Content-Type parsing compatibility and source-only regression
+
+**Status: IN_PROGRESS; NO APP BUILD.** Existing draft [PR #3](https://github.com/amroalhamedi2022-hue/personal-download-manager/pull/3) on `automation/idm-ftp-cancel-and-category-flush`, targeting `codex/repair-rf00-rf01`. The previous `HLSResponseInfo.expectSuccess` compared `supportedMime.startsWith(rawContentType)`, which rejected a valid HLS `Content-Type: application/vnd.apple.mpegurl; charset=utf-8` when the length was unknown, yet treated a partial MIME prefix as valid. Both cases matter for chunked/unknown-length playlists.
+
+**Production change:** New dependency-free `HlsContentType.kt` compares the trimmed, lowercased MIME token before any semicolon with the two supported HLS MIME types. `HLSResponseInfo.kt` calls the helper, preserving the existing bounded 2 MiB playlist body reader and unconditional declared-length guard. The pre-existing small-body fallback for unexpected MIME types remains unchanged: **this is MIME compatibility/validation, not an authentication or content-security boundary**. The HLS parser still validates the playlist itself.
+
+| Gate | Result | Evidence |
+| --- | --- | --- |
+| Isolated Kotlin/JVM source regression | **PASS 12/12** | Compiled **only** `HlsContentType.kt` + `HyperGetHlsContentTypeSmoke.kt` with local `kotlinc` and ran the standalone `kotlin` main. Covered both supported types, charset, mixed case, whitespace, false prefixes/suffixes, missing/empty/unrelated/multiple values. **No application compile or packaging.** |
+| Tested-source GitHub blob identity | **PASS 3/3** | `git hash-object` for the locally tested helper `1be7be858690c9bf6ca21b66fe5a436ccf5be13b`, smoke `045564bb9fb5dfcff86ba63de7b9993e16a0c0e1`, and Python source contract `5cfd28b72518a8907dd51d6e892cf996f39eb6b8` matched the uploaded GitHub blobs. |
+| Exact remote source static review | **PASS 11/11** | Verified production helper wiring, exact MIME equality, parameter normalization, removal of legacy prefix check, preservation of declared/actual 2 MiB limits, source test and Python-only CI wiring. |
+| Source-only GitHub CI at `d22383fd6aceedb11143717bbe7d1d68a926fedd` | **PASS** | [Run 40080682643](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40080682643): FTP stage contract, HLS reconciliation, HLS bounded-body, **new HLS MIME** contract and local FTP fixture all succeeded. Python-only, no Gradle, no EXE or installer. |
+| Earlier CI regression and correction | **FIXED** | [Run 40080642252](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40080642252) failed because the pre-existing bounded-body *test* searched for the deleted local variable `val hlsPossibleHeaders`. The test was corrected to anchor on the actual `Content-Type` lookup without weakening the declared-length check; subsequent run passed. |
+| Real HLS HTTP server / Windows, persisted-playlist refresh, stale downloader references, 1/4/16, SHA-256, CPU/RAM, Liquid Progress, HyperGet.exe, migration, browser integration and independent recheck | **NOT TESTED / DEFERRED** | User's mandatory NO-BUILD rule remains active until complete source/UI/security readiness. |
+
+**Scope and risk:** No new dependency, license, credentials, data migration, IPC, packaging, release, main write, merge, paid API or Torrent. Existing Apache-2.0/JDK/Kotlin primitives only. Source-only validation cannot prove runtime HLS/Windows behavior. Incomplete persisted HLS playlist revalidation and cached downloader lifecycle remain open and must be reviewed before the final build. Keep PR Draft and the development task active until verified delivery.
+
+---
+
 ## HyperGet — 2026-10-24: bounded HLS playlist response (SOURCE ONLY; NO APP BUILD)
 
 **Status: IN_PROGRESS.** PR #3 remains Draft on `automation/idm-ftp-cancel-and-category-flush` against `codex/repair-rf00-rf01`. Security review found `HLSResponseInfo.fromConnection` called unbounded `readUtf8()` on the response body; its 2 MiB content-length check applied only when the Content-Type was unexpected. A server with a correct HLS Content-Type, a missing Content-Length (chunked), or a misleading declared length could exhaust memory before parsing.
