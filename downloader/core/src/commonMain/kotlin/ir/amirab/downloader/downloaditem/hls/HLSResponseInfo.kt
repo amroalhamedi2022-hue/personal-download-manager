@@ -78,11 +78,6 @@ data class HLSResponseInfo(
             return playlistParser.readPlaylist(data)
         }
 
-        private val HALS_POSSIBLE_HEADERS = listOf(
-            "application/x-mpegurl",
-            "application/vnd.apple.mpegurl",
-        )
-
         /**
          * if no hls content-size received we check this
          */
@@ -94,16 +89,12 @@ data class HLSResponseInfo(
             if (declaredLength != null && declaredLength > MAX_HLS_PLAYLIST_BYTES) {
                 throw BadHLSResponseException("HLS playlist content length exceeds maximum allowed size")
             }
-            val hlsPossibleHeaders = HALS_POSSIBLE_HEADERS
             val contentType = connection.responseInfo.responseHeaders["content-type"]
             var error: String? = null
             if (contentType == null) {
                 error = "no content type is provided"
-            } else {
-                val isHLSContentType = hlsPossibleHeaders.any { it.startsWith(contentType, ignoreCase = true) }
-                if (!isHLSContentType) {
-                    error = "content type is not hls compatible: $contentType"
-                }
+            } else if (!isHlsPlaylistContentType(contentType)) {
+                error = "content type is not hls compatible: $contentType"
             }
             if (error != null) {
                 val contentLength = connection.responseInfo.contentLength
