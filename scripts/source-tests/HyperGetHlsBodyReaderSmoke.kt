@@ -19,6 +19,8 @@ fun main() {
     verify(readBoundedHlsPlaylist(ByteArrayInputStream(byteArrayOf(1, 2, 3)), 3).length == 3, "exact size accepted")
     verify(failsOversize { readBoundedHlsPlaylist(ByteArrayInputStream(byteArrayOf(1, 2, 3, 4)), 3) }, "oversized rejected")
     verify(failsOversize { readBoundedHlsPlaylist(ByteArrayInputStream(ByteArray(9000)), 8192) }, "oversized across buffer rejected")
+    verify(readBoundedHlsPlaylist(ByteArrayInputStream(ByteArray(MAX_HLS_PLAYLIST_BYTES))).length == MAX_HLS_PLAYLIST_BYTES, "2MiB exact limit accepted")
+    verify(failsOversize { readBoundedHlsPlaylist(ByteArrayInputStream(ByteArray(MAX_HLS_PLAYLIST_BYTES + 1))) }, "2MiB plus one rejected")
     verify(readBoundedHlsPlaylist(ByteArrayInputStream("مرحبا".toByteArray(Charsets.UTF_8)), 64) == "مرحبا", "utf8 preserved")
     verify(runCatching { readBoundedHlsPlaylist(ByteArrayInputStream(byteArrayOf(1)), 0) }.exceptionOrNull() is IllegalArgumentException, "invalid limit rejected")
     val zeroRead = object : InputStream() {
