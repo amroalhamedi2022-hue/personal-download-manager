@@ -1,3 +1,21 @@
+## HyperGet — 2026-10-24: bounded HLS playlist response (SOURCE ONLY; NO APP BUILD)
+
+**Status: IN_PROGRESS.** PR #3 remains Draft on `automation/idm-ftp-cancel-and-category-flush` against `codex/repair-rf00-rf01`. Security review found `HLSResponseInfo.fromConnection` called unbounded `readUtf8()` on the response body; its 2 MiB content-length check applied only when the Content-Type was unexpected. A server with a correct HLS Content-Type, a missing Content-Length (chunked), or a misleading declared length could exhaust memory before parsing.
+
+**Production fix:** `HlsPlaylistBodyReader.kt` reads a maximum of 2 MiB of actual response bytes, probing one additional byte and rejecting oversize with `IOException`, regardless of Content-Type or declared size. `HLSResponseInfo` now rejects oversized declared lengths unconditionally and uses the bounded reader for all playlist responses. No change to stored download records, credentials, browser IPC, app identity, licenses, dependencies, or Torrent scope.
+
+| Gate | Status | Evidence |
+| --- | --- | --- |
+| Isolated Kotlin/JVM reader regression | **PASS 8/8** | Compiled **only** `HlsPlaylistBodyReader.kt` and `HyperGetHlsBodyReaderSmoke.kt` with `kotlinc -J-Xmx384m` and ran the standalone main; exact-size acceptance, 1-byte oversize, >8KiB stream, UTF-8, empty body, invalid limit, and zero-byte read. **No full app compile or packaging.** |
+| Exact GitHub blob identity | **PASS** | `git hash-object` of both locally compiled source files matched remote blobs: helper `cf1f12ed03594888f97f4d5ad4b3e0b9db532ca2`, smoke `06dbb08682d676ca579760b152d6fb15b70fee69`. |
+| Source-only static contracts | **PASS 9/9 local checks** | Confirmed production wiring, declared/actual caps, oversize rejection, smoke coverage and Python-only CI configuration against fetched GitHub blobs. New Python unittest `test_hyperget_hls_body_source.py` is wired to `.github/workflows/hyperget-source-only.yml`. |
+| Source-only GitHub CI at final SHA | **PENDING** | Verify exact SHA run; earlier SHA success is not evidence for the latest change. CI intentionally does not run Gradle or produce installers. |
+| Full HLS integration/Windows memory, HTTP/HTTPS/FTP, 1/4/16, SHA-256, CPU/RAM, Liquid Progress, HyperGet.exe/icon, migration, browser, independent recheck | **NOT TESTED** | Binding NO-BUILD gate. |
+
+**Residual risk:** The source reader has been tested in isolation, not compiled with Okio/HLS parser or exercised on Windows. The response-size cap does not prove full memory bounds for segment downloads or the entire application. HLS persisted-playlist refresh, stale part downloader references, and installed Windows acceptance remain open. Do not declare delivery or disable the developer automation.
+
+---
+
 ## HyperGet — 2026-10-24: HLS playlist reconciliation safety (SOURCE ONLY; NO APP BUILD)
 
 **Status: IN_PROGRESS.** Draft PR #3, branch `automation/idm-ftp-cancel-and-category-flush` targeting `codex/repair-rf00-rf01`; no main write or merge. The prior `HLSDownloadJob.updateParts` constructed `newPartsToSave` but never called `setParts` on it. It also reused a completed segment by sequence/duration alone even when the segment URI changed. This could leave refreshed playlists unapplied and mark different bytes as already downloaded.
