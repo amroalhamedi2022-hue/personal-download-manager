@@ -88,6 +88,8 @@ class HLSDownloadJob(
 
     val itemSaveLock = Mutex()
     val partLock = Mutex()
+    // Serialize playlist replacement across remote refresh and UI preview updates.
+    private val playlistMutationLock = Mutex()
     private suspend fun loadPartState() {
         val mediaSegments = partLock.withLock {
             partListDb.getParts(id)
@@ -625,11 +627,17 @@ class HLSDownloadJob(
         }
         // Retry and pause paths should already be idle; explicitly await any
         // leftover part workers before discarding their cached references.
-        stopAllParts()
-        clearPartDownloaderList()
-        updateParts(
-            response.hlsManifest
-        )
+        // Suspending stop/join cannot run inside Mutex.withLock's non-suspending
+        // action. Hold the lock explicitly until all old workers are idle and
+        // their listeners have been retired before replacing segment objects.
+        playlistMutationLock.lock()
+        try {
+            stopAllParts()
+            clearPartDownloaderList()
+            updateParts(response.hlsManifest)
+        } finally {
+            playlistMutationLock.unlock()
+        }
         return response
     }
 
@@ -705,9 +713,22 @@ class HLSDownloadJob(
 
     override suspend fun extraConfigsReceived(config: DownloadJobExtraConfig) {
         if (config !is HLSDownloadJobExtraConfig) return
-        config.hlsManifest?.let {
-            updateParts(it)
-            saveParts()
+        config.hlsManifest?.let { preview ->
+            // The edit dialog's playlist is a preview, not an authoritative
+            // refresh of an active transfer. Replacing its segments while old
+            // workers run can mix stale callbacks/files with new segment IDs.
+            // Active jobs always fetch and reconcile the remote playlist on resume.
+            playlistMutationLock.lock()
+            try {
+                if (!isDownloadActive.value && activeDownloadScope?.isActive != true) {
+                    stopAllParts()
+                    clearPartDownloaderList()
+                    updateParts(preview)
+                    saveParts()
+                }
+            } finally {
+                playlistMutationLock.unlock()
+            }
         }
     }
 }
