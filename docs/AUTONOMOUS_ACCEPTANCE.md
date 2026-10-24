@@ -1,3 +1,17 @@
+## HyperGet — 2026-10-24: persisted HLS playlist refresh + stale downloader retirement (SOURCE ONLY)
+
+**Status: IN_PROGRESS; NO APP BUILD.** On restart the HLS job previously fetched a remote playlist only when the persisted part list was empty. Thus a fully persisted old playlist could be assembled after staged-file size validation **without checking whether the server's segment URI/duration changed**. Moreover, `clearPartDownloaderList()` iterated current `parts`, missing cached workers/listeners for segments removed by reconciliation.
+
+**Production** [`653a18a5`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/653a18a5d3d9de5ceb0bf27ef1a45ebff31dba07): on each HLS resume, fetch and reconcile the current remote playlist before the all-complete shortcut; await old part workers, cancel all status listeners, and clear cached downloader instances before replacing segment objects. Existing sequence+URI+duration reconciliation retains progress only for matching identities, and existing staged-file checks still run before final assembly. **Remote playlist failure now prevents completion based only on stale persisted metadata**, intentionally preferring correctness to offline assembly.
+
+**Regression** [`1342af31`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/1342af314086992632e2ccea1f6c3a519ff71858): six new Python source-contract tests check unconditional refresh, ordering before fast completion, stopping workers before cache retirement, full listener/cache cleanup, reconciliation wiring, and staged-file revalidation. **CI wiring** [`c0b5313d`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/c0b5313df137e95b215a8c3287d8c92c02067cb5): source-only Python workflow includes new test; no Gradle, EXE, installer, artifact upload or paid API.
+
+**Verification:** **PASS** 8/8 independent remote-source assertions against exact GitHub blobs; **PASS** [GitHub source-only Run 40088136056](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40088136056) at `c0b5313df137e95b215a8c3287d8c92c02067cb5`: all seven substantive Python/FTP steps passed, including the new HLS lifecycle test. The acceptance-document-only commit below is not itself a new CI-tested code SHA. **NOT TESTED:** full Kotlin/Gradle JUnit, live HLS restart, Windows app, browser E2E, 1/4/16, SHA-256 end-to-end, CPU/RAM, GUI, migration, final EXE and independent recheck.
+
+**Residual risks:** Source contracts are structural, not proof of full HLS runtime correctness. Playlist identity by URI/duration cannot detect changed bytes served at an unchanged URL; robust validators/hash and real HTTP fixture tests remain required. Playlist refresh and worker cleanup are not yet proven under every concurrent `extraConfigsReceived` path; concurrent file replacement between stage check and assembly also remains open. PR #3 stays Draft; no main write, auto-merge, release, build or Torrent.
+
+---
+
 ## HyperGet — 2026-10-24: persisted HLS completed-part safety (NO APP BUILD)
 
 **Status: IN_PROGRESS.** On resume, the old HLS fast path finalized a job whenever every persisted part carried `isCompleted=true`, **before** checking whether the corresponding staged files still existed or had the expected length. A deleted, empty or truncated segment could therefore be assembled or cause a late failure.
