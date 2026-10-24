@@ -1,3 +1,11 @@
+## HyperGet — 2026-10-24 HLS Windows gate failure and SemVer prerequisite repair
+
+**Observed FAIL (not a Kotlin test result):** Windows guarded-HLS workflow Run 40114659012 on the first head b1c1a8e could not configure the root Gradle build. The exact error at build.gradle.kts:33 was `Invalid version: 1.0.0-sha.03710`; the PR synthetic merge commit happened to start with a numeric identifier containing a leading zero, which violates SemVer. No JUnit XML or executable was produced, so the HLS Kotlin tests remain NOT TESTED on that run.
+
+**Repair:** Prefix the commit-hash prerelease token with `g` and use seven characters, e.g. `1.0.0-sha.g03710ab`, preserving tagged release versions and existing persistence identifiers. Both PR source CI and targeted Windows JUnit workflow now check out the exact PR head instead of GitHub's synthetic merge ref; add a source regression for leading-zero SHA. This is a build configuration fix motivated by an observed failure, not a new EXE packaging request. A subsequent exact-head Windows test result is required before marking the HLS milestone PASS.
+
+---
+
 ## HyperGet — 2026-10-24 HG-HLS-AUTH-01 protected HLS redirect milestone
 
 **Functional acceptance:** A protected HLS manifest, preview and media segment may follow at most five HTTP 301/302/303/307/308 redirects on the same scheme/canonical host/effective port while retaining explicit Cookie/Authorization/Basic credentials. Reject cross-origin, HTTPS downgrade, port change, URL-embedded credentials, missing Location, loops and excess hops before issuing a second request. Close every intermediate response. Anonymous HLS keeps OkHttp's existing redirect handling. This completes a functional compatibility slice after earlier security-only guards.

@@ -26,7 +26,7 @@ gitVersion {
             it.matchResult.groups.get("version")!!.value
         }
         commit {
-            "$defaultSemVersion-sha.${it.refInfo.commitHash.take(5)}"
+            "$defaultSemVersion-sha.g${it.refInfo.commitHash.take(7)}"
         }
     }
 }
