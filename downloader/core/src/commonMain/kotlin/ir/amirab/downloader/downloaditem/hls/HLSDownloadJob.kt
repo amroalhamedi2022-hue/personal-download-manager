@@ -43,6 +43,9 @@ class HLSDownloadJob(
     val listDb by downloadManager::dlListDb
     val partListDb by downloadManager::partListDb
     private val parts: MutableList<MediaSegment> = mutableListOf()
+    // Relative media URIs must resolve against the *final* playlist response URL.
+    // A playlist can redirect to a different host or directory than its input link.
+    private var segmentBaseUrl: String = downloadItem.link
 
     private lateinit var destination: SegmentedDownloadDestination
 
@@ -528,7 +531,7 @@ class HLSDownloadJob(
         synchronized(partDownloaderList) {
             return partDownloaderList.getOrPut(part.getID()) {
                 HLSPartDownloader(
-                    baseURL = downloadItem.link,
+                    baseURL = segmentBaseUrl,
                     part = part,
                     getDestWriter = {
                         destination.getWriterFor(part)
@@ -634,6 +637,9 @@ class HLSDownloadJob(
         try {
             stopAllParts()
             clearPartDownloaderList()
+            // OkHttp exposes the final URL after redirects in responseInfo.
+            // Update this before creating any new segment downloaders.
+            segmentBaseUrl = response.httpResponseInfo.requestUrl
             updateParts(response.hlsManifest)
         } finally {
             playlistMutationLock.unlock()
