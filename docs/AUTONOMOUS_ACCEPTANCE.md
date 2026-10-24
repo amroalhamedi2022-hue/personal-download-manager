@@ -12,6 +12,8 @@
 | GitHub CI at new SHA | **NOT TESTED until queried** | Existing workflows were audited: packaging workflows are push-scoped to `main` / `codex/repair-rf00-rf01`, tag or manual dispatch; no workflow requested. Do not equate this with disabling all automatic Actions globally. |
 | Windows FTP live, cross-volume/network share fallback, concurrent 1/4/16, HTTP/HTTPS/HLS, CPU/RAM, SHA-256, Liquid Progress, HyperGet.exe, upgrade, browser integration, independent recheck | **NOT TESTED / DEFERRED** | User's NO-BUILD gate remains binding until source/UI/security readiness. |
 
+**Follow-up integration regression (added, NOT EXECUTED under NO-BUILD):** `FtpTransferClientTest.destinationCreatedWhileRetrIsRunningCannotBeOverwrittenAtCommit` uses the existing local Apache FTP fixture. It creates a conflicting destination from `onProgress` *after* RETR begins, expects `FileAlreadyExistsException`, verifies user bytes remain unchanged and the fully received staged bytes survive. This is a future desktopTest gate, **NOT TESTED** until the final build stage.
+
 **Next:** test Windows hard-link/fallback behavior and actual race after final readiness; continue HTTP/HLS and identity/UI source work. Do not merge, write main, run packaging or disable recurring development.
 
 ---

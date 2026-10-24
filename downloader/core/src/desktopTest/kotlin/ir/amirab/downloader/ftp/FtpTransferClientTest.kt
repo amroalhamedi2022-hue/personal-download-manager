@@ -279,6 +279,37 @@ class FtpTransferClientTest {
     }
 
     @Test
+    fun destinationCreatedWhileRetrIsRunningCannotBeOverwrittenAtCommit() = withFixture { fixture ->
+        val destination = fixture.downloadFolder.resolve("late-created.bin")
+        val sentinel = byteArrayOf(88, 77, 66, 55)
+        var createdDuringTransfer = false
+        val failure = assertFailsWith<IOException> {
+            FtpTransferClient().download(
+                fixture.url("fixture.bin"), destination,
+                username = "test", password = "secret",
+                onProgress = { downloaded, _ ->
+                    if (!createdDuringTransfer && downloaded > 0L) {
+                        Files.write(destination, sentinel)
+                        createdDuringTransfer = true
+                    }
+                },
+            )
+        }
+        assertTrue(createdDuringTransfer, "Test must create the conflicting file after RETR begins")
+        assertTrue(
+            failure is java.nio.file.FileAlreadyExistsException,
+            "A late-created output must be rejected rather than silently replaced",
+        )
+        assertContentEquals(sentinel, Files.readAllBytes(destination))
+        // Keep the fully received staged data so the user can resolve the name
+        // conflict without losing the completed transfer bytes.
+        assertContentEquals(
+            fixture.bytes,
+            Files.readAllBytes(fixture.downloadFolder.resolve("late-created.bin.ftp-part")),
+        )
+    }
+
+    @Test
     fun existingDestinationRemainsByteForByteUntouched() = withFixture { fixture ->
         val destination = fixture.downloadFolder.resolve("protected.bin")
         val original = byteArrayOf(1, 2, 3, 4, 5, 6)
