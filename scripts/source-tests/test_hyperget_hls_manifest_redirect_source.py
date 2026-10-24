@@ -73,5 +73,33 @@ class HlsManifestRedirectSourceTest(unittest.TestCase):
             self.assertIn(test, self.kotlin_tests)
 
 
+    def test_guarded_client_cannot_add_ambient_cookies(self):
+        # The supplied OkHttpClient may have a non-empty CookieJar. Explicit
+        # Cookie headers from HLS credentials are still added by newCall().
+        guarded = self.client.split("private val noRedirectClient =", 1)[1].split(
+            "private fun newCall(", 1
+        )[0]
+        self.assertIn("singleAttemptClient.newBuilder()", guarded)
+        self.assertIn(".cookieJar(CookieJar.NO_COOKIES)", guarded)
+        self.assertIn(".followRedirects(false)", guarded)
+        self.assertIn(".followSslRedirects(false)", guarded)
+
+    def test_ordinary_requests_keep_supplied_cookiejar(self):
+        # No mutation of the shared client; only the guarded derivative is
+        # isolated, and normal HTTP/anonymous HLS still use singleAttemptClient.
+        self.assertIn("private val singleAttemptClient = okHttpClient.newBuilder()", self.client)
+        self.assertIn(") noRedirectClient else singleAttemptClient", self.client)
+        self.assertIn("requestClient\n            .applyProxy(downloadCredentials)", self.client)
+
+    def test_explicit_hls_cookie_header_is_still_supported(self):
+        policy = self.policy.split("fun credentialsForHlsPlaylist(", 1)[1].split(
+            "internal fun credentialsForHlsSegment(", 1
+        )[0]
+        self.assertIn("source.headers", policy)
+        self.assertIn("headers = headers", policy)
+        self.assertIn("header(k, v)", self.client)
+        self.assertIn("cookieAloneDisablesPlaylistRedirects", self.kotlin_tests)
+
+
 if __name__ == "__main__":
     unittest.main()
