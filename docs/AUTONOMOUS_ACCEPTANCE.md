@@ -1,3 +1,21 @@
+## HyperGet — 2026-10-24: FTP final publish must not clobber a concurrent destination (SOURCE ONLY; NO BUILD)
+
+**Status: IN_PROGRESS.** Existing draft PR #3, branch `automation/idm-ftp-cancel-and-category-flush`, base `codex/repair-rf00-rf01`. Source change: the FTP final publish now calls `publishFtpStagedFile` instead of `Files.move(part, destination, ATOMIC_MOVE)`. On Linux, the old ATOMIC_MOVE call was **reproduced overwriting an existing destination** without REPLACE_EXISTING (JShell/JDK 21, actual temp files); the initial `Files.exists` check is not sufficient when another process creates the target during RETR.
+
+**Fix:** Try an exclusive hard-link publish in the same directory (atomic destination creation on supporting file systems), then remove the staged name. If hard links are unavailable (e.g., FAT/exFAT or some shares), fall back to `Files.move` without ATOMIC_MOVE or REPLACE_EXISTING. The fallback is not a universal cross-process atomicity guarantee; do not overstate it. The sidecar's atomic REPLACE_EXISTING update remains unchanged. No credentials, IPC, Registry, user-data schema or download identity changes. Existing Apache-2.0 source and Java NIO reused; no new dependencies or paid service.
+
+| Gate | Status | Evidence |
+| --- | --- | --- |
+| Before-fix overwrite reproduction | **FAIL reproduced (expected)** | JDK 21 JShell, existing target `user-data` was overwritten by `Files.move(part, target, ATOMIC_MOVE)`, result `downloaded`. |
+| Isolated Kotlin/JVM source test | **PASS 9/9** | `kotlinc -J-Xmx384m FtpStagedFileCommit.kt HyperGetFtpStagedFileCommitSmoke.kt -d classes && kotlin -classpath classes ir.amirab.downloader.ftp.HyperGetFtpStagedFileCommitSmokeKt`. Tests complete publish, stage cleanup, existing-target preservation, missing-part rejection and symlink-target protection on Linux. **Not full app compilation.** |
+| Integrated FTP call site | **SOURCE REVIEW ONLY** | `FtpTransferClient.download` now delegates final publish to the helper after completion/size/cancellation checks; no changes to REST or speed limiter. |
+| GitHub CI at new SHA | **NOT TESTED until queried** | Existing workflows were audited: packaging workflows are push-scoped to `main` / `codex/repair-rf00-rf01`, tag or manual dispatch; no workflow requested. Do not equate this with disabling all automatic Actions globally. |
+| Windows FTP live, cross-volume/network share fallback, concurrent 1/4/16, HTTP/HTTPS/HLS, CPU/RAM, SHA-256, Liquid Progress, HyperGet.exe, upgrade, browser integration, independent recheck | **NOT TESTED / DEFERRED** | User's NO-BUILD gate remains binding until source/UI/security readiness. |
+
+**Next:** test Windows hard-link/fallback behavior and actual race after final readiness; continue HTTP/HLS and identity/UI source work. Do not merge, write main, run packaging or disable recurring development.
+
+---
+
 ## HyperGet — 2026-10-24: FTP RETR Pause/stream-registration cleanup race (SOURCE + TEST; NO APP BUILD)
 
 **Status: IN_PROGRESS. Production source changed: YES.** Existing draft [PR #3](https://github.com/amroalhamedi2022-hue/personal-download-manager/pull/3), head `automation/idm-ftp-cancel-and-category-flush` → base `codex/repair-rf00-rf01`. Production commits: [`05b88c4d`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/05b88c4df4924e3b9411d022c99da9f268c67026) (small stream-lifecycle helper) and [`ee598b4e`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/ee598b4e9596f4ca002259a06c9e3d172e82ac56) (FTP transport integration); regression commit [`f8f3a808`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/f8f3a8081fd3b39faa192104f201e56eae96570d).

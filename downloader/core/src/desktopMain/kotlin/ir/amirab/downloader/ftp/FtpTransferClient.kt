@@ -244,11 +244,9 @@ class FtpTransferClient {
                 throw IOException("FTP byte-count mismatch: expected ${identity.size}, got $downloaded")
             }
             transfer.ensureNotCancelled()
-            try {
-                Files.move(part, absolute, StandardCopyOption.ATOMIC_MOVE)
-            } catch (_: AtomicMoveNotSupportedException) {
-                Files.move(part, absolute)
-            }
+            // Never use ATOMIC_MOVE here: it can replace a file that appeared
+            // while RETR was running, even without REPLACE_EXISTING.
+            publishFtpStagedFile(part, absolute)
             Files.deleteIfExists(meta)
             return TransferResult(absolute, downloaded - existing, existing, identity.size, identity.modificationTime)
         } finally {
