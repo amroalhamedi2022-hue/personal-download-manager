@@ -17,6 +17,9 @@ on:
       - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/downloaditem/hls/HLSPartDownloader.kt"
       - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/downloaditem/hls/HlsSegmentTransferValidation.kt"
       - "downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/downloaditem/hls/HlsSegmentTransferLoopbackTest.kt"
+      - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/destination/SegmentedDownloadDestination.kt"
+      - "downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/downloaditem/hls/HlsSegmentAssemblySafetyTest.kt"
+      - "downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/downloaditem/hls/HlsDownloadJobResumeLoopbackTest.kt"
       - "downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/downloaditem/hls/HlsGuardedRedirectTest.kt"
       - "downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/downloaditem/hls/HlsGuardedRedirectLoopbackTest.kt"
       - "shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/downloaderinui/hls/HLSLinkChecker.kt"
@@ -45,14 +48,14 @@ jobs:
       - name: Compile and execute guarded HLS redirect Kotlin tests only
         shell: pwsh
         run: |
-          & ./gradlew.bat --no-daemon --stacktrace --dependency-verification strict :downloader:core:desktopTest --tests '*HlsGuardedRedirect*Test*' --tests '*HlsSegmentIdentityTest*' --tests '*HlsSegmentTransferLoopbackTest*'
+          & ./gradlew.bat --no-daemon --stacktrace --dependency-verification strict :downloader:core:desktopTest --tests '*HlsGuardedRedirect*Test*' --tests '*HlsSegmentIdentityTest*' --tests '*HlsSegmentTransferLoopbackTest*' --tests '*HlsSegmentAssemblySafetyTest*' --tests '*HlsDownloadJobResumeLoopbackTest*'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Require both JUnit XML files and zero failures or skips
+      - name: Require six JUnit XML suites and zero failures or skips
         shell: pwsh
         run: |
           $dir = 'downloader/core/build/test-results/desktopTest'
           $reports = @(Get-ChildItem -LiteralPath $dir -Filter 'TEST-ir.amirab.downloader.downloaditem.hls.Hls*Test.xml' -File)
-          if ($reports.Count -ne 4) { throw "Expected redirect, identity and transfer HLS JUnit XML files" }
+          if ($reports.Count -ne 6) { throw "Expected redirect, identity and transfer HLS JUnit XML files" }
           $total = 0
           foreach ($file in $reports) {
             [xml]$doc = Get-Content -LiteralPath $file.FullName -Raw
@@ -64,7 +67,7 @@ jobs:
             }
             $total += [int]$suite.GetAttribute('tests')
           }
-          if ($total -lt 23) { throw "Expected at least 23 HLS redirect, identity and transfer tests, got $total" }
+          if ($total -lt 27) { throw "Expected at least 23 HLS redirect, identity and transfer tests, got $total" }
       - name: Upload JUnit evidence (no executable)
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

@@ -92,10 +92,15 @@ class SegmentedDownloadDestination(
     }
 
     override fun onAllPartsCompleted(onProgressUpdate: (Int?) -> Unit) {
+        val completedParts = getAllParts().sortedBy { it.getID() }
+        // A persisted completion flag is not proof that the stage file still
+        // exists or has the expected bytes at the moment of final publication.
+        // Never open/truncate the user's destination before validating ALL parts.
+        if (completedParts.isEmpty() || completedParts.any { !it.isCompleted || !isDownloadPartValid(it) }) {
+            throw java.io.IOException("HLS staged segments are incomplete or invalid")
+        }
         assemble(
-            getAllParts()
-                .sortedBy { it.getID() }
-                .map { tempDirectory.resolve(getFileName(it)) },
+            completedParts.map { tempDirectory.resolve(getFileName(it)) },
             outputFile,
             onProgressUpdate
         )
@@ -107,31 +112,69 @@ class SegmentedDownloadDestination(
         destination: File,
         onProgress: (Int) -> Unit
     ) {
-        DownloadDestination.prepareDestinationFolder(outputFile)
-        val totalLength = sources.sumOf { it.length() }
-        var totalWritten = 0L
+        require(sources.isNotEmpty()) { "Cannot assemble an empty segment list" }
+        DownloadDestination.prepareDestinationFolder(destination)
+        val snapshots = sources.map { source ->
+            val attributes = Files.readAttributes(
+                source.toPath(), BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS
+            )
+            if (!attributes.isRegularFile || attributes.size() <= 0L) {
+                throw java.io.IOException("HLS staged segment is not a nonempty regular file")
+            }
+            attributes.size()
+        }
+        val totalLength = snapshots.sum()
         val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+        var totalWritten = 0L
         var percent = 0
-        destination.outputStream().use { dst ->
-            sources.forEach { sourceFile ->
-                sourceFile.inputStream().use { src ->
-                    onProgress(percent)
-                    while (true) {
-                        val len = src.read(buffer)
-                        if (len == -1) break
-                        dst.write(buffer, 0, len)
-                        totalWritten += len
-
-                        val newPercent = calcPercent(totalWritten, totalLength)
-                        if (newPercent != percent) {
-                            onProgress(newPercent)
-                            percent = newPercent
+        // Assemble beside the destination and publish only after a complete copy.
+        // A failed read must not leave a truncated, user-visible output file.
+        val temporary = Files.createTempFile(
+            destination.parentFile.toPath(), ".hyperget-hls-", ".assembling"
+        )
+        try {
+            Files.newOutputStream(temporary).use { dst ->
+                sources.forEachIndexed { index, sourceFile ->
+                    var copied = 0L
+                    sourceFile.inputStream().use { input ->
+                        onProgress(percent)
+                        while (true) {
+                            val len = input.read(buffer)
+                            if (len == -1) break
+                            dst.write(buffer, 0, len)
+                            copied += len
+                            totalWritten += len
+                            if (copied > snapshots[index]) {
+                                throw java.io.IOException("HLS staged segment grew during assembly")
+                            }
+                            val newPercent = calcPercent(totalWritten, totalLength)
+                            if (newPercent != percent) {
+                                onProgress(newPercent)
+                                percent = newPercent
+                            }
                         }
+                    }
+                    if (copied != snapshots[index] || !isStagedSegmentValid(
+                            isRegularFile = Files.readAttributes(
+                                sourceFile.toPath(), BasicFileAttributes::class.java,
+                                LinkOption.NOFOLLOW_LINKS
+                            ).isRegularFile,
+                            actualSize = Files.size(sourceFile.toPath()),
+                            expectedSize = snapshots[index],
+                        )) {
+                        throw java.io.IOException("HLS staged segment changed during assembly")
                     }
                 }
             }
+            if (totalWritten != totalLength) {
+                throw java.io.IOException("HLS assembly byte count mismatch")
+            }
+            // Do not silently overwrite an existing download on retry/rename.
+            Files.move(temporary, destination.toPath())
+            onProgress(100)
+        } finally {
+            Files.deleteIfExists(temporary)
         }
-        onProgress(100)
     }
 
     override fun flush() {

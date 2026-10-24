@@ -30,6 +30,7 @@ on:
       - "scripts/source-tests/test_hyperget_hls_playlist_source.py"
       - "scripts/source-tests/test_hyperget_hls_segment_identity_source.py"
       - "scripts/source-tests/test_hyperget_hls_segment_transfer_source.py"
+      - "scripts/source-tests/test_hyperget_hls_resume_assembly_source.py"
       - "scripts/source-tests/HyperGetHlsBodyReaderSmoke.kt"
       - "scripts/source-tests/test_hyperget_hls_body_source.py"
       - "scripts/source-tests/HyperGetHlsContentTypeSmoke.kt"
@@ -63,6 +64,8 @@ jobs:
         run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_hls_segment_identity_source.py -v
       - name: Verify complete HLS segment and assembly source contract
         run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_hls_segment_transfer_source.py -v
+      - name: Verify HLS job resume and atomic staged assembly source contract
+        run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_hls_resume_assembly_source.py -v
       - name: Verify HLS persisted completion and staged-file source contract
         run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_hls_resume_source.py -v
       - name: Verify HLS persisted playlist refresh and downloader retirement
