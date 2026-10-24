@@ -83,4 +83,66 @@ class HlsSegmentAssemblySafetyTest {
             assertTrue(root.listFiles()?.none { it.name.endsWith(".assembling") } == true)
         } finally { root.deleteRecursively() }
     }
+    @Test fun sameSizeStageReplacementDuringAssemblyIsRejected() {
+        val root = Files.createTempDirectory("hyperget-assembly-swap-").toFile()
+        try {
+            val stage = root.resolve("stage").apply { mkdirs() }
+            val source = stage.resolve("1").apply { writeBytes(byteArrayOf(1, 2, 3)) }
+            val output = root.resolve("finished.ts")
+            val dest = SegmentedDownloadDestination(
+                tempDirectory = stage, outputFile = output,
+                getAllParts = { emptyList() }, getFileName = { it.getID().toString() },
+                appendMode = false
+            )
+            var swapped = false
+            assertFailsWith<IOException> {
+                dest.assemble(listOf(source), output) {
+                    if (!swapped) {
+                        swapped = true
+                        Files.move(source.toPath(), stage.resolve("original").toPath())
+                        source.writeBytes(byteArrayOf(9, 8, 7))
+                        Files.setLastModifiedTime(
+                            source.toPath(),
+                            java.nio.file.attribute.FileTime.fromMillis(System.currentTimeMillis() + 60_000)
+                        )
+                    }
+                }
+            }
+            assertTrue(swapped)
+            assertFalse(output.exists())
+            assertTrue(stage.resolve("original").exists())
+            assertTrue(root.listFiles()?.none { it.name.endsWith(".assembling") } == true)
+        } finally { root.deleteRecursively() }
+    }
+
+    @Test fun sameLengthInPlaceMutationDuringAssemblyIsRejected() {
+        val root = Files.createTempDirectory("hyperget-assembly-mutate-").toFile()
+        try {
+            val stage = root.resolve("stage").apply { mkdirs() }
+            val source = stage.resolve("1").apply { writeBytes(byteArrayOf(1, 2, 3)) }
+            val output = root.resolve("finished.ts")
+            val dest = SegmentedDownloadDestination(
+                tempDirectory = stage, outputFile = output,
+                getAllParts = { emptyList() }, getFileName = { it.getID().toString() },
+                appendMode = false
+            )
+            var changed = false
+            assertFailsWith<IOException> {
+                dest.assemble(listOf(source), output) {
+                    if (!changed) {
+                        changed = true
+                        source.writeBytes(byteArrayOf(3, 2, 1))
+                        Files.setLastModifiedTime(
+                            source.toPath(),
+                            java.nio.file.attribute.FileTime.fromMillis(System.currentTimeMillis() + 60_000)
+                        )
+                    }
+                }
+            }
+            assertTrue(changed)
+            assertFalse(output.exists())
+            assertTrue(root.listFiles()?.none { it.name.endsWith(".assembling") } == true)
+        } finally { root.deleteRecursively() }
+    }
+
 }
