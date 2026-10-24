@@ -18,7 +18,7 @@ import kotlin.test.assertTrue
 /** Kotlin fake-transport tests; not a substitute for live Windows network E2E. */
 class HlsGuardedRedirectTest {
     private val base = "https://media.example.test/live/index.m3u8"
-    private fun protected() = credentialsForHlsPlaylist(
+    private fun protectedCredentials() = credentialsForHlsPlaylist(
         HLSDownloadCredentials(link = base, headers = mapOf("Cookie" to "session=private"))
     )
 
@@ -56,7 +56,7 @@ class HlsGuardedRedirectTest {
             second to (307 to "/final/index.m3u8"),
             final to (200 to null),
         ))
-        client.connectHlsWithOriginGuard(protected()).use {
+        client.connectHlsWithOriginGuard(protectedCredentials()).use {
             assertEquals(final, it.responseInfo.requestUrl)
         }
         assertEquals(listOf(base, second, final), client.requests.map { it.link })
@@ -67,31 +67,31 @@ class HlsGuardedRedirectTest {
 
     @Test fun crossHostRedirectIsRejectedBeforeSecondRequest() {
         val client = ScriptedClient(mapOf(base to (302 to "https://cdn.example.test/steal")))
-        assertFailsWith<IOException> { runBlocking { client.connectHlsWithOriginGuard(protected()) } }
+        assertFailsWith<IOException> { runBlocking { client.connectHlsWithOriginGuard(protectedCredentials()) } }
         assertEquals(listOf(base), client.requests.map { it.link })
     }
 
     @Test fun protocolDowngradeIsRejected() {
         val client = ScriptedClient(mapOf(base to (301 to "http://media.example.test/live/clear")))
-        assertFailsWith<IOException> { runBlocking { client.connectHlsWithOriginGuard(protected()) } }
+        assertFailsWith<IOException> { runBlocking { client.connectHlsWithOriginGuard(protectedCredentials()) } }
         assertEquals(1, client.requests.size)
     }
 
     @Test fun portChangeIsRejected() {
         val client = ScriptedClient(mapOf(base to (308 to "https://media.example.test:8443/live/next")))
-        assertFailsWith<IOException> { runBlocking { client.connectHlsWithOriginGuard(protected()) } }
+        assertFailsWith<IOException> { runBlocking { client.connectHlsWithOriginGuard(protectedCredentials()) } }
         assertEquals(1, client.requests.size)
     }
 
     @Test fun urlEmbeddedCredentialsAreRejected() {
         val client = ScriptedClient(mapOf(base to (302 to "https://user:password@media.example.test/next")))
-        assertFailsWith<IOException> { runBlocking { client.connectHlsWithOriginGuard(protected()) } }
+        assertFailsWith<IOException> { runBlocking { client.connectHlsWithOriginGuard(protectedCredentials()) } }
         assertEquals(1, client.requests.size)
     }
 
     @Test fun missingLocationIsRejected() {
         val client = ScriptedClient(mapOf(base to (302 to null)))
-        assertFailsWith<IOException> { runBlocking { client.connectHlsWithOriginGuard(protected()) } }
+        assertFailsWith<IOException> { runBlocking { client.connectHlsWithOriginGuard(protectedCredentials()) } }
         assertEquals(1, client.requests.size)
     }
 
@@ -101,7 +101,7 @@ class HlsGuardedRedirectTest {
             base to (302 to "next"),
             next to (302 to "index.m3u8"),
         ))
-        assertFailsWith<IOException> { runBlocking { client.connectHlsWithOriginGuard(protected()) } }
+        assertFailsWith<IOException> { runBlocking { client.connectHlsWithOriginGuard(protectedCredentials()) } }
         assertEquals(listOf(base, next), client.requests.map { it.link })
     }
 
@@ -110,7 +110,7 @@ class HlsGuardedRedirectTest {
         val map = mutableMapOf(base to (302 to hops[0]))
         for (i in 0..5) map[hops[i]] = 302 to hops[i + 1]
         val client = ScriptedClient(map)
-        assertFailsWith<IOException> { runBlocking { client.connectHlsWithOriginGuard(protected()) } }
+        assertFailsWith<IOException> { runBlocking { client.connectHlsWithOriginGuard(protectedCredentials()) } }
         assertEquals(6, client.requests.size)
         assertFalse(client.requests.any { it.link == hops[5] })
     }
