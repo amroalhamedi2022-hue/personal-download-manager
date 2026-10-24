@@ -1,10 +1,12 @@
 package ir.amirab.downloader.ftp
 
+import java.io.IOException
 import java.nio.file.FileAlreadyExistsException
 import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.Path
 import java.nio.file.FileSystemException
+import java.nio.file.attribute.BasicFileAttributes
 
 /**
  * Publish a completed FTP part without silently replacing a file created by
@@ -16,8 +18,28 @@ import java.nio.file.FileSystemException
  * written bytes atomically with an exclusive destination name. The fallback
  * supports file systems without hard links, using a no-replace Files.move;
  * that fallback does not promise cross-process atomicity on every provider.
+ *
+ * The pre-publish check also rejects a staged path swapped after its stream
+ * was opened. File-key protection is conditional on filesystem support; a
+ * malicious process with write access to the destination directory can still
+ * race a check and a subsequent filesystem operation.
  */
-internal fun publishFtpStagedFile(part: Path, destination: Path) {
+internal fun publishFtpStagedFile(
+    part: Path,
+    destination: Path,
+    expectedSize: Long? = null,
+    expectedFileKey: Any? = null,
+) {
+    val attributes = Files.readAttributes(part, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
+    if (!attributes.isRegularFile) {
+        throw IOException("FTP staged path is not a regular file at publication")
+    }
+    if (expectedSize != null && attributes.size() != expectedSize) {
+        throw IOException("FTP staged size changed before publication")
+    }
+    if (expectedFileKey != null && attributes.fileKey() != expectedFileKey) {
+        throw IOException("FTP staged identity changed before publication")
+    }
     try {
         Files.createLink(destination, part)
     } catch (alreadyExists: FileAlreadyExistsException) {
