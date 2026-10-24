@@ -197,9 +197,12 @@ class FtpTransferClient {
             val stream = ftp.retrieveFileStream(endpoint.path)
                 ?: throw IOException("FTP RETR rejected (code ${ftp.replyCode})")
             transfer.dataStream.set(stream)
-            transfer.ensureNotCancelled()
             var downloaded = existing
-            try {
+            withFtpDataStream(
+                stream = stream,
+                unregister = { transfer.dataStream.compareAndSet(stream, null) },
+                checkCancellation = { transfer.ensureNotCancelled() },
+            ) {
                 // A server may advertise metadata for a path that is not readable.
                 // Don't leave a misleading resume sidecar unless RETR was accepted.
                 if (existing == 0L) {
@@ -232,10 +235,6 @@ class FtpTransferClient {
                         }
                     }
                 }
-            } finally {
-                transfer.dataStream.compareAndSet(stream, null)
-                // Also close when sidecar creation failed before stream.use began.
-                runCatching { stream.close() }
             }
             transfer.ensureNotCancelled()
             if (!ftp.completePendingCommand()) {
