@@ -1,0 +1,59 @@
+"""Regression contract for the installed Windows 1/4/16 acceptance harness.
+
+The actual Windows job is still required: source assertions cannot prove
+that an installed HyperGet app admits live sockets or completes SHA-256.
+"""
+from pathlib import Path
+import re
+import unittest
+
+ROOT = Path(__file__).resolve().parents[2]
+BENCH = (ROOT / "scripts/Run-WindowsActiveBenchmarkMatrix.ps1").read_text(encoding="utf-8")
+FIXTURE = (ROOT / "scripts/LocalHttpRangeFixture.py").read_text(encoding="utf-8")
+WORKFLOW = (ROOT / ".github/workflows/windows-installed-active-benchmark.yml").read_text(encoding="utf-8")
+
+
+class ActiveBenchmarkContract(unittest.TestCase):
+    def test_each_scenario_sets_its_own_persisted_cap(self):
+        self.assertRegex(
+            BENCH,
+            r"foreach \(\$jobs in @\(1, 4, 16\)\)\s*\{\s*"
+            r"\$appliedMaxConcurrentDownloads = Invoke-MaxConcurrentDownloadsSetting -SetValue \$jobs",
+        )
+        self.assertIn("if ($verifiedMaxConcurrentDownloads -ne $jobs)", BENCH)
+        self.assertNotIn("Invoke-MaxConcurrentDownloadsSetting -SetValue 16", BENCH)
+
+    def test_batch_resume_measures_real_distinct_sockets(self):
+        self.assertIn("& $cliPath download resume @startIds", BENCH)
+        self.assertIn("active_distinct_tasks", BENCH)
+        self.assertIn("peak_distinct_tasks", BENCH)
+        self.assertIn("Only $($ready.active_distinct_tasks) of $jobs tasks were active", BENCH)
+
+    def test_every_download_must_pass_sha_and_process_samples(self):
+        self.assertIn("Get-FileHash -LiteralPath $path -Algorithm SHA256", BENCH)
+        self.assertIn("Get-FileHash -LiteralPath $task.Path -Algorithm SHA256", BENCH)
+        self.assertIn("$expectedTaskCount = $Rounds * (1 + 4 + 16)", BENCH)
+        self.assertIn("$metricFiles.Count -ne $Rounds * 3", BENCH)
+        self.assertIn("Measure-WindowsDownloadManager.ps1", BENCH)
+
+    def test_fixture_exposes_only_synthetic_active_task_ids(self):
+        self.assertIn('snapshot["active_task_ids"] = sorted(tasks_active)', FIXTURE)
+        self.assertIn('snapshot["active_distinct_tasks"] = len(tasks_active)', FIXTURE)
+        self.assertIn('ThreadingHTTPServer(("127.0.0.1", 0), Handler)', FIXTURE)
+
+    def test_original_persisted_cap_is_restored_on_failure(self):
+        self.assertIn("} finally {", BENCH)
+        self.assertIn("-SetValue $originalMaxConcurrentDownloads", BENCH)
+
+    def test_windows_milestone_checks_exact_pr_head_not_merge_sha(self):
+        self.assertIn("pull_request:", WORKFLOW)
+        self.assertIn("branches: [codex/repair-rf00-rf01]", WORKFLOW)
+        self.assertIn("github.event.pull_request.head.sha || github.sha", WORKFLOW)
+        self.assertIn("-SourceSha $env:HYPERGET_TESTED_SHA", WORKFLOW)
+        self.assertIn("-Rounds 3", WORKFLOW)
+        self.assertIn("createReleaseFolderForCi", WORKFLOW)
+        self.assertIn("Run-WindowsActiveBenchmarkMatrix.ps1", WORKFLOW)
+
+
+if __name__ == "__main__":
+    unittest.main()

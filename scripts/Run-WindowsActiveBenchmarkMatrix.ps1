@@ -97,17 +97,20 @@ try {
     }
     if (-not $foundApp) { throw 'Installed GUI did not stay running.' }
     $originalMaxConcurrentDownloads = Invoke-MaxConcurrentDownloadsSetting
-    $appliedMaxConcurrentDownloads = Invoke-MaxConcurrentDownloadsSetting -SetValue 16
-    if ($appliedMaxConcurrentDownloads -ne 16) {
-        throw "Persistent concurrent-download setting returned $appliedMaxConcurrentDownloads after setting 16."
-    }
-    Start-Sleep -Milliseconds 750
-    $verifiedMaxConcurrentDownloads = Invoke-MaxConcurrentDownloadsSetting
-    if ($verifiedMaxConcurrentDownloads -ne 16) {
-        throw "Persistent concurrent-download setting did not survive a separate CLI read: $verifiedMaxConcurrentDownloads."
-    }
-    Write-Host "Benchmark temporarily raised max concurrent downloads from $originalMaxConcurrentDownloads to 16."
+    # Measure each workload under its OWN persisted queue limit, not a
+    # blanket 16-job setting. Otherwise the 1/4 scenarios do not verify
+    # that the installed queue respects the user's configured cap.
     foreach ($jobs in @(1, 4, 16)) {
+        $appliedMaxConcurrentDownloads = Invoke-MaxConcurrentDownloadsSetting -SetValue $jobs
+        if ($appliedMaxConcurrentDownloads -ne $jobs) {
+            throw "Concurrency cap for $jobs-task workload returned $appliedMaxConcurrentDownloads."
+        }
+        Start-Sleep -Milliseconds 750
+        $verifiedMaxConcurrentDownloads = Invoke-MaxConcurrentDownloadsSetting
+        if ($verifiedMaxConcurrentDownloads -ne $jobs) {
+            throw "Concurrency cap for $jobs-task workload did not survive separate CLI read: $verifiedMaxConcurrentDownloads."
+        }
+        Write-Host "Installed max concurrent downloads verified at $jobs for the $jobs-task workload."
         for ($round = 1; $round -le $Rounds; $round++) {
             $scenario = "active-$jobs"
             $statsUrl = "http://127.0.0.1:$port/stats"
