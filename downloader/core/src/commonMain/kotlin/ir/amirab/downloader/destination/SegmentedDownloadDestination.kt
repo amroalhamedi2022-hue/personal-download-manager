@@ -121,9 +121,10 @@ class SegmentedDownloadDestination(
             if (!attributes.isRegularFile || attributes.size() <= 0L) {
                 throw java.io.IOException("HLS staged segment is not a nonempty regular file")
             }
-            attributes.size()
+            // Retain identity and modification metadata, not just size.
+            attributes
         }
-        val totalLength = snapshots.sum()
+        val totalLength = snapshots.sumOf { it.size() }
         val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
         var totalWritten = 0L
         var percent = 0
@@ -136,7 +137,8 @@ class SegmentedDownloadDestination(
             Files.newOutputStream(temporary).use { dst ->
                 sources.forEachIndexed { index, sourceFile ->
                     var copied = 0L
-                    sourceFile.inputStream().use { input ->
+                    // Refuse symlinks introduced after initial validation.
+                    Files.newInputStream(sourceFile.toPath(), LinkOption.NOFOLLOW_LINKS).use { input ->
                         onProgress(percent)
                         while (true) {
                             val len = input.read(buffer)
@@ -144,7 +146,7 @@ class SegmentedDownloadDestination(
                             dst.write(buffer, 0, len)
                             copied += len
                             totalWritten += len
-                            if (copied > snapshots[index]) {
+                            if (copied > snapshots[index].size()) {
                                 throw java.io.IOException("HLS staged segment grew during assembly")
                             }
                             val newPercent = calcPercent(totalWritten, totalLength)
@@ -154,14 +156,16 @@ class SegmentedDownloadDestination(
                             }
                         }
                     }
-                    if (copied != snapshots[index] || !isStagedSegmentValid(
-                            isRegularFile = Files.readAttributes(
-                                sourceFile.toPath(), BasicFileAttributes::class.java,
-                                LinkOption.NOFOLLOW_LINKS
-                            ).isRegularFile,
-                            actualSize = Files.size(sourceFile.toPath()),
-                            expectedSize = snapshots[index],
-                        )) {
+                    val current = Files.readAttributes(
+                        sourceFile.toPath(), BasicFileAttributes::class.java,
+                        LinkOption.NOFOLLOW_LINKS
+                    )
+                    val original = snapshots[index]
+                    if (copied != original.size() || !current.isRegularFile ||
+                        current.size() != original.size() ||
+                        current.lastModifiedTime() != original.lastModifiedTime() ||
+                        (original.fileKey() != null && current.fileKey() != original.fileKey())
+                    ) {
                         throw java.io.IOException("HLS staged segment changed during assembly")
                     }
                 }
