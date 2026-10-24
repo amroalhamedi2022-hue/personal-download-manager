@@ -1,3 +1,15 @@
+## HyperGet — 2026-10-24: redirected HLS playlist segment-base fix (SOURCE ONLY)
+
+**Status: IN_PROGRESS; no application build.** The HLS response parser already resolves the first segment against `responseInfo.requestUrl` (the final OkHttp response URL), but `HLSDownloadJob.getOrCreatePartDownloader` previously passed `downloadItem.link` (the pre-redirect playlist URL) to segment workers. For a playlist redirected to a different host or directory, relative `.ts` segment links could therefore resolve to the wrong resource.
+
+**Production:** [`971aade7`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/971aade7b53b7a5f1733d715a3093d0250b827be) tracks the final manifest response URL as `segmentBaseUrl`, updates it after retiring old workers and before reconciling segments, and passes it to new `HLSPartDownloader` instances. The original link remains the initial fallback until a successful refresh. No persistence schema, IPC protocol, extension ID, credential, or user data migration changed.
+
+**Regression:** [`6593e05c`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/6593e05c10f3fd4e5207f23dc857820fb6141b52) adds seven Python source-contract/URL-resolution cases covering the final response URL, update ordering, worker wiring, changed host/path, and absolute segment URLs. [`38b27808`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/38b27808653fdd8f100ca01cdea4dd5aad4e7297) wires them into the source-only CI. **PASS** 9/9 independent post-push source assertions. **PASS** [GitHub source-only Run 40096795128](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40096795128) on exact code SHA `38b27808653fdd8f100ca01cdea4dd5aad4e7297`: all nine substantive Python/FTP steps succeeded, including the new redirect test. This is source-level verification, **not** a live Kotlin HTTP redirect test.
+
+**NOT TESTED:** Kotlin/Gradle JUnit, live HLS redirect with signed/authenticated segments, Windows HLS/FTP/HTTP E2E, 1/4/16 transfers, SHA-256 full downloads, CPU/RAM, Liquid Progress, browser integration, installer/upgrade, final `HyperGet.exe`, independent recheck. **Residual risk:** segment requests currently construct `HttpDownloadCredentials(url)` without propagating playlist credentials; authenticated HLS segments and cross-origin redirect credential isolation need a separate reviewed change. Same-URL changed-content detection and concurrent staged-file replacement remain open. No full compile, Gradle, package/EXE/installer Actions, paid API, release, main write, merge or Torrent. PR #3 remains Draft.
+
+---
+
 ## HyperGet — 2026-10-24: serialize HLS preview edits against active playlist refresh (SOURCE ONLY)
 
 **Status: IN_PROGRESS; NO APP BUILD.** On an existing HLS job, `extraConfigsReceived` previously applied a UI link-checker's `hlsManifest` directly to `parts`, even while segment workers and listeners were active. That could replace in-memory `MediaSegment` objects without retiring old workers, allowing stale status callbacks and staged segment reuse during active transfer.
