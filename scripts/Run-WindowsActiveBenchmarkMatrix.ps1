@@ -160,7 +160,24 @@ try {
                 Start-Sleep -Milliseconds 250
             }
             if (-not $allActive) {
-                throw "Only $($ready.active_distinct_tasks) of $jobs tasks were active; cannot label this sample a $jobs-concurrent workload."
+                # Preserve evidence before the finally block shuts down the GUI.
+                # In particular distinguish a queue/admission failure from a
+                # fixture that saw all tasks at some point but not concurrently.
+                $diagnostics = [System.Collections.Generic.List[string]]::new()
+                $diagnostics.Add("Scenario: $scenario; round: $round; expected live tasks: $jobs")
+                $diagnostics.Add("Fixture stats: $($ready | ConvertTo-Json -Compress)")
+                $diagnostics.Add("Configured max concurrent downloads: $(Invoke-MaxConcurrentDownloadsSetting)")
+                $statusOutput = @(& $cliPath download show @startIds 2>&1)
+                $diagnostics.Add("Installed CLI task status (exit $LASTEXITCODE):")
+                $diagnostics.AddRange([string[]]@($statusOutput | ForEach-Object { "$_" }))
+                foreach ($task in $taskFiles) {
+                    $length = if (Test-Path -LiteralPath $task.Path -PathType Leaf) {
+                        (Get-Item -LiteralPath $task.Path).Length
+                    } else { 'missing' }
+                    $diagnostics.Add("Task $($task.Id) $($task.Name): output bytes=$length")
+                }
+                $diagnostics | Set-Content -LiteralPath (Join-Path $destination 'failure-diagnostics.txt') -Encoding utf8
+                throw "Only $($ready.active_distinct_tasks) of $jobs tasks were active; cannot label this sample a $jobs-concurrent workload. See failure-diagnostics.txt."
             }
             # Slow loopback source ensures the test samples real in-flight transfers,
             # even with the downloader's parallel HTTP Range segments.

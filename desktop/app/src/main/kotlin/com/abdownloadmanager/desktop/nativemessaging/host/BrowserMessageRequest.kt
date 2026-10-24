@@ -73,8 +73,9 @@ context(json: Json)
 fun NativeMessagingMessage.Content.Companion.error(
     throwable: Throwable
 ): NativeMessagingMessage.Content {
+    val safe = safeBrowserError(throwable)
     return error(
-        errorType = throwable::class.qualifiedName,
-        message = throwable.localizedMessage,
+        errorType = safe.errorType,
+        message = safe.message,
     )
 }
