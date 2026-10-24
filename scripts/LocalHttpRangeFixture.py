@@ -59,6 +59,9 @@ def main():
                     tasks_seen.clear()
                 snapshot = dict(stats)
                 snapshot["active_distinct_tasks"] = len(tasks_active)
+                # Only local synthetic task names, never request URLs, headers
+                # or credentials. Helps distinguish late starts from early exits.
+                snapshot["active_task_ids"] = sorted(tasks_active)
                 snapshot["unique_tasks_seen"] = len(tasks_seen)
             body = json.dumps(snapshot, sort_keys=True).encode("ascii")
             self.send_response(200)

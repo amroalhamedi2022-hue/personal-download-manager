@@ -2,6 +2,12 @@ name: Windows installed active HTTP 1-4-16 benchmark
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches: [codex/repair-rf00-rf01]
+    paths:
+      - ".github/workflows/windows-installed-active-benchmark.yml"
+      - "scripts/Run-WindowsActiveBenchmarkMatrix.ps1"
+      - "scripts/LocalHttpRangeFixture.py"
   push:
     branches: [codex/repair-rf00-rf01]
     paths:
@@ -28,9 +34,19 @@ jobs:
     timeout-minutes: 90
     env:
       SKIP_ANDROID_BUILD: "true"
+      HYPERGET_TESTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - name: Check out exact tested source SHA
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Preflight exact PR head and per-scenario cap contracts (no compile)
+        shell: pwsh
+        run: |
+          $actual = (git rev-parse HEAD).Trim()
+          if ($actual -ne $env:HYPERGET_TESTED_SHA) { throw "Wrong checkout: $actual" }
+          python -m unittest discover -s scripts/source-tests -p test_hyperget_active_benchmark_source.py -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Set up JetBrains Runtime 25
         uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
@@ -82,7 +98,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          & ./scripts/Run-WindowsActiveBenchmarkMatrix.ps1 -GuiExecutable $env:IDM_BENCH_GUI -CliExecutable $env:IDM_BENCH_CLI -SourceSha $env:GITHUB_SHA -OutputDirectory 'build/ci-release/active-transfer-bench' -Rounds 3 -SampleSeconds 8 -FileSizeMiB 32 -ServerChunkDelayMs 500 -CompletionTimeoutSeconds 300
+          & ./scripts/Run-WindowsActiveBenchmarkMatrix.ps1 -GuiExecutable $env:IDM_BENCH_GUI -CliExecutable $env:IDM_BENCH_CLI -SourceSha $env:HYPERGET_TESTED_SHA -OutputDirectory 'build/ci-release/active-transfer-bench' -Rounds 3 -SampleSeconds 8 -FileSizeMiB 32 -ServerChunkDelayMs 500 -CompletionTimeoutSeconds 300
 
       - name: Audit hashes, concurrent requests, process samples, and render report
         shell: pwsh

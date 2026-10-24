@@ -43,6 +43,9 @@ class HLSDownloadJob(
     val listDb by downloadManager::dlListDb
     val partListDb by downloadManager::partListDb
     private val parts: MutableList<MediaSegment> = mutableListOf()
+    // Relative media URIs must resolve against the *final* playlist response URL.
+    // A playlist can redirect to a different host or directory than its input link.
+    private var segmentBaseUrl: String = downloadItem.link
 
     private lateinit var destination: SegmentedDownloadDestination
 
@@ -88,6 +91,8 @@ class HLSDownloadJob(
 
     val itemSaveLock = Mutex()
     val partLock = Mutex()
+    // Serialize playlist replacement across remote refresh and UI preview updates.
+    private val playlistMutationLock = Mutex()
     private suspend fun loadPartState() {
         val mediaSegments = partLock.withLock {
             partListDb.getParts(id)
@@ -139,15 +144,16 @@ class HLSDownloadJob(
         return newActiveScope.launch {
             //boot download item from storage!
             boot()
-            // if download item is booted and parts is not empty it means that we resumed that file in some point
-            // but we should check if all parts are already downloaded to finish the job before hitting the server unnecessarily!
-            if (parts.isNotEmpty() && parts.all { it.isCompleted }) {
-                onDownloadFinished()
-                return@launch
-            }
+            // Persisted completion flags are not proof that the staged bytes survived
+            // a crash, external edit, or interrupted flush. Validate on-disk parts
+            // before allowing the fast completion path to assemble them.
             onDownloadResuming()
             try {
                 fetchDownloadInfoAndValidate()
+                if (parts.isNotEmpty() && parts.all { it.isCompleted }) {
+                    onDownloadFinished()
+                    return@launch
+                }
                 createPartDownloaderList()
 //                println("part downloaders created")
                 beginDownloadParts()
@@ -502,10 +508,13 @@ class HLSDownloadJob(
     }
 
     private fun clearPartDownloaderList() {
-//        thisLogger().info("create part downloaders")
-        parts.forEach {
-            destroyPartDownloader(it)
-        }
+        // Reconciliation replaces MediaSegment instances and may remove old
+        // sequence IDs. Iterating the *current* parts misses obsolete cached
+        // downloaders and their status listeners. Drop every cached reference
+        // only after the corresponding transfers have stopped.
+        listenerJobs.values.forEach { it.cancel() }
+        listenerJobs.clear()
+        partDownloaderList.clear()
     }
 
     private val speedLimiter = SpeedLimiter()
@@ -522,7 +531,8 @@ class HLSDownloadJob(
         synchronized(partDownloaderList) {
             return partDownloaderList.getOrPut(part.getID()) {
                 HLSPartDownloader(
-                    baseURL = downloadItem.link,
+                    baseURL = segmentBaseUrl,
+                    playlistCredentials = downloadItem,
                     part = part,
                     getDestWriter = {
                         destination.getWriterFor(part)
@@ -555,9 +565,11 @@ class HLSDownloadJob(
 
     private suspend fun fetchDownloadInfoAndValidate(
     ) {
-        if (parts.isEmpty()) {
-            initialParts()
-        }
+        // A persisted all-completed playlist is not authoritative: the server
+        // may now serve different bytes under the same media sequence. Refresh
+        // on EVERY resume before the completion fast path, not just when empty.
+        // Retire old downloader/listener objects before replacing segments.
+        initialParts()
         // at this point we have all the parts we need either by hitting remote or they are already in destination
         // before proceed we should check the downloaded parts and remove the "isCompleted" flag if they are missing
         parts
@@ -566,63 +578,75 @@ class HLSDownloadJob(
                 // redownload invalid parts
                 if (!destination.isDownloadPartValid(it)) {
                     it.isCompleted = false
+                    it.resetCurrent()
+                    it.statusFlow.update { PartDownloadStatus.IDLE }
                 }
             }
 
         saveState()
     }
 
-    // new segments received
-    // we should compare those and update them
-    // we reset the whole if we found different duration
-    fun updateParts(
-        playlist: MediaPlaylist
-    ) {
-        val newParts = playlist.mediaSegments()
-            .mapIndexed { index, segment ->
-                MediaSegment(
-                    segmentIndex = playlist.mediaSequence() + index,
-                    link = segment.uri(),
-                    duration = segment.duration()
-                )
-            }
-        val currentParts = parts
-        downloadItem.duration = newParts.sumOf { it.duration }
-        if (currentParts.isEmpty()) {
-            setParts(newParts)
-            return
+    // Refresh the segment list as a transaction. A matching sequence number
+    // alone does not prove that an old completed segment has the same bytes:
+    // compare URI and duration before carrying completion/progress forward.
+    fun updateParts(playlist: MediaPlaylist) {
+        val incoming = playlist.mediaSegments().mapIndexed { index, segment ->
+            HlsSegmentSnapshot(
+                sequence = playlist.mediaSequence() + index,
+                // Persist the resolved media resource identity, not a relative URI.
+                // A later playlist redirect may reuse the same filename for different bytes.
+                uri = resolveHlsSegmentIdentity(segmentBaseUrl, segment.uri()),
+                duration = segment.duration(),
+            )
         }
-        val oldPartsMap = currentParts.associateBy {
-            it.segmentIndex
+        val previous = parts.map { segment ->
+            HlsSegmentSnapshot(
+                sequence = segment.segmentIndex,
+                uri = segment.link,
+                duration = segment.duration,
+                completed = segment.isCompleted,
+                length = segment.length,
+                current = segment.current,
+            )
         }
-        val newPartsToSave = ArrayList<MediaSegment>(newParts.size)
-        for (newPart in newParts) {
-            val oldPart = oldPartsMap[newPart.segmentIndex]
-            var newPartToAdd = newPart
-            if (oldPart != null) {
-                if (oldPart.duration == newPart.duration) {
-                    newPartToAdd = newPart.copy(
-                        isCompleted = oldPart.isCompleted
-                    )
-                } else {
-                    // inconsistencies found! reset the parts to the new one
-                    setParts(newParts)
-                    return
-                }
-            }
-            newPartsToSave.add(newPartToAdd)
-        }
+        val reconciled = reconcileHlsSegments(previous, incoming)
+        downloadItem.duration = reconciled.sumOf { it.duration }
+        // The old implementation populated newPartsToSave but never applied
+        // it. Always commit the refreshed playlist, including an empty one.
+        setParts(reconciled.map { segment ->
+            MediaSegment(
+                segmentIndex = segment.sequence,
+                link = segment.uri,
+                duration = segment.duration,
+                isCompleted = segment.completed,
+                length = segment.length,
+                current = segment.current,
+            )
+        })
     }
 
     private suspend fun initialParts(): HLSResponseInfo {
-        val response = client.connect(
-            downloadItem, null, null
+        val response = client.connectHlsWithOriginGuard(
+            credentialsForHlsPlaylist(downloadItem)
         ).use {
             HLSResponseInfo.fromConnection(it)
         }
-        updateParts(
-            response.hlsManifest
-        )
+        // Retry and pause paths should already be idle; explicitly await any
+        // leftover part workers before discarding their cached references.
+        // Suspending stop/join cannot run inside Mutex.withLock's non-suspending
+        // action. Hold the lock explicitly until all old workers are idle and
+        // their listeners have been retired before replacing segment objects.
+        playlistMutationLock.lock()
+        try {
+            stopAllParts()
+            clearPartDownloaderList()
+            // OkHttp exposes the final URL after redirects in responseInfo.
+            // Update this before creating any new segment downloaders.
+            segmentBaseUrl = response.httpResponseInfo.requestUrl
+            updateParts(response.hlsManifest)
+        } finally {
+            playlistMutationLock.unlock()
+        }
         return response
     }
 
@@ -698,9 +722,22 @@ class HLSDownloadJob(
 
     override suspend fun extraConfigsReceived(config: DownloadJobExtraConfig) {
         if (config !is HLSDownloadJobExtraConfig) return
-        config.hlsManifest?.let {
-            updateParts(it)
-            saveParts()
+        config.hlsManifest?.let { preview ->
+            // The edit dialog's playlist is a preview, not an authoritative
+            // refresh of an active transfer. Replacing its segments while old
+            // workers run can mix stale callbacks/files with new segment IDs.
+            // Active jobs always fetch and reconcile the remote playlist on resume.
+            playlistMutationLock.lock()
+            try {
+                if (!isDownloadActive.value && activeDownloadScope?.isActive != true) {
+                    stopAllParts()
+                    clearPartDownloaderList()
+                    updateParts(preview)
+                    saveParts()
+                }
+            } finally {
+                playlistMutationLock.unlock()
+            }
         }
     }
 }
