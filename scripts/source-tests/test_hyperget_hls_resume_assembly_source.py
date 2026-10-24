@@ -27,7 +27,17 @@ class HlsResumeAssemblyContract(unittest.TestCase):
 
     def test_failed_assembly_cleans_temporary_file(self):
         self.assertIn("Files.deleteIfExists(temporary)", self.dest)
-        self.assertIn("copied != snapshots[index]", self.dest)
+        self.assertIn("copied != original.size()", self.dest)
+
+    def test_stage_open_refuses_symlink_swap(self):
+        self.assertIn("Files.newInputStream(sourceFile.toPath(), LinkOption.NOFOLLOW_LINKS)", self.dest)
+        self.assertNotIn("sourceFile.inputStream()", self.dest)
+
+    def test_same_size_stage_mutation_is_rejected(self):
+        for marker in ("current.lastModifiedTime() != original.lastModifiedTime()", "current.fileKey() != original.fileKey()"):
+            self.assertIn(marker, self.dest)
+        for marker in ("sameSizeStageReplacementDuringAssemblyIsRejected", "sameLengthInPlaceMutationDuringAssemblyIsRejected"):
+            self.assertIn(marker, self.assembly)
 
     def test_job_fixture_boots_persisted_completed_segments(self):
         for marker in ("MemoryDownloadPartStatesDB()", "partsDb.setParts(88", "manager.boot()", "manager.resume(88)", "DownloadStatus.Completed"):
