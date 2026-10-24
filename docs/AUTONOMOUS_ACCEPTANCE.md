@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | Isolated Kotlin/JVM source regression | **PASS 11/11** | JDK/Kotlin compiler: compiled **only** `HlsPlaylistReconciliation.kt` and `HyperGetHlsReconciliationSmoke.kt`; checked same identity, signed URI change, duration change, sequence change, incoming order, empty/new playlists, completion/length/progress. No full app compile or installer. |
 | Exact GitHub blob identity of tested source | **PASS** | Helper `4ad1ac4968a7ee85df5b3b9a3c286601a3e30445`; smoke `0fe383ef8320194ecee0e9f760644e7f20cf6a61` matched local `git hash-object` of compiled files. |
-| HLS source-only Python contract in CI | **PENDING** | New `test_hyperget_hls_playlist_source.py` added to source-only workflow, with HLS source/test path filters. Does not invoke Gradle or create executable artifacts. Record exact CI run after it finishes. |
+| HLS source-only Python contract in CI | **PASS** | [Run 40072872187](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40072872187) on source/acceptance SHA `d39034f4`: HLS, FTP source and local FTP fixture steps completed successfully; workflow invokes Python stdlib only, no Gradle or executable artifacts. |
 | Desktop JUnit `HlsPlaylistReconciliationTest` | **NOT TESTED** | Three methods committed for eventual full application validation, explicitly deferred by NO-BUILD rule. |
 | Real HLS refresh/restart, HTTPS, FTP Windows Pause/Resume, 1/4/16, SHA-256, CPU/RAM, UI, HyperGet.exe/icon, upgrade, browser integration and independent recheck | **NOT TESTED** | Binding NO-BUILD rule remains active. |
 
