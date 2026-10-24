@@ -17,6 +17,8 @@ on:
       - "scripts/source-tests/test_hyperget_hls_playlist_source.py"
       - "scripts/source-tests/HyperGetHlsBodyReaderSmoke.kt"
       - "scripts/source-tests/test_hyperget_hls_body_source.py"
+      - "scripts/source-tests/HyperGetHlsContentTypeSmoke.kt"
+      - "scripts/source-tests/test_hyperget_hls_mime_source.py"
       - "downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/ftp/FtpStagedIdentityTest.kt"
       - "scripts/source-tests/test_hyperget_ftp_stage_source.py"
       - "scripts/test_local_ftp_fixture.py"
@@ -40,5 +42,7 @@ jobs:
         run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_hls_playlist_source.py -v
       - name: Verify bounded HLS playlist body source contract
         run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_hls_body_source.py -v
+      - name: Verify HLS MIME source contract
+        run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_hls_mime_source.py -v
       - name: Verify local FTP fixture protocol
         run: python3 -m unittest scripts/test_local_ftp_fixture.py -v
