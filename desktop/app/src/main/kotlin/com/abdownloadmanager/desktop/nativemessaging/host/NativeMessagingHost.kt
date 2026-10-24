@@ -84,7 +84,7 @@ class NativeMessagingHost(
                 router.handle(request)
             } catch (e: Exception) {
                 appLogger.e { "HyperGet native messaging request handler failed" }
-                replyError(e)
+                replyError(e, request.id)
                 continue
             }
 
@@ -95,17 +95,17 @@ class NativeMessagingHost(
                 // stdout. An error reply would corrupt the browser's framing.
                 if (e is IOException) throw e
                 appLogger.e { "HyperGet native messaging response could not be sent" }
-                replyError(e)
+                replyError(e, request.id)
             }
         }
     }
 
-    private fun replyError(e: Exception) {
+    private fun replyError(e: Exception, requestId: String? = null) {
         try {
             val safe = safeBrowserError(e)
             val content = context(json) {
                 NativeMessagingMessage(
-                    id = NativeMessagingMessage.generateId(),
+                    id = requestId ?: NativeMessagingMessage.generateId(),
                     content = NativeMessagingMessage.Content.error(
                         errorType = safe.errorType,
                         message = safe.message
