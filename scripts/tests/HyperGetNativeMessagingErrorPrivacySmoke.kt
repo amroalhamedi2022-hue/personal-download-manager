@@ -1,5 +1,6 @@
 // Isolated Kotlin/JVM source test. No Gradle, Compose, installer or EXE.
 import com.abdownloadmanager.desktop.nativemessaging.host.safeBrowserError
+import com.abdownloadmanager.desktop.nativemessaging.host.browserReplyId
 import java.io.IOException
 
 fun main() {
@@ -24,5 +25,12 @@ fun main() {
     cases++
     check(safeBrowserError(IllegalStateException("internal detail")) == safeBrowserError(IOException("other detail")))
     cases++
-    println("PASS: $cases HyperGet browser-error privacy source cases")
+    var generated = 0
+    check(browserReplyId("B_original-request", { generated++; "N_generated" }) == "B_original-request")
+    cases++
+    check(generated == 0) // must not generate a different ID for an existing request
+    cases++
+    check(browserReplyId(null, { generated++; "N_generated" }) == "N_generated" && generated == 1)
+    cases++
+    println("PASS: $cases HyperGet browser-error privacy/correlation source cases")
 }
