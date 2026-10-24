@@ -37,6 +37,8 @@ class HlsBodySafetyContract(unittest.TestCase):
     def test_boundary_and_stream_regressions_present(self):
         for label in (
             "exact size accepted",
+            "2MiB exact limit accepted",
+            "2MiB plus one rejected",
             "oversized rejected",
             "oversized across buffer rejected",
             "zero-length read handled",
