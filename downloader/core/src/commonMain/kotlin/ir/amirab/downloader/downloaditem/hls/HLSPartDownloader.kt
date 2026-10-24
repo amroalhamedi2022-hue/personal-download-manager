@@ -46,9 +46,8 @@ class HLSPartDownloader(
         val hostPermit = hostLimitRegistry?.acquireForUrl(url)
         var openedConnection: Connection<HttpResponseInfo>? = null
         try {
-            val connect = client.connect(
-                credentialsForHlsSegment(playlistCredentials, baseURL, url),
-                null, null,
+            val connect = client.connectHlsWithOriginGuard(
+                credentialsForHlsSegment(playlistCredentials, baseURL, url)
             )
             openedConnection = connect
             if (stop || !currentCoroutineContext().isActive) {

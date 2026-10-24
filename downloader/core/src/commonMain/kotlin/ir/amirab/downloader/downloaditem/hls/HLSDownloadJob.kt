@@ -624,8 +624,8 @@ class HLSDownloadJob(
     }
 
     private suspend fun initialParts(): HLSResponseInfo {
-        val response = client.connect(
-            credentialsForHlsPlaylist(downloadItem), null, null
+        val response = client.connectHlsWithOriginGuard(
+            credentialsForHlsPlaylist(downloadItem)
         ).use {
             HLSResponseInfo.fromConnection(it)
         }

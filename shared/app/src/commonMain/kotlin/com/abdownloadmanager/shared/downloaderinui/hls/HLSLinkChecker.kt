@@ -7,6 +7,7 @@ import ir.amirab.downloader.connection.HttpDownloaderClient
 import ir.amirab.downloader.downloaditem.hls.HLSDownloadCredentials
 import ir.amirab.downloader.downloaditem.hls.HLSResponseInfo
 import ir.amirab.downloader.downloaditem.hls.credentialsForHlsPlaylist
+import ir.amirab.downloader.downloaditem.hls.connectHlsWithOriginGuard
 import ir.amirab.util.HttpUrlUtils
 import ir.amirab.util.flow.mapStateFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -33,7 +34,7 @@ class HLSLinkChecker(
     }
 
     override suspend fun actualCheck(credentials: HLSDownloadCredentials): HLSResponseInfo {
-        return client.connect(credentialsForHlsPlaylist(credentials), null, null)
+        return client.connectHlsWithOriginGuard(credentialsForHlsPlaylist(credentials))
             .use { HLSResponseInfo.fromConnection(it) }
     }
 }

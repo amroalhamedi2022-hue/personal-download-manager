@@ -43,12 +43,13 @@ class HlsManifestRedirectSourceTest(unittest.TestCase):
             self.assertIn(name, self.policy)
 
     def test_download_resume_uses_guarded_playlist_request(self):
-        self.assertIn("credentialsForHlsPlaylist(downloadItem), null, null", self.job)
+        self.assertIn("client.connectHlsWithOriginGuard(", self.job)
+        self.assertIn("credentialsForHlsPlaylist(downloadItem)", self.job)
         self.assertNotIn("client.connect(\n            downloadItem, null, null", self.job)
 
     def test_ui_preview_uses_same_guard(self):
         self.assertIn("import ir.amirab.downloader.downloaditem.hls.credentialsForHlsPlaylist", self.checker)
-        self.assertIn("client.connect(credentialsForHlsPlaylist(credentials), null, null)", self.checker)
+        self.assertIn("client.connectHlsWithOriginGuard(credentialsForHlsPlaylist(credentials))", self.checker)
         self.assertNotIn("client.connect(credentials, null, null)", self.checker)
 
     def test_transport_has_no_redirect_client_and_transient_flag(self):

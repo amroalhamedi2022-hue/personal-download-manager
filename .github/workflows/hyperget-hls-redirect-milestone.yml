@@ -1,0 +1,62 @@
+name: HyperGet HLS guarded redirect milestone (Windows Kotlin)
+
+# Purposeful milestone compilation, NOT packaging: source contracts cannot
+# establish Kotlin compile correctness or that real JUnit tests execute.
+# No EXE, installer or distribution tasks.
+on:
+  pull_request:
+    branches: [codex/repair-rf00-rf01]
+    paths:
+      - ".github/workflows/hyperget-hls-redirect-milestone.yml"
+      - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/downloaditem/hls/HlsGuardedRedirects.kt"
+      - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/downloaditem/hls/HlsSegmentCredentialPolicy.kt"
+      - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/downloaditem/hls/HLSDownloadJob.kt"
+      - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/downloaditem/hls/HLSPartDownloader.kt"
+      - "downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/downloaditem/hls/HlsGuardedRedirectTest.kt"
+      - "shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/downloaderinui/hls/HLSLinkChecker.kt"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  guarded-redirect-unit:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    env:
+      SKIP_ANDROID_BUILD: "true"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up JetBrains Runtime 25
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: jetbrains
+          java-package: jdk
+          java-version: "25"
+          cache: gradle
+      - name: Compile and execute guarded HLS redirect Kotlin tests only
+        shell: pwsh
+        run: |
+          & ./gradlew.bat --no-daemon --stacktrace --dependency-verification strict :downloader:core:desktopTest --tests '*HlsGuardedRedirectTest*'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Require JUnit XML and zero failures or skips
+        shell: pwsh
+        run: |
+          $file = 'downloader/core/build/test-results/desktopTest/TEST-ir.amirab.downloader.downloaditem.hls.HlsGuardedRedirectTest.xml'
+          if (!(Test-Path -LiteralPath $file)) { throw "Missing guarded HLS JUnit XML" }
+          [xml]$doc = Get-Content -LiteralPath $file -Raw
+          $suite = $doc.SelectSingleNode('//testsuite')
+          if ($null -eq $suite -or [int]$suite.GetAttribute('tests') -lt 10 -or
+              [int]$suite.GetAttribute('failures') -ne 0 -or
+              [int]$suite.GetAttribute('errors') -ne 0 -or
+              [int]$suite.GetAttribute('skipped') -ne 0) {
+            throw "Guarded HLS milestone JUnit acceptance failed"
+          }
+      - name: Upload JUnit evidence (no executable)
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: hyperget-hls-guarded-redirect-junit
+          path: downloader/core/build/test-results/desktopTest/TEST-ir.amirab.downloader.downloaditem.hls.HlsGuardedRedirectTest.xml
+          if-no-files-found: warn
+          retention-days: 7

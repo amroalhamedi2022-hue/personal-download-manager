@@ -1,3 +1,17 @@
+## HyperGet — 2026-10-24 HG-HLS-AUTH-01 protected HLS redirect milestone
+
+**Functional acceptance:** A protected HLS manifest, preview and media segment may follow at most five HTTP 301/302/303/307/308 redirects on the same scheme/canonical host/effective port while retaining explicit Cookie/Authorization/Basic credentials. Reject cross-origin, HTTPS downgrade, port change, URL-embedded credentials, missing Location, loops and excess hops before issuing a second request. Close every intermediate response. Anonymous HLS keeps OkHttp's existing redirect handling. This completes a functional compatibility slice after earlier security-only guards.
+
+**Production:** New HlsGuardedRedirects.kt implements one shared request policy used by HLSDownloadJob, HLSPartDownloader and HLSLinkChecker. No storage, extension protocol, user identity or new runtime dependencies changed. Reviewed existing Apache-2.0 OkHttp implementation and RFC 9110 redirect guidance; no borrowed code or new license obligations.
+
+**Regression:** 10 Kotlin desktopTest scripted-transport cases test same-origin chains and secret retention, cross-host, scheme/port changes, URL userinfo, missing Location, cycle, hop limit, anonymous compatibility and protected segments. A Python source-contract suite checks all three production call sites, origin checks, socket closure and bounds; the previous manifest source contract was updated to reflect shared policy. **Status pending exact-SHA CI; no PASS is claimed before results.**
+
+**Purposeful compile gate (specified before triggering):** Does real Kotlin compile and do the 10 redirect JUnit tests run on Windows with zero failures, errors and skips? Source tests cannot answer that. Expected result: targeted :downloader:core:desktopTest with XML >=10 tests; new PR-only Windows workflow compiles/tests this milestone only, no EXE/installer. If it fails, the milestone is blocked and the log must be investigated.
+
+**Still NOT TESTED:** live local two-host HTTP/HTTPS with actual OkHttp; custom interceptors/authenticators; staged segment content identity; HTTP/FTP/HLS end-to-end; 1/4/16 concurrent sockets and SHA-256; CPU/RAM; Liquid Progress; full HyperGet UI/icon, upgrade and browser E2E; single HyperGet.exe and independent Windows recheck. No main writes, merge, paid API, Torrent or unrelated-project changes. PR #3 remains Draft.
+
+---
+
 ## HyperGet — 2026-10-24: guarded HLS CookieJar isolation (SOURCE ONLY)
 
 **Status: IN_PROGRESS; NO APP BUILD.** Reviewed the existing HLS manifest/segment origin policy and the shared OkHttp transport. The guarded `noRedirectClient` inherited the application's configured `CookieJar` from `singleAttemptClient`; that meant an explicit-header origin policy did not also control implicit ambient cookies. No evidence establishes that the current configured jar actually contains cookies, so this is a defense-in-depth isolation fix rather than a demonstrated exfiltration exploit.
