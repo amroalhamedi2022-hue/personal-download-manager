@@ -31,16 +31,21 @@ class LocalHttpRangeFixtureTest(unittest.TestCase):
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
         )
+        # On Windows the file may become visible before write_text has
+        # flushed its port digits. Wait for a complete numeric value.
+        port_text = ""
         for _ in range(100):
             if cls.port_file.exists():
-                break
+                port_text = cls.port_file.read_text().strip()
+                if port_text.isdecimal():
+                    break
             if cls.process.poll() is not None:
                 raise RuntimeError(f"Fixture exited: {cls.process.stderr.read().decode()}")
             time.sleep(0.05)
-        if not cls.port_file.exists():
+        if not port_text.isdecimal():
             cls.process.kill()
-            raise RuntimeError("Fixture server did not start")
-        cls.port = int(cls.port_file.read_text())
+            raise RuntimeError("Fixture server did not publish a valid port")
+        cls.port = int(port_text)
 
     @classmethod
     def tearDownClass(cls):
