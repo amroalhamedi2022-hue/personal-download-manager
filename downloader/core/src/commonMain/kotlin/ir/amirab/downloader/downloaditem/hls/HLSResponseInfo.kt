@@ -39,7 +39,7 @@ data class HLSResponseInfo(
     companion object {
         fun fromConnection(connection: Connection<HttpResponseInfo>): HLSResponseInfo {
             expectSuccess(connection)
-            val data = connection.source.buffer().use { it.readUtf8() }
+            val data = connection.source.buffer().use { readBoundedHlsPlaylist(it.inputStream()) }
             val playlist = try {
                 parseHLSAsMediaPlaylist(data)
             } catch (e: Exception) {
@@ -86,9 +86,14 @@ data class HLSResponseInfo(
         /**
          * if no hls content-size received we check this
          */
-        private const val MAXIMUM_ALLOWED_SIZE = 2 * 1024 * 1024 // 2MiB
         private fun expectSuccess(connection: Connection<HttpResponseInfo>) {
             connection.responseInfo.expectSuccess()
+            // Content-Type is not a safety boundary: even a correctly typed
+            // response must respect the same declared and actual byte limit.
+            val declaredLength = connection.responseInfo.contentLength
+            if (declaredLength != null && declaredLength > MAX_HLS_PLAYLIST_BYTES) {
+                throw BadHLSResponseException("HLS playlist content length exceeds maximum allowed size")
+            }
             val hlsPossibleHeaders = HALS_POSSIBLE_HEADERS
             val contentType = connection.responseInfo.responseHeaders["content-type"]
             var error: String? = null
@@ -105,7 +110,7 @@ data class HLSResponseInfo(
                 if (contentLength == null) {
                     error += ", and content length is unknown"
                 } else {
-                    if (contentLength > MAXIMUM_ALLOWED_SIZE) {
+                    if (contentLength > MAX_HLS_PLAYLIST_BYTES) {
                         error += ", and returned content length is too big for hls playlist"
                     } else {
                         error = null
