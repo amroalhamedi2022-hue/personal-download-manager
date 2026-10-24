@@ -572,46 +572,41 @@ class HLSDownloadJob(
         saveState()
     }
 
-    // new segments received
-    // we should compare those and update them
-    // we reset the whole if we found different duration
-    fun updateParts(
-        playlist: MediaPlaylist
-    ) {
-        val newParts = playlist.mediaSegments()
-            .mapIndexed { index, segment ->
-                MediaSegment(
-                    segmentIndex = playlist.mediaSequence() + index,
-                    link = segment.uri(),
-                    duration = segment.duration()
-                )
-            }
-        val currentParts = parts
-        downloadItem.duration = newParts.sumOf { it.duration }
-        if (currentParts.isEmpty()) {
-            setParts(newParts)
-            return
+    // Refresh the segment list as a transaction. A matching sequence number
+    // alone does not prove that an old completed segment has the same bytes:
+    // compare URI and duration before carrying completion/progress forward.
+    fun updateParts(playlist: MediaPlaylist) {
+        val incoming = playlist.mediaSegments().mapIndexed { index, segment ->
+            HlsSegmentSnapshot(
+                sequence = playlist.mediaSequence() + index,
+                uri = segment.uri(),
+                duration = segment.duration(),
+            )
         }
-        val oldPartsMap = currentParts.associateBy {
-            it.segmentIndex
+        val previous = parts.map { segment ->
+            HlsSegmentSnapshot(
+                sequence = segment.segmentIndex,
+                uri = segment.link,
+                duration = segment.duration,
+                completed = segment.isCompleted,
+                length = segment.length,
+                current = segment.current,
+            )
         }
-        val newPartsToSave = ArrayList<MediaSegment>(newParts.size)
-        for (newPart in newParts) {
-            val oldPart = oldPartsMap[newPart.segmentIndex]
-            var newPartToAdd = newPart
-            if (oldPart != null) {
-                if (oldPart.duration == newPart.duration) {
-                    newPartToAdd = newPart.copy(
-                        isCompleted = oldPart.isCompleted
-                    )
-                } else {
-                    // inconsistencies found! reset the parts to the new one
-                    setParts(newParts)
-                    return
-                }
-            }
-            newPartsToSave.add(newPartToAdd)
-        }
+        val reconciled = reconcileHlsSegments(previous, incoming)
+        downloadItem.duration = reconciled.sumOf { it.duration }
+        // The old implementation populated newPartsToSave but never applied
+        // it. Always commit the refreshed playlist, including an empty one.
+        setParts(reconciled.map { segment ->
+            MediaSegment(
+                segmentIndex = segment.sequence,
+                link = segment.uri,
+                duration = segment.duration,
+                isCompleted = segment.completed,
+                length = segment.length,
+                current = segment.current,
+            )
+        })
     }
 
     private suspend fun initialParts(): HLSResponseInfo {
