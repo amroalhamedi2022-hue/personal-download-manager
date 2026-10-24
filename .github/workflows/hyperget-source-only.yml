@@ -12,6 +12,7 @@ on:
       - ".github/workflows/hyperget-source-only.yml"
       - "downloader/core/src/desktopMain/kotlin/ir/amirab/downloader/ftp/**"
       - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/downloaditem/hls/**"
+      - "downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/downloaditem/hls/**"
       - "scripts/source-tests/HyperGetHlsReconciliationSmoke.kt"
       - "scripts/source-tests/test_hyperget_hls_playlist_source.py"
       - "downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/ftp/FtpStagedIdentityTest.kt"
