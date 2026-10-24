@@ -593,7 +593,9 @@ class HLSDownloadJob(
         val incoming = playlist.mediaSegments().mapIndexed { index, segment ->
             HlsSegmentSnapshot(
                 sequence = playlist.mediaSequence() + index,
-                uri = segment.uri(),
+                // Persist the resolved media resource identity, not a relative URI.
+                // A later playlist redirect may reuse the same filename for different bytes.
+                uri = resolveHlsSegmentIdentity(segmentBaseUrl, segment.uri()),
                 duration = segment.duration(),
             )
         }

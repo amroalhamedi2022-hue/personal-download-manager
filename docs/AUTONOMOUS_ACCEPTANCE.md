@@ -652,3 +652,17 @@ No `main` write, auto-merge, Torrent, public release, paid API/service, packagin
 | License/dependency/cost | **PASS SOURCE REVIEW** | Existing Apache-2.0 project license retained; only JDK/Kotlin/Python stdlib already in project, no new dependency, paid API, installer, merge, release or Torrent. |
 
 **Mandatory next work:** Continue source fixes, original Liquid Progress/UI and HyperGet identity/icon/migration requirements, full protocol/concurrency coverage and license/security review. Do not run any full Gradle compile/build or packaging until all source-readiness gates are met. Then permit the first final Windows build, run installed Windows tests, independent double recheck, and deliver an actual `HyperGet.exe` with SHA-256 before declaring completion or disabling the recurring task.
+
+## 2026-10-24 — HG-HLS-AUTH-01 follow-through: final playlist URL and persisted media identity
+
+**Functional requirement:** A previously completed HLS segment may be reused only when its media resource identity is unchanged. The existing reconciliation compared raw relative URI + duration + sequence, but `clip.ts` in `/a/` is not the same resource as `clip.ts` in `/b/` after a playlist redirect. A size-valid old staged file could otherwise be assembled into a different playlist.
+
+**Production change (this PR head):** resolve each segment URI using OkHttp `HttpUrl.resolve` against the **final playlist response URL**, then persist the canonical absolute media URL as its identity. Keep existing sequence/duration matching and staged-file checks. Strip fragments (not sent to HTTP servers), retain signed query parameters, reject URL-embedded username/password. Existing relative-URI records are conservatively re-downloaded once on refresh; no database migration, deletion of user downloads or change to native messaging/IPC.
+
+**Source regression:** seven Kotlin desktop tests for same-resource reuse, redirected directory, redirected host, absolute CDN segment, old relative records, query/fragment semantics and URL userinfo rejection. Five Python source contract tests guard production wiring and the new cases.
+
+**Milestone build gate (planned, not yet claimed):** Run **only** `:downloader:core:desktopTest --tests '*HlsGuardedRedirect*Test*' --tests '*HlsSegmentIdentityTest*'` on free Windows GitHub Actions; expect three JUnit XML files, at least 19 tests, zero failures/skips. This purpose-specific compilation is necessary because Python static tests cannot validate Kotlin/OkHttp binary API compatibility or actual JUnit execution. It does **not** package HyperGet.exe or test the installed UI. Capture exact SHA and run log before marking PASS. Earlier loopback run 40115692417 succeeded on previous head `08d6ce14`, but that does not validate this patch.
+
+**Remaining:** HLS end-to-end playlist→media download and byte/hash comparison on Windows; same URL with mutated server bytes remains intrinsically unprovable without trusted validators/content hashes; FTP Pause/REST, 1/4/16, HTTP/HTTPS, CPU/RAM, Liquid Progress, icon, browser and upgrade remain open. Status IN_PROGRESS. No main write/merge, Torrent, paid service or release.
+
+**Reference/licensing:** reused existing OkHttp `HttpUrl.resolve` (OkHttp Apache-2.0) and existing project's Apache-2.0 Kotlin architecture, no new dependency or copied third-party source.

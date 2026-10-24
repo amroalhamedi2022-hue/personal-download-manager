@@ -1,4 +1,4 @@
-name: HyperGet HLS guarded redirect milestone (Windows Kotlin)
+name: HyperGet HLS redirect and media identity milestone (Windows Kotlin)
 
 # Purposeful milestone compilation, NOT packaging: source contracts cannot
 # establish Kotlin compile correctness or that real JUnit tests execute.
@@ -12,6 +12,8 @@ on:
       - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/downloaditem/hls/HlsGuardedRedirects.kt"
       - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/downloaditem/hls/HlsSegmentCredentialPolicy.kt"
       - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/downloaditem/hls/HLSDownloadJob.kt"
+      - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/downloaditem/hls/HlsSegmentIdentity.kt"
+      - "downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/downloaditem/hls/HlsSegmentIdentityTest.kt"
       - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/downloaditem/hls/HLSPartDownloader.kt"
       - "downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/downloaditem/hls/HlsGuardedRedirectTest.kt"
       - "downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/downloaditem/hls/HlsGuardedRedirectLoopbackTest.kt"
@@ -41,14 +43,14 @@ jobs:
       - name: Compile and execute guarded HLS redirect Kotlin tests only
         shell: pwsh
         run: |
-          & ./gradlew.bat --no-daemon --stacktrace --dependency-verification strict :downloader:core:desktopTest --tests '*HlsGuardedRedirect*Test*'
+          & ./gradlew.bat --no-daemon --stacktrace --dependency-verification strict :downloader:core:desktopTest --tests '*HlsGuardedRedirect*Test*' --tests '*HlsSegmentIdentityTest*'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Require both JUnit XML files and zero failures or skips
         shell: pwsh
         run: |
           $dir = 'downloader/core/build/test-results/desktopTest'
-          $reports = @(Get-ChildItem -LiteralPath $dir -Filter 'TEST-ir.amirab.downloader.downloaditem.hls.HlsGuardedRedirect*Test.xml' -File)
-          if ($reports.Count -ne 2) { throw "Expected fake and loopback HLS JUnit XML files" }
+          $reports = @(Get-ChildItem -LiteralPath $dir -Filter 'TEST-ir.amirab.downloader.downloaditem.hls.Hls*Test.xml' -File)
+          if ($reports.Count -ne 3) { throw "Expected fake, loopback and segment identity HLS JUnit XML files" }
           $total = 0
           foreach ($file in $reports) {
             [xml]$doc = Get-Content -LiteralPath $file.FullName -Raw
@@ -60,12 +62,12 @@ jobs:
             }
             $total += [int]$suite.GetAttribute('tests')
           }
-          if ($total -lt 12) { throw "Expected at least 12 HLS redirect tests, got $total" }
+          if ($total -lt 19) { throw "Expected at least 19 HLS redirect and segment identity tests, got $total" }
       - name: Upload JUnit evidence (no executable)
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: hyperget-hls-guarded-redirect-junit
+          name: hyperget-hls-redirect-media-identity-junit
           path: downloader/core/build/test-results/desktopTest/TEST-ir.amirab.downloader.downloaditem.hls.HlsGuardedRedirect*Test.xml
           if-no-files-found: warn
           retention-days: 7
