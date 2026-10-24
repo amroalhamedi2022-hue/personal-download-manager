@@ -41,6 +41,17 @@ class ActiveBenchmarkContract(unittest.TestCase):
         self.assertIn('snapshot["active_distinct_tasks"] = len(tasks_active)', FIXTURE)
         self.assertIn('ThreadingHTTPServer(("127.0.0.1", 0), Handler)', FIXTURE)
 
+    def test_16_task_gate_proves_live_sockets_not_merely_seen_tasks(self):
+        self.assertIn("gate_tasks=16", BENCH)
+        self.assertIn("gate_released", BENCH)
+        self.assertIn("gate_open.wait(timeout=25)", FIXTURE)
+        self.assertIn("len(tasks_active) >= gate_expected[0]", FIXTURE)
+        self.assertIn("Get-FileHash -LiteralPath $task.Path -Algorithm SHA256", BENCH)
+
+    def test_windows_summary_uses_exact_pr_head(self):
+        self.assertIn("-SourceSha $env:HYPERGET_TESTED_SHA -Rounds 3", WORKFLOW)
+        self.assertNotIn("-SourceSha $env:GITHUB_SHA -Rounds 3", WORKFLOW)
+
     def test_original_persisted_cap_is_restored_on_failure(self):
         self.assertIn("} finally {", BENCH)
         self.assertIn("-SetValue $originalMaxConcurrentDownloads", BENCH)

@@ -12,6 +12,7 @@ on:
       - ".github/workflows/hyperget-source-only.yml"
       - "scripts/Run-WindowsActiveBenchmarkMatrix.ps1"
       - "scripts/LocalHttpRangeFixture.py"
+      - "scripts/test_local_http_range_fixture.py"
       - "scripts/source-tests/test_hyperget_active_benchmark_source.py"
       - "build.gradle.kts"
       - "scripts/source-tests/test_hyperget_semver_source.py"
@@ -89,5 +90,7 @@ jobs:
         run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_hls_mime_source.py -v
       - name: Verify installed HTTP 1/4/16 benchmark source contract (no app build)
         run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_active_benchmark_source.py -v
+      - name: Verify local HTTP fixture and gated socket admission
+        run: python3 -m unittest scripts/test_local_http_range_fixture.py -v
       - name: Verify local FTP fixture protocol
         run: python3 -m unittest scripts/test_local_ftp_fixture.py -v

@@ -42,12 +42,30 @@ def main():
     }
     tasks_active = {}
     tasks_seen = set()
+    # Test-only bounded admission barrier: prove distinct live GET sockets
+    # without allowing early fast tasks to finish before the last starts.
+    gate_expected = [0]
+    gate_open = threading.Event()
+    gate_open.set()
 
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
 
         def stats_request(self, query):
-            reset = parse_qs(query).get("reset") == ["1"]
+            params = parse_qs(query)
+            reset = params.get("reset") == ["1"]
+            gate_values = params.get("gate_tasks", [])
+            if gate_values and (not reset or len(gate_values) != 1):
+                self.send_error(400, "gate_tasks requires reset=1")
+                return
+            try:
+                requested_gate = int(gate_values[0]) if gate_values else 0
+            except ValueError:
+                self.send_error(400, "Invalid gate_tasks")
+                return
+            if requested_gate < 0 or requested_gate > 64:
+                self.send_error(400, "gate_tasks outside 0..64")
+                return
             with guard:
                 if reset and stats["active_requests"]:
                     self.send_error(409, "Transfers still active")
@@ -57,7 +75,14 @@ def main():
                         stats[key] = 0
                     tasks_active.clear()
                     tasks_seen.clear()
+                    gate_expected[0] = requested_gate
+                    if requested_gate:
+                        gate_open.clear()
+                    else:
+                        gate_open.set()
                 snapshot = dict(stats)
+                snapshot["gate_expected_tasks"] = gate_expected[0]
+                snapshot["gate_released"] = gate_open.is_set()
                 snapshot["active_distinct_tasks"] = len(tasks_active)
                 # Only local synthetic task names, never request URLs, headers
                 # or credentials. Helps distinguish late starts from early exits.
@@ -114,7 +139,12 @@ def main():
                 stats["peak_distinct_tasks"] = max(
                     stats["peak_distinct_tasks"], len(tasks_active)
                 )
+                if gate_expected[0] and len(tasks_active) >= gate_expected[0]:
+                    gate_open.set()
             try:
+                # Timeout is a real failure (incomplete HTTP body), not a PASS.
+                if not gate_open.wait(timeout=25):
+                    return
                 with file_path.open("rb") as inp:
                     inp.seek(start)
                     try:

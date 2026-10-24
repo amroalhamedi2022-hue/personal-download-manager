@@ -8,6 +8,7 @@ on:
       - ".github/workflows/windows-installed-active-benchmark.yml"
       - "scripts/Run-WindowsActiveBenchmarkMatrix.ps1"
       - "scripts/LocalHttpRangeFixture.py"
+      - "scripts/test_local_http_range_fixture.py"
   push:
     branches: [codex/repair-rf00-rf01]
     paths:
@@ -46,6 +47,8 @@ jobs:
           $actual = (git rev-parse HEAD).Trim()
           if ($actual -ne $env:HYPERGET_TESTED_SHA) { throw "Wrong checkout: $actual" }
           python -m unittest discover -s scripts/source-tests -p test_hyperget_active_benchmark_source.py -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m unittest scripts/test_local_http_range_fixture.py -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Set up JetBrains Runtime 25
@@ -104,7 +107,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          & ./scripts/Summarize-WindowsActiveBenchmark.ps1 -Directory 'build/ci-release/active-transfer-bench' -SourceSha $env:GITHUB_SHA -Rounds 3
+          & ./scripts/Summarize-WindowsActiveBenchmark.ps1 -Directory 'build/ci-release/active-transfer-bench' -SourceSha $env:HYPERGET_TESTED_SHA -Rounds 3
           $report = 'build/ci-release/active-transfer-bench/benchmark-report.md'
           if (-not (Test-Path -LiteralPath $report -PathType Leaf)) { throw 'Verified report missing' }
           Get-Content -LiteralPath $report

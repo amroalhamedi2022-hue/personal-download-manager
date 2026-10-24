@@ -114,7 +114,14 @@ try {
         for ($round = 1; $round -le $Rounds; $round++) {
             $scenario = "active-$jobs"
             $statsUrl = "http://127.0.0.1:$port/stats"
-            $prior = Invoke-RestMethod -Uri "${statsUrl}?reset=1" -TimeoutSec 10
+            # The previous installed run saw all 16 tasks but only 15
+            # overlapped; hold bytes until 16 distinct GET sockets are live.
+            $resetUri = if ($jobs -eq 16) { "${statsUrl}?reset=1&gate_tasks=16" } else { "${statsUrl}?reset=1" }
+            $prior = Invoke-RestMethod -Uri $resetUri -TimeoutSec 10
+            $expectedGate = if ($jobs -eq 16) { 16 } else { 0 }
+            if ([int]$prior.gate_expected_tasks -ne $expectedGate) {
+                throw 'Fixture admission gate configuration failed.'
+            }
             if ([int]$prior.active_requests -ne 0 -or [int]$prior.total_requests -ne 0) {
                 throw 'Fixture statistics reset failed before the workload.'
             }
@@ -161,6 +168,9 @@ try {
                     break
                 }
                 Start-Sleep -Milliseconds 250
+            }
+            if ($allActive -and $jobs -eq 16 -and -not [bool]$ready.gate_released) {
+                throw '16 live sockets reported but fixture admission gate was not released.'
             }
             if (-not $allActive) {
                 # Preserve evidence before the finally block shuts down the GUI.

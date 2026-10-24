@@ -64,8 +64,9 @@ class LocalHttpRangeFixtureTest(unittest.TestCase):
         finally:
             conn.close()
 
-    def get_stats(self, reset=False):
-        status, fields, body = self.request("GET", "/stats?reset=1" if reset else "/stats")
+    def get_stats(self, reset=False, gate_tasks=0):
+        path = (f"/stats?reset=1&gate_tasks={gate_tasks}" if reset else "/stats")
+        status, fields, body = self.request("GET", path)
         self.assertEqual(200, status)
         self.assertEqual("application/json", fields["Content-Type"])
         return json.loads(body)
@@ -76,6 +77,52 @@ class LocalHttpRangeFixtureTest(unittest.TestCase):
                 return
             time.sleep(0.03)
         self.fail("Fixture leaked active request(s)")
+
+    def test_gated_two_task_socket_admission_before_body(self):
+        self.wait_idle()
+        before = self.get_stats(reset=True, gate_tasks=2)
+        self.assertEqual(2, before["gate_expected_tasks"])
+        self.assertFalse(before["gate_released"])
+        results, errors = {}, []
+        def fetch(task):
+            try:
+                results[task] = self.request("GET", f"/fixture.bin?task={task}")
+            except Exception as exc:
+                errors.append(str(exc))
+        first = threading.Thread(target=fetch, args=("gate-first",))
+        second = threading.Thread(target=fetch, args=("gate-second",))
+        first.start()
+        for _ in range(100):
+            snapshot = self.get_stats()
+            if snapshot["active_distinct_tasks"] == 1:
+                break
+            time.sleep(0.02)
+        else:
+            self.fail("First gated socket was not registered")
+        self.assertEqual(0, snapshot["bytes_sent"])
+        self.assertFalse(snapshot["gate_released"])
+        self.assertTrue(first.is_alive())
+        second.start()
+        for worker in (first, second):
+            worker.join(timeout=12)
+            self.assertFalse(worker.is_alive())
+        self.assertEqual([], errors)
+        for task in ("gate-first", "gate-second"):
+            self.assertEqual(200, results[task][0])
+            self.assertEqual(self.payload, results[task][2])
+        self.wait_idle()
+        after = self.get_stats()
+        self.assertTrue(after["gate_released"])
+        self.assertEqual(2, after["peak_distinct_tasks"])
+        self.assertEqual(2, after["unique_tasks_seen"])
+        self.get_stats(reset=True)
+
+    def test_gate_rejects_invalid_configuration(self):
+        for path in ("/stats?gate_tasks=2", "/stats?reset=1&gate_tasks=65",
+                     "/stats?reset=1&gate_tasks=abc"):
+            status, _, _ = self.request("GET", path)
+            self.assertEqual(400, status)
+        self.assertEqual(0, self.get_stats(reset=True)["gate_expected_tasks"])
 
     def test_range_response_body_and_headers(self):
         status, headers, data = self.request("HEAD", "/fixture.bin")
