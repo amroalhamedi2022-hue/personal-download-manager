@@ -1,3 +1,23 @@
+## HyperGet — 2026-10-24: bounded, symlink-safe FTP resume metadata (SOURCE + TEST; NO APP BUILD)
+
+**Status: IN_PROGRESS.** Draft [PR #3](https://github.com/amroalhamedi2022-hue/personal-download-manager/pull/3), head `automation/idm-ftp-cancel-and-category-flush`, base `codex/repair-rf00-rf01`. This round changed production code and tests, without touching `main` or merging.
+
+**Finding:** The old `loadIdentity` used `Files.isRegularFile(path)` and `Files.newInputStream(path)`, which follow symbolic links. A local `.ftp-part.properties` link could therefore make FTP resume parse an unrelated file. The parser also had no input-size bound. **Fix:** new `loadFtpResumeIdentity` checks a regular file without following links, opens with `NOFOLLOW_LINKS`, limits reads to 16 KiB (+1 byte for rejection), checks file-key continuity when supported, and converts malformed Java-properties Unicode escapes into a fixed `IOException`. A truly missing sidecar still returns null; existing unsafe sidecars fail closed without deleting staged download data. `FtpTransferClient` uses the guarded reader before REST resume. No schema, credentials, IPC, registry, remote FTP protocol, dependency or paid service changes.
+
+| Gate | Status | Evidence |
+| --- | --- | --- |
+| Isolated Kotlin/JVM sidecar regression | **PASS 11/11** | JDK 21 / kotlinc; compiled only `FtpResumeIdentity.kt` and `HyperGetFtpResumeIdentitySmoke.kt`. Missing/valid sidecar, symlink and dangling link, directory, oversized and malformed metadata; unrelated file preserved. **Not full-app compilation.** |
+| Exact source/test blob identity | **PASS** | Local `git hash-object` matches GitHub: helper `7f754047f3fc33c394d8490113f65ac936682b9e`; smoke `5848b2464c6f2e875b5ff75b8525e83a8d5751df`. |
+| GitHub source-only CI at source/test SHA `2c14dc13bc2518b074f2b8ae226724894ad94c64` | **PASS** | [Run 40068779167](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40068779167): 8/8 Python source-contract checks, 3/3 local FTP fixture checks. Workflow contains no Gradle, packaging or executable artifact upload. |
+| New repository JUnit test `FtpResumeIdentityTest` | **NOT TESTED** | Five JUnit methods added but not run under the no-full-build rule. |
+| Windows FTP real Pause/Resume, HTTP/HTTPS/HLS, 1/4/16, SHA-256, CPU/RAM, Liquid Progress, HyperGet.exe/icon, upgrade, browser integration and independent recheck | **NOT TESTED / DEFERRED** | User's binding NO-BUILD restriction; no Windows executable, installer or release produced. |
+
+**Residual risk:** A hostile process with write access to the same directory can still mutate a regular sidecar in place, including during reading; `fileKey` may be null on some filesystems. This guard is not a cross-process locking scheme. Windows provider behavior and FTP resume integration require final exact-SHA tests. The earlier 13/16 active transfer and FTP installed regressions remain unproven fixed.
+
+**Commits:** helper `dae9b070`; transport wiring `29ff4324`; isolated smoke `3ceccd6d`; deferred JUnit `29c7691a`; source CI checks `2c14dc13`. No full Gradle/Compose compilation, EXE/NSIS/MSI, packaging workflow dispatch, auto-merge, Torrent or paid API. Next: source-only HTTP/HLS/FTP/UI/identity review; final build only after complete readiness, followed by Windows acceptance and independent recheck.
+
+---
+
 ## HyperGet — 2026-10-24: FTP staged-output symlink and resume-offset guard (SOURCE + REGRESSION; NO BUILD)
 
 **Status: IN_PROGRESS.** Existing draft [PR #3](https://github.com/amroalhamedi2022-hue/personal-download-manager/pull/3) on `automation/idm-ftp-cancel-and-category-flush`, targeting `codex/repair-rf00-rf01`; no main write or merge. Production commits: [`bae58037`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/bae580374194ee35948abaf8f2282a4ba2fbbd68) (new guarded staged-file helper), [`16cfdbd5`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/16cfdbd594426bc44de3f422f6a91f5f10396b68) (FTP transport integration); source regression [`f63f379b`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/f63f379b90783263cb0f8d7a9105cf3f240ab474); desktop integration regression [`ad668625`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/ad6686257759282ea88c54600aaf39cfd847875e).
