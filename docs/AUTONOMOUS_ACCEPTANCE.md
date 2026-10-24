@@ -1,3 +1,23 @@
+## HyperGet — 2026-10-24: HLS playlist reconciliation safety (SOURCE ONLY; NO APP BUILD)
+
+**Status: IN_PROGRESS.** Draft PR #3, branch `automation/idm-ftp-cancel-and-category-flush` targeting `codex/repair-rf00-rf01`; no main write or merge. The prior `HLSDownloadJob.updateParts` constructed `newPartsToSave` but never called `setParts` on it. It also reused a completed segment by sequence/duration alone even when the segment URI changed. This could leave refreshed playlists unapplied and mark different bytes as already downloaded.
+
+**Production fix:** `HlsPlaylistReconciliation.kt` provides dependency-free reconciliation by sequence + **exact URI** + duration, preserving completion/length/progress only for matching identity. `HLSDownloadJob.updateParts` now applies the entire reconciled playlist in incoming order, including removal of obsolete segments. Changed URI/duration resets stale completion and byte metadata. No new dependencies, credentials, IPC, registry, identity migration or Torrent code.
+
+| Gate | Status | Evidence |
+| --- | --- | --- |
+| Isolated Kotlin/JVM source regression | **PASS 11/11** | JDK/Kotlin compiler: compiled **only** `HlsPlaylistReconciliation.kt` and `HyperGetHlsReconciliationSmoke.kt`; checked same identity, signed URI change, duration change, sequence change, incoming order, empty/new playlists, completion/length/progress. No full app compile or installer. |
+| Exact GitHub blob identity of tested source | **PASS** | Helper `4ad1ac4968a7ee85df5b3b9a3c286601a3e30445`; smoke `0fe383ef8320194ecee0e9f760644e7f20cf6a61` matched local `git hash-object` of compiled files. |
+| HLS source-only Python contract in CI | **PENDING** | New `test_hyperget_hls_playlist_source.py` added to source-only workflow, with HLS source/test path filters. Does not invoke Gradle or create executable artifacts. Record exact CI run after it finishes. |
+| Desktop JUnit `HlsPlaylistReconciliationTest` | **NOT TESTED** | Three methods committed for eventual full application validation, explicitly deferred by NO-BUILD rule. |
+| Real HLS refresh/restart, HTTPS, FTP Windows Pause/Resume, 1/4/16, SHA-256, CPU/RAM, UI, HyperGet.exe/icon, upgrade, browser integration and independent recheck | **NOT TESTED** | Binding NO-BUILD rule remains active. |
+
+**Residual risk:** This repairs `updateParts` when called; it does **not** change the existing `fetchDownloadInfoAndValidate` behavior that fetches a playlist only if no segments are persisted. A separate policy and test are needed for revalidating persisted playlists, particularly sliding live HLS windows and signed URL refresh. `HLSDownloadJob` itself was not compiled, and Windows runtime behavior is unverified. Existing 13/16 active transfer failure is not resolved by this change. Continue source-only feature/security/UI review; first Windows build only after complete readiness.
+
+**Commits:** `6d25cc56` (helper), `167b095f` (integration), `8a97247a` (smoke), `007592cd` (source contract), `374fabe8` / `7152bec9` (source-only CI), `a3065b86` (deferred JUnit). No paid API, EXE/installer, workflow packaging dispatch, auto-merge or main write.
+
+---
+
 ## HyperGet — 2026-10-24: bounded, symlink-safe FTP resume metadata (SOURCE + TEST; NO APP BUILD)
 
 **Status: IN_PROGRESS.** Draft [PR #3](https://github.com/amroalhamedi2022-hue/personal-download-manager/pull/3), head `automation/idm-ftp-cancel-and-category-flush`, base `codex/repair-rf00-rf01`. This round changed production code and tests, without touching `main` or merging.
