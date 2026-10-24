@@ -19,6 +19,7 @@ on:
       - "scripts/source-tests/test_hyperget_hls_preview_lifecycle_source.py"
       - "scripts/source-tests/test_hyperget_hls_redirect_base_source.py"
       - "scripts/source-tests/test_hyperget_hls_segment_credentials_source.py"
+      - "scripts/source-tests/test_hyperget_hls_manifest_redirect_source.py"
       - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/connection/OkHttpHttpDownloaderClient.kt"
       - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/downloaditem/http/HttpDownloadCredentials.kt"
       - "downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/downloaditem/hls/**"
@@ -59,6 +60,8 @@ jobs:
         run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_hls_redirect_base_source.py -v
       - name: Verify HLS segment credential scoping and redirect guard
         run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_hls_segment_credentials_source.py -v
+      - name: Verify HLS manifest redirect credential isolation (source only)
+        run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_hls_manifest_redirect_source.py -v
       - name: Verify bounded HLS playlist body source contract
         run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_hls_body_source.py -v
       - name: Verify HLS MIME source contract
