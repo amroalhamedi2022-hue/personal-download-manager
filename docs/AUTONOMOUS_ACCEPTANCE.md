@@ -716,3 +716,16 @@ No `main` write, auto-merge, Torrent, public release, paid API/service, packagin
 
 **Remaining/risks:** No true process-kill/restart of installed EXE, NTFS hostile stage replacement, network share ACL/TOCTOU, same-URL mutated media content with trusted validators, FTP Pause/REST and strict active-socket 1/4/16, CPU/RAM, Liquid Progress, icon, extension E2E, upgrade, single HyperGet.exe or independent final-product recheck. Gradle warned about deprecated features before Gradle 10; compilation succeeded. No new dependency or paid service, no Torrent, main write, merge or release. Browser PR #1 remains separate/draft. **Overall: IN_PROGRESS.**
 
+
+
+## 2026-10-24 — HG-HLS-RESUME-03 hardening: reject stage swaps during final assembly
+
+**Same functional milestone, not a new feature:** Safe HLS publication must not accept a completed stage replaced with a different same-length file or modified in place between initial attribute validation and copy. Prior code compared size only and reopened stages with `File.inputStream()`, which follows a symlink introduced after the first NOFOLLOW validation. A replaced stage with identical byte count could be published without detection.
+
+**Production:** `SegmentedDownloadDestination.assemble` now opens stage streams with JDK `Files.newInputStream(path, LinkOption.NOFOLLOW_LINKS)`, and checks the original vs post-copy regular-file flag, length, modification timestamp and `fileKey` (when available). This closes deterministic callback-time same-size replacement/mutation cases; it does not cryptographically authenticate content or eliminate all filesystem races. No new dependency, storage migration or protocol change. References: Oracle JDK Files API (NOFOLLOW_LINKS) and existing Apache-2.0 OkHttp code; no third-party source copied.
+
+**Regression:** two new `HlsSegmentAssemblySafetyTest` cases deterministically replace a stage with a different same-size file or rewrite its bytes during the assembly progress callback, force distinct modification metadata, and require failure with no published output and no leaked .assembling file. Existing safe assembly, redirect, identity, transfer and resume tests must stay green.
+
+**Purposeful Windows compilation gate — recorded before requesting a new manual run:** Does JDK 25/Kotlin compile the NOFOLLOW stream option and does the real NTFS/Windows runner reject same-size stage mutation without publishing an output? **Expected:** 6 HLS JUnit suites, >=29 tests, zero errors/failures/skips; source-only CI green. Python/static checks cannot prove Java NIO provider behavior or Kotlin/JVM API compatibility. **Scope:** free Windows targeted `:downloader:core:desktopTest` only, no EXE/installer/packaging. The PR workflow may automatically trigger for code changes; do not rerun manually until its exact-head result is known.
+
+**Status:** CODE + TEST PUSHED; Windows outcome **NOT TESTED** pending exact-SHA CI. Remaining product gates unchanged: actual OS process kill + installed-app restart, FTP Pause/REST, strict 1/4/16, CPU/RAM, Liquid Progress, icon/identity, browser extension, upgrade and single HyperGet.exe with independent Windows recheck. Keep PR #3 Draft; no main write, auto-merge, Torrent or paid service.
