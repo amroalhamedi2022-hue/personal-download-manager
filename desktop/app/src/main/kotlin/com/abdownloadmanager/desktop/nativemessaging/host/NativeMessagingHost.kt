@@ -1,6 +1,5 @@
 package com.abdownloadmanager.desktop.nativemessaging.host
 
-import com.abdownloadmanager.desktop.nativemessaging.host.stdio.InvalidNativeMessagingFrameException
 import com.abdownloadmanager.desktop.nativemessaging.host.stdio.NativeMessagingFinished
 import com.abdownloadmanager.desktop.nativemessaging.host.stdio.TypeSafeStdioProtocol
 import com.abdownloadmanager.desktop.utils.EntryType
@@ -68,12 +67,10 @@ class NativeMessagingHost(
             } catch (e: Exception) {
                 // A corrupt frame length leaves stdin out of sync. Never reinterpret
                 // its payload as subsequent headers or send a reply to that stream.
-                if (e is NativeMessagingFinished || e is InvalidNativeMessagingFrameException) {
+                if (e is NativeMessagingFinished || e is IOException) {
                     throw e
                 }
-                appLogger.e(e) {
-                    "channel.receive() failed with error"
-                }
+                appLogger.e { "HyperGet native messaging request could not be decoded" }
                 replyError(e)
                 if (e is SerializationException || e is IllegalArgumentException) {
                     //
@@ -86,9 +83,7 @@ class NativeMessagingHost(
             val response = try {
                 router.handle(request)
             } catch (e: Exception) {
-                appLogger.e(e) {
-                    "router.handle(request) failed"
-                }
+                appLogger.e { "HyperGet native messaging request handler failed" }
                 replyError(e)
                 continue
             }
@@ -99,9 +94,7 @@ class NativeMessagingHost(
                 // An IOException may mean that only part of the frame reached
                 // stdout. An error reply would corrupt the browser's framing.
                 if (e is IOException) throw e
-                appLogger.e(e) {
-                    "channel.send(response) failed"
-                }
+                appLogger.e { "HyperGet native messaging response could not be sent" }
                 replyError(e)
             }
         }
@@ -109,11 +102,13 @@ class NativeMessagingHost(
 
     private fun replyError(e: Exception) {
         try {
+            val safe = safeBrowserError(e)
             val content = context(json) {
                 NativeMessagingMessage(
                     id = NativeMessagingMessage.generateId(),
                     content = NativeMessagingMessage.Content.error(
-                        message = e.localizedMessage
+                        errorType = safe.errorType,
+                        message = safe.message
                     )
                 )
             }
@@ -122,9 +117,7 @@ class NativeMessagingHost(
             // The protocol poisons stdout on write/flush IO failure. Abort the
             // host instead of silently looping on a broken browser pipe.
             if (exception is IOException) throw exception
-            appLogger.e(exception) {
-                "can't send the error to the browser"
-            }
+            appLogger.e { "HyperGet could not send a browser error response" }
         }
     }
 }
