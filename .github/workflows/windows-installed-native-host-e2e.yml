@@ -258,9 +258,24 @@ jobs:
           Expand-Archive -LiteralPath $archive -DestinationPath $extract -Force
           $driver = Get-ChildItem -LiteralPath $extract -File -Recurse -Filter 'geckodriver.exe' | Select-Object -First 1
           if (-not $driver) { throw 'geckodriver.exe missing after official archive extraction' }
+
+          # Firefox 138+ and a geckodriver exposing --allow-system-access are required
+          # only for this isolated extension-page E2E. The flag grants full browser-UI
+          # privileges, so it is never enabled in the delivered HyperGet application.
+          $runtimeInfo = Get-Content 'build/ci-release/native-host/firefox-runtime-sha256.txt' -Raw
+          $firefoxMajorMatch = [regex]::Match($runtimeInfo, '(?m)^FirefoxVersion=(\d+)\.')
+          if (-not $firefoxMajorMatch.Success -or [int]$firefoxMajorMatch.Groups[1].Value -lt 138) {
+            throw 'Firefox 138+ is required for the isolated privileged extension-page E2E'
+          }
+          $driverHelp = (& $driver.FullName --help 2>&1 | Out-String)
+          if ($LASTEXITCODE -ne 0 -or $driverHelp -notmatch '--allow-system-access') {
+            throw 'Official geckodriver does not support --allow-system-access'
+          }
+
           "GeckodriverTag=$tag" | Add-Content 'build/ci-release/native-host/firefox-runtime-sha256.txt'
           "GeckodriverArchiveSHA256=$archiveSha" | Add-Content 'build/ci-release/native-host/firefox-runtime-sha256.txt'
           "GeckodriverURL=$($uri.AbsoluteUri)" | Add-Content 'build/ci-release/native-host/firefox-runtime-sha256.txt'
+          "GeckodriverAllowSystemAccessSupported=true" | Add-Content 'build/ci-release/native-host/firefox-runtime-sha256.txt'
           "HYPERGET_GECKODRIVER_EXE=$($driver.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
       - name: Run real Firefox extension -> installed HyperGet -> SHA-verified download
         shell: pwsh
