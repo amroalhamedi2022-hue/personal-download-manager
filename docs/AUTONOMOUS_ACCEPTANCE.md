@@ -791,3 +791,11 @@ No `main` write, auto-merge, Torrent, public release, paid API/service, packagin
 **PASS HLS targeted Windows JUnit** on same production SHA: [40153251401](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40153251401), six suites / 29 tests / zero failures or skips; no installed HLS GUI crash/restart validation.
 
 **NOT TESTED:** FTP installed Pause/REST/resume and WinCred recovery at this SHA, HTTPS public E2E, HLS installed kill/restart, URL refresh, scheduler, browser native-host E2E, Liquid Progress visual QA, HyperGet executable/icon and legacy upgrade, independent second Windows recheck and final single `HyperGet.exe`. No IDM baseline measured. Next functional milestone is FTP live Pause/REST with staged-part integrity and SHA-256. Detailed reproducible evidence and resource measurements: [HG_WINDOWS_1_4_16_ACCEPTED_2026-10-25.md](checkpoints/HG_WINDOWS_1_4_16_ACCEPTED_2026-10-25.md). No main write, auto-merge, paid runner or Torrent.
+
+---
+
+## HyperGet — 2026-10-25 HG-FTP-WIN-LOOPBACK-01 pre-build acceptance question
+
+**Milestone question, documented before targeted Windows compilation:** Does the real production `FtpTransferClient` and `FtpDownloadJob` pass Apache FTP localhost integration tests on Windows, including mid-stream Pause leaving a nonempty incomplete `.ftp-part`, verified REST resume with identical bytes, changed remote identity rejection, Windows Credential Manager lookup after persisted-task restart, and destination-file protection? **Expected:** targeted `:downloader:core:desktopTest` compiles, three FTP JUnit suites with at least **29 tests total**, zero errors/failures/skips. Existing 21 FTP integration tests plus five resume-identity and three staged-identity tests are already in source. A clean Windows JUnit run is necessary: static tests do not exercise real Apache FTP sockets, REST, filesystem or Windows WinCred. No installer/EXE or paid runner is required for this bounded gate. **Before run:** NOT TESTED on the new workflow; a failed test is a failure, not permission to weaken assertions.
+
+**Remaining beyond this gate:** installed GUI/CLI FTP pause/restart and an actual killed process; HLS/HTTPS/URL-refresh/scheduler/browser/UI/upgrade/final EXE. This JUnit milestone alone must never be reported as a full installed FTP acceptance.
