@@ -142,9 +142,15 @@ try {
     if ((Test-Path -LiteralPath $partialPath) -or (Test-Path -LiteralPath "$partialPath.properties")) {
         throw 'FTP staging data remained after successful commit.'
     }
-    $statusOutput = @(& $cliPath download show $taskId 2>&1)
-    if ($LASTEXITCODE -ne 0 -or ($statusOutput -join "`n") -notmatch 'Finished') {
-        throw "Persisted FTP task did not report Finished: $($statusOutput -join ' ')"
+    # The default Mordant table truncates status columns on narrow Windows CI
+    # consoles (e.g. "Fini…"). Use the production's stable, non-sensitive
+    # machine-readable ID/status output rather than matching rendered columns.
+    $statusOutput = @(& $cliPath download show --status-lines $taskId 2>&1)
+    $statusExitCode = $LASTEXITCODE
+    $statusRows = @($statusOutput | ForEach-Object { "$_".Trim() })
+    $expectedStatus = "$taskId`tFinished"
+    if ($statusExitCode -ne 0 -or $statusRows.Count -ne 1 -or $statusRows[0] -cne $expectedStatus) {
+        throw "Persisted FTP task did not report the exact Finished ID/status line: $($statusRows -join ' ')"
     }
     $stats = Get-Content -LiteralPath $statsFile -Raw | ConvertFrom-Json
     $positiveOffsets = @($stats.rest_offsets | Where-Object { [long]$_ -gt 0 })
