@@ -16,3 +16,7 @@ Does the changed production Kotlin compile and do the four new JUnit regressions
 - **Next if FAIL:** inspect exact-head artifact diagnostics for whether the missing job transitions to retry/error, and instrument the per-part Connecting/IDLE phase if necessary. Do not increase benchmark timeout or lower strict concurrency gate to hide failure.
 
 References: official [Kotlin coroutine timeout and cancellation docs](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/with-timeout.html), existing Apache-2.0 downloader source. PR #3 remains Draft. No main write, auto-merge, release, paid service, or unrelated project modification.
+
+## Exact-head test failure and repair (2026-10-25)
+- [Windows queue JUnit 40196161158](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40196161158) on `77e50131`: **FAIL** because two new expression-bodied `@Test` methods returned `Throwable` instead of JVM `void` (JUnit4 `InvalidTestClassError`). **Production Kotlin compiled**, and existing 11 tests completed; the new four were not executed. This is a test-declaration error, not evidence that the deadline behavior failed.
+- Follow-up changes make all four JUnit methods return explicit `Unit` and remove a redundant type check. The new SHA requires independent JUnit verification. Source CI 40196161148 passed on the prior SHA. No release or completion claim.

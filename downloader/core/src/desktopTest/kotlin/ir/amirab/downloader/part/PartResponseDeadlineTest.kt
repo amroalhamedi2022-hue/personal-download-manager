@@ -30,6 +30,7 @@ class PartResponseDeadlineTest {
         assertEquals(false, connection.closed)
         returned.close()
         assertTrue(connection.closed)
+        Unit
     }
 
     @Test fun noResponseBecomesRetryableIOExceptionRatherThanSilentConnecting() = runBlocking {
@@ -40,6 +41,7 @@ class PartResponseDeadlineTest {
             }
         }.exceptionOrNull()
         assertIs<SocketTimeoutException>(failure)
+        Unit
     }
 
     @Test fun explicitCancellationIsNotConvertedIntoRetryableSocketTimeout() = runBlocking {
@@ -53,7 +55,7 @@ class PartResponseDeadlineTest {
         task.cancel()
         val failure = runCatching { task.await() }.exceptionOrNull()
         assertIs<CancellationException>(failure)
-        assertTrue(failure !is SocketTimeoutException)
+        Unit
     }
 
     @Test fun outerDeadlineRemainsCancellationRatherThanNetworkRetry() = runBlocking {
@@ -66,5 +68,6 @@ class PartResponseDeadlineTest {
             }
         }.exceptionOrNull()
         assertIs<TimeoutCancellationException>(failure)
+        Unit
     }
 }
