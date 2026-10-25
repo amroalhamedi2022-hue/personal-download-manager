@@ -8,6 +8,7 @@ on:
     paths:
       - ".github/workflows/windows-installed-memory-profile.yml"
       - "scripts/Collect-WindowsJvmMemoryProfile.ps1"
+      - "scripts/source-tests/test_hyperget_memory_profile_source.py"
       - "scripts/Run-WindowsActiveBenchmarkMatrix.ps1"
       - "scripts/Summarize-WindowsActiveBenchmark.ps1"
       - "scripts/Measure-WindowsDownloadManager.ps1"

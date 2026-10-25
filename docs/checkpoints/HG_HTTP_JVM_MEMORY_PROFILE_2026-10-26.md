@@ -18,3 +18,7 @@ Expected: all 21 file hashes and three CSVs pass, and profile files are uploaded
 - Product release remains NOT READY: HTTPS remote, refreshed URL, scheduler, installed HLS kill/relaunch, Liquid Progress visuals, final branding/icon, upgrade/uninstall preservation, independent Windows release recheck and final single `HyperGet.exe` remain open.
 
 No main write, merge, release, paid service or Torrent.
+
+
+## Profile preflight failure and repair
+The first profile workflow [40246220683](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40246220683) stopped in preflight because the source test compared the first textual occurrence of the script names; the profile script appeared in the parser step before the transfer command. No build/profile ran. The test now compares actual PowerShell invocation lines, and the profile workflow includes the source-contract path so the repaired preflight is revalidated before packaging. Exact-head profile result remains pending.

@@ -17,10 +17,9 @@ class WindowsJvmMemoryProfileContract(unittest.TestCase):
     def test_profile_runs_after_real_installed_transfer_matrix(self):
         self.assertIn("Run-WindowsActiveBenchmarkMatrix.ps1", WORKFLOW)
         self.assertIn("Collect-WindowsJvmMemoryProfile.ps1", WORKFLOW)
-        self.assertLess(
-            WORKFLOW.index("Run-WindowsActiveBenchmarkMatrix.ps1"),
-            WORKFLOW.index("Collect-WindowsJvmMemoryProfile.ps1"),
-        )
+        transfer_call = WORKFLOW.index("& ./scripts/Run-WindowsActiveBenchmarkMatrix.ps1")
+        profile_call = WORKFLOW.index("& ./scripts/Collect-WindowsJvmMemoryProfile.ps1")
+        self.assertLess(transfer_call, profile_call)
         self.assertIn("createReleaseFolderForCi", WORKFLOW)
         self.assertIn("github.event.pull_request.head.sha || github.sha", WORKFLOW)
 
