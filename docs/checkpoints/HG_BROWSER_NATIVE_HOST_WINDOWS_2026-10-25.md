@@ -15,3 +15,7 @@ Exact prior head `fa28fd4ca5a811fa883ab158e9ce3a80fbf8ebe9`: [HTTP installed Win
 
 ## Status
 Script added at `scripts/Run-WindowsInstalledNativeHostE2E.ps1` in commit `50de336dfdc97dc7f2fb0dc77f1dc6314bb13caa`. New native host Windows gate **NOT TESTED** until exact-head CI result. No main write, auto-merge, Torrent, release or user-facing binary.
+
+## First exact-head Windows attempt — FAIL in test harness, not host (2026-10-25)
+
+[Windows run 40214882135](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40214882135) at SHA `3fe66173c8200e0828784b43b489d5ff0a34c6a5`: pre-build PowerShell parser **PASS**, NSIS **BUILD SUCCESSFUL** (~4 min), internal installer SHA-256 `c2e52b4404555ca5fa52105e91ffb4f97fe550dd60e3c0b7b026067473759b68`. Installation stage **FAIL** because workflow variable `$host` conflicts with PowerShell's built-in read-only `$Host` automatic variable. The native protocol script **did not execute**; registration/ping/error/EOF remain **NOT TESTED**. The targeted repair renames only the workflow local variable to `$nativeExeFiles`, without changing application code or loosening assertions. A new exact-head Windows installed run is required. No success claim from the failed run.
