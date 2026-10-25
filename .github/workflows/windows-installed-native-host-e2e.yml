@@ -1,0 +1,105 @@
+name: HyperGet installed Windows native host IPC milestone
+
+# One purposeful Windows build for installed native messaging host registration
+# and real browser-style binary stdio framing. No actual browser is launched.
+on:
+  pull_request:
+    branches: [codex/repair-rf00-rf01]
+    paths:
+      - ".github/workflows/windows-installed-native-host-e2e.yml"
+      - "scripts/Run-WindowsInstalledNativeHostE2E.ps1"
+      - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/nativemessaging/**"
+      - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/AppInfo.kt"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hyperget-installed-native-host-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  installed-native-host:
+    name: Windows NSIS install, Chrome Firefox HKCU manifests, framed native host ping
+    runs-on: windows-2022
+    timeout-minutes: 60
+    env:
+      SKIP_ANDROID_BUILD: "true"
+      HYPERGET_TESTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Check out exact tested source SHA
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Verify SHA and parse PowerShell before NSIS build
+        shell: pwsh
+        run: |
+          if ((git rev-parse HEAD).Trim() -ne $env:HYPERGET_TESTED_SHA) { throw 'Wrong source SHA' }
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path 'scripts/Run-WindowsInstalledNativeHostE2E.ps1').Path,
+            [ref]$tokens, [ref]$errors
+          ) | Out-Null
+          if ($errors.Count -ne 0) {
+            $errors | ForEach-Object { Write-Host $_.ToString() }
+            throw "Native host E2E script has $($errors.Count) parser errors"
+          }
+          Write-Host 'Native host PowerShell syntax PASS before installer build'
+      - name: Set up JetBrains Runtime 25
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: jetbrains
+          java-package: jdk
+          java-version: "25"
+          cache: gradle
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build exactly one internal Windows NSIS installer
+        shell: bash
+        run: >-
+          ./gradlew --no-daemon --stacktrace
+          --dependency-verification strict
+          createReleaseFolderForCi
+      - name: Record installer SHA256 and install native host package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installers = @(Get-ChildItem -LiteralPath 'build/ci-release/binaries' -File -Recurse -Filter '*.exe')
+          if ($installers.Count -ne 1) { throw "Expected one internal NSIS installer, got $($installers.Count)" }
+          $sha = (Get-FileHash -LiteralPath $installers[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          New-Item -ItemType Directory -Path 'build/ci-release/native-host' -Force | Out-Null
+          "SourceSHA=$env:HYPERGET_TESTED_SHA" | Set-Content 'build/ci-release/native-host/installer-sha256.txt'
+          "InstallerSHA256=$sha" | Add-Content 'build/ci-release/native-host/installer-sha256.txt'
+          Write-Host "Internal NSIS test installer SHA256: $sha"
+          $dir = Join-Path $env:RUNNER_TEMP 'hyperget-native-host-installed'
+          if (Test-Path -LiteralPath $dir) { throw 'Unexpected pre-existing install directory' }
+          $proc = Start-Process -FilePath $installers[0].FullName -ArgumentList @('/S', "/D=$dir") -PassThru
+          if (-not $proc.WaitForExit(180000)) {
+            Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+            throw 'NSIS install timed out'
+          }
+          if ($proc.ExitCode -ne 0) { throw "NSIS exit code $($proc.ExitCode)" }
+          $gui = @(Get-ChildItem -LiteralPath $dir -File -Recurse -Filter 'DownloadManager.exe')
+          $host = @(Get-ChildItem -LiteralPath $dir -File -Recurse -Filter 'DownloadManagerNativeMessagingHost.exe')
+          if ($gui.Count -ne 1 -or $host.Count -ne 1) {
+            throw "Installed GUI/native host executable missing: GUI=$($gui.Count), host=$($host.Count)"
+          }
+          "HYPERGET_GUI_EXE=$($gui[0].FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "HYPERGET_NATIVE_EXE=$($host[0].FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Run installed Windows native host protocol acceptance
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & ./scripts/Run-WindowsInstalledNativeHostE2E.ps1 -GuiExecutable $env:HYPERGET_GUI_EXE -HostExecutable $env:HYPERGET_NATIVE_EXE -SourceSha $env:HYPERGET_TESTED_SHA -OutputDirectory 'build/ci-release/native-host/evidence'
+      - name: Upload non-sensitive Windows native host evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: hyperget-installed-native-host-evidence
+          path: |
+            build/ci-release/native-host/installer-sha256.txt
+            build/ci-release/native-host/evidence/native-host-report.json
+          if-no-files-found: warn
+          retention-days: 14
