@@ -85,6 +85,13 @@ def main():
     tasks_active = {}
     tasks_seen = set()
     task_bytes_sent = {}
+    # Per-task bounded HTTP response lifecycle counters distinguish a
+    # short successful Range probe from a disconnected/stalled data socket.
+    # Task names are synthetic fixture labels; no URL or credential is logged.
+    task_get_started = {}
+    task_get_completed = {}
+    task_get_interrupted = {}
+    task_requested_bytes = {}
     task_pacer = TaskChunkPacer(args.task_chunk_delay_ms / 1000.0)
     # Test-only bounded admission barrier: prove distinct live GET sockets
     # without allowing early fast tasks to finish before the last starts.
@@ -120,6 +127,10 @@ def main():
                     tasks_active.clear()
                     tasks_seen.clear()
                     task_bytes_sent.clear()
+                    task_get_started.clear()
+                    task_get_completed.clear()
+                    task_get_interrupted.clear()
+                    task_requested_bytes.clear()
                     task_pacer.reset()
                     gate_expected[0] = requested_gate
                     if requested_gate:
@@ -135,6 +146,10 @@ def main():
                 snapshot["active_task_ids"] = sorted(tasks_active)
                 snapshot["unique_tasks_seen"] = len(tasks_seen)
                 snapshot["task_bytes_sent"] = dict(sorted(task_bytes_sent.items()))
+                snapshot["task_get_started"] = dict(sorted(task_get_started.items()))
+                snapshot["task_get_completed"] = dict(sorted(task_get_completed.items()))
+                snapshot["task_get_interrupted"] = dict(sorted(task_get_interrupted.items()))
+                snapshot["task_requested_bytes"] = dict(sorted(task_requested_bytes.items()))
             body = json.dumps(snapshot, sort_keys=True).encode("ascii")
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -178,6 +193,8 @@ def main():
 
             task_id = parse_qs(address.query).get("task", ["unlabeled"])[0][:128]
             with guard:
+                task_get_started[task_id] = task_get_started.get(task_id, 0) + 1
+                task_requested_bytes[task_id] = task_requested_bytes.get(task_id, 0) + remaining
                 stats["active_requests"] += 1
                 stats["total_requests"] += 1
                 tasks_seen.add(task_id)
@@ -225,6 +242,10 @@ def main():
                         pass
             finally:
                 with guard:
+                    if remaining == 0:
+                        task_get_completed[task_id] = task_get_completed.get(task_id, 0) + 1
+                    else:
+                        task_get_interrupted[task_id] = task_get_interrupted.get(task_id, 0) + 1
                     stats["active_requests"] -= 1
                     count = tasks_active[task_id] - 1
                     if count:
