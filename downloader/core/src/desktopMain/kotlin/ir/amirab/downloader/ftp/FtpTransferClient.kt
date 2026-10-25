@@ -12,6 +12,7 @@ import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
+import java.nio.file.attribute.FileTime
 import java.time.Duration
 import java.util.Properties
 import java.util.concurrent.atomic.AtomicBoolean
@@ -198,6 +199,7 @@ class FtpTransferClient {
             transfer.dataStream.set(stream)
             var downloaded = existing
             var stagedFileKey: Any? = null
+            var stagedCreationTime: FileTime? = null
             withFtpDataStream(
                 stream = stream,
                 unregister = { transfer.dataStream.compareAndSet(stream, null) },
@@ -220,6 +222,7 @@ class FtpTransferClient {
                     rateLimited.buffer().use { received ->
                         val openedStage = openFtpStagedOutput(part, existing)
                         stagedFileKey = openedStage.fileKey
+                        stagedCreationTime = openedStage.creationTime
                         openedStage.buffered().use { outputStream ->
                             val buffer = ByteArray(64 * 1024)
                             while (true) {
@@ -246,7 +249,7 @@ class FtpTransferClient {
             transfer.ensureNotCancelled()
             // Never use ATOMIC_MOVE here: it can replace a file that appeared
             // while RETR was running, even without REPLACE_EXISTING.
-            publishFtpStagedFile(part, absolute, downloaded, stagedFileKey)
+            publishFtpStagedFile(part, absolute, downloaded, stagedFileKey, stagedCreationTime)
             Files.deleteIfExists(meta)
             return TransferResult(absolute, downloaded - existing, existing, identity.size, identity.modificationTime)
         } finally {

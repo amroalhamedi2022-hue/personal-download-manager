@@ -7,6 +7,7 @@ import java.nio.file.LinkOption
 import java.nio.file.Path
 import java.nio.file.FileSystemException
 import java.nio.file.attribute.BasicFileAttributes
+import java.nio.file.attribute.FileTime
 
 /**
  * Publish a completed FTP part without silently replacing a file created by
@@ -19,16 +20,17 @@ import java.nio.file.attribute.BasicFileAttributes
  * supports file systems without hard links, using a no-replace Files.move;
  * that fallback does not promise cross-process atomicity on every provider.
  *
- * The pre-publish check also rejects a staged path swapped after its stream
- * was opened. File-key protection is conditional on filesystem support; a
- * malicious process with write access to the destination directory can still
- * race a check and a subsequent filesystem operation.
+ * The pre-publish check rejects a staged path swapped after its stream was
+ * opened. On providers without fileKey (including some Windows providers),
+ * creationTime adds a best-effort identity check. A hostile actor able to
+ * forge timestamps or race the final check is not fully prevented.
  */
 internal fun publishFtpStagedFile(
     part: Path,
     destination: Path,
     expectedSize: Long? = null,
     expectedFileKey: Any? = null,
+    expectedCreationTime: FileTime? = null,
 ) {
     val attributes = Files.readAttributes(part, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
     if (!attributes.isRegularFile) {
@@ -36,6 +38,9 @@ internal fun publishFtpStagedFile(
     }
     if (expectedSize != null && attributes.size() != expectedSize) {
         throw IOException("FTP staged size changed before publication")
+    }
+    if (expectedCreationTime != null && attributes.creationTime() != expectedCreationTime) {
+        throw IOException("FTP staged creation time changed before publication")
     }
     if (expectedFileKey != null && attributes.fileKey() != expectedFileKey) {
         throw IOException("FTP staged identity changed before publication")

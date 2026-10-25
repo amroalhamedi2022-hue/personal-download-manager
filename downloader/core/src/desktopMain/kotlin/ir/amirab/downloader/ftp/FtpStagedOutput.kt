@@ -10,6 +10,7 @@ import java.nio.file.OpenOption
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
 import java.nio.file.attribute.BasicFileAttributes
+import java.nio.file.attribute.FileTime
 
 /**
  * Never follow an attacker-controlled .ftp-part symbolic link when measuring or
@@ -31,6 +32,7 @@ internal fun ftpStagedBytes(part: Path): Long {
 internal class FtpStagedOutput internal constructor(
     private val delegate: OutputStream,
     val fileKey: Any?,
+    val creationTime: FileTime,
 ) : OutputStream() {
     override fun write(b: Int) = delegate.write(b)
     override fun write(b: ByteArray, off: Int, len: Int) = delegate.write(b, off, len)
@@ -65,10 +67,13 @@ internal fun openFtpStagedOutput(part: Path, expectedSize: Long): FtpStagedOutpu
         if (!after.isRegularFile || channel.size() != expectedSize || after.size() != expectedSize) {
             throw IOException("FTP staged file changed while opening; refusing unsafe resume")
         }
+        if (before != null && before.creationTime() != after.creationTime()) {
+            throw IOException("FTP staged file creation time changed while opening")
+        }
         if (before?.fileKey() != null && before.fileKey() != after.fileKey()) {
             throw IOException("FTP staged file identity changed while opening")
         }
-        return FtpStagedOutput(Channels.newOutputStream(channel), after.fileKey())
+        return FtpStagedOutput(Channels.newOutputStream(channel), after.fileKey(), after.creationTime())
     } catch (failure: Throwable) {
         channel.close()
         throw failure
