@@ -62,6 +62,14 @@ class ActiveBenchmarkContract(unittest.TestCase):
         self.assertIn('time.sleep(wait)', FIXTURE)
         self.assertIn('snapshot["task_bytes_sent"] = dict(sorted(task_bytes_sent.items()))', FIXTURE)
 
+    def test_strict_fixture_has_one_throttle_per_transfer(self):
+        self.assertIn('if args.chunk_delay_ms > 0 and not gate_expected[0]:', FIXTURE)
+        self.assertIn('stats["connection_delay_sleeps"] += 1', FIXTURE)
+        self.assertIn('with task_pacer.slot(task_id) as wait:', FIXTURE)
+        # Neither real-socket admission nor the final SHA gate may be relaxed.
+        self.assertIn('active_distinct_tasks', BENCH)
+        self.assertIn('Get-FileHash -LiteralPath $task.Path -Algorithm SHA256', BENCH)
+
     def test_windows_summary_uses_exact_pr_head(self):
         self.assertIn("-SourceSha $env:HYPERGET_TESTED_SHA -Rounds 3", WORKFLOW)
         self.assertNotIn("-SourceSha $env:GITHUB_SHA -Rounds 3", WORKFLOW)
