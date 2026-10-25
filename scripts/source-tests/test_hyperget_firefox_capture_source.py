@@ -50,6 +50,31 @@ class FirefoxInstalledCaptureSourceTest(unittest.TestCase):
         self.assertIn("test_hyperget_firefox_capture_source.py", WORKFLOW)
         self.assertIn("node --check scripts/Run-WindowsFirefoxNativeE2E.mjs", WORKFLOW)
 
+    def test_webdriver_failure_reports_safe_route_status_and_error_class(self):
+        self.assertIn("function safeWebDriverRoute(route)", SCRIPT)
+        self.assertIn("normalizedWebDriverError(parsed?.value?.error)", SCRIPT)
+        self.assertIn("recordWebDriverFailure(method, route, statusCode, errorCode)", SCRIPT)
+        self.assertIn("WEBDRIVER_COMMAND_FAILED:", SCRIPT)
+        self.assertIn("routeClass: safeWebDriverRoute(route)", SCRIPT)
+        self.assertNotIn("parsed?.value?.message", SCRIPT)
+        self.assertNotIn("rejectRequest(new Error(parsed", SCRIPT)
+
+    def test_failure_artifact_is_written_with_stage_without_raw_exception(self):
+        self.assertIn("function writeEvidenceReport(verified, failureCode = null)", SCRIPT)
+        self.assertIn("writeEvidenceReport(false, failureCode)", SCRIPT)
+        self.assertIn("stage: currentStage", SCRIPT)
+        self.assertIn("webdriverFailure: lastWebDriverFailure", SCRIPT)
+        self.assertIn("FIREFOX_NATIVE_E2E_FAILED:", SCRIPT)
+        self.assertIn("event: 'FIREFOX_NATIVE_E2E_FAILED'", SCRIPT)
+
+    def test_browser_acceptance_stages_are_explicit(self):
+        for stage in (
+            "CREATE_FIREFOX_SESSION", "INSTALL_FIREFOX_ADDON",
+            "NAVIGATE_EXTENSION_OPTIONS", "NATIVE_PING",
+            "NATIVE_SAFE_ERROR", "NATIVE_ADD", "VERIFY_DOWNLOAD_SHA256",
+        ):
+            self.assertIn("currentStage = '" + stage + "'", SCRIPT)
+
 
 if __name__ == "__main__":
     unittest.main()

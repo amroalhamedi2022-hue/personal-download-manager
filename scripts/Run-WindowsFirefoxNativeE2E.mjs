@@ -11,6 +11,8 @@ import { dirname, join, resolve } from 'node:path';
 
 const ADDON_ID = 'browser-integration@personaldownloadmanager.local';
 const NATIVE_HOST = 'app.personaldownloadmanager';
+let currentStage = 'PREFLIGHT';
+let lastWebDriverFailure = null;
 const SOURCE_SHA = process.env.HYPERGET_TESTED_SHA || 'unknown';
 
 function sleep(ms) { return new Promise(resolveSleep => setTimeout(resolveSleep, ms)); }
@@ -27,34 +29,68 @@ async function waitFor(check, label, timeoutMs = 30000) {
   throw new Error(label);
 }
 
+function safeWebDriverRoute(route) {
+  if (route === '/status') return 'STATUS';
+  if (route === '/session') return 'CREATE_SESSION';
+  if (/^\/session\/[^/]+\/moz\/addon\/install$/.test(route)) return 'INSTALL_ADDON';
+  if (/^\/session\/[^/]+\/url$/.test(route)) return 'NAVIGATE';
+  if (/^\/session\/[^/]+\/execute\/(?:sync|async)$/.test(route)) return 'EXECUTE';
+  if (/^\/session\/[^/]+$/.test(route)) return 'SESSION';
+  return 'OTHER';
+}
+const SAFE_WEBDRIVER_ERRORS = new Set([
+  'invalid argument','session not created','unknown command','unsupported operation',
+  'no such window','no such session','invalid session id','timeout','script timeout',
+  'javascript error','unknown error','element not interactable','invalid selector',
+  'unexpected alert open','no such alert','stale element reference','detached shadow root',
+  'move target out of bounds','insecure certificate','unable to set cookie',
+  'unable to capture screen','no such element','element click intercepted','invalid cookie domain',
+]);
+function normalizedWebDriverError(value) {
+  if (typeof value !== 'string') return 'HTTP_ERROR';
+  if (!SAFE_WEBDRIVER_ERRORS.has(value)) return 'OTHER_W3C_ERROR';
+  return value.toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_|_$/g, '');
+}
+function recordWebDriverFailure(method, route, statusCode, errorCode) {
+  lastWebDriverFailure = { method, routeClass: safeWebDriverRoute(route),
+    statusCode: Number.isInteger(statusCode) ? statusCode : null, errorCode };
+}
 function webdriverRequest(port, route, method = 'GET', body = undefined, timeoutMs = 30000) {
   const serialized = body === undefined ? null : Buffer.from(JSON.stringify(body));
   return new Promise((resolveRequest, rejectRequest) => {
+    const routeClass = safeWebDriverRoute(route);
+    let localFailure = null;
     const req = httpRequest({
-      host: '127.0.0.1',
-      port,
-      path: route,
-      method,
-      headers: serialized ? {
-        'Content-Type': 'application/json; charset=utf-8',
-        'Content-Length': String(serialized.length),
-      } : {},
+      host: '127.0.0.1', port, path: route, method,
+      headers: serialized ? {'Content-Type':'application/json; charset=utf-8','Content-Length':String(serialized.length)} : {},
     }, response => {
       const chunks = [];
       response.on('data', chunk => chunks.push(chunk));
       response.on('end', () => {
         let parsed;
         try { parsed = JSON.parse(Buffer.concat(chunks).toString('utf8')); }
-        catch { rejectRequest(new Error('WEBDRIVER_INVALID_JSON')); return; }
-        if ((response.statusCode ?? 500) >= 400 || parsed?.value?.error) {
-          rejectRequest(new Error('WEBDRIVER_COMMAND_FAILED'));
+        catch {
+          recordWebDriverFailure(method, route, response.statusCode ?? 500, 'INVALID_JSON');
+          rejectRequest(new Error('WEBDRIVER_INVALID_JSON')); return;
+        }
+        const statusCode = response.statusCode ?? 500;
+        if (statusCode >= 400 || parsed?.value?.error) {
+          const errorCode = normalizedWebDriverError(parsed?.value?.error);
+          recordWebDriverFailure(method, route, statusCode, errorCode);
+          rejectRequest(new Error(`WEBDRIVER_COMMAND_FAILED:${routeClass}:${statusCode}:${errorCode}`));
           return;
         }
         resolveRequest(parsed);
       });
     });
-    req.setTimeout(timeoutMs, () => req.destroy(new Error('WEBDRIVER_TIMEOUT')));
-    req.on('error', () => rejectRequest(new Error('WEBDRIVER_UNAVAILABLE')));
+    req.setTimeout(timeoutMs, () => {
+      localFailure = 'TIMEOUT'; recordWebDriverFailure(method, route, null, localFailure);
+      req.destroy(new Error('WEBDRIVER_TIMEOUT'));
+    });
+    req.on('error', () => {
+      if (!localFailure) { localFailure = 'UNAVAILABLE'; recordWebDriverFailure(method, route, null, localFailure); }
+      rejectRequest(new Error(localFailure === 'TIMEOUT' ? 'WEBDRIVER_TIMEOUT' : 'WEBDRIVER_UNAVAILABLE'));
+    });
     if (serialized) req.write(serialized);
     req.end();
   });
@@ -219,13 +255,34 @@ let nativePingVerified = false;
 let safeErrorVerified = false;
 let firefoxVersion = 'unknown';
 
+function safeFailureCode(error) {
+  const message = error instanceof Error ? error.message : '';
+  if (/^WEBDRIVER_COMMAND_FAILED:[A-Z_]+:\\d{3}:[A-Z_]+$/.test(message)) return message;
+  if (/^[A-Z0-9_:-]{1,120}$/.test(message)) return message;
+  return 'UNCLASSIFIED';
+}
+function writeEvidenceReport(verified, failureCode = null) {
+  writeFileSync(join(evidenceDir, 'firefox-native-extension-report.json'), JSON.stringify({
+    sourceSha: SOURCE_SHA, browser: 'Mozilla Firefox', firefoxVersion,
+    extensionId: ADDON_ID, manifestVersion: 2, nativeHost: NATIVE_HOST,
+    stage: currentStage, failureCode, webdriverFailure: lastWebDriverFailure,
+    addonInstalled, nativePingCorrelated: nativePingVerified,
+    safeErrorCorrelatedAndSanitized: safeErrorVerified,
+    browserDownloadCaptured: downloadVerified, browserDownloadSha256Verified: downloadVerified,
+    browserFixtureBytes: fixture.bytes.length, browserFixtureSha256: fixture.expectedSha,
+    browserFixtureGetRequests: fixture.getRequests(), verified,
+  }, null, 2));
+}
+
 try {
+  currentStage = 'GECKODRIVER_STATUS';
   await waitFor(async () => {
     if (gecko.exitCode !== null) throw new Error('GECKODRIVER_EXITED');
     const response = await webdriverRequest(geckoPort, '/status', 'GET', undefined, 2000);
     return response?.value?.ready === true;
   }, 'Geckodriver did not become ready', 30000);
 
+  currentStage = 'CREATE_FIREFOX_SESSION';
   const created = await webdriverRequest(geckoPort, '/session', 'POST', {
     capabilities: {
       alwaysMatch: {
@@ -252,6 +309,7 @@ try {
   profileDir = capabilities['moz:profile'];
   if (!profileDir || !existsSync(profileDir)) throw new Error('FIREFOX_PROFILE_NOT_FOUND');
 
+  currentStage = 'INSTALL_FIREFOX_ADDON';
   const addonBase64 = readFileSync(addonZip).toString('base64');
   const installed = await webdriverRequest(geckoPort,
     `/session/${sessionId}/moz/addon/install`, 'POST',
@@ -259,16 +317,20 @@ try {
   if (installed?.value !== ADDON_ID) throw new Error('FIREFOX_ADDON_ID_MISMATCH');
   addonInstalled = true;
 
+  currentStage = 'READ_EXTENSION_UUID';
   const uuid = await waitFor(() => readExtensionUuid(profileDir),
     'FIREFOX_EXTENSION_UUID_NOT_FOUND', 15000);
   const optionsUrl = `moz-extension://${uuid}/src/optionsui/option-ui.html`;
+  currentStage = 'NAVIGATE_EXTENSION_OPTIONS';
   await webdriverRequest(geckoPort, `/session/${sessionId}/url`, 'POST', { url: optionsUrl });
+  currentStage = 'WAIT_EXTENSION_CONTEXT';
   await waitFor(async () => {
     const state = await executeScript(geckoPort, sessionId,
       'return document.readyState === "complete" && typeof browser !== "undefined" && !!browser.runtime;');
     return state === true;
   }, 'FIREFOX_EXTENSION_PAGE_NOT_READY', 30000);
 
+  currentStage = 'NATIVE_PING';
   const pingId = `B_firefox_ping_${process.pid}`;
   const ping = await nativeMessage(geckoPort, sessionId, {
     id: pingId,
@@ -280,6 +342,7 @@ try {
   }
   nativePingVerified = true;
 
+  currentStage = 'NATIVE_SAFE_ERROR';
   const errorId = `B_firefox_error_${process.pid}`;
   const safeError = await nativeMessage(geckoPort, sessionId, {
     id: errorId,
@@ -294,6 +357,7 @@ try {
   }
   safeErrorVerified = true;
 
+  currentStage = 'NATIVE_ADD';
   const downloadId = `B_firefox_download_${process.pid}`;
   const addRequest = {
     id: downloadId,
@@ -322,6 +386,7 @@ try {
   }
 
   const roots = ['Downloads', 'Desktop', 'Documents'].map(name => join(homedir(), name));
+  currentStage = 'VERIFY_DOWNLOAD_SHA256';
   await waitFor(() => {
     for (const root of roots) {
       const path = findCapturedFile(root, fixture.fileName);
@@ -337,23 +402,17 @@ try {
   if (fixture.getRequests() < 1) throw new Error('FIREFOX_ADD_ACK_WITHOUT_REAL_HTTP_GET');
   downloadVerified = true;
 
-  writeFileSync(join(evidenceDir, 'firefox-native-extension-report.json'), JSON.stringify({
-    sourceSha: SOURCE_SHA,
-    browser: 'Mozilla Firefox',
-    firefoxVersion,
-    extensionId: ADDON_ID,
-    manifestVersion: 2,
-    nativeHost: NATIVE_HOST,
-    nativePingCorrelated: nativePingVerified,
-    safeErrorCorrelatedAndSanitized: safeErrorVerified,
-    browserDownloadCaptured: downloadVerified,
-    browserDownloadSha256Verified: downloadVerified,
-    browserFixtureBytes: fixture.bytes.length,
-    browserFixtureSha256: fixture.expectedSha,
-    browserFixtureGetRequests: fixture.getRequests(),
-    verified: nativePingVerified && safeErrorVerified && downloadVerified,
-  }, null, 2));
+  currentStage = 'COMPLETE';
+  writeEvidenceReport(true, null);
   console.log('PASS: real Firefox extension -> installed HyperGet host; correlated ping, sanitized error and 2 MiB SHA-verified download');
+} catch (error) {
+  const failureCode = safeFailureCode(error);
+  try { writeEvidenceReport(false, failureCode); } catch { /* preserve original failure */ }
+  console.error(JSON.stringify({
+    event: 'FIREFOX_NATIVE_E2E_FAILED', stage: currentStage,
+    failureCode, webdriverFailure: lastWebDriverFailure,
+  }));
+  throw new Error(`FIREFOX_NATIVE_E2E_FAILED:${currentStage}:${failureCode}`);
 } finally {
   await new Promise(resolveClose => fixture.server.close(resolveClose));
   if (sessionId) {
