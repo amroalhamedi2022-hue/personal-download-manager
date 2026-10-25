@@ -99,8 +99,11 @@ def main():
     task_probe_get_started = {}
     task_data_get_started = {}
     task_pacer = TaskChunkPacer(args.task_chunk_delay_ms / 1000.0)
-    # Test-only bounded admission barrier: prove distinct live GET sockets
-    # without allowing early fast tasks to finish before the last starts.
+    # Test-only admission OBSERVATION: track simultaneous real data GETs.
+    # Never hold HTTP sockets behind a barrier: under a shared host connection
+    # cap, early tasks can occupy every socket and prevent later tasks from
+    # reaching their first data GET (a self-inflicted deadlock). The benchmark
+    # must still observe all 16 live data tasks through its full sample.
     gate_expected = [0]
     gate_open = threading.Event()
     gate_open.set()
@@ -227,9 +230,9 @@ def main():
                 else:
                     task_probe_get_started[task_id] = task_probe_get_started.get(task_id, 0) + 1
             try:
-                # Timeout is a real failure (incomplete HTTP body), not a PASS.
-                if is_counted_transfer and not gate_open.wait(timeout=25):
-                    return
+                # Transfer immediately; gate_released records actual overlap,
+                # not permission to start sending. Pacing keeps each task live
+                # long enough for later jobs to obtain host connections.
                 with file_path.open("rb") as inp:
                     inp.seek(start)
                     try:

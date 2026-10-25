@@ -84,7 +84,7 @@ class LocalHttpRangeFixtureTest(unittest.TestCase):
             time.sleep(0.03)
         self.fail("Fixture leaked active request(s)")
 
-    def test_gated_two_task_socket_admission_before_body(self):
+    def test_gated_two_task_overlap_without_blocking_first_body(self):
         self.wait_idle()
         before = self.get_stats(reset=True, gate_tasks=2)
         self.assertEqual(2, before["gate_expected_tasks"])
@@ -105,7 +105,14 @@ class LocalHttpRangeFixtureTest(unittest.TestCase):
             time.sleep(0.02)
         else:
             self.fail("First gated socket was not registered")
-        self.assertEqual(0, snapshot["bytes_sent"])
+        # The first data GET must make progress BEFORE the second arrives;
+        # waiting for every task can exhaust a downloader-wide host socket cap.
+        for _ in range(30):
+            snapshot = self.get_stats()
+            if snapshot["bytes_sent"] > 0:
+                break
+            time.sleep(0.01)
+        self.assertGreater(snapshot["bytes_sent"], 0)
         self.assertFalse(snapshot["gate_released"])
         self.assertTrue(first.is_alive())
         second.start()
@@ -149,8 +156,8 @@ class LocalHttpRangeFixtureTest(unittest.TestCase):
             except Exception as exc:
                 errors.append(str(exc))
 
-        first = threading.Thread(target=data_fetch, args=("data-first", 0, 131071))
-        second = threading.Thread(target=data_fetch, args=("data-second", 131072, 262143))
+        first = threading.Thread(target=data_fetch, args=("data-first", 0, 262143))
+        second = threading.Thread(target=data_fetch, args=("data-second", 0, 262143))
         first.start()
         for _ in range(100):
             waiting = self.get_stats()
@@ -158,7 +165,7 @@ class LocalHttpRangeFixtureTest(unittest.TestCase):
                 break
             time.sleep(0.02)
         else:
-            self.fail("First long data GET did not wait at the barrier")
+            self.fail("First long data GET did not become active")
         self.assertFalse(waiting["gate_released"])
         status, _, body = self.request(
             "GET", "/fixture.bin?task=probe-second",
@@ -174,8 +181,8 @@ class LocalHttpRangeFixtureTest(unittest.TestCase):
             worker.join(timeout=8)
             self.assertFalse(worker.is_alive())
         self.assertEqual([], errors)
-        self.assertEqual(self.payload[:131072], results["data-first"][2])
-        self.assertEqual(self.payload[131072:], results["data-second"][2])
+        self.assertEqual(self.payload, results["data-first"][2])
+        self.assertEqual(self.payload, results["data-second"][2])
         self.wait_idle()
         after = self.get_stats()
         self.assertTrue(after["gate_released"])

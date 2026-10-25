@@ -78,7 +78,7 @@ try {
         # Aggregate per-task pacing makes a 32 MiB task last longer than
         # the 8s CPU/RAM window even when it uses many parallel Range sockets.
         # The gate still proves 16 live sockets; all 63 SHA checks remain strict.
-        '--task-chunk-delay-ms', "120"
+        '--task-chunk-delay-ms', "180"
     )
     $server = Start-Process -FilePath 'python' -ArgumentList $serverArgs -PassThru -RedirectStandardOutput (Join-Path $destination 'server-stdout.txt') -RedirectStandardError (Join-Path $destination 'server-stderr.txt')
     for ($wait = 0; $wait -lt 80 -and -not (Test-Path -LiteralPath $portPath); $wait++) {
@@ -118,9 +118,9 @@ try {
         for ($round = 1; $round -le $Rounds; $round++) {
             $scenario = "active-$jobs"
             $statsUrl = "http://127.0.0.1:$port/stats"
-            # Gate only long data GETs; 256/512-byte metadata probes do not
-            # establish actual download concurrency. Hold data until 16
-            # distinct tasks have real transfer sockets live.
+            # Count only long data GETs; short probes cannot satisfy the
+            # overlap criterion. Do not block early sockets: a shared host
+            # connection cap could prevent later jobs from reaching GET.
             $resetUri = if ($jobs -eq 16) { "${statsUrl}?reset=1&gate_tasks=16" } else { "${statsUrl}?reset=1" }
             $prior = Invoke-RestMethod -Uri $resetUri -TimeoutSec 10
             $expectedGate = if ($jobs -eq 16) { 16 } else { 0 }
@@ -163,10 +163,12 @@ try {
             if ($LASTEXITCODE -ne 0) {
                 throw "Batch CLI Resume failed for $scenario round $round."
             }
-            # Poll real on-wire requests, not queue state: the measured
-            # sample window starts only once ALL distinct tasks have sockets.
+            # Poll real on-wire requests, not queue state. Permit up to 75s
+            # for 16 segmented jobs to start; the per-task 180ms/chunk pacing
+            # keeps a 32MiB transfer alive for ~92s. Once all are live, the
+            # original strict eight-second overlap + 63 SHA gate still apply.
             $allActive = $false
-            for ($attempt = 0; $attempt -lt 60; $attempt++) {
+            for ($attempt = 0; $attempt -lt 300; $attempt++) {
                 $ready = Invoke-RestMethod -Uri $statsUrl -TimeoutSec 10
                 if ([int]$ready.active_distinct_tasks -ge $jobs) {
                     $allActive = $true

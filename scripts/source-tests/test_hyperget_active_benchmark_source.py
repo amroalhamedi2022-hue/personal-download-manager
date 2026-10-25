@@ -44,14 +44,16 @@ class ActiveBenchmarkContract(unittest.TestCase):
     def test_16_task_gate_proves_live_sockets_not_merely_seen_tasks(self):
         self.assertIn("gate_tasks=16", BENCH)
         self.assertIn("gate_released", BENCH)
-        self.assertIn("gate_open.wait(timeout=25)", FIXTURE)
+        self.assertNotIn("gate_open.wait(", FIXTURE)
+        self.assertIn("gate_open.set()", FIXTURE)
         self.assertIn("len(tasks_active) >= gate_expected[0]", FIXTURE)
         self.assertIn("Get-FileHash -LiteralPath $task.Path -Algorithm SHA256", BENCH)
 
     def test_short_probes_cannot_admit_a_strict_data_transfer(self):
         self.assertIn("MIN_DATA_TRANSFER_BYTES = 64 * 1024", FIXTURE)
         self.assertIn("gate_expected[0] == 0 or remaining >= MIN_DATA_TRANSFER_BYTES", FIXTURE)
-        self.assertIn("if is_counted_transfer and not gate_open.wait(timeout=25):", FIXTURE)
+        self.assertNotIn("gate_open.wait(", FIXTURE)
+        self.assertIn("if is_counted_transfer:", FIXTURE)
         self.assertIn('snapshot["task_probe_get_started"]', FIXTURE)
         self.assertIn('snapshot["task_data_get_started"]', FIXTURE)
         self.assertIn("if is_counted_transfer:", FIXTURE)
@@ -65,7 +67,7 @@ class ActiveBenchmarkContract(unittest.TestCase):
         self.assertNotIn('task_pacer.reserve(', FIXTURE)
         self.assertIn('stats["paced_chunks"] += 1', FIXTURE)
         self.assertIn('stats["paced_wait_seconds"] += wait', FIXTURE)
-        self.assertIn("'--task-chunk-delay-ms', \"120\"", BENCH)
+        self.assertIn("'--task-chunk-delay-ms', \"180\"", BENCH)
         self.assertIn('if gate_expected[0] and is_counted_transfer:', FIXTURE)
         self.assertIn('if wait:', FIXTURE)
         self.assertIn('time.sleep(wait)', FIXTURE)
@@ -78,6 +80,11 @@ class ActiveBenchmarkContract(unittest.TestCase):
         # Neither real-socket admission nor the final SHA gate may be relaxed.
         self.assertIn('active_distinct_tasks', BENCH)
         self.assertIn('Get-FileHash -LiteralPath $task.Path -Algorithm SHA256', BENCH)
+
+    def test_admission_window_does_not_deadlock_host_socket_pool(self):
+        self.assertIn("for ($attempt = 0; $attempt -lt 300; $attempt++)", BENCH)
+        self.assertNotIn("gate_open.wait(", FIXTURE)
+        self.assertIn("if ([int]$during.peak_distinct_tasks -lt $jobs -or [int]$during.active_distinct_tasks -lt $jobs)", BENCH)
 
     def test_windows_summary_uses_exact_pr_head(self):
         self.assertIn("-SourceSha $env:HYPERGET_TESTED_SHA -Rounds 3", WORKFLOW)
