@@ -9,6 +9,7 @@ import threading
 import time
 import unittest
 from pathlib import Path
+from scripts.LocalHttpRangeFixture import BurstReadyHTTPServer
 
 
 class LocalHttpRangeFixtureTest(unittest.TestCase):
@@ -83,6 +84,46 @@ class LocalHttpRangeFixtureTest(unittest.TestCase):
                 return
             time.sleep(0.03)
         self.fail("Fixture leaked active request(s)")
+
+    def test_burst_32_simultaneous_range_probes_do_not_refuse_connections(self):
+        # The Windows 16-job benchmark opens many more than five Range sockets.
+        # Check the actual fixture's listen backlog AND its live burst behavior.
+        self.assertGreaterEqual(BurstReadyHTTPServer.request_queue_size, 128)
+        self.wait_idle()
+        self.get_stats(reset=True)
+        count = 32
+        start = threading.Barrier(count + 1)
+        results, errors = [], []
+        lock = threading.Lock()
+
+        def fetch(index):
+            try:
+                start.wait(timeout=10)
+                status, _, body = self.request(
+                    "GET", f"/fixture.bin?task=burst-{index}",
+                    {"Range": "bytes=0-255"},
+                )
+                with lock:
+                    results.append((status, len(body)))
+            except Exception as exc:
+                with lock:
+                    errors.append(type(exc).__name__)
+
+        workers = [threading.Thread(target=fetch, args=(i,)) for i in range(count)]
+        for worker in workers:
+            worker.start()
+        start.wait(timeout=10)
+        for worker in workers:
+            worker.join(timeout=15)
+            self.assertFalse(worker.is_alive(), "A burst probe hung")
+        self.assertEqual([], errors, "Fixture refused a burst connection")
+        self.assertEqual(count, len(results))
+        self.assertTrue(all(result == (206, 256) for result in results))
+        self.wait_idle()
+        snapshot = self.get_stats()
+        self.assertEqual(count, snapshot["unique_tasks_seen"])
+        self.assertEqual(0, snapshot["active_distinct_tasks"])
+        self.get_stats(reset=True)
 
     def test_gated_two_task_overlap_without_blocking_first_body(self):
         self.wait_idle()
