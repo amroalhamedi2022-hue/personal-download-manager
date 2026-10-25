@@ -21,6 +21,12 @@ import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import java.io.Closeable
+import java.net.SocketTimeoutException
 import okio.Buffer
 import okio.Source
 import okio.use
@@ -31,6 +37,37 @@ import kotlin.time.Duration.Companion.seconds
 
 const val PART_MAX_TRIES = 10
 const val RetryDelay = 1_000L
+
+// Bounds only the pre-response connection phase; long streaming bodies remain unrestricted.
+private const val PART_RESPONSE_DEADLINE_MILLIS = 45_000L
+
+/**
+ * A suspended HTTP call may otherwise leave a part Connecting forever while the
+ * persisted job reports Downloading. Turn the response-header deadline into an
+ * IOException so the existing retry budget handles it; never turn user/parent
+ * cancellation into a network retry. Close a connection acquired at the race edge.
+ */
+internal suspend fun <T : Closeable> awaitPartResponseWithDeadline(
+    timeoutMillis: Long,
+    connect: suspend () -> T,
+): T {
+    require(timeoutMillis > 0L)
+    var acquired: T? = null
+    try {
+        return withTimeout(timeoutMillis) {
+            connect().also { acquired = it }
+        }
+    } catch (timeout: TimeoutCancellationException) {
+        runCatching { acquired?.close() }
+        // An enclosing timeout cancels our caller; it is NOT a retryable socket error.
+        currentCoroutineContext().ensureActive()
+        throw SocketTimeoutException("HTTP response headers were not received before the connection deadline")
+    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+        runCatching { acquired?.close() }
+        throw cancelled
+    }
+}
+
 
 abstract class PartDownloader<
         TPart : DownloadPart
@@ -210,7 +247,9 @@ abstract class PartDownloader<
 
     private suspend fun download() {
         onNewStatus(PartDownloadStatus.Connecting)
-        val conn = connectAndVerify()
+        val conn = awaitPartResponseWithDeadline(PART_RESPONSE_DEADLINE_MILLIS) {
+            connectAndVerify()
+        }
         thread = thread {
             if (stop || Thread.currentThread().isInterrupted) {
                 conn.close()

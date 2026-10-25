@@ -9,6 +9,8 @@ on:
       - "scripts/Run-WindowsActiveBenchmarkMatrix.ps1"
       - "scripts/LocalHttpRangeFixture.py"
       - "scripts/test_local_http_range_fixture.py"
+      - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/part/PartDownloader.kt"
+      - "downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/part/PartResponseDeadlineTest.kt"
   push:
     branches: [codex/repair-rf00-rf01]
     paths:
