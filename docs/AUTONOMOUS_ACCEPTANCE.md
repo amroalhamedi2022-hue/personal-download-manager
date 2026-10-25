@@ -1008,3 +1008,14 @@ Installed Windows run [40241733195](https://github.com/amroalhamedi2022-hue/pers
 **Performance finding — do not call memory optimized:** the fresh exact-head report shows at 16-way round 3 **peak Working Set 527.09 MiB**, **peak Private Bytes 590.309 MiB**, **336 threads**, and **2,229 handles** in the two-process app tree. At 1-way, peak Working Set was 312.117 MiB and Private Bytes 324.797 MiB; at 4-way, 335.957 MiB and 358.293 MiB. This is a correctness acceptance PASS, not a performance/memory target PASS. The report does not include a comparable IDM baseline. The next performance milestone should investigate the per-part blocking copy threads plus OkHttp dispatcher configuration and profile JVM heap/native-thread contribution before choosing a change; do not lower the 16-task or SHA gates.
 
 **Remaining NOT TESTED / INCOMPLETE:** HTTPS remote endpoint, refreshed/expiring URL flow, scheduler, installed HLS process-kill/relaunch, real Liquid Progress visual comparison/screenshots, final HyperGet icon/full branding, in-place upgrade/uninstall with preserved old data, independent Windows release recheck, and final single `HyperGet.exe`. Browser cold-wake and HTTP exact-head gates are now closed for their stated scopes. No main write, merge, release, paid service, or Torrent.
+
+
+## 2026-10-26 — HG-HTTP-DISPATCHER-RESOURCE-BOUND-01 (production experiment pending)
+
+The exact-head baseline at `dd86e7375e06be9b397a6b3013efc33897bd7de7` passed 63/63 SHA-verified files and 9/9 process samples, but at 16 concurrent downloads reached **336 threads**, **2,229 handles**, **527.09 MiB peak Working Set**, and **590.309 MiB peak Private Bytes**. This is a concrete resource concern, not a performance PASS.
+
+**Change under test:** replace the unbounded OkHttp dispatcher limits with a finite `64` global and `64` per-host asynchronous request cap. Add source regression coverage and wire the changed production DI file into both the source-only and installed Windows benchmark scope gates. No downloader protocol, per-download part count, fixture pacing, concurrency gate, or SHA threshold is changed.
+
+**Purposeful Windows build question (before build):** does the capped dispatcher keep all 16 distinct downloads actively transferring and still pass 63/63 SHA-256 + 9/9 CPU/RAM samples, while reducing peak thread count and/or memory? Expected: functional gates unchanged and fewer concurrent callback threads; resource improvement must be measured, not assumed. Source tests cannot validate OkHttp dispatcher behavior, Windows socket admission, actual active tasks, or process memory.
+
+**Status:** source regression and exact-head Windows matrix are pending for the new production SHA. If concurrency or hashes fail, revert/tune the cap rather than weakening acceptance. If memory does not materially improve, inspect a heap/thread profile before another production rewrite. No main write, merge, release, paid service, or Torrent.

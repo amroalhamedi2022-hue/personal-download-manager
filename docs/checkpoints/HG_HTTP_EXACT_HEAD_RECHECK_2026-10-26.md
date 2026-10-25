@@ -27,3 +27,10 @@ Correctness passed, but memory/thread use remains a real follow-up: 16-way round
 
 ## Still open
 HTTPS remote endpoint, refresh URL, scheduler, installed HLS kill/relaunch, Liquid Progress visual comparison, final HyperGet icon/branding, in-place upgrade/uninstall preserving old data, independent Windows release recheck, and final single `HyperGet.exe`. No main write, merge, release, paid service or Torrent.
+
+
+## HG-HTTP-DISPATCHER-RESOURCE-BOUND-01 — next exact-head experiment
+
+Baseline [40242626125](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40242626125) passed **63/63 SHA-256 transfers** and **9/9 CPU/RAM samples** at source SHA `dd86e7375e06be9b397a6b3013efc33897bd7de7`. It also exposed a resource concern: 16-way round 3 peaked at 336 threads, 2,229 handles, 527.09 MiB Working Set and 590.309 MiB Private Bytes.
+
+The next production experiment sets OkHttp's asynchronous dispatcher to 64 global / 64 per-host requests instead of `Int.MAX_VALUE`, adds a source regression test, and makes both source-only and installed Windows benchmark workflows run for that production DI change. Expected: retain 16 active distinct tasks and 63/63 hashes while reducing callback-thread bursts; the actual memory result remains unknown until the exact-head Windows run completes. No benchmark threshold is relaxed.

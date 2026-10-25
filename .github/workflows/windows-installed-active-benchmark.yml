@@ -11,6 +11,8 @@ on:
       - "scripts/test_local_http_range_fixture.py"
       - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/part/PartDownloader.kt"
       - "downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/part/PartResponseDeadlineTest.kt"
+      - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/di/Di.kt"
+      - "scripts/source-tests/test_hyperget_http_dispatcher_bound_source.py"
   push:
     branches: [codex/repair-rf00-rf01]
     paths:
@@ -22,6 +24,8 @@ on:
       - "desktop/app/resources/installer/nsis-script-template.nsi"
       - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/cli/settings/**"
       - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/singleInstance/service/**"
+      - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/di/Di.kt"
+      - "scripts/source-tests/test_hyperget_http_dispatcher_bound_source.py"
 
 permissions:
   contents: read
@@ -55,7 +59,7 @@ jobs:
           run=false
           while IFS= read -r file; do
             case "$file" in
-              .github/workflows/windows-installed-active-benchmark.yml|scripts/Run-WindowsActiveBenchmarkMatrix.ps1|scripts/LocalHttpRangeFixture.py|scripts/test_local_http_range_fixture.py|downloader/core/src/commonMain/kotlin/ir/amirab/downloader/part/PartDownloader.kt|downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/part/PartResponseDeadlineTest.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/cli/settings/*|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/singleInstance/service/*)
+              .github/workflows/windows-installed-active-benchmark.yml|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/di/Di.kt|scripts/source-tests/test_hyperget_http_dispatcher_bound_source.py|scripts/Run-WindowsActiveBenchmarkMatrix.ps1|scripts/LocalHttpRangeFixture.py|scripts/test_local_http_range_fixture.py|downloader/core/src/commonMain/kotlin/ir/amirab/downloader/part/PartDownloader.kt|downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/part/PartResponseDeadlineTest.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/cli/settings/*|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/singleInstance/service/*)
                 run=true
                 ;;
             esac
@@ -82,6 +86,8 @@ jobs:
           $actual = (git rev-parse HEAD).Trim()
           if ($actual -ne $env:HYPERGET_TESTED_SHA) { throw "Wrong checkout: $actual" }
           python -m unittest discover -s scripts/source-tests -p test_hyperget_active_benchmark_source.py -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m unittest scripts/source-tests/test_hyperget_http_dispatcher_bound_source.py -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m unittest scripts/test_local_http_range_fixture.py -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
