@@ -33,11 +33,23 @@ class FirefoxInstalledCaptureSourceTest(unittest.TestCase):
         self.assertIn("browserFixtureBytes: fixture.bytes.length", SCRIPT)
 
     def test_warm_gui_ipc_and_error_payloads_are_not_logged(self):
-        self.assertIn("download', 'show', '--status-lines', '9223372036854775807'", SCRIPT)
-        self.assertIn("Installed HyperGet GUI/IPC readiness check failed", SCRIPT)
+        start_command = "['gui', 'start-if-not-started']"
+        status_command = "['download', 'show', '--status-lines', '9223372036854775807']"
+        self.assertIn(start_command, SCRIPT)
+        self.assertIn(status_command, SCRIPT)
+        self.assertLess(SCRIPT.index(start_command), SCRIPT.index(status_command))
+        self.assertIn("function spawnFailureCode(result, requireEmptyStdout = false)", SCRIPT)
+        self.assertIn("function writeGuiWarmupFailure(stage, failureCode, startResult, statusResult)", SCRIPT)
+        self.assertIn("writeGuiWarmupFailure('GUI_START', guiStartFailure, guiStart, null)", SCRIPT)
+        self.assertIn("writeGuiWarmupFailure('GUI_IPC_READINESS', warmupFailure, guiStart, warmup)", SCRIPT)
+        self.assertIn("guiStartFailureCode: spawnFailureCode(startResult)", SCRIPT)
+        self.assertIn("guiIpcFailureCode: spawnFailureCode(statusResult, true)", SCRIPT)
+        self.assertIn("Installed HyperGet GUI/IPC readiness check failed:", SCRIPT)
         self.assertNotIn("console.log(add", SCRIPT)
         self.assertNotIn("console.log(safeError", SCRIPT)
         self.assertNotIn("console.log(warmup.stdout", SCRIPT)
+        self.assertNotIn("stdout: warmup.stdout", SCRIPT)
+        self.assertNotIn("stderr: warmup.stderr", SCRIPT)
 
     def test_windows_gate_uses_official_firefox_and_geckodriver_inputs(self):
         self.assertIn("product-details.mozilla.org", WORKFLOW)
