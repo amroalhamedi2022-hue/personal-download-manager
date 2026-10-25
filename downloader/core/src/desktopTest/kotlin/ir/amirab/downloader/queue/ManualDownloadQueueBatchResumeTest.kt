@@ -214,7 +214,15 @@ class ManualDownloadQueueBatchResumeTest {
             withTimeout(5.seconds) {
                 while (downloads.started.size < 4) delay(10)
             }
-            assertEquals(listOf(81L, 82L, 83L, 84L), downloads.started.toList())
+            // startJob is dispatched on independent coroutines: the first
+            // three reservations are ordered, but their observed callbacks
+            // can race. The safety contract is unique membership and that 84
+            // is admitted only after the final stopping slot is released.
+            val observedStarts = downloads.started.toList()
+            assertEquals(4, observedStarts.size)
+            assertEquals(setOf(81L, 82L, 83L), observedStarts.take(3).toSet())
+            assertEquals(84L, observedStarts.last())
+            assertEquals(4, observedStarts.toSet().size, "No job may start twice")
         } finally {
             scope.cancel()
         }
