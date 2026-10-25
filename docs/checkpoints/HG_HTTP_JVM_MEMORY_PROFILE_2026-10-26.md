@@ -22,3 +22,7 @@ No main write, merge, release, paid service or Torrent.
 
 ## Profile preflight failure and repair
 The first profile workflow [40246220683](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40246220683) stopped in preflight because the source test compared the first textual occurrence of the script names; the profile script appeared in the parser step before the transfer command. No build/profile ran. The test now compares actual PowerShell invocation lines, and the profile workflow includes the source-contract path so the repaired preflight is revalidated before packaging. Exact-head profile result remains pending.
+
+
+## JVM profile attempt: harness lifetime issue fixed
+Run [40246308828](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40246308828) built and installed the app and passed **21/21 SHA hashes + 3/3 resource CSVs**, but profile collection failed because Run-WindowsActiveBenchmarkMatrix.ps1 deliberately stopped the GUI in its finally block. This is not a production app failure and no jcmd output was captured. Added opt-in -KeepGuiRunning; normal benchmark cleanup remains the default, while the diagnostic workflow now preserves the GUI for post-transfer jcmd. New exact-head run pending.

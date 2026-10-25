@@ -5,6 +5,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[2]
 PROFILE = (ROOT / "scripts/Collect-WindowsJvmMemoryProfile.ps1").read_text(encoding="utf-8")
 WORKFLOW = (ROOT / ".github/workflows/windows-installed-memory-profile.yml").read_text(encoding="utf-8")
+MATRIX_SCRIPT = (ROOT / "scripts/Run-WindowsActiveBenchmarkMatrix.ps1").read_text(encoding="utf-8")
 
 
 class WindowsJvmMemoryProfileContract(unittest.TestCase):
@@ -22,6 +23,9 @@ class WindowsJvmMemoryProfileContract(unittest.TestCase):
         self.assertLess(transfer_call, profile_call)
         self.assertIn("createReleaseFolderForCi", WORKFLOW)
         self.assertIn("github.event.pull_request.head.sha || github.sha", WORKFLOW)
+        self.assertIn("[switch] $KeepGuiRunning", MATRIX_SCRIPT)
+        self.assertIn("-KeepGuiRunning", WORKFLOW)
+        self.assertIn("if ($KeepGuiRunning)", MATRIX_SCRIPT)
 
     def test_profile_artifact_is_uploaded_even_if_jcmd_fails(self):
         self.assertIn("if: always()", WORKFLOW)

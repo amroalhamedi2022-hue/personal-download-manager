@@ -17,7 +17,8 @@ param(
     [ValidateRange(5, 60)][int] $SampleSeconds = 8,
     [ValidateRange(10, 500)][int] $ServerChunkDelayMs = 500,
     [ValidateRange(8, 128)][int] $FileSizeMiB = 32,
-    [ValidateRange(120, 600)][int] $CompletionTimeoutSeconds = 300
+    [ValidateRange(120, 600)][int] $CompletionTimeoutSeconds = 300,
+    [switch] $KeepGuiRunning
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -329,7 +330,11 @@ try {
         }
     }
     if ($gui -and -not $gui.HasExited) {
-        Stop-Process -Id $gui.Id -Force -ErrorAction SilentlyContinue
+        if ($KeepGuiRunning) {
+            Write-Host "Preserving installed GUI for post-transfer diagnostics."
+        } else {
+            Stop-Process -Id $gui.Id -Force -ErrorAction SilentlyContinue
+        }
     }
     if ($server -and -not $server.HasExited) {
         Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue
