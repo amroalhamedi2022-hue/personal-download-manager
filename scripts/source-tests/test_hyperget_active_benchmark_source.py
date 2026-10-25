@@ -48,6 +48,15 @@ class ActiveBenchmarkContract(unittest.TestCase):
         self.assertIn("len(tasks_active) >= gate_expected[0]", FIXTURE)
         self.assertIn("Get-FileHash -LiteralPath $task.Path -Algorithm SHA256", BENCH)
 
+    def test_short_probes_cannot_admit_a_strict_data_transfer(self):
+        self.assertIn("MIN_DATA_TRANSFER_BYTES = 64 * 1024", FIXTURE)
+        self.assertIn("gate_expected[0] == 0 or remaining >= MIN_DATA_TRANSFER_BYTES", FIXTURE)
+        self.assertIn("if is_counted_transfer and not gate_open.wait(timeout=25):", FIXTURE)
+        self.assertIn('snapshot["task_probe_get_started"]', FIXTURE)
+        self.assertIn('snapshot["task_data_get_started"]', FIXTURE)
+        self.assertIn("if is_counted_transfer:", FIXTURE)
+        self.assertIn("if gate_expected[0] and is_counted_transfer:", FIXTURE)
+
     def test_gated_workload_paces_aggregate_task_bytes_not_individual_sockets(self):
         self.assertIn('class TaskChunkPacer:', FIXTURE)
         self.assertIn('with task_pacer.slot(task_id) as wait:', FIXTURE)

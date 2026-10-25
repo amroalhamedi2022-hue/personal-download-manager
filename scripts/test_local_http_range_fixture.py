@@ -123,6 +123,71 @@ class LocalHttpRangeFixtureTest(unittest.TestCase):
         self.assertEqual(2, after["unique_tasks_seen"])
         self.get_stats(reset=True)
 
+    def test_gated_metadata_probes_do_not_release_data_socket_barrier(self):
+        # Windows evidence showed four tasks with only 256/512 bytes:
+        # those completed probes must not masquerade as active downloads.
+        self.wait_idle()
+        self.get_stats(reset=True, gate_tasks=2)
+        status, _, body = self.request(
+            "GET", "/fixture.bin?task=probe-first",
+            {"Range": "bytes=0-255"},
+        )
+        self.assertEqual(206, status)
+        self.assertEqual(self.payload[:256], body)
+        before = self.get_stats()
+        self.assertFalse(before["gate_released"])
+        self.assertEqual(0, before["active_distinct_tasks"])
+        self.assertEqual(1, before["task_probe_get_started"]["probe-first"])
+        results, errors = {}, []
+
+        def data_fetch(task, start, end):
+            try:
+                results[task] = self.request(
+                    "GET", f"/fixture.bin?task={task}",
+                    {"Range": f"bytes={start}-{end}"},
+                )
+            except Exception as exc:
+                errors.append(str(exc))
+
+        first = threading.Thread(target=data_fetch, args=("data-first", 0, 131071))
+        second = threading.Thread(target=data_fetch, args=("data-second", 131072, 262143))
+        first.start()
+        for _ in range(100):
+            waiting = self.get_stats()
+            if waiting["active_distinct_tasks"] == 1:
+                break
+            time.sleep(0.02)
+        else:
+            self.fail("First long data GET did not wait at the barrier")
+        self.assertFalse(waiting["gate_released"])
+        status, _, body = self.request(
+            "GET", "/fixture.bin?task=probe-second",
+            {"Range": "bytes=0-511"},
+        )
+        self.assertEqual(206, status)
+        self.assertEqual(self.payload[:512], body)
+        waiting = self.get_stats()
+        self.assertEqual(1, waiting["active_distinct_tasks"])
+        self.assertFalse(waiting["gate_released"])
+        second.start()
+        for worker in (first, second):
+            worker.join(timeout=8)
+            self.assertFalse(worker.is_alive())
+        self.assertEqual([], errors)
+        self.assertEqual(self.payload[:131072], results["data-first"][2])
+        self.assertEqual(self.payload[131072:], results["data-second"][2])
+        self.wait_idle()
+        after = self.get_stats()
+        self.assertTrue(after["gate_released"])
+        self.assertEqual(2, after["peak_distinct_tasks"])
+        self.assertEqual(4, after["unique_tasks_seen"])
+        self.assertEqual(1, after["task_probe_get_started"]["probe-second"])
+        self.assertEqual(1, after["task_data_get_started"]["data-first"])
+        self.assertEqual(1, after["task_data_get_started"]["data-second"])
+        reset = self.get_stats(reset=True)
+        self.assertEqual({}, reset["task_probe_get_started"])
+        self.assertEqual({}, reset["task_data_get_started"])
+
     def test_gated_parallel_ranges_share_one_task_byte_budget(self):
         self.wait_idle()
         self.get_stats(reset=True, gate_tasks=2)

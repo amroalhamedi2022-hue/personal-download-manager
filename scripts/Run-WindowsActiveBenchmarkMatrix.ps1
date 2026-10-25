@@ -118,8 +118,9 @@ try {
         for ($round = 1; $round -le $Rounds; $round++) {
             $scenario = "active-$jobs"
             $statsUrl = "http://127.0.0.1:$port/stats"
-            # The previous installed run saw all 16 tasks but only 15
-            # overlapped; hold bytes until 16 distinct GET sockets are live.
+            # Gate only long data GETs; 256/512-byte metadata probes do not
+            # establish actual download concurrency. Hold data until 16
+            # distinct tasks have real transfer sockets live.
             $resetUri = if ($jobs -eq 16) { "${statsUrl}?reset=1&gate_tasks=16" } else { "${statsUrl}?reset=1" }
             $prior = Invoke-RestMethod -Uri $resetUri -TimeoutSec 10
             $expectedGate = if ($jobs -eq 16) { 16 } else { 0 }

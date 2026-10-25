@@ -16,6 +16,9 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 RANGE = re.compile(r"^bytes=(\d+)-(\d*)$")
+# A 256/512-byte range probe is metadata discovery, not a sustained transfer.
+# Only a GET of at least one 64-KiB data chunk admits a strict gated task.
+MIN_DATA_TRANSFER_BYTES = 64 * 1024
 
 
 class TaskChunkPacer:
@@ -93,6 +96,8 @@ def main():
     task_get_completed = {}
     task_get_interrupted = {}
     task_requested_bytes = {}
+    task_probe_get_started = {}
+    task_data_get_started = {}
     task_pacer = TaskChunkPacer(args.task_chunk_delay_ms / 1000.0)
     # Test-only bounded admission barrier: prove distinct live GET sockets
     # without allowing early fast tasks to finish before the last starts.
@@ -132,6 +137,8 @@ def main():
                     task_get_completed.clear()
                     task_get_interrupted.clear()
                     task_requested_bytes.clear()
+                    task_probe_get_started.clear()
+                    task_data_get_started.clear()
                     task_pacer.reset()
                     gate_expected[0] = requested_gate
                     if requested_gate:
@@ -151,6 +158,8 @@ def main():
                 snapshot["task_get_completed"] = dict(sorted(task_get_completed.items()))
                 snapshot["task_get_interrupted"] = dict(sorted(task_get_interrupted.items()))
                 snapshot["task_requested_bytes"] = dict(sorted(task_requested_bytes.items()))
+                snapshot["task_probe_get_started"] = dict(sorted(task_probe_get_started.items()))
+                snapshot["task_data_get_started"] = dict(sorted(task_data_get_started.items()))
             body = json.dumps(snapshot, sort_keys=True).encode("ascii")
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -194,21 +203,32 @@ def main():
 
             task_id = parse_qs(address.query).get("task", ["unlabeled"])[0][:128]
             with guard:
+                # The 16-task barrier previously counted 256-byte metadata
+                # probes as live downloads. Those probes finished before any
+                # actual file data socket opened, yielding a false peak=16.
+                # Let probes complete immediately; block only real data GETs.
+                is_counted_transfer = (
+                    gate_expected[0] == 0 or remaining >= MIN_DATA_TRANSFER_BYTES
+                )
                 task_get_started[task_id] = task_get_started.get(task_id, 0) + 1
                 task_requested_bytes[task_id] = task_requested_bytes.get(task_id, 0) + remaining
                 stats["active_requests"] += 1
                 stats["total_requests"] += 1
                 tasks_seen.add(task_id)
-                tasks_active[task_id] = tasks_active.get(task_id, 0) + 1
                 stats["peak_requests"] = max(stats["peak_requests"], stats["active_requests"])
-                stats["peak_distinct_tasks"] = max(
-                    stats["peak_distinct_tasks"], len(tasks_active)
-                )
-                if gate_expected[0] and len(tasks_active) >= gate_expected[0]:
-                    gate_open.set()
+                if is_counted_transfer:
+                    task_data_get_started[task_id] = task_data_get_started.get(task_id, 0) + 1
+                    tasks_active[task_id] = tasks_active.get(task_id, 0) + 1
+                    stats["peak_distinct_tasks"] = max(
+                        stats["peak_distinct_tasks"], len(tasks_active)
+                    )
+                    if gate_expected[0] and len(tasks_active) >= gate_expected[0]:
+                        gate_open.set()
+                else:
+                    task_probe_get_started[task_id] = task_probe_get_started.get(task_id, 0) + 1
             try:
                 # Timeout is a real failure (incomplete HTTP body), not a PASS.
-                if not gate_open.wait(timeout=25):
+                if is_counted_transfer and not gate_open.wait(timeout=25):
                     return
                 with file_path.open("rb") as inp:
                     inp.seek(start)
@@ -221,7 +241,7 @@ def main():
                             # 16 Range sockets can finish one task while the
                             # other 15 remain active. Pace aggregate bytes for
                             # each task only in the strict gated workload.
-                            if gate_expected[0]:
+                            if gate_expected[0] and is_counted_transfer:
                                 with task_pacer.slot(task_id) as wait:
                                     with guard:
                                         stats["paced_chunks"] += 1
@@ -256,11 +276,12 @@ def main():
                     else:
                         task_get_interrupted[task_id] = task_get_interrupted.get(task_id, 0) + 1
                     stats["active_requests"] -= 1
-                    count = tasks_active[task_id] - 1
-                    if count:
-                        tasks_active[task_id] = count
-                    else:
-                        del tasks_active[task_id]
+                    if is_counted_transfer:
+                        count = tasks_active[task_id] - 1
+                        if count:
+                            tasks_active[task_id] = count
+                        else:
+                            del tasks_active[task_id]
 
         def do_GET(self):
             self.serve_file(True)
