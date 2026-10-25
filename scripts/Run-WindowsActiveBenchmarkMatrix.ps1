@@ -187,8 +187,8 @@ try {
                 $diagnostics.Add("Scenario: $scenario; round: $round; expected live tasks: $jobs")
                 $diagnostics.Add("Fixture stats: $($ready | ConvertTo-Json -Compress)")
                 $diagnostics.Add("Configured max concurrent downloads: $(Invoke-MaxConcurrentDownloadsSetting)")
-                $statusOutput = @(& $cliPath download show @startIds 2>&1)
-                $diagnostics.Add("Installed CLI task status (exit $LASTEXITCODE):")
+                $statusOutput = @(& $cliPath download show --status-lines @startIds 2>&1)
+                $diagnostics.Add("Installed CLI task status (exit $LASTEXITCODE; ID<TAB>Status):")
                 $diagnostics.AddRange([string[]]@($statusOutput | ForEach-Object { "$_" }))
                 foreach ($task in $taskFiles) {
                     $length = if (Test-Path -LiteralPath $task.Path -PathType Leaf) {
@@ -218,8 +218,8 @@ try {
                 $diagnostics.Add("Scenario: $scenario; round: $round; expected: $jobs")
                 $diagnostics.Add("Fixture stats: $($during | ConvertTo-Json -Compress -Depth 6)")
                 $diagnostics.Add("Configured max concurrent downloads: $(Invoke-MaxConcurrentDownloadsSetting)")
-                $statusOutput = @(& $cliPath download show @startIds 2>&1)
-                $diagnostics.Add("Installed CLI task status (exit $LASTEXITCODE):")
+                $statusOutput = @(& $cliPath download show --status-lines @startIds 2>&1)
+                $diagnostics.Add("Installed CLI task status (exit $LASTEXITCODE; ID<TAB>Status):")
                 $diagnostics.AddRange([string[]]@($statusOutput | ForEach-Object { "$_" }))
                 foreach ($task in $taskFiles) {
                     $length = if (Test-Path -LiteralPath $task.Path -PathType Leaf) {
@@ -262,8 +262,8 @@ try {
                         $diagnostics.Add("Pending file missing: $path")
                     }
                 }
-                $statusOutput = @(& $cliPath download show @startIds 2>&1)
-                $diagnostics.Add('Installed CLI task status:')
+                $statusOutput = @(& $cliPath download show --status-lines @startIds 2>&1)
+                $diagnostics.Add('Installed CLI task status (ID<TAB>Status):')
                 $diagnostics.AddRange([string[]]@($statusOutput | ForEach-Object { "$_" }))
                 $diagnostics | Set-Content -LiteralPath (Join-Path $destination 'failure-diagnostics.txt') -Encoding utf8
                 throw "Timed out or SHA mismatch for $scenario round ${round}: $($pending -join ', ')"

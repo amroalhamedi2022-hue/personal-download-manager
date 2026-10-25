@@ -22,8 +22,15 @@ class ShowDownload : SuspendingCliktCommand("show") {
         "--watch",
         help = "Track the download progress"
     ).flag()
+    // Stable, untruncated, non-sensitive ID/status output for scripts and diagnostics.
+    // No IPC protocol or persisted state changes.
+    private val statusLines by option(
+        "--status-lines",
+        help = "Print one tab-separated ID and status per download (no names or paths)"
+    ).flag()
 
     override suspend fun run() {
+        require(!watch || !statusLines) { "--status-lines cannot be combined with --watch" }
         if (watch) {
             monitorDownloads()
         } else {
@@ -66,7 +73,13 @@ class ShowDownload : SuspendingCliktCommand("show") {
         }
 
         if (downloads.isEmpty()) {
-            echo(yellow("No downloads found."))
+            if (!statusLines) echo(yellow("No downloads found."))
+            return
+        }
+        if (statusLines) {
+            downloads.forEach { download ->
+                echo("${download.id}\t${download.status.displayName}")
+            }
             return
         }
 
