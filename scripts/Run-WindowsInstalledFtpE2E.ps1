@@ -153,7 +153,10 @@ try {
     if ($statusExitCode -ne 0 -or $statusRows.Count -ne 1) {
         throw "Persisted FTP task returned an invalid number of status rows or nonzero exit: $($statusRows -join ' ')"
     }
-    $statusMatch = [regex]::Match($statusRows[0], '^([0-9]+)\s+Finished
+    $statusMatch = [regex]::Match($statusRows[0], '^([0-9]+)\s+Finished$')
+    if (-not $statusMatch.Success -or [long]$statusMatch.Groups[1].Value -ne $taskId) {
+        throw "Persisted FTP task did not report Finished for expected ID $taskId : $($statusRows -join ' ')"
+    }
     $stats = Get-Content -LiteralPath $statsFile -Raw | ConvertFrom-Json
     $positiveOffsets = @($stats.rest_offsets | Where-Object { [long]$_ -gt 0 })
     if ([int]$stats.retrievals -lt 2 -or [int]$stats.completed_retrievals -ne 1 -or $positiveOffsets.Count -lt 1) {
