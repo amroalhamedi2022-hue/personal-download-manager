@@ -89,6 +89,15 @@ jobs:
           --dependency-verification strict
           createReleaseFolderForCi
 
+      - name: Record SHA-256 of the one internal NSIS test installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installers = @(Get-ChildItem -LiteralPath 'build/ci-release/binaries' -File -Recurse -Filter '*.exe')
+          if ($installers.Count -ne 1) { throw "Expected exactly one installer for SHA audit" }
+          $hash = (Get-FileHash -LiteralPath $installers[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          Write-Host "Internal Windows test installer SHA-256: $hash"
+          "SourceSHA=$env:HYPERGET_TESTED_SHA`nInstallerSHA256=$hash`nFileName=$($installers[0].Name)" | Set-Content -LiteralPath 'build/ci-release/ftp-installer-sha256.txt' -Encoding utf8
       - name: Install real GUI and CLI into a clean directory
         shell: pwsh
         run: |
@@ -129,6 +138,7 @@ jobs:
         with:
           name: windows-installed-ftp-e2e-evidence
           path: |
+            build/ci-release/ftp-installer-sha256.txt
             build/ci-release/ftp-e2e/ftp-e2e-report.json
             build/ci-release/ftp-e2e/ftp-stats.json
             build/ci-release/ftp-e2e/ftp-server-stdout.txt
