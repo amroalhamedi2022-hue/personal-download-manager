@@ -230,11 +230,63 @@ const guiExe = process.env.HYPERGET_GUI_EXE;
 if (!guiExe || !existsSync(guiExe)) throw new Error('Installed HyperGet GUI missing');
 const cliExe = join(dirname(guiExe), 'DownloadManagerCli.exe');
 if (!existsSync(cliExe)) throw new Error('Installed HyperGet CLI missing');
+function spawnFailureCode(result, requireEmptyStdout = false) {
+  if (!result) return 'NOT_RUN';
+  if (result.error) {
+    if (result.error.code === 'ETIMEDOUT') return 'TIMEOUT';
+    if (['ENOENT', 'EACCES', 'EINVAL'].includes(result.error.code)) return result.error.code;
+    return 'SPAWN_ERROR';
+  }
+  if (result.status !== 0) return 'NONZERO_EXIT';
+  if (requireEmptyStdout && result.stdout?.trim()) return 'UNEXPECTED_STDOUT';
+  return null;
+}
+function writeGuiWarmupFailure(stage, failureCode, startResult, statusResult) {
+  // Persist only allowlisted failure classes, exit codes and output-presence booleans.
+  // Never serialize raw stdout/stderr, paths, URLs, headers or exception messages.
+  writeFileSync(join(evidenceDir, 'firefox-native-extension-report.json'), JSON.stringify({
+    sourceSha: SOURCE_SHA,
+    browser: 'Mozilla Firefox',
+    firefoxVersion: 'unknown',
+    extensionId: ADDON_ID,
+    manifestVersion: 2,
+    nativeHost: NATIVE_HOST,
+    stage,
+    failureCode,
+    guiStartExitCode: Number.isInteger(startResult?.status) ? startResult.status : null,
+    guiStartFailureCode: spawnFailureCode(startResult),
+    guiIpcExitCode: Number.isInteger(statusResult?.status) ? statusResult.status : null,
+    guiIpcFailureCode: spawnFailureCode(statusResult, true),
+    guiIpcStdoutPresent: Boolean(statusResult?.stdout?.trim()),
+    guiIpcStderrPresent: Boolean(statusResult?.stderr?.trim()),
+    addonInstalled: false,
+    nativePingCorrelated: false,
+    safeErrorCorrelatedAndSanitized: false,
+    browserDownloadCaptured: false,
+    browserDownloadSha256Verified: false,
+    browserFixtureBytes: 0,
+    browserFixtureGetRequests: 0,
+    verified: false,
+  }, null, 2));
+}
+
+// Mirror the proven Chrome warmup contract: explicitly start the installed GUI,
+// then use a separate read-only IPC command as the readiness proof.
+const guiStart = spawnSync(cliExe,
+  ['gui', 'start-if-not-started'],
+  { encoding: 'utf8', timeout: 45000, windowsHide: true });
+const guiStartFailure = spawnFailureCode(guiStart);
+if (guiStartFailure) {
+  writeGuiWarmupFailure('GUI_START', guiStartFailure, guiStart, null);
+  throw new Error('Installed HyperGet GUI start failed:' + guiStartFailure);
+}
 const warmup = spawnSync(cliExe,
   ['download', 'show', '--status-lines', '9223372036854775807'],
   { encoding: 'utf8', timeout: 45000, windowsHide: true });
-if (warmup.error || warmup.status !== 0 || warmup.stdout?.trim()) {
-  throw new Error('Installed HyperGet GUI/IPC readiness check failed');
+const warmupFailure = spawnFailureCode(warmup, true);
+if (warmupFailure) {
+  writeGuiWarmupFailure('GUI_IPC_READINESS', warmupFailure, guiStart, warmup);
+  throw new Error('Installed HyperGet GUI/IPC readiness check failed:' + warmupFailure);
 }
 
 const fixture = createFixture();
