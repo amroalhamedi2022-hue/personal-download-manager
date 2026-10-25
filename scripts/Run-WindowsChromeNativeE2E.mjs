@@ -3,8 +3,9 @@
 // This checks the browser API, not HTTP download capture or cookies.
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { createServer } from 'node:http';
+import { homedir, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 
@@ -258,13 +259,135 @@ try {
     const firstPort = await exerciseConnectedPort('B_chrome_port_a',
       ['ping', 'ping', 'hyperget-nonexistent-action']);
     const reconnectedPort = await exerciseConnectedPort('B_chrome_port_b', ['ping']);
+
+    // HG-BROWSER-CHROME-04: browser extension -> native host -> installed
+    // GUI IPC -> real loopback HTTP GET -> on-disk SHA-256. The fixture is
+    // local, deterministic and has no cookies, credentials or external URLs.
+    const fixtureName = 'hyperget-browser-capture-' + process.pid + '.bin';
+    const fixtureBytes = Buffer.alloc(2 * 1024 * 1024);
+    for (let index = 0; index < fixtureBytes.length; index++) {
+      fixtureBytes[index] = index % 251;
+    }
+    const expectedSha = createHash('sha256').update(fixtureBytes).digest('hex');
+    let fixtureGetCount = 0;
+    const fixtureServer = createServer((request, response) => {
+      const pathname = new URL(request.url ?? '/', 'http://127.0.0.1').pathname;
+      if (pathname !== '/' + fixtureName) {
+        response.writeHead(404); response.end(); return;
+      }
+      if (request.method !== 'GET' && request.method !== 'HEAD') {
+        response.writeHead(405); response.end(); return;
+      }
+      const range = request.headers.range;
+      const match = range ? /^bytes=(\\d+)-(\\d*)$/.exec(range) : null;
+      if (range && !match) {
+        response.writeHead(416, { 'Content-Range': 'bytes */' + fixtureBytes.length });
+        response.end(); return;
+      }
+      const start = match ? Number(match[1]) : 0;
+      const end = match && match[2] ? Number(match[2]) : fixtureBytes.length - 1;
+      if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) ||
+          start < 0 || start >= fixtureBytes.length || end < start ||
+          end >= fixtureBytes.length) {
+        response.writeHead(416, { 'Content-Range': 'bytes */' + fixtureBytes.length });
+        response.end(); return;
+      }
+      const headers = {
+        'Content-Type': 'application/octet-stream',
+        'Content-Length': String(end - start + 1),
+        'Content-Disposition': 'attachment; filename="' + fixtureName + '"',
+        'Accept-Ranges': 'bytes',
+        'Cache-Control': 'no-store',
+      };
+      if (match) headers['Content-Range'] = 'bytes ' + start + '-' + end + '/' + fixtureBytes.length;
+      response.writeHead(match ? 206 : 200, headers);
+      if (request.method === 'GET') {
+        fixtureGetCount++;
+        response.end(fixtureBytes.subarray(start, end + 1));
+      } else {
+        response.end();
+      }
+    });
+    await new Promise((resolve, reject) => {
+      fixtureServer.once('error', reject);
+      fixtureServer.listen(0, '127.0.0.1', resolve);
+    });
+    let captureVerified = false;
+    try {
+      const port = fixtureServer.address().port;
+      const downloadUrl = 'http://127.0.0.1:' + port + '/' + fixtureName;
+      const requestId = 'B_chrome_download_' + process.pid;
+      const addRequest = {
+        id: requestId,
+        content: {
+          action: 'add',
+          isError: false,
+          payload: JSON.stringify({
+            items: [{
+              link: downloadUrl, downloadPage: null, headers: null,
+              description: null, suggestedName: fixtureName, type: 'http',
+            }],
+            options: { silentAdd: true, silentStart: true },
+          }),
+        },
+      };
+      const evaluated = await page.call('Runtime.evaluate', {
+        expression: '(async () => await chrome.runtime.sendNativeMessage(' +
+          JSON.stringify(hostName) + ', ' + JSON.stringify(addRequest) + '))()',
+        awaitPromise: true, returnByValue: true,
+      });
+      if (evaluated.exceptionDetails) {
+        throw Error('Chrome native add request failed');
+      }
+      const addReply = evaluated.result?.value;
+      if (addReply?.id !== requestId || addReply.content?.isError !== false ||
+          addReply.content?.payload !== 'true') {
+        throw Error('Installed HyperGet rejected browser-origin add request');
+      }
+
+      // Only look for our unique fixture filename under standard local user
+      // download directories. Never enumerate or report unrelated filenames.
+      function findCapturedFile(directory, depth = 3) {
+        if (!existsSync(directory)) return null;
+        for (const entry of readdirSync(directory, { withFileTypes: true })) {
+          const child = join(directory, entry.name);
+          if (entry.isFile() && entry.name === fixtureName) return child;
+          if (entry.isDirectory() && depth > 0 && !entry.name.startsWith('.')) {
+            const found = findCapturedFile(child, depth - 1);
+            if (found) return found;
+          }
+        }
+        return null;
+      }
+      const roots = ['Downloads', 'Desktop', 'Documents'].map(name => join(homedir(), name));
+      await poll(() => {
+        for (const root of roots) {
+          const path = findCapturedFile(root);
+          if (!path || statSync(path).size !== fixtureBytes.length) continue;
+          if (createHash('sha256').update(readFileSync(path)).digest('hex') === expectedSha) {
+            return true;
+          }
+        }
+        return false;
+      }, 'SHA-verified browser-origin download', 120000);
+      if (fixtureGetCount < 1) {
+        throw Error('Browser add was acknowledged without a real HTTP data GET');
+      }
+      captureVerified = true;
+    } finally {
+      await new Promise(resolve => fixtureServer.close(resolve));
+    }
+    if (!captureVerified) throw Error('Browser download capture was not SHA verified');
+
     writeFileSync(join(evidenceDir, 'chrome-native-extension-report.json'), JSON.stringify({
       browser: 'Google Chrome', extensionId, manifestVersion: manifest.manifest_version,
       nativeHost: hostName, realChromeExtensionLoaded: true, requests: results,
-      browserDownloadCaptured: false, connectedPort: firstPort,
+      browserDownloadCaptured: captureVerified, browserDownloadSha256Verified: captureVerified,
+      browserFixtureBytes: fixtureBytes.length, browserFixtureGetRequests: fixtureGetCount,
+      connectedPort: firstPort,
       reconnectedPort, verified: true,
     }, null, 2));
-    console.log('PASS: real Chrome extension -> installed HyperGet native host; three one-shot replies, three connected-port replies and one reply after reconnect');
+    console.log('PASS: real Chrome extension -> installed HyperGet native host; three one-shot replies, three connected-port replies, one reconnect and one SHA-verified browser download');
   } finally { page.close(); }
 } finally {
   browserSocket?.close();
