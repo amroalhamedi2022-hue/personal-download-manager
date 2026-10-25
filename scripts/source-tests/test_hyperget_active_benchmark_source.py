@@ -106,6 +106,16 @@ class ActiveBenchmarkContract(unittest.TestCase):
         self.assertIn("createReleaseFolderForCi", WORKFLOW)
         self.assertIn("Run-WindowsActiveBenchmarkMatrix.ps1", WORKFLOW)
 
+    def test_workflow_change_itself_cannot_silently_skip_the_required_matrix(self):
+        # pull_request.paths already includes the workflow. The runtime scope gate
+        # must also recognize it, otherwise a workflow-only acceptance-gate fix
+        # is reported as green while the 63-download/9-metric job is skipped.
+        self.assertIn(
+            '.github/workflows/windows-installed-active-benchmark.yml|scripts/Run-WindowsActiveBenchmarkMatrix.ps1',
+            WORKFLOW,
+        )
+        self.assertIn("if: needs.change-scope.outputs.run == 'true'", WORKFLOW)
+
 
 if __name__ == "__main__":
     unittest.main()

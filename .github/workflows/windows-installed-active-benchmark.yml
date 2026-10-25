@@ -55,7 +55,7 @@ jobs:
           run=false
           while IFS= read -r file; do
             case "$file" in
-              scripts/Run-WindowsActiveBenchmarkMatrix.ps1|scripts/LocalHttpRangeFixture.py|scripts/test_local_http_range_fixture.py|downloader/core/src/commonMain/kotlin/ir/amirab/downloader/part/PartDownloader.kt|downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/part/PartResponseDeadlineTest.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/cli/settings/*|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/singleInstance/service/*)
+              .github/workflows/windows-installed-active-benchmark.yml|scripts/Run-WindowsActiveBenchmarkMatrix.ps1|scripts/LocalHttpRangeFixture.py|scripts/test_local_http_range_fixture.py|downloader/core/src/commonMain/kotlin/ir/amirab/downloader/part/PartDownloader.kt|downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/part/PartResponseDeadlineTest.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/cli/settings/*|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/singleInstance/service/*)
                 run=true
                 ;;
             esac
