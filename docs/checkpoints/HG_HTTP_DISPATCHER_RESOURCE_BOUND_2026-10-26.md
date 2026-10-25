@@ -18,3 +18,12 @@ No main write, merge, release, paid service or Torrent.
 
 ## Preflight failure (diagnosed; no benchmark build occurred)
 First capped-dispatcher attempt [40244507183](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40244507183) failed before compile/installer at the preflight source contract. The regression asserted the workflow path and benchmark script path were adjacent in the shell allowlist; the new production/test paths made that assumption invalid. Source-only [40244507086](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40244507086) confirmed the same one-test failure. Fixed the assertion to check both paths independently and removed the source-test file from the expensive matrix trigger while keeping the production DI path and workflow itself in scope. The previous failure did not test the memory change; exact-head matrix remains pending.
+
+
+## Dispatcher cap result (exact-head PASS)
+The capped-dispatcher matrix [40244684936](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40244684936) passed **63/63 SHA** and **9/9 CPU/RAM** at SHA `587fb010973a7a8358d06e10b5c64e2bdd5d1afe`. Installer SHA-256 `77756d9be2e09de85f1395b3e53f58955e8c32c75127a23f3619fe3cfbb87e0c`; artifact ZIP SHA-256 `506f9d3393f7ba13ac3f99d70faf29a39896dd98b0689cb00971427496df8483`.
+
+Compared with the previous uncapped exact-head run, 16-way peak threads fell 336→277 and handles 2,229→2,003, but Working Set only fell 527.09→522.113 MiB and Private Bytes 590.309→582.375 MiB. Treat this as a thread/handle improvement, not a memory success.
+
+## HG-HTTP-JVM-MEMORY-PROFILE-01
+A targeted workflow will run one installed 1/4/16 round and then collect `jcmd GC.heap_info`, `GC.class_histogram`, `Thread.print`, VM version and a process snapshot. Goal: distinguish used/committed heap and retained classes from native/thread overhead before choosing another production change. Source tests cannot answer this. Exact-head profile is pending; no further memory code change until evidence is inspected.
