@@ -279,7 +279,7 @@ try {
         response.writeHead(405); response.end(); return;
       }
       const range = request.headers.range;
-      const match = range ? /^bytes=(\\d+)-(\\d*)$/.exec(range) : null;
+      const match = range ? /^bytes=(\d+)-(\d*)$/.exec(range) : null;
       if (range && !match) {
         response.writeHead(416, { 'Content-Range': 'bytes */' + fixtureBytes.length });
         response.end(); return;
