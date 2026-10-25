@@ -74,7 +74,11 @@ try {
     $serverArgs = @(
         ('"' + $fixtureScript + '"'), '--file', ('"' + $fixture + '"'),
         '--port-file', ('"' + $portPath + '"'),
-        '--chunk-delay-ms', "$ServerChunkDelayMs"
+        '--chunk-delay-ms', "$ServerChunkDelayMs",
+        # Aggregate per-task pacing makes a 32 MiB task last longer than
+        # the 8s CPU/RAM window even when it uses many parallel Range sockets.
+        # The gate still proves 16 live sockets; all 63 SHA checks remain strict.
+        '--task-chunk-delay-ms', "120"
     )
     $server = Start-Process -FilePath 'python' -ArgumentList $serverArgs -PassThru -RedirectStandardOutput (Join-Path $destination 'server-stdout.txt') -RedirectStandardError (Join-Path $destination 'server-stderr.txt')
     for ($wait = 0; $wait -lt 80 -and -not (Test-Path -LiteralPath $portPath); $wait++) {

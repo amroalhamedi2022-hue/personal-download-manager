@@ -17,12 +17,36 @@ from urllib.parse import parse_qs, urlsplit
 RANGE = re.compile(r"^bytes=(\d+)-(\d*)$")
 
 
+class TaskChunkPacer:
+    """Share one byte-rate budget across all Range sockets of a task.
+
+    Reserving a chunk is serialized by the fixture's existing guard. The
+    wait itself happens outside the guard, so different tasks stay parallel.
+    """
+    def __init__(self, interval_seconds):
+        self.interval_seconds = interval_seconds
+        self.next_send = {}
+
+    def reserve(self, task_id, now):
+        if self.interval_seconds <= 0:
+            return 0.0
+        slot = max(now, self.next_send.get(task_id, now))
+        self.next_send[task_id] = slot + self.interval_seconds
+        return max(0.0, slot - now)
+
+    def reset(self):
+        self.next_send.clear()
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--file", type=Path, required=True)
     ap.add_argument("--port-file", type=Path, required=True)
     ap.add_argument("--chunk-delay-ms", type=float, default=15.0)
+    ap.add_argument("--task-chunk-delay-ms", type=float, default=0.0)
     args = ap.parse_args()
+    if args.task_chunk_delay_ms < 0:
+        ap.error("--task-chunk-delay-ms must be nonnegative")
     if args.chunk_delay_ms < 0:
         ap.error("--chunk-delay-ms must be nonnegative")
     file_path = args.file.resolve(strict=True)
@@ -39,9 +63,12 @@ def main():
         "total_requests": 0,
         "bytes_sent": 0,
         "peak_distinct_tasks": 0,
+        "paced_chunks": 0,
+        "paced_wait_seconds": 0.0,
     }
     tasks_active = {}
     tasks_seen = set()
+    task_pacer = TaskChunkPacer(args.task_chunk_delay_ms / 1000.0)
     # Test-only bounded admission barrier: prove distinct live GET sockets
     # without allowing early fast tasks to finish before the last starts.
     gate_expected = [0]
@@ -75,6 +102,7 @@ def main():
                         stats[key] = 0
                     tasks_active.clear()
                     tasks_seen.clear()
+                    task_pacer.reset()
                     gate_expected[0] = requested_gate
                     if requested_gate:
                         gate_open.clear()
@@ -152,6 +180,18 @@ def main():
                             chunk = inp.read(min(64 * 1024, remaining))
                             if not chunk:
                                 raise IOError("Source truncated mid-response")
+                            # Per-connection throttling alone is insufficient:
+                            # 16 Range sockets can finish one task while the
+                            # other 15 remain active. Pace aggregate bytes for
+                            # each task only in the strict gated workload.
+                            wait = 0.0
+                            with guard:
+                                if gate_expected[0]:
+                                    wait = task_pacer.reserve(task_id, time.monotonic())
+                                    stats["paced_chunks"] += 1
+                                    stats["paced_wait_seconds"] += wait
+                            if wait:
+                                time.sleep(wait)
                             self.wfile.write(chunk)
                             self.wfile.flush()
                             remaining -= len(chunk)

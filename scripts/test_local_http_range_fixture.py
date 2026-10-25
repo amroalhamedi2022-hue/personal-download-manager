@@ -26,7 +26,8 @@ class LocalHttpRangeFixtureTest(unittest.TestCase):
                 str(Path(__file__).resolve().with_name("LocalHttpRangeFixture.py")),
                 "--file", str(cls.file),
                 "--port-file", str(cls.port_file),
-                "--chunk-delay-ms", "80"
+                "--chunk-delay-ms", "80",
+                "--task-chunk-delay-ms", "120"
             ],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
@@ -121,6 +122,46 @@ class LocalHttpRangeFixtureTest(unittest.TestCase):
         self.assertEqual(2, after["peak_distinct_tasks"])
         self.assertEqual(2, after["unique_tasks_seen"])
         self.get_stats(reset=True)
+
+    def test_gated_parallel_ranges_share_one_task_byte_budget(self):
+        self.wait_idle()
+        self.get_stats(reset=True, gate_tasks=2)
+        results, errors = {}, []
+
+        def fetch(label, task, range_header):
+            try:
+                headers = {"Range": range_header} if range_header else {}
+                results[label] = self.request("GET", f"/fixture.bin?task={task}", headers)
+            except Exception as exc:
+                errors.append(str(exc))
+
+        workers = [
+            threading.Thread(target=fetch, args=("left", "split", "bytes=0-131071")),
+            threading.Thread(target=fetch, args=("right", "split", "bytes=131072-262143")),
+            threading.Thread(target=fetch, args=("peer", "peer", None)),
+        ]
+        for worker in workers:
+            worker.start()
+        for worker in workers:
+            worker.join(timeout=12)
+            self.assertFalse(worker.is_alive())
+        self.assertEqual([], errors)
+        self.assertEqual(self.payload[:131072], results["left"][2])
+        self.assertEqual(self.payload[131072:], results["right"][2])
+        self.assertEqual(self.payload, results["peer"][2])
+        self.assertEqual(206, results["left"][0])
+        self.assertEqual(206, results["right"][0])
+        self.wait_idle()
+        snapshot = self.get_stats()
+        self.assertEqual(2, snapshot["peak_distinct_tasks"])
+        self.assertEqual(3, snapshot["total_requests"])
+        self.assertEqual(8, snapshot["paced_chunks"])
+        # The split task's two sockets must wait for the SAME budget.
+        self.assertGreater(snapshot["paced_wait_seconds"], 0.1)
+        self.assertEqual(len(self.payload) * 2, snapshot["bytes_sent"])
+        reset = self.get_stats(reset=True)
+        self.assertEqual(0, reset["paced_chunks"])
+        self.assertEqual(0.0, reset["paced_wait_seconds"])
 
     def test_gate_rejects_invalid_configuration(self):
         for path in ("/stats?gate_tasks=2", "/stats?reset=1&gate_tasks=65",
