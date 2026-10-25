@@ -50,13 +50,17 @@ class ActiveBenchmarkContract(unittest.TestCase):
 
     def test_gated_workload_paces_aggregate_task_bytes_not_individual_sockets(self):
         self.assertIn('class TaskChunkPacer:', FIXTURE)
-        self.assertIn('task_pacer.reserve(task_id, time.monotonic())', FIXTURE)
+        self.assertIn('with task_pacer.slot(task_id) as wait:', FIXTURE)
+        self.assertIn('with task_lock:', FIXTURE)
+        self.assertIn('self.next_send[task_id] = time.monotonic() + self.interval_seconds', FIXTURE)
+        self.assertNotIn('task_pacer.reserve(', FIXTURE)
         self.assertIn('stats["paced_chunks"] += 1', FIXTURE)
         self.assertIn('stats["paced_wait_seconds"] += wait', FIXTURE)
         self.assertIn("'--task-chunk-delay-ms', \"120\"", BENCH)
         self.assertIn('if gate_expected[0]:', FIXTURE)
         self.assertIn('if wait:', FIXTURE)
         self.assertIn('time.sleep(wait)', FIXTURE)
+        self.assertIn('snapshot["task_bytes_sent"] = dict(sorted(task_bytes_sent.items()))', FIXTURE)
 
     def test_windows_summary_uses_exact_pr_head(self):
         self.assertIn("-SourceSha $env:HYPERGET_TESTED_SHA -Rounds 3", WORKFLOW)

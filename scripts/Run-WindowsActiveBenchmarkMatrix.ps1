@@ -209,7 +209,23 @@ try {
             }
             $during = Invoke-RestMethod -Uri $statsUrl -TimeoutSec 10
             if ([int]$during.peak_distinct_tasks -lt $jobs -or [int]$during.active_distinct_tasks -lt $jobs) {
-                throw "$scenario did not keep all $jobs tasks transferring throughout the measurement window: active=$($during.active_distinct_tasks), peak=$($during.peak_distinct_tasks)."
+                # Preserve the exact synthetic task IDs and transferred bytes
+                # at failure; a Range handoff gap is not a completed download.
+                $diagnostics = [System.Collections.Generic.List[string]]::new()
+                $diagnostics.Add("Scenario: $scenario; round: $round; expected: $jobs")
+                $diagnostics.Add("Fixture stats: $($during | ConvertTo-Json -Compress -Depth 6)")
+                $diagnostics.Add("Configured max concurrent downloads: $(Invoke-MaxConcurrentDownloadsSetting)")
+                $statusOutput = @(& $cliPath download show @startIds 2>&1)
+                $diagnostics.Add("Installed CLI task status (exit $LASTEXITCODE):")
+                $diagnostics.AddRange([string[]]@($statusOutput | ForEach-Object { "$_" }))
+                foreach ($task in $taskFiles) {
+                    $length = if (Test-Path -LiteralPath $task.Path -PathType Leaf) {
+                        (Get-Item -LiteralPath $task.Path).Length
+                    } else { 'missing' }
+                    $diagnostics.Add("Task $($task.Id) $($task.Name): output bytes=$length")
+                }
+                $diagnostics | Set-Content -LiteralPath (Join-Path $destination 'failure-diagnostics.txt') -Encoding utf8
+                throw "$scenario did not keep all $jobs tasks transferring throughout the measurement window: active=$($during.active_distinct_tasks), peak=$($during.peak_distinct_tasks). See failure-diagnostics.txt."
             }
             $pending = [System.Collections.Generic.HashSet[string]]::new([string[]]@($taskFiles | ForEach-Object { $_.Path }), [System.StringComparer]::OrdinalIgnoreCase)
             $deadline = [DateTime]::UtcNow.AddSeconds($CompletionTimeoutSeconds)

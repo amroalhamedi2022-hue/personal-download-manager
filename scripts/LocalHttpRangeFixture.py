@@ -6,6 +6,7 @@ one fixture. /stats is a loopback-only test endpoint used to PROVE how many
 distinct tasks actually transferred concurrently (not merely queued).
 """
 import argparse
+from contextlib import contextmanager
 import json
 import re
 import threading
@@ -26,16 +27,31 @@ class TaskChunkPacer:
     def __init__(self, interval_seconds):
         self.interval_seconds = interval_seconds
         self.next_send = {}
+        self.task_locks = {}
+        self.lock_guard = threading.Lock()
 
-    def reserve(self, task_id, now):
-        if self.interval_seconds <= 0:
-            return 0.0
-        slot = max(now, self.next_send.get(task_id, now))
-        self.next_send[task_id] = slot + self.interval_seconds
-        return max(0.0, slot - now)
+    @contextmanager
+    def slot(self, task_id):
+        # Serialize actual sends per task instead of reserving arbitrarily
+        # distant future slots. Many Range sockets otherwise queue >10s of
+        # future sends, hit the downloader's read timeout and drop live tasks.
+        with self.lock_guard:
+            task_lock = self.task_locks.setdefault(task_id, threading.Lock())
+        with task_lock:
+            now = time.monotonic()
+            wait = max(0.0, self.next_send.get(task_id, now) - now)
+            if wait:
+                time.sleep(wait)
+            try:
+                yield wait
+            finally:
+                # Advance only after the actual write, not at reservation time.
+                self.next_send[task_id] = time.monotonic() + self.interval_seconds
 
     def reset(self):
-        self.next_send.clear()
+        with self.lock_guard:
+            self.next_send.clear()
+            self.task_locks.clear()
 
 
 def main():
@@ -68,6 +84,7 @@ def main():
     }
     tasks_active = {}
     tasks_seen = set()
+    task_bytes_sent = {}
     task_pacer = TaskChunkPacer(args.task_chunk_delay_ms / 1000.0)
     # Test-only bounded admission barrier: prove distinct live GET sockets
     # without allowing early fast tasks to finish before the last starts.
@@ -102,6 +119,7 @@ def main():
                         stats[key] = 0
                     tasks_active.clear()
                     tasks_seen.clear()
+                    task_bytes_sent.clear()
                     task_pacer.reset()
                     gate_expected[0] = requested_gate
                     if requested_gate:
@@ -116,6 +134,7 @@ def main():
                 # or credentials. Helps distinguish late starts from early exits.
                 snapshot["active_task_ids"] = sorted(tasks_active)
                 snapshot["unique_tasks_seen"] = len(tasks_seen)
+                snapshot["task_bytes_sent"] = dict(sorted(task_bytes_sent.items()))
             body = json.dumps(snapshot, sort_keys=True).encode("ascii")
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -184,19 +203,22 @@ def main():
                             # 16 Range sockets can finish one task while the
                             # other 15 remain active. Pace aggregate bytes for
                             # each task only in the strict gated workload.
-                            wait = 0.0
-                            with guard:
-                                if gate_expected[0]:
-                                    wait = task_pacer.reserve(task_id, time.monotonic())
-                                    stats["paced_chunks"] += 1
-                                    stats["paced_wait_seconds"] += wait
-                            if wait:
-                                time.sleep(wait)
-                            self.wfile.write(chunk)
-                            self.wfile.flush()
+                            if gate_expected[0]:
+                                with task_pacer.slot(task_id) as wait:
+                                    with guard:
+                                        stats["paced_chunks"] += 1
+                                        stats["paced_wait_seconds"] += wait
+                                    self.wfile.write(chunk)
+                                    self.wfile.flush()
+                            else:
+                                self.wfile.write(chunk)
+                                self.wfile.flush()
                             remaining -= len(chunk)
                             with guard:
                                 stats["bytes_sent"] += len(chunk)
+                                task_bytes_sent[task_id] = (
+                                    task_bytes_sent.get(task_id, 0) + len(chunk)
+                                )
                             if args.chunk_delay_ms > 0:
                                 time.sleep(args.chunk_delay_ms / 1000.0)
                     except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):

@@ -159,9 +159,48 @@ class LocalHttpRangeFixtureTest(unittest.TestCase):
         # The split task's two sockets must wait for the SAME budget.
         self.assertGreater(snapshot["paced_wait_seconds"], 0.1)
         self.assertEqual(len(self.payload) * 2, snapshot["bytes_sent"])
+        self.assertEqual(len(self.payload), snapshot["task_bytes_sent"]["split"])
+        self.assertEqual(len(self.payload), snapshot["task_bytes_sent"]["peer"])
         reset = self.get_stats(reset=True)
+        self.assertEqual({}, reset["task_bytes_sent"])
         self.assertEqual(0, reset["paced_chunks"])
         self.assertEqual(0.0, reset["paced_wait_seconds"])
+
+    def test_many_range_sockets_share_bounded_live_task_pacer(self):
+        self.wait_idle()
+        self.get_stats(reset=True, gate_tasks=1)
+        results, errors = [], []
+        # Twelve sockets share one task, with no speculative reservations
+        # beyond the current send. This catches starvation/timeouts when a
+        # segmented downloader opens many parallel Range connections.
+        def fetch(part):
+            try:
+                start = (part % 4) * 65536
+                status, _, body = self.request(
+                    "GET", "/fixture.bin?task=multi-range",
+                    {"Range": f"bytes={start}-{start + 65535}"}
+                )
+                results.append((status, body, start))
+            except Exception as exc:
+                errors.append(str(exc))
+        workers = [threading.Thread(target=fetch, args=(i,)) for i in range(12)]
+        for worker in workers:
+            worker.start()
+        for worker in workers:
+            worker.join(timeout=8)
+            self.assertFalse(worker.is_alive(), "A Range socket was starved")
+        self.assertEqual([], errors)
+        self.assertEqual(12, len(results))
+        for status, body, start in results:
+            self.assertEqual(206, status)
+            self.assertEqual(self.payload[start:start + 65536], body)
+        self.wait_idle()
+        snapshot = self.get_stats()
+        self.assertEqual(12, snapshot["total_requests"])
+        self.assertEqual(12, snapshot["paced_chunks"])
+        self.assertEqual(12 * 65536, snapshot["task_bytes_sent"]["multi-range"])
+        self.assertEqual(1, snapshot["peak_distinct_tasks"])
+        self.get_stats(reset=True)
 
     def test_gate_rejects_invalid_configuration(self):
         for path in ("/stats?gate_tasks=2", "/stats?reset=1&gate_tasks=65",
