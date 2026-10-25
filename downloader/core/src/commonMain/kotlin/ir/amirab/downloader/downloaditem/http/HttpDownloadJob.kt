@@ -378,16 +378,11 @@ class HttpDownloadJob(
     private val partLoopLock = Mutex()
 
     //    private val c = AtomicInteger(0)
-    private fun beginDownloadParts() {
-        if (partLoopLock.isLocked) {
-            return
-        }
-        activeDownloadScope?.launch {
-            if (!partLoopLock.tryLock()) {
-                return@launch
-            }
-//            c.incrementAndGet()
-            try {
+    private suspend fun beginDownloadParts() {
+        // A skipped tryLock could leave a newly resumed job marked Downloading
+        // with no part ever scheduled. Wait for the current scheduling pass.
+        // This call completes before onDownloadResumed publishes Downloading.
+        partLoopLock.withLock {
                 val activeCount = getPartDownloaderList()
                     .count { it.active }
                 val howMuchCreate = getRequestedPartitionCount() - activeCount
@@ -450,13 +445,7 @@ class HttpDownloadJob(
                             it.awaitIdle()
                         }
                 }
-            } catch (e: Exception) {
-                throw e
-            } finally {
-//                println("C:" + c)
-                partLoopLock.unlock()
-//                c.decrementAndGet()
-            }
+
         }
     }
 
