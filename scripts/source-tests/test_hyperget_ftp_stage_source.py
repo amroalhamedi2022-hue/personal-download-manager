@@ -30,12 +30,15 @@ class StagedFileSourceContract(unittest.TestCase):
         self.assertIn("channel.size() != expectedSize || after.size() != expectedSize", self.output)
         self.assertIn("before.fileKey() != after.fileKey()", self.output)
         self.assertIn("after.fileKey()", self.output)
+        self.assertIn("before.creationTime() != after.creationTime()", self.output)
+        self.assertIn("after.creationTime()", self.output)
 
     def test_publish_checks_file_type_size_and_key(self):
         for fragment in (
             "if (!attributes.isRegularFile)",
             "attributes.size() != expectedSize",
             "attributes.fileKey() != expectedFileKey",
+            "attributes.creationTime() != expectedCreationTime",
         ):
             self.assertIn(fragment, self.publish)
 
@@ -46,11 +49,14 @@ class StagedFileSourceContract(unittest.TestCase):
 
     def test_transport_uses_opened_identity_and_byte_count(self):
         self.assertIn("stagedFileKey = openedStage.fileKey", self.transfer)
-        self.assertIn("publishFtpStagedFile(part, absolute, downloaded, stagedFileKey)", self.transfer)
+        self.assertIn("stagedCreationTime = openedStage.creationTime", self.transfer)
+        self.assertIn("publishFtpStagedFile(part, absolute, downloaded, stagedFileKey, stagedCreationTime)", self.transfer)
 
     def test_regression_covers_same_size_replacement(self):
-        self.assertIn("sameSizeReplacementCannotBePublishedWhenFileKeysAreAvailable", self.regression)
-        self.assertIn("assumeTrue(", self.regression)
+        self.assertIn("sameSizeReplacementCannotBePublishedWithPortableIdentity", self.regression)
+        self.assertIn("creationTimeFallbackRejectsSameSizeSwapWithoutFileKey", self.regression)
+        self.assertIn("publishFtpStagedFile(stage, destination, 3, null, opened.creationTime)", self.regression)
+        self.assertNotIn("assumeTrue(", self.regression)
 
     def test_resume_identity_is_bounded_and_never_follows_symlinks(self):
         self.assertIn("Files.readAttributes(path, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)", self.resume_identity)
