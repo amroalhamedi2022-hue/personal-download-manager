@@ -261,7 +261,8 @@ try {
     writeFileSync(join(evidenceDir, 'chrome-native-extension-report.json'), JSON.stringify({
       browser: 'Google Chrome', extensionId, manifestVersion: manifest.manifest_version,
       nativeHost: hostName, realChromeExtensionLoaded: true, requests: results,
-      browserDownloadCaptured: false, connectedPort: firstPort,\n      reconnectedPort, verified: true,
+      browserDownloadCaptured: false, connectedPort: firstPort,
+      reconnectedPort, verified: true,
     }, null, 2));
     console.log('PASS: real Chrome extension -> installed HyperGet native host; three one-shot replies, three connected-port replies and one reply after reconnect');
   } finally { page.close(); }
