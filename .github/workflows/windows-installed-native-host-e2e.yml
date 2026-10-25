@@ -8,6 +8,7 @@ on:
     paths:
       - ".github/workflows/windows-installed-native-host-e2e.yml"
       - "scripts/Run-WindowsInstalledNativeHostE2E.ps1"
+      - "scripts/Run-WindowsChromeNativeE2E.mjs"
       - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/nativemessaging/**"
       - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/AppInfo.kt"
   workflow_dispatch:
@@ -47,6 +48,13 @@ jobs:
             throw "Native host E2E script has $($errors.Count) parser errors"
           }
           Write-Host 'Native host PowerShell syntax PASS before installer build'
+      - name: Set up Node.js 22 for real Chrome DevTools native messaging
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Validate Chrome E2E JavaScript syntax before installer build
+        shell: pwsh
+        run: node --check scripts/Run-WindowsChromeNativeE2E.mjs
       - name: Set up JetBrains Runtime 25
         uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
@@ -93,6 +101,36 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           & ./scripts/Run-WindowsInstalledNativeHostE2E.ps1 -GuiExecutable $env:HYPERGET_GUI_EXE -HostExecutable $env:HYPERGET_NATIVE_EXE -SourceSha $env:HYPERGET_TESTED_SHA -OutputDirectory 'build/ci-release/native-host/evidence'
+      - name: Check out pinned browser PR extension source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: amroalhamedi2022-hue/personal-download-manager-browser-integration
+          ref: 0fb5a304cbde07a9758d2b42417e7a8a85cba0f2
+          path: browser-integration
+          persist-credentials: false
+      - name: Build real Chrome MV3 extension from locked browser PR source
+        shell: pwsh
+        working-directory: browser-integration
+        run: |
+          if ((git rev-parse HEAD).Trim() -ne '0fb5a304cbde07a9758d2b42417e7a8a85cba0f2') { throw 'Wrong browser PR SHA' }
+          npm ci --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { throw 'Browser npm ci failed' }
+          npm run build:chrome
+          if ($LASTEXITCODE -ne 0) { throw 'Chrome MV3 extension build failed' }
+          if (-not (Test-Path 'dist/chrome/manifest.json')) { throw 'Built Chrome manifest missing' }
+      - name: Run actual installed Chrome extension nativeMessaging API acceptance
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $candidates = @(
+            (Join-Path $env:ProgramFiles 'Google/Chrome/Application/chrome.exe'),
+            (Join-Path ${env:ProgramFiles(x86)} 'Google/Chrome/Application/chrome.exe'),
+            (Join-Path $env:LOCALAPPDATA 'Google/Chrome/Application/chrome.exe')
+          )
+          $chrome = @($candidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1)
+          if ($chrome.Count -ne 1) { throw 'Chrome executable not installed on Windows runner' }
+          & node ./scripts/Run-WindowsChromeNativeE2E.mjs $chrome[0] 'browser-integration/dist/chrome' 'build/ci-release/native-host/chrome-evidence'
+          if ($LASTEXITCODE -ne 0) { throw "Real Chrome native E2E failed: $LASTEXITCODE" }
       - name: Upload non-sensitive Windows native host evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -101,5 +139,6 @@ jobs:
           path: |
             build/ci-release/native-host/installer-sha256.txt
             build/ci-release/native-host/evidence/native-host-report.json
+            build/ci-release/native-host/chrome-evidence/chrome-native-extension-report.json
           if-no-files-found: warn
           retention-days: 14
