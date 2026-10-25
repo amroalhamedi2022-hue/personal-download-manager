@@ -118,19 +118,35 @@ jobs:
           npm run build:chrome
           if ($LASTEXITCODE -ne 0) { throw 'Chrome MV3 extension build failed' }
           if (-not (Test-Path 'dist/chrome/manifest.json')) { throw 'Built Chrome manifest missing' }
-      - name: Run actual installed Chrome extension nativeMessaging API acceptance
+      - name: Run actual Chrome for Testing MV3 extension nativeMessaging API acceptance
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $candidates = @(
-            (Join-Path $env:ProgramFiles 'Google/Chrome/Application/chrome.exe'),
-            (Join-Path ${env:ProgramFiles(x86)} 'Google/Chrome/Application/chrome.exe'),
-            (Join-Path $env:LOCALAPPDATA 'Google/Chrome/Application/chrome.exe')
-          )
-          $chrome = @($candidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1)
-          if ($chrome.Count -ne 1) { throw 'Chrome executable not installed on Windows runner' }
-          & node ./scripts/Run-WindowsChromeNativeE2E.mjs $chrome[0] 'browser-integration/dist/chrome' 'build/ci-release/native-host/chrome-evidence'
-          if ($LASTEXITCODE -ne 0) { throw "Real Chrome native E2E failed: $LASTEXITCODE" }
+          # Branded Chrome >=137 intentionally ignores --load-extension. Google's
+          # official Chrome for Testing retains the switch for extension CI.
+          $catalog = Invoke-RestMethod -Uri 'https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json'
+          $matches = @($catalog.channels.Stable.downloads.chrome | Where-Object { $_.platform -eq 'win64' })
+          if ($matches.Count -ne 1) { throw 'Official Chrome for Testing win64 release not found' }
+          $download = [uri]$matches[0].url
+          if ($download.Scheme -ne 'https' -or $download.Host -ne 'storage.googleapis.com' -or
+              -not $download.AbsolutePath.StartsWith('/chrome-for-testing-public/')) {
+            throw 'Unexpected Chrome for Testing download origin'
+          }
+          $archive = Join-Path $env:RUNNER_TEMP 'hyperget-chrome-for-testing-win64.zip'
+          Invoke-WebRequest -Uri $download.AbsoluteUri -OutFile $archive
+          $archiveSha = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          $unpack = Join-Path $env:RUNNER_TEMP 'hyperget-chrome-for-testing'
+          Expand-Archive -LiteralPath $archive -DestinationPath $unpack
+          $chrome = Join-Path $unpack 'chrome-win64/chrome.exe'
+          if (-not (Test-Path -LiteralPath $chrome -PathType Leaf)) {
+            throw 'Official Chrome for Testing executable missing after extraction'
+          }
+          @(
+            "ChromeForTestingVersion=$($catalog.channels.Stable.version)",
+            "ChromeForTestingArchiveSHA256=$archiveSha"
+          ) | Set-Content 'build/ci-release/native-host/chrome-for-testing-sha256.txt'
+          & node ./scripts/Run-WindowsChromeNativeE2E.mjs $chrome 'browser-integration/dist/chrome' 'build/ci-release/native-host/chrome-evidence'
+          if ($LASTEXITCODE -ne 0) { throw "Real Chrome for Testing native E2E failed: $LASTEXITCODE" }
       - name: Upload non-sensitive Windows native host evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -140,5 +156,6 @@ jobs:
             build/ci-release/native-host/installer-sha256.txt
             build/ci-release/native-host/evidence/native-host-report.json
             build/ci-release/native-host/chrome-evidence/chrome-native-extension-report.json
+            build/ci-release/native-host/chrome-for-testing-sha256.txt
           if-no-files-found: warn
           retention-days: 14
