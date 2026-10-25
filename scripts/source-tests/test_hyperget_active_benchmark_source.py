@@ -39,7 +39,10 @@ class ActiveBenchmarkContract(unittest.TestCase):
     def test_fixture_exposes_only_synthetic_active_task_ids(self):
         self.assertIn('snapshot["active_task_ids"] = sorted(tasks_active)', FIXTURE)
         self.assertIn('snapshot["active_distinct_tasks"] = len(tasks_active)', FIXTURE)
-        self.assertIn('ThreadingHTTPServer(("127.0.0.1", 0), Handler)', FIXTURE)
+        self.assertIn('BurstReadyHTTPServer(("127.0.0.1", 0), Handler)', FIXTURE)
+        self.assertIn("class BurstReadyHTTPServer(ThreadingHTTPServer):", FIXTURE)
+        self.assertIn("request_queue_size = 256", FIXTURE)
+        self.assertIn("test_burst_32_simultaneous_range_probes_do_not_refuse_connections", (ROOT / "scripts/test_local_http_range_fixture.py").read_text(encoding="utf-8"))
 
     def test_16_task_gate_proves_live_sockets_not_merely_seen_tasks(self):
         self.assertIn("gate_tasks=16", BENCH)
