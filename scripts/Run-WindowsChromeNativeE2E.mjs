@@ -127,15 +127,32 @@ try {
   await page.ready();
   try {
     await page.call('Runtime.enable');
-    await poll(async () => {
-      const state = await page.call('Runtime.evaluate', {
-        expression: '({ id: globalThis.chrome?.runtime?.id ?? null, origin: location.origin, ready: document.readyState })',
-        returnByValue: true,
-      });
-      const value = state.result?.value;
-      return value?.id === extensionId && value?.origin === 'chrome-extension://' + extensionId
-        && value?.ready === 'complete';
-    }, 'loaded Chrome extension page');
+    await page.call('Page.enable');
+    // Chrome may create a tab before the unpacked extension is registered.
+    // Retry navigation once after startup rather than testing the initial error page.
+    let lastState = null;
+    let navigatedAgain = false;
+    const navigationStart = Date.now();
+    try {
+      await poll(async () => {
+        const state = await page.call('Runtime.evaluate', {
+          expression: '({ id: globalThis.chrome?.runtime?.id ?? null, origin: location.origin, ready: document.readyState })',
+          returnByValue: true,
+        });
+        lastState = state.result?.value ?? null;
+        if (lastState?.id === extensionId &&
+            lastState?.origin === 'chrome-extension://' + extensionId &&
+            lastState?.ready === 'complete') return true;
+        if (!navigatedAgain && Date.now() - navigationStart > 4000) {
+          navigatedAgain = true;
+          await page.call('Page.navigate', { url });
+        }
+        return false;
+      }, 'loaded Chrome extension page', 30000);
+    } catch {
+      // Only fixed-origin browser state; never print page contents, cookies or URLs.
+      throw Error('Chrome extension context unavailable: ' + JSON.stringify(lastState));
+    }
     const results = [];
     for (const [id, action] of [
       ['B_chrome_native_1', 'ping'],
