@@ -33,6 +33,7 @@ function safeWebDriverRoute(route) {
   if (route === '/status') return 'STATUS';
   if (route === '/session') return 'CREATE_SESSION';
   if (/^\/session\/[^/]+\/moz\/addon\/install$/.test(route)) return 'INSTALL_ADDON';
+  if (/^\/session\/[^/]+\/moz\/context$/.test(route)) return 'CONTEXT';
   if (/^\/session\/[^/]+\/url$/.test(route)) return 'NAVIGATE';
   if (/^\/session\/[^/]+\/execute\/(?:sync|async)$/.test(route)) return 'EXECUTE';
   if (/^\/session\/[^/]+$/.test(route)) return 'SESSION';
@@ -296,8 +297,10 @@ await new Promise((resolveListen, rejectListen) => {
 });
 const fixturePort = fixture.server.address().port;
 const geckoPort = await reservePort();
+// Firefox 138+ gates privileged browser-UI automation behind this explicit flag.
+ // This isolated CI profile contains only the temporary test add-on and fixture.
 const gecko = spawn(geckodriverExe,
-  ['--host', '127.0.0.1', '--port', String(geckoPort), '--log', 'error'],
+  ['--host', '127.0.0.1', '--port', String(geckoPort), '--log', 'error', '--allow-system-access'],
   { stdio: 'ignore', windowsHide: true });
 let sessionId = null;
 let profileDir = null;
@@ -373,8 +376,28 @@ try {
   const uuid = await waitFor(() => readExtensionUuid(profileDir),
     'FIREFOX_EXTENSION_UUID_NOT_FOUND', 15000);
   const optionsUrl = `moz-extension://${uuid}/src/optionsui/option-ui.html`;
-  currentStage = 'NAVIGATE_EXTENSION_OPTIONS';
-  await webdriverRequest(geckoPort, `/session/${sessionId}/url`, 'POST', { url: optionsUrl });
+
+  // WebDriver Navigate To does not support moz-extension:// URLs in Firefox.
+  // Use Mozilla's explicitly gated chrome context only to open the test add-on
+  // page, then return to content context before exercising its public API.
+  const handlesBefore = await webdriverRequest(geckoPort,
+    `/session/${sessionId}/window/handles`, 'GET');
+  if (!Array.isArray(handlesBefore?.value)) throw new Error('FIREFOX_WINDOW_HANDLES_UNAVAILABLE');
+  currentStage = 'OPEN_EXTENSION_OPTIONS_PRIVILEGED';
+  await webdriverRequest(geckoPort, `/session/${sessionId}/moz/context`, 'POST', { context: 'chrome' });
+  await executeScript(geckoPort, sessionId,
+    'const tab = gBrowser.addTab(arguments[0], { triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal() }); gBrowser.selectedTab = tab; return tab.linkedBrowser.currentURI.spec;',
+    [optionsUrl]);
+  const beforeHandleSet = new Set(handlesBefore.value);
+  const extensionHandle = await waitFor(async () => {
+    const handles = await webdriverRequest(geckoPort,
+      `/session/${sessionId}/window/handles`, 'GET');
+    if (!Array.isArray(handles?.value)) return null;
+    return handles.value.find(handle => !beforeHandleSet.has(handle)) || null;
+  }, 'FIREFOX_EXTENSION_TAB_NOT_FOUND', 15000);
+  await webdriverRequest(geckoPort, `/session/${sessionId}/window`, 'POST', { handle: extensionHandle });
+  await webdriverRequest(geckoPort, `/session/${sessionId}/moz/context`, 'POST', { context: 'content' });
+
   currentStage = 'WAIT_EXTENSION_CONTEXT';
   await waitFor(async () => {
     const state = await executeScript(geckoPort, sessionId,
