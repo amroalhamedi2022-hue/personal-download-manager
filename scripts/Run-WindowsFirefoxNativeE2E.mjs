@@ -385,6 +385,9 @@ try {
   if (!Array.isArray(handlesBefore?.value)) throw new Error('FIREFOX_WINDOW_HANDLES_UNAVAILABLE');
   currentStage = 'OPEN_EXTENSION_OPTIONS_PRIVILEGED';
   await webdriverRequest(geckoPort, `/session/${sessionId}/moz/context`, 'POST', { context: 'chrome' });
+  const chromeContext = await webdriverRequest(geckoPort,
+    `/session/${sessionId}/moz/context`, 'GET');
+  if (chromeContext?.value !== 'chrome') throw new Error('FIREFOX_CHROME_CONTEXT_NOT_ACTIVE');
   await executeScript(geckoPort, sessionId,
     'const tab = gBrowser.addTab(arguments[0], { triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal() }); gBrowser.selectedTab = tab; return tab.linkedBrowser.currentURI.spec;',
     [optionsUrl]);
@@ -397,6 +400,9 @@ try {
   }, 'FIREFOX_EXTENSION_TAB_NOT_FOUND', 15000);
   await webdriverRequest(geckoPort, `/session/${sessionId}/window`, 'POST', { handle: extensionHandle });
   await webdriverRequest(geckoPort, `/session/${sessionId}/moz/context`, 'POST', { context: 'content' });
+  const contentContext = await webdriverRequest(geckoPort,
+    `/session/${sessionId}/moz/context`, 'GET');
+  if (contentContext?.value !== 'content') throw new Error('FIREFOX_CONTENT_CONTEXT_NOT_RESTORED');
 
   currentStage = 'WAIT_EXTENSION_CONTEXT';
   await waitFor(async () => {
