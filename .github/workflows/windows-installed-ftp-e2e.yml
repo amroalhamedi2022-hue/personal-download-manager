@@ -72,6 +72,18 @@ jobs:
         shell: pwsh
         run: |
           if ((git rev-parse HEAD).Trim() -ne $env:HYPERGET_TESTED_SHA) { throw 'Wrong FTP test source SHA' }
+      - name: Parse installed FTP PowerShell test before expensive NSIS build
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          $path = (Resolve-Path 'scripts/Run-WindowsInstalledFtpE2E.ps1').Path
+          [System.Management.Automation.Language.Parser]::ParseFile($path, [ref]$tokens, [ref]$errors) | Out-Null
+          if ($errors.Count -ne 0) {
+            $errors | ForEach-Object { Write-Host $_.ToString() }
+            throw "FTP E2E PowerShell syntax invalid: $($errors.Count) parser errors"
+          }
+          Write-Host 'FTP E2E PowerShell parser PASS before NSIS build'
       - name: Set up JetBrains Runtime 25
         uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
