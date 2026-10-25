@@ -6,6 +6,8 @@ import ir.amirab.downloader.db.IDownloadPartListDb
 import ir.amirab.downloader.downloaditem.*
 import ir.amirab.downloader.downloaditem.contexts.DuplicateRemoval
 import ir.amirab.downloader.downloaditem.contexts.RemovedBy
+import ir.amirab.downloader.downloaditem.contexts.ResumedBy
+import ir.amirab.downloader.downloaditem.contexts.StoppedBy
 import ir.amirab.downloader.downloaditem.DownloadJobStatus
 import ir.amirab.downloader.downloaditem.DownloadStatus
 import ir.amirab.downloader.utils.DuplicateFilterByPath
@@ -34,6 +36,13 @@ internal fun shouldDeleteDownloadOutput(
     status: DownloadStatus,
     removeCompletedFile: Boolean,
 ): Boolean = status != DownloadStatus.Completed || removeCompletedFile
+
+/** A new lifecycle command must not inherit the previous Stop/Resume actor. */
+internal fun contextForLifecyclePause(previous: DownloadItemContext, command: DownloadItemContext): DownloadItemContext =
+    previous.minusKey(StoppedBy).minusKey(ResumedBy) + command
+
+internal fun contextForLifecycleResume(previous: DownloadItemContext, command: DownloadItemContext): DownloadItemContext =
+    previous.minusKey(StoppedBy).minusKey(ResumedBy) + command
 
 internal fun pendingDownloadsToBoot(
     items: List<IDownloadItem>,
@@ -244,7 +253,7 @@ class DownloadManager(
     suspend fun pause(id: Long, context: DownloadItemContext = EmptyContext) {
         withJobLifecycleLock(id) {
             val job = getDownloadJob(id) ?: return@withJobLifecycleLock
-            contextContainer.updateContext(id) { it + context }
+            contextContainer.updateContext(id) { contextForLifecyclePause(it, context) }
             job.pause()
         }
     }
@@ -261,7 +270,7 @@ class DownloadManager(
                     }
                 }
                 job?.let {
-                    contextContainer.updateContext(id) { it + context }
+                    contextContainer.updateContext(id) { contextForLifecycleResume(it, context) }
                     if (it.downloadItem.retryAt != null) {
                         it.restoreInterruptedRetry()
                     } else {

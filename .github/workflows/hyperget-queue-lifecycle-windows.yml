@@ -1,0 +1,74 @@
+name: HyperGet Windows queue lifecycle regression
+# Question: do lifecycle actor transitions compile and preserve 16-task batch admission?
+# Expected: >=4 new + >=7 existing JUnit tests, no failures/skips. Source checks alone are insufficient.
+# Targeted Windows compile only; NO EXE or installer.
+on:
+  pull_request:
+    branches: [codex/repair-rf00-rf01]
+    paths:
+      - ".github/workflows/hyperget-queue-lifecycle-windows.yml"
+      - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/DownloadManager.kt"
+      - "downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/DownloadManagerLifecycleContextTest.kt"
+      - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/queue/ManualDownloadQueue.kt"
+      - "downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/queue/ManualDownloadQueueBatchResumeTest.kt"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  queue-lifecycle:
+    runs-on: windows-2022
+    timeout-minutes: 35
+    env:
+      SKIP_ANDROID_BUILD: "true"
+      HYPERGET_TESTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Verify source SHA and contracts
+        shell: pwsh
+        run: |
+          if ((git rev-parse HEAD).Trim() -ne $env:HYPERGET_TESTED_SHA) { throw 'Wrong SHA' }
+          python -m unittest discover -s scripts/source-tests -p test_hyperget_lifecycle_context_source.py -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: jetbrains
+          java-package: jdk
+          java-version: "25"
+          cache: gradle
+      - name: Compile and run two targeted Kotlin suites
+        shell: pwsh
+        run: |
+          & ./gradlew.bat --no-daemon --stacktrace --dependency-verification strict :downloader:core:desktopTest --tests '*DownloadManagerLifecycleContextTest*' --tests '*ManualDownloadQueueBatchResumeTest*'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify exact JUnit XML counts and zero failures
+        shell: pwsh
+        run: |
+          $dir = 'downloader/core/build/test-results/desktopTest'
+          $suites = @(
+            @{Name='ir.amirab.downloader.DownloadManagerLifecycleContextTest';Min=4},
+            @{Name='ir.amirab.downloader.queue.ManualDownloadQueueBatchResumeTest';Min=7}
+          )
+          foreach ($suite in $suites) {
+            $path = Join-Path $dir "TEST-$($suite.Name).xml"
+            if (-not (Test-Path -LiteralPath $path)) { throw "Missing JUnit XML: $path" }
+            [xml]$doc = Get-Content -LiteralPath $path -Raw
+            $node = $doc.SelectSingleNode('//testsuite')
+            if ($null -eq $node) { throw "Invalid JUnit XML: $path" }
+            foreach ($field in @('failures','errors','skipped')) {
+              if ([int]$node.GetAttribute($field) -ne 0) { throw "JUnit $field: $path" }
+            }
+            if ([int]$node.GetAttribute('tests') -lt $suite.Min) { throw "Insufficient tests: $path" }
+            Write-Host "PASS $($suite.Name): $($node.GetAttribute('tests')) tests"
+          }
+      - name: Upload targeted JUnit XML, not EXE
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: hyperget-queue-lifecycle-windows-junit
+          path: |
+            downloader/core/build/test-results/desktopTest/TEST-ir.amirab.downloader.DownloadManagerLifecycleContextTest.xml
+            downloader/core/build/test-results/desktopTest/TEST-ir.amirab.downloader.queue.ManualDownloadQueueBatchResumeTest.xml
+          if-no-files-found: warn
+          retention-days: 7

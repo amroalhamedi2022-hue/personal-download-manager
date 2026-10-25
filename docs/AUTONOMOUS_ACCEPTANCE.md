@@ -1,3 +1,13 @@
+## 2026-10-25 HyperGet queue lifecycle milestone — Windows JUnit pending
+
+**Exact evidence:** Windows installed HTTP run 40179341528 on e16d779a FAIL: 1/4 concurrency rounds PASS (15/63 SHA transfers and 6/9 CPU/RAM CSV); first 16-task round only 15 real active tasks. Artifact 12593552642 shows task ID 16 (active-16-round-1-task-2.bin) **Paused** without any GET, while 15 other tasks transferred. This is evidence of a pre-network cancellation/pause, **not proof of an HTTP host socket cap**. Root cause of that Pause remains unknown.
+
+**Production correctness:** DownloadManager retained previous StoppedBy and ResumedBy context across opposite lifecycle commands, so later events could carry stale actor attribution. Replace both lifecycle keys on each Pause/Resume; retain unrelated context and persistence/IPC. Four Kotlin regressions check actor replacement, 16 cycles and unrelated context preservation. Existing seven batch/queue tests run alongside them. Also wire the previously omitted five CLI status-line source tests into fast CI. Existing project is Apache-2.0; no new library or copied implementation.
+
+**Purposeful build question (written before run):** Do the changed Kotlin transitions compile on Windows and pass >=11 targeted JUnit tests, zero failures/errors/skips? Source checks cannot prove this. New path-scoped workflow compiles downloader core desktopTest only; no EXE/installer. **NOT TESTED** until exact-head CI/JUnit XML inspected. This fixes a real lifecycle attribution bug but **does not claim** to fix 16-task concurrency. FTP/HLS exact-head Windows suites on e16d779a PASS; full installed Windows, independent recheck, browser, Liquid Progress, upgrade and HyperGet.exe remain open. PR #3 Draft; no main write, merge, Torrent or paid runner.
+
+---
+
 ## HyperGet — 2026-10-24 HG-HLS-AUTH-01 evidence checkpoint (no release)
 
 **Current functional slice:** Guarded same-origin authenticated redirects are wired into HLS manifest refresh, UI preview and media segment workers. They preserve explicit headers on same-origin hops and reject cross-origin/downgrade/port/userinfo/loop/over-limit hops. No Torrent, new paid dependency or user-data schema change.
