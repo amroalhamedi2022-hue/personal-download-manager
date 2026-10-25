@@ -66,7 +66,7 @@ class ActiveBenchmarkContract(unittest.TestCase):
         self.assertIn('stats["paced_chunks"] += 1', FIXTURE)
         self.assertIn('stats["paced_wait_seconds"] += wait', FIXTURE)
         self.assertIn("'--task-chunk-delay-ms', \"120\"", BENCH)
-        self.assertIn('if gate_expected[0]:', FIXTURE)
+        self.assertIn('if gate_expected[0] and is_counted_transfer:', FIXTURE)
         self.assertIn('if wait:', FIXTURE)
         self.assertIn('time.sleep(wait)', FIXTURE)
         self.assertIn('snapshot["task_bytes_sent"] = dict(sorted(task_bytes_sent.items()))', FIXTURE)
