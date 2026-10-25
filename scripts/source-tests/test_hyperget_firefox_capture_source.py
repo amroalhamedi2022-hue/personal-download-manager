@@ -8,7 +8,6 @@ import unittest
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = (ROOT / "scripts/Run-WindowsFirefoxNativeE2E.mjs").read_text(encoding="utf-8")
 WORKFLOW = (ROOT / ".github/workflows/windows-installed-native-host-e2e.yml").read_text(encoding="utf-8")
-SOURCE_WORKFLOW = (ROOT / ".github/workflows/hyperget-source-only.yml").read_text(encoding="utf-8")
 
 
 class FirefoxInstalledCaptureSourceTest(unittest.TestCase):
@@ -22,7 +21,7 @@ class FirefoxInstalledCaptureSourceTest(unittest.TestCase):
     def test_native_messages_use_production_host_and_correlate_replies(self):
         self.assertIn("app.personaldownloadmanager", SCRIPT)
         self.assertIn("browser.runtime.sendNativeMessage", SCRIPT)
-        self.assertIn("ping.reply?.id", SCRIPT)
+        self.assertIn("ping?.reply?.id", SCRIPT)
         self.assertIn("FIREFOX_ADD_REPLY_ID_MISMATCH", SCRIPT)
         self.assertIn("HyperGet could not complete the browser request.", SCRIPT)
 
@@ -47,8 +46,9 @@ class FirefoxInstalledCaptureSourceTest(unittest.TestCase):
         self.assertIn("npm run pack:firefox", WORKFLOW)
         self.assertIn("Run-WindowsFirefoxNativeE2E.mjs", WORKFLOW)
         self.assertIn("firefox-native-extension-report.json", WORKFLOW)
-        self.assertIn("scripts/Run-WindowsFirefoxNativeE2E.mjs", SOURCE_WORKFLOW)
-        self.assertIn("test_hyperget_firefox_capture_source.py", SOURCE_WORKFLOW)
+        self.assertIn("Run-WindowsFirefoxNativeE2E.mjs", WORKFLOW)
+        self.assertIn("test_hyperget_firefox_capture_source.py", WORKFLOW)
+        self.assertIn("node --check scripts/Run-WindowsFirefoxNativeE2E.mjs", WORKFLOW)
 
 
 if __name__ == "__main__":
