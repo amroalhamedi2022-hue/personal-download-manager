@@ -93,12 +93,25 @@ class FirefoxInstalledCaptureSourceTest(unittest.TestCase):
         self.assertNotIn("currentStage = 'NAVIGATE_EXTENSION_OPTIONS'", SCRIPT)
         self.assertNotIn("await webdriverRequest(geckoPort, `/session/${sessionId}/url`, 'POST', { url: optionsUrl })", SCRIPT)
 
+    def test_browser_add_must_cold_wake_the_stopped_gui(self):
+        self.assertIn("['gui', 'exit']", SCRIPT)
+        self.assertIn("function waitForGuiProcessState(expectRunning, timeoutMs = 30000)", SCRIPT)
+        self.assertIn("waitForGuiProcessState(false, 30000)", SCRIPT)
+        self.assertIn("waitForGuiProcessState(true, 30000)", SCRIPT)
+        self.assertIn("function stopGuiBeforeBrowserAdd()", SCRIPT)
+        self.assertIn("function confirmGuiWakeAfterBrowserAdd()", SCRIPT)
+        self.assertIn("guiColdWakeVerified: guiStoppedBeforeBrowserAdd && guiWakeObservedAfterBrowserAdd && downloadVerified", SCRIPT)
+        self.assertIn("Get-Process -Name", SCRIPT)
+        self.assertLess(SCRIPT.index("stopGuiBeforeBrowserAdd();"), SCRIPT.index("currentStage = 'NATIVE_ADD'"))
+        self.assertLess(SCRIPT.index("confirmGuiWakeAfterBrowserAdd();"), SCRIPT.index("currentStage = 'VERIFY_DOWNLOAD_SHA256'"))
+
     def test_browser_acceptance_stages_are_explicit(self):
         for stage in (
             "CREATE_FIREFOX_SESSION", "INSTALL_FIREFOX_ADDON",
             "OPEN_EXTENSION_OPTIONS_PRIVILEGED", "WAIT_EXTENSION_CONTEXT",
-            "NATIVE_PING", "NATIVE_SAFE_ERROR", "NATIVE_ADD",
-            "VERIFY_DOWNLOAD_SHA256",
+            "NATIVE_PING", "NATIVE_SAFE_ERROR", "STOP_GUI_BEFORE_BROWSER_ADD",
+            "GUI_STOPPED_BEFORE_BROWSER_ADD", "NATIVE_ADD",
+            "WAIT_GUI_WAKE_AFTER_ADD", "GUI_WAKE_CONFIRMED", "VERIFY_DOWNLOAD_SHA256",
         ):
             self.assertIn("currentStage = '" + stage + "'", SCRIPT)
 

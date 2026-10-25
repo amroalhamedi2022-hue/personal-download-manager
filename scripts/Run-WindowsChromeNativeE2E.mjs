@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { homedir, tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, extname, join, resolve } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 
 const [chromeArg, extensionArg, evidenceArg] = process.argv.slice(2);
@@ -35,6 +35,8 @@ const profileDir = join(tmpdir(), 'hyperget-chrome-native-' + process.pid);
 const hostName = 'app.personaldownloadmanager'; // retained compatibility identity
 let chrome = null;
 let browserSocket = null;
+let guiStoppedBeforeBrowserAdd = false;
+let guiWakeObservedAfterBrowserAdd = false;
 
 async function poll(fn, label, timeout = 45000) {
   const deadline = Date.now() + timeout;
@@ -279,6 +281,10 @@ try {
     if (!existsSync(cliExe)) {
       throw Error('Installed HyperGet CLI missing for IPC readiness check');
     }
+    const guiProcessName = basename(guiExe, extname(guiExe));
+    if (!/^[A-Za-z0-9._-]+$/.test(guiProcessName)) {
+      throw Error('Installed HyperGet GUI process identity is not safe for cold-wake testing');
+    }
     function spawnFailureCode(result, requireEmptyStdout = false) {
       if (!result) return 'NOT_RUN';
       if (result.error) {
@@ -304,6 +310,9 @@ try {
         guiIpcFailureCode: spawnFailureCode(statusResult, true),
         guiIpcStdoutPresent: Boolean(statusResult?.stdout?.trim()),
         guiIpcStderrPresent: Boolean(statusResult?.stderr?.trim()),
+        guiStoppedBeforeBrowserAdd: false,
+        guiWakeObservedAfterBrowserAdd: false,
+        guiColdWakeVerified: false,
         verified: false,
       }, null, 2));
     }
@@ -333,6 +342,50 @@ try {
     }
     const expectedSha = createHash('sha256').update(fixtureBytes).digest('hex');
     let fixtureGetCount = 0;
+    let captureVerified = false;
+    function waitForGuiProcessState(expectRunning, timeoutMs = 30000) {
+      const expected = expectRunning ? '$true' : '$false';
+      const script = `$expected = ${expected}; $deadline = (Get-Date).AddMilliseconds(${timeoutMs}); do { $p = Get-Process -Name '${guiProcessName}' -ErrorAction SilentlyContinue; if (([bool]$p) -eq $expected) { exit 0 }; Start-Sleep -Milliseconds 250 } while ((Get-Date) -lt $deadline); exit 2`;
+      const result = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script],
+        { encoding: 'utf8', timeout: timeoutMs + 5000, windowsHide: true });
+      return !result.error && result.status === 0;
+    }
+    function writeColdWakeReport(stage, failureCode = null, verified = false) {
+      writeFileSync(join(evidenceDir, 'chrome-native-extension-report.json'), JSON.stringify({
+        sourceSha: process.env.HYPERGET_TESTED_SHA || 'unknown',
+        browser: 'Google Chrome', extensionId, manifestVersion: manifest.manifest_version,
+        nativeHost: hostName, stage, failureCode, requests: results,
+        browserDownloadCaptured: captureVerified, browserDownloadSha256Verified: captureVerified,
+        browserFixtureBytes: fixtureBytes.length, browserFixtureSha256: expectedSha,
+        browserFixtureGetRequests: fixtureGetCount, connectedPort: firstPort, reconnectedPort,
+        guiStoppedBeforeBrowserAdd, guiWakeObservedAfterBrowserAdd,
+        guiColdWakeVerified: guiStoppedBeforeBrowserAdd && guiWakeObservedAfterBrowserAdd && captureVerified,
+        verified,
+      }, null, 2));
+    }
+    function stopGuiBeforeBrowserAdd() {
+      const exitResult = spawnSync(cliExe, ['gui', 'exit'],
+        { encoding: 'utf8', timeout: 45000, windowsHide: true });
+      const failure = spawnFailureCode(exitResult);
+      if (failure) {
+        writeColdWakeReport('GUI_STOP_FAILED', 'GUI_COLD_STOP_COMMAND_FAILED:' + failure);
+        throw Error('GUI_COLD_STOP_COMMAND_FAILED:' + failure);
+      }
+      if (!waitForGuiProcessState(false, 30000)) {
+        writeColdWakeReport('GUI_STOP_FAILED', 'GUI_DID_NOT_STOP_BEFORE_BROWSER_ADD');
+        throw Error('GUI_DID_NOT_STOP_BEFORE_BROWSER_ADD');
+      }
+      guiStoppedBeforeBrowserAdd = true;
+      writeColdWakeReport('GUI_STOPPED_BEFORE_BROWSER_ADD');
+    }
+    function confirmGuiWakeAfterBrowserAdd() {
+      if (!waitForGuiProcessState(true, 30000)) {
+        writeColdWakeReport('GUI_WAKE_FAILED', 'GUI_DID_NOT_WAKE_FROM_BROWSER_ADD');
+        throw Error('GUI_DID_NOT_WAKE_FROM_BROWSER_ADD');
+      }
+      guiWakeObservedAfterBrowserAdd = true;
+      writeColdWakeReport('GUI_WAKE_CONFIRMED');
+    }
     const fixtureServer = createServer((request, response) => {
       const pathname = new URL(request.url ?? '/', 'http://127.0.0.1').pathname;
       if (pathname !== '/' + fixtureName) {
@@ -375,7 +428,6 @@ try {
       fixtureServer.once('error', reject);
       fixtureServer.listen(0, '127.0.0.1', resolve);
     });
-    let captureVerified = false;
     try {
       const port = fixtureServer.address().port;
       const downloadUrl = 'http://127.0.0.1:' + port + '/' + fixtureName;
@@ -394,16 +446,25 @@ try {
           }),
         },
       };
-      const evaluated = await page.call('Runtime.evaluate', {
-        expression: '(async () => await chrome.runtime.sendNativeMessage(' +
-          JSON.stringify(hostName) + ', ' + JSON.stringify(addRequest) + '))()',
-        awaitPromise: true, returnByValue: true,
-      });
+      stopGuiBeforeBrowserAdd();
+      let evaluated;
+      try {
+        evaluated = await page.call('Runtime.evaluate', {
+          expression: '(async () => await chrome.runtime.sendNativeMessage(' +
+            JSON.stringify(hostName) + ', ' + JSON.stringify(addRequest) + '))()',
+          awaitPromise: true, returnByValue: true,
+        });
+      } catch {
+        writeColdWakeReport('NATIVE_ADD_FAILED', 'NATIVE_ADD_EXCEPTION');
+        throw Error('Chrome native add request failed');
+      }
       if (evaluated.exceptionDetails) {
+        writeColdWakeReport('NATIVE_ADD_FAILED', 'NATIVE_ADD_EXCEPTION');
         throw Error('Chrome native add request failed');
       }
       const addReply = evaluated.result?.value;
       if (addReply?.id !== requestId) {
+        writeColdWakeReport('NATIVE_ADD_FAILED', 'ADD_REPLY_ID_MISMATCH');
         throw Error('Installed HyperGet browser add reply correlation failed');
       }
       if (addReply.content?.isError === true) {
@@ -416,11 +477,14 @@ try {
             safeType = candidate;
           }
         } catch { /* Do not expose malformed native payloads. */ }
+        writeColdWakeReport('NATIVE_ADD_REJECTED', safeType);
         throw Error('Installed HyperGet rejected browser-origin add request: ' + safeType);
       }
       if (addReply.content?.isError !== false || addReply.content?.payload !== 'true') {
+        writeColdWakeReport('NATIVE_ADD_FAILED', 'ADD_ACK_UNEXPECTED');
         throw Error('Installed HyperGet returned an unexpected browser add acknowledgment');
       }
+      confirmGuiWakeAfterBrowserAdd();
 
       // Only look for our unique fixture filename under standard local user
       // download directories. Never enumerate or report unrelated filenames.
@@ -437,17 +501,23 @@ try {
         return null;
       }
       const roots = ['Downloads', 'Desktop', 'Documents'].map(name => join(homedir(), name));
-      await poll(() => {
-        for (const root of roots) {
-          const path = findCapturedFile(root);
-          if (!path || statSync(path).size !== fixtureBytes.length) continue;
-          if (createHash('sha256').update(readFileSync(path)).digest('hex') === expectedSha) {
-            return true;
+      try {
+        await poll(() => {
+          for (const root of roots) {
+            const path = findCapturedFile(root);
+            if (!path || statSync(path).size !== fixtureBytes.length) continue;
+            if (createHash('sha256').update(readFileSync(path)).digest('hex') === expectedSha) {
+              return true;
+            }
           }
-        }
-        return false;
-      }, 'SHA-verified browser-origin download', 120000);
+          return false;
+        }, 'SHA-verified browser-origin download', 120000);
+      } catch {
+        writeColdWakeReport('DOWNLOAD_SHA256_FAILED', 'SHA_OR_TIMEOUT');
+        throw Error('SHA-verified browser-origin download failed');
+      }
       if (fixtureGetCount < 1) {
+        writeColdWakeReport('DOWNLOAD_NO_HTTP_GET', 'ADD_ACK_WITHOUT_HTTP_GET');
         throw Error('Browser add was acknowledged without a real HTTP data GET');
       }
       captureVerified = true;
@@ -456,15 +526,8 @@ try {
     }
     if (!captureVerified) throw Error('Browser download capture was not SHA verified');
 
-    writeFileSync(join(evidenceDir, 'chrome-native-extension-report.json'), JSON.stringify({
-      browser: 'Google Chrome', extensionId, manifestVersion: manifest.manifest_version,
-      nativeHost: hostName, realChromeExtensionLoaded: true, requests: results,
-      browserDownloadCaptured: captureVerified, browserDownloadSha256Verified: captureVerified,
-      browserFixtureBytes: fixtureBytes.length, browserFixtureGetRequests: fixtureGetCount,
-      connectedPort: firstPort,
-      reconnectedPort, verified: true,
-    }, null, 2));
-    console.log('PASS: real Chrome extension -> installed HyperGet native host; three one-shot replies, three connected-port replies, one reconnect and one SHA-verified browser download');
+    writeColdWakeReport('COMPLETE', null, true);
+    console.log('PASS: real Chrome extension -> installed HyperGet native host; correlated native replies, cold GUI wake and SHA-verified browser download');
   } finally { page.close(); }
 } finally {
   browserSocket?.close();

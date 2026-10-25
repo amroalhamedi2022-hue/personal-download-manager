@@ -7,12 +7,14 @@ import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync, mkdirSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, extname, join, resolve } from 'node:path';
 
 const ADDON_ID = 'browser-integration@personaldownloadmanager.local';
 const NATIVE_HOST = 'app.personaldownloadmanager';
 let currentStage = 'PREFLIGHT';
 let lastWebDriverFailure = null;
+let guiStoppedBeforeBrowserAdd = false;
+let guiWakeObservedAfterBrowserAdd = false;
 const SOURCE_SHA = process.env.HYPERGET_TESTED_SHA || 'unknown';
 
 function sleep(ms) { return new Promise(resolveSleep => setTimeout(resolveSleep, ms)); }
@@ -231,6 +233,10 @@ const guiExe = process.env.HYPERGET_GUI_EXE;
 if (!guiExe || !existsSync(guiExe)) throw new Error('Installed HyperGet GUI missing');
 const cliExe = join(dirname(guiExe), 'DownloadManagerCli.exe');
 if (!existsSync(cliExe)) throw new Error('Installed HyperGet CLI missing');
+const guiProcessName = basename(guiExe, extname(guiExe));
+if (!/^[A-Za-z0-9._-]+$/.test(guiProcessName)) {
+  throw new Error('Installed HyperGet GUI process identity is not safe for cold-wake testing');
+}
 function spawnFailureCode(result, requireEmptyStdout = false) {
   if (!result) return 'NOT_RUN';
   if (result.error) {
@@ -260,6 +266,9 @@ function writeGuiWarmupFailure(stage, failureCode, startResult, statusResult) {
     guiIpcFailureCode: spawnFailureCode(statusResult, true),
     guiIpcStdoutPresent: Boolean(statusResult?.stdout?.trim()),
     guiIpcStderrPresent: Boolean(statusResult?.stderr?.trim()),
+    guiStoppedBeforeBrowserAdd: false,
+    guiWakeObservedAfterBrowserAdd: false,
+    guiColdWakeVerified: false,
     addonInstalled: false,
     nativePingCorrelated: false,
     safeErrorCorrelatedAndSanitized: false,
@@ -321,12 +330,53 @@ function writeEvidenceReport(verified, failureCode = null) {
     sourceSha: SOURCE_SHA, browser: 'Mozilla Firefox', firefoxVersion,
     extensionId: ADDON_ID, manifestVersion: 2, nativeHost: NATIVE_HOST,
     stage: currentStage, failureCode, webdriverFailure: lastWebDriverFailure,
+    guiStoppedBeforeBrowserAdd, guiWakeObservedAfterBrowserAdd,
+    guiColdWakeVerified: guiStoppedBeforeBrowserAdd && guiWakeObservedAfterBrowserAdd && downloadVerified,
     addonInstalled, nativePingCorrelated: nativePingVerified,
     safeErrorCorrelatedAndSanitized: safeErrorVerified,
     browserDownloadCaptured: downloadVerified, browserDownloadSha256Verified: downloadVerified,
     browserFixtureBytes: fixture.bytes.length, browserFixtureSha256: fixture.expectedSha,
     browserFixtureGetRequests: fixture.getRequests(), verified,
   }, null, 2));
+}
+
+function waitForGuiProcessState(expectRunning, timeoutMs = 30000) {
+  const expected = expectRunning ? '$true' : '$false';
+  const script = `$expected = ${expected}; $deadline = (Get-Date).AddMilliseconds(${timeoutMs}); do { $p = Get-Process -Name '${guiProcessName}' -ErrorAction SilentlyContinue; if (([bool]$p) -eq $expected) { exit 0 }; Start-Sleep -Milliseconds 250 } while ((Get-Date) -lt $deadline); exit 2`;
+  const result = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script],
+    { encoding: 'utf8', timeout: timeoutMs + 5000, windowsHide: true });
+  return !result.error && result.status === 0;
+}
+
+function stopGuiBeforeBrowserAdd() {
+  currentStage = 'STOP_GUI_BEFORE_BROWSER_ADD';
+  const exitResult = spawnSync(cliExe, ['gui', 'exit'],
+    { encoding: 'utf8', timeout: 45000, windowsHide: true });
+  const failure = spawnFailureCode(exitResult);
+  if (failure) {
+    currentStage = 'GUI_STOP_FAILED';
+    writeEvidenceReport(false, 'GUI_COLD_STOP_COMMAND_FAILED:' + failure);
+    throw new Error('GUI_COLD_STOP_COMMAND_FAILED:' + failure);
+  }
+  if (!waitForGuiProcessState(false, 30000)) {
+    currentStage = 'GUI_STOP_FAILED';
+    writeEvidenceReport(false, 'GUI_DID_NOT_STOP_BEFORE_BROWSER_ADD');
+    throw new Error('GUI_DID_NOT_STOP_BEFORE_BROWSER_ADD');
+  }
+  guiStoppedBeforeBrowserAdd = true;
+  currentStage = 'GUI_STOPPED_BEFORE_BROWSER_ADD';
+  writeEvidenceReport(false, null);
+}
+
+function confirmGuiWakeAfterBrowserAdd() {
+  currentStage = 'WAIT_GUI_WAKE_AFTER_ADD';
+  if (!waitForGuiProcessState(true, 30000)) {
+    writeEvidenceReport(false, 'GUI_DID_NOT_WAKE_FROM_BROWSER_ADD');
+    throw new Error('GUI_DID_NOT_WAKE_FROM_BROWSER_ADD');
+  }
+  guiWakeObservedAfterBrowserAdd = true;
+  currentStage = 'GUI_WAKE_CONFIRMED';
+  writeEvidenceReport(false, null);
 }
 
 try {
@@ -438,6 +488,7 @@ try {
   }
   safeErrorVerified = true;
 
+  stopGuiBeforeBrowserAdd();
   currentStage = 'NATIVE_ADD';
   const downloadId = `B_firefox_download_${process.pid}`;
   const addRequest = {
@@ -465,6 +516,7 @@ try {
   if (add.reply.content?.isError !== false || add.reply.content?.payload !== 'true') {
     throw new Error('FIREFOX_ADD_ACK_UNEXPECTED');
   }
+  confirmGuiWakeAfterBrowserAdd();
 
   const roots = ['Downloads', 'Desktop', 'Documents'].map(name => join(homedir(), name));
   currentStage = 'VERIFY_DOWNLOAD_SHA256';
