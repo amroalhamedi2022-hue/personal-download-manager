@@ -82,12 +82,12 @@ jobs:
           }
           if ($proc.ExitCode -ne 0) { throw "NSIS exit code $($proc.ExitCode)" }
           $gui = @(Get-ChildItem -LiteralPath $dir -File -Recurse -Filter 'DownloadManager.exe')
-          $host = @(Get-ChildItem -LiteralPath $dir -File -Recurse -Filter 'DownloadManagerNativeMessagingHost.exe')
-          if ($gui.Count -ne 1 -or $host.Count -ne 1) {
-            throw "Installed GUI/native host executable missing: GUI=$($gui.Count), host=$($host.Count)"
+          $nativeExeFiles = @(Get-ChildItem -LiteralPath $dir -File -Recurse -Filter 'DownloadManagerNativeMessagingHost.exe')
+          if ($gui.Count -ne 1 -or $nativeExeFiles.Count -ne 1) {
+            throw "Installed GUI/native host executable missing: GUI=$($gui.Count), host=$($nativeExeFiles.Count)"
           }
           "HYPERGET_GUI_EXE=$($gui[0].FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-          "HYPERGET_NATIVE_EXE=$($host[0].FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "HYPERGET_NATIVE_EXE=$($nativeExeFiles[0].FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
       - name: Run installed Windows native host protocol acceptance
         shell: pwsh
         run: |
