@@ -110,10 +110,9 @@ class ActiveBenchmarkContract(unittest.TestCase):
         # pull_request.paths already includes the workflow. The runtime scope gate
         # must also recognize it, otherwise a workflow-only acceptance-gate fix
         # is reported as green while the 63-download/9-metric job is skipped.
-        self.assertIn(
-            '.github/workflows/windows-installed-active-benchmark.yml|scripts/Run-WindowsActiveBenchmarkMatrix.ps1',
-            WORKFLOW,
-        )
+        scope = WORKFLOW.split('case "$file" in', 1)[1].split(")", 1)[0]
+        self.assertIn(".github/workflows/windows-installed-active-benchmark.yml", scope)
+        self.assertIn("scripts/Run-WindowsActiveBenchmarkMatrix.ps1", scope)
         self.assertIn("if: needs.change-scope.outputs.run == 'true'", WORKFLOW)
 
 

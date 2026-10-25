@@ -1010,7 +1010,7 @@ Installed Windows run [40241733195](https://github.com/amroalhamedi2022-hue/pers
 **Remaining NOT TESTED / INCOMPLETE:** HTTPS remote endpoint, refreshed/expiring URL flow, scheduler, installed HLS process-kill/relaunch, real Liquid Progress visual comparison/screenshots, final HyperGet icon/full branding, in-place upgrade/uninstall with preserved old data, independent Windows release recheck, and final single `HyperGet.exe`. Browser cold-wake and HTTP exact-head gates are now closed for their stated scopes. No main write, merge, release, paid service, or Torrent.
 
 
-## 2026-10-26 — HG-HTTP-DISPATCHER-RESOURCE-BOUND-01 (production experiment pending)
+## 2026-10-26 — HG-HTTP-DISPATCHER-RESOURCE-BOUND-01 (production experiment pending; preflight repaired)
 
 The exact-head baseline at `dd86e7375e06be9b397a6b3013efc33897bd7de7` passed 63/63 SHA-verified files and 9/9 process samples, but at 16 concurrent downloads reached **336 threads**, **2,229 handles**, **527.09 MiB peak Working Set**, and **590.309 MiB peak Private Bytes**. This is a concrete resource concern, not a performance PASS.
 
@@ -1019,3 +1019,6 @@ The exact-head baseline at `dd86e7375e06be9b397a6b3013efc33897bd7de7` passed 63/
 **Purposeful Windows build question (before build):** does the capped dispatcher keep all 16 distinct downloads actively transferring and still pass 63/63 SHA-256 + 9/9 CPU/RAM samples, while reducing peak thread count and/or memory? Expected: functional gates unchanged and fewer concurrent callback threads; resource improvement must be measured, not assumed. Source tests cannot validate OkHttp dispatcher behavior, Windows socket admission, actual active tasks, or process memory.
 
 **Status:** source regression and exact-head Windows matrix are pending for the new production SHA. If concurrency or hashes fail, revert/tune the cap rather than weakening acceptance. If memory does not materially improve, inspect a heap/thread profile before another production rewrite. No main write, merge, release, paid service, or Torrent.
+
+
+**Preflight failure and repair (same milestone):** first exact-head attempt [40244507183](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40244507183) stopped before installer build because an existing source test expected the workflow's own path to be adjacent to `Run-WindowsActiveBenchmarkMatrix.ps1`. Adding the new production/test paths made that assertion brittle. Source-only run [40244507086](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40244507086) exposed the same assertion failure. No Windows build or transfer measurement occurred on that attempt. Fixed the test to assert both paths independently and removed the source-test file itself from the expensive benchmark trigger; the production `Di.kt` and workflow changes still trigger the next exact-head matrix. Browser E2E [40244507055](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40244507055) passed with the dispatcher cap, but does not replace the 63/63 + 9/9 matrix.

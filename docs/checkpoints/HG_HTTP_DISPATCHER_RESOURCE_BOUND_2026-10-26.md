@@ -14,3 +14,7 @@ Replace `Int.MAX_VALUE` global and per-host OkHttp dispatcher limits with **64 /
 **Status at checkpoint creation:** NOT TESTED on the new production SHA. Do not claim a resource improvement until the installed Windows artifact is inspected. If active-task fairness or hashes fail, tune/revert the cap without relaxing acceptance; if memory is unchanged, gather JVM heap/thread evidence before further code changes.
 
 No main write, merge, release, paid service or Torrent.
+
+
+## Preflight failure (diagnosed; no benchmark build occurred)
+First capped-dispatcher attempt [40244507183](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40244507183) failed before compile/installer at the preflight source contract. The regression asserted the workflow path and benchmark script path were adjacent in the shell allowlist; the new production/test paths made that assumption invalid. Source-only [40244507086](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40244507086) confirmed the same one-test failure. Fixed the assertion to check both paths independently and removed the source-test file from the expensive matrix trigger while keeping the production DI path and workflow itself in scope. The previous failure did not test the memory change; exact-head matrix remains pending.
