@@ -156,6 +156,9 @@ class LocalHttpRangeFixtureTest(unittest.TestCase):
         self.assertEqual(2, snapshot["peak_distinct_tasks"])
         self.assertEqual(3, snapshot["total_requests"])
         self.assertEqual(8, snapshot["paced_chunks"])
+        # The aggregate gated pacer is the ONLY throttle for 16-way
+        # workloads: do not stack the legacy per-connection sleep.
+        self.assertEqual(0, snapshot["connection_delay_sleeps"])
         # The split task's two sockets must wait for the SAME budget.
         self.assertGreater(snapshot["paced_wait_seconds"], 0.1)
         self.assertEqual(len(self.payload) * 2, snapshot["bytes_sent"])
@@ -198,6 +201,7 @@ class LocalHttpRangeFixtureTest(unittest.TestCase):
         snapshot = self.get_stats()
         self.assertEqual(12, snapshot["total_requests"])
         self.assertEqual(12, snapshot["paced_chunks"])
+        self.assertEqual(0, snapshot["connection_delay_sleeps"])
         self.assertEqual(12 * 65536, snapshot["task_bytes_sent"]["multi-range"])
         self.assertEqual(1, snapshot["peak_distinct_tasks"])
         self.get_stats(reset=True)
@@ -290,7 +294,10 @@ class LocalHttpRangeFixtureTest(unittest.TestCase):
         self.assertEqual(len(self.payload) * 2, snapshot["bytes_sent"])
         self.assertEqual(0, snapshot["active_distinct_tasks"])
         self.assertEqual(0, snapshot["active_requests"])
+        # Ungated 1/4-way workloads still exercise legacy socket pacing.
+        self.assertGreater(snapshot["connection_delay_sleeps"], 0)
         zero = self.get_stats(reset=True)
+        self.assertEqual(0, zero["connection_delay_sleeps"])
         self.assertEqual(0, zero["total_requests"])
         self.assertEqual(0, zero["peak_distinct_tasks"])
         self.assertEqual(0, zero["unique_tasks_seen"])
