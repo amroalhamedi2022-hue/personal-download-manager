@@ -8,6 +8,8 @@ on:
     paths:
       - ".github/workflows/hyperget-queue-lifecycle-windows.yml"
       - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/DownloadManager.kt"
+      - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/downloaditem/http/HttpDownloadJob.kt"
+      - "scripts/source-tests/test_hyperget_http_part_admission_source.py"
       - "downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/DownloadManagerLifecycleContextTest.kt"
       - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/queue/ManualDownloadQueue.kt"
       - "downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/queue/ManualDownloadQueueBatchResumeTest.kt"
@@ -30,6 +32,8 @@ jobs:
         run: |
           if ((git rev-parse HEAD).Trim() -ne $env:HYPERGET_TESTED_SHA) { throw 'Wrong SHA' }
           python -m unittest discover -s scripts/source-tests -p test_hyperget_lifecycle_context_source.py -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m unittest discover -s scripts/source-tests -p test_hyperget_http_part_admission_source.py -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
