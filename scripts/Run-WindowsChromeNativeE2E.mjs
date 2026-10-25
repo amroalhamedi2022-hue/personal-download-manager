@@ -184,12 +184,86 @@ try {
       }
       results.push({ action, correlated: true, result: action === 'ping' ? 'PASS' : 'SAFE_ERROR_PASS' });
     }
+    // Acceptance HG-BROWSER-CHROME-03, recorded before the Windows installer run:
+    // Does a real Chrome MV3 extension keep a connected native host alive for
+    // concurrent requests, correlate every reply, disconnect, then reconnect?
+    // Expect 3/3 replies on the first port and 1/1 after reconnect, in addition
+    // to the existing 3 one-shot replies. Source mocks cannot exercise Chrome
+    // nativeMessaging host lifetime, Windows registration or port disconnects.
+    // The existing single installed-NSIS workflow is the purposeful runtime gate.
+    async function exerciseConnectedPort(prefix, actions) {
+      const expression = `(async () => {
+        const actions = ${JSON.stringify(actions)};
+        const prefix = ${JSON.stringify(prefix)};
+        const host = ${JSON.stringify(hostName)};
+        const port = chrome.runtime.connectNative(host);
+        return await new Promise((resolve, reject) => {
+          let settled = false;
+          const pending = new Map(actions.map((action, index) =>
+            [prefix + '_' + index, action]));
+          const timer = setTimeout(() => fail('Native port response timed out'), 15000);
+          function finish(value, error) {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            port.disconnect();
+            if (error) reject(Error(error));
+            else resolve(value);
+          }
+          function fail(message) { finish(null, message); }
+          port.onDisconnect.addListener(() => {
+            if (!settled) fail('Native port disconnected before all replies');
+          });
+          port.onMessage.addListener(reply => {
+            if (settled) return;
+            const action = pending.get(reply?.id);
+            if (!action) { fail('Native port reply has unknown or duplicate ID'); return; }
+            pending.delete(reply.id);
+            if (action === 'ping') {
+              if (reply.content?.isError !== false ||
+                  reply.content?.payload !== 'true') {
+                fail('Native port ping failed'); return;
+              }
+            } else {
+              if (reply.content?.isError !== true) {
+                fail('Unknown native action not rejected'); return;
+              }
+              let safe;
+              try { safe = JSON.parse(reply.content.payload); }
+              catch { fail('Native port error is not JSON'); return; }
+              if (safe.errorType !== 'REQUEST_FAILED' ||
+                  safe.message !== 'HyperGet could not complete the browser request.') {
+                fail('Native port error privacy check failed'); return;
+              }
+            }
+            if (pending.size === 0) finish({ replies: actions.length, correlated: true });
+          });
+          actions.forEach((action, index) =>
+            port.postMessage({
+              id: prefix + '_' + index,
+              content: { action, isError: false, payload: 'null' },
+            }));
+        });
+      })()`;
+      const evaluated = await page.call('Runtime.evaluate', {
+        expression, awaitPromise: true, returnByValue: true,
+      });
+      if (evaluated.exceptionDetails ||
+          evaluated.result?.value?.replies !== actions.length ||
+          evaluated.result?.value?.correlated !== true) {
+        throw Error('Real Chrome connected native port acceptance failed');
+      }
+      return { replies: actions.length, correlated: true };
+    }
+    const firstPort = await exerciseConnectedPort('B_chrome_port_a',
+      ['ping', 'ping', 'hyperget-nonexistent-action']);
+    const reconnectedPort = await exerciseConnectedPort('B_chrome_port_b', ['ping']);
     writeFileSync(join(evidenceDir, 'chrome-native-extension-report.json'), JSON.stringify({
       browser: 'Google Chrome', extensionId, manifestVersion: manifest.manifest_version,
       nativeHost: hostName, realChromeExtensionLoaded: true, requests: results,
-      browserDownloadCaptured: false, verified: true,
+      browserDownloadCaptured: false, connectedPort: firstPort,\n      reconnectedPort, verified: true,
     }, null, 2));
-    console.log('PASS: real Chrome extension -> installed HyperGet native host; two pings and safe error');
+    console.log('PASS: real Chrome extension -> installed HyperGet native host; three one-shot replies, three connected-port replies and one reply after reconnect');
   } finally { page.close(); }
 } finally {
   browserSocket?.close();
