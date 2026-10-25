@@ -26,3 +26,9 @@
 - Firefox installed download: **FAIL on previous head; retest pending**.
 - HTTPS remote endpoint, refresh URL, scheduler, cold browser-triggered GUI wake, Liquid Progress/visual match, safe HyperGet branding/upgrade, independent release recheck and final single `HyperGet.exe`: **NOT TESTED / INCOMPLETE**.
 - No main write, merge, release, paid service or Torrent.
+
+
+## Follow-up retest result — 2026-10-25 22:08Z
+Run [40238268700](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40238268700) at source SHA `5104b1da9743eea660161c85b159d0fb36f833af` **did not reach the Firefox step**. The purposeful NSIS build/install passed (test installer SHA-256 `df3084e4267c9ce7042ab83453aac39ba052ed636c7a4296ab53e7698cf6e933`), as did the installed native-host protocol and both Chrome/Firefox extension packaging steps, but Chrome step 15 failed at the pre-browser GUI/IPC warmup with `Installed HyperGet GUI/IPC readiness check failed`. Thus the new Firefox diagnostic path remains **NOT TESTED**; this is not a Firefox result. Artifact [12616365138](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40238268700/artifacts/12616365138), archive SHA-256 `bf5cf66e87de91ad6843002448291275170061ce3ebc47f00b8c282c2021e098`.
+
+The next harness fix calls the documented installed CLI `gui start-if-not-started` command before the read-only status probe, and emits a failure report containing only stage, exit code, safe failure class and stdout/stderr-presence booleans. No raw output or user paths are persisted. The next exact-head Windows run must pass the Chrome preflight and real Chrome capture before the Firefox diagnostic step can be considered exercised.

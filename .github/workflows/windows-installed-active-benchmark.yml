@@ -27,11 +27,44 @@ permissions:
   contents: read
 
 concurrency:
+  # Preserve an already-running evidence round; unrelated PR commits are gated below.
   group: windows-installed-active-benchmark-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
+  change-scope:
+    name: Skip Windows transfer matrix for unrelated PR commits
+    runs-on: ubuntu-24.04
+    outputs:
+      run: ${{ steps.scope.outputs.run }}
+    steps:
+      - name: Check out exact PR head and its parent
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 2
+      - id: scope
+        shell: bash
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          changed="$(git diff --name-only HEAD^ HEAD)"
+          printf 'Latest commit changed files:\\n%s\\n' "$changed"
+          run=false
+          while IFS= read -r file; do
+            case "$file" in
+              scripts/Run-WindowsActiveBenchmarkMatrix.ps1|scripts/LocalHttpRangeFixture.py|scripts/test_local_http_range_fixture.py|downloader/core/src/commonMain/kotlin/ir/amirab/downloader/part/PartDownloader.kt|downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/part/PartResponseDeadlineTest.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/cli/settings/*|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/singleInstance/service/*)
+                run=true
+                ;;
+            esac
+          done <<< "$changed"
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+
   real-windows-active-transfers:
+    needs: change-scope
+    if: needs.change-scope.outputs.run == 'true'
     name: Install once; 63 SHA256-verified downloads and 9 real CPU/RAM runs
     runs-on: windows-2022
     timeout-minutes: 90

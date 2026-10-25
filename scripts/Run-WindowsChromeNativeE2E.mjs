@@ -279,12 +279,52 @@ try {
     if (!existsSync(cliExe)) {
       throw Error('Installed HyperGet CLI missing for IPC readiness check');
     }
+    function spawnFailureCode(result, requireEmptyStdout = false) {
+      if (!result) return 'NOT_RUN';
+      if (result.error) {
+        if (result.error.code === 'ETIMEDOUT') return 'TIMEOUT';
+        if (['ENOENT', 'EACCES', 'EINVAL'].includes(result.error.code)) return result.error.code;
+        return 'SPAWN_ERROR';
+      }
+      if (result.status !== 0) return 'NONZERO_EXIT';
+      if (requireEmptyStdout && result.stdout?.trim()) return 'UNEXPECTED_STDOUT';
+      return null;
+    }
+    function writeGuiWarmupFailure(stage, failureCode, startResult, statusResult) {
+      // Only booleans, numeric exit codes and allowlisted error classes are persisted.
+      // Never serialize raw stdout/stderr, local paths or process exception messages.
+      writeFileSync(join(evidenceDir, 'chrome-native-extension-report.json'), JSON.stringify({
+        sourceSha: process.env.HYPERGET_TESTED_SHA || 'unknown',
+        browser: 'Google Chrome',
+        stage,
+        failureCode,
+        guiStartExitCode: Number.isInteger(startResult?.status) ? startResult.status : null,
+        guiStartFailureCode: spawnFailureCode(startResult),
+        guiIpcExitCode: Number.isInteger(statusResult?.status) ? statusResult.status : null,
+        guiIpcFailureCode: spawnFailureCode(statusResult, true),
+        guiIpcStdoutPresent: Boolean(statusResult?.stdout?.trim()),
+        guiIpcStderrPresent: Boolean(statusResult?.stderr?.trim()),
+        verified: false,
+      }, null, 2));
+    }
+
+    // Use the CLI's explicit public start-if-not-started command first. The
+    // status-only read is a second independent proof that GUI IPC is ready.
+    const guiStart = spawnSync(cliExe,
+      ['gui', 'start-if-not-started'],
+      { encoding: 'utf8', timeout: 45000, windowsHide: true });
+    const guiStartFailure = spawnFailureCode(guiStart);
+    if (guiStartFailure) {
+      writeGuiWarmupFailure('GUI_START', guiStartFailure, guiStart, null);
+      throw Error('Installed HyperGet GUI start failed:' + guiStartFailure);
+    }
     const warmup = spawnSync(cliExe,
       ['download', 'show', '--status-lines', '9223372036854775807'],
       { encoding: 'utf8', timeout: 45000, windowsHide: true });
-    if (warmup.error || warmup.status !== 0 || warmup.stdout?.trim()) {
-      // Never print CLI output: it could include local paths or app errors.
-      throw Error('Installed HyperGet GUI/IPC readiness check failed');
+    const warmupFailure = spawnFailureCode(warmup, true);
+    if (warmupFailure) {
+      writeGuiWarmupFailure('GUI_IPC_READINESS', warmupFailure, guiStart, warmup);
+      throw Error('Installed HyperGet GUI/IPC readiness check failed:' + warmupFailure);
     }
     const fixtureName = 'hyperget-browser-capture-' + process.pid + '.bin';
     const fixtureBytes = Buffer.alloc(2 * 1024 * 1024);

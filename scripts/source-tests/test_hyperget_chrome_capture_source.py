@@ -11,12 +11,23 @@ WORKFLOW = (ROOT / ".github/workflows/windows-installed-native-host-e2e.yml").re
 
 
 class ChromeInstalledCaptureSourceTest(unittest.TestCase):
-    def test_warm_gui_ipc_before_browser_add(self):
+    def test_explicit_cli_gui_start_and_read_only_ipc_probe_precede_browser_add(self):
+        self.assertIn("const guiStart = spawnSync(cliExe,", SCRIPT)
+        self.assertIn("['gui', 'start-if-not-started']", SCRIPT)
         self.assertIn("const warmup = spawnSync(cliExe,", SCRIPT)
         self.assertIn("'download', 'show', '--status-lines', '9223372036854775807'", SCRIPT)
-        self.assertIn("warmup.status !== 0", SCRIPT)
-        self.assertIn("warmup.stdout?.trim()", SCRIPT)
+        self.assertIn("spawnFailureCode(warmup, true)", SCRIPT)
+        self.assertLess(SCRIPT.index("const guiStart = spawnSync"), SCRIPT.index("const warmup = spawnSync"))
         self.assertLess(SCRIPT.index("const warmup = spawnSync"), SCRIPT.index("const fixtureName ="))
+
+    def test_gui_warmup_failure_artifact_is_sanitized(self):
+        self.assertIn("writeGuiWarmupFailure('GUI_START'", SCRIPT)
+        self.assertIn("writeGuiWarmupFailure('GUI_IPC_READINESS'", SCRIPT)
+        self.assertIn("guiIpcStdoutPresent: Boolean(statusResult?.stdout?.trim())", SCRIPT)
+        self.assertIn("guiIpcStderrPresent: Boolean(statusResult?.stderr?.trim())", SCRIPT)
+        self.assertNotIn("stdout: statusResult.stdout", SCRIPT)
+        self.assertNotIn("stderr: statusResult.stderr", SCRIPT)
+        self.assertNotIn("console.log(warmup.stdout", SCRIPT)
 
     def test_installed_gui_and_cli_are_required(self):
         self.assertIn("process.env.HYPERGET_GUI_EXE", SCRIPT)
