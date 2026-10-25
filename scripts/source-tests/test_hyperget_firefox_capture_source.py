@@ -79,11 +79,22 @@ class FirefoxInstalledCaptureSourceTest(unittest.TestCase):
         self.assertIn("FIREFOX_NATIVE_E2E_FAILED:", SCRIPT)
         self.assertIn("event: 'FIREFOX_NATIVE_E2E_FAILED'", SCRIPT)
 
+    def test_extension_page_uses_supported_privileged_open_not_webdriver_navigation(self):
+        self.assertIn("'--allow-system-access'", SCRIPT)
+        self.assertIn("`/session/${sessionId}/moz/context`", SCRIPT)
+        self.assertIn("{ context: 'chrome' }", SCRIPT)
+        self.assertIn("{ context: 'content' }", SCRIPT)
+        self.assertIn("gBrowser.addTab(arguments[0]", SCRIPT)
+        self.assertIn("`/session/${sessionId}/window/handles`", SCRIPT)
+        self.assertNotIn("currentStage = 'NAVIGATE_EXTENSION_OPTIONS'", SCRIPT)
+        self.assertNotIn("await webdriverRequest(geckoPort, `/session/${sessionId}/url`, 'POST', { url: optionsUrl })", SCRIPT)
+
     def test_browser_acceptance_stages_are_explicit(self):
         for stage in (
             "CREATE_FIREFOX_SESSION", "INSTALL_FIREFOX_ADDON",
-            "NAVIGATE_EXTENSION_OPTIONS", "NATIVE_PING",
-            "NATIVE_SAFE_ERROR", "NATIVE_ADD", "VERIFY_DOWNLOAD_SHA256",
+            "OPEN_EXTENSION_OPTIONS_PRIVILEGED", "WAIT_EXTENSION_CONTEXT",
+            "NATIVE_PING", "NATIVE_SAFE_ERROR", "NATIVE_ADD",
+            "VERIFY_DOWNLOAD_SHA256",
         ):
             self.assertIn("currentStage = '" + stage + "'", SCRIPT)
 
