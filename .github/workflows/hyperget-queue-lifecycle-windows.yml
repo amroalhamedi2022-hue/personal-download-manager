@@ -57,7 +57,7 @@ jobs:
             $node = $doc.SelectSingleNode('//testsuite')
             if ($null -eq $node) { throw "Invalid JUnit XML: $path" }
             foreach ($field in @('failures','errors','skipped')) {
-              if ([int]$node.GetAttribute($field) -ne 0) { throw "JUnit $field: $path" }
+              if ([int]$node.GetAttribute($field) -ne 0) { throw "JUnit ${field}: $path" }
             }
             if ([int]$node.GetAttribute('tests') -lt $suite.Min) { throw "Insufficient tests: $path" }
             Write-Host "PASS $($suite.Name): $($node.GetAttribute('tests')) tests"
