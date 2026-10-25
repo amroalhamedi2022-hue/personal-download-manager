@@ -81,6 +81,7 @@ def main():
         "peak_distinct_tasks": 0,
         "paced_chunks": 0,
         "paced_wait_seconds": 0.0,
+        "connection_delay_sleeps": 0,
     }
     tasks_active = {}
     tasks_seen = set()
@@ -236,7 +237,15 @@ def main():
                                 task_bytes_sent[task_id] = (
                                     task_bytes_sent.get(task_id, 0) + len(chunk)
                                 )
-                            if args.chunk_delay_ms > 0:
+                            # Strict 16-task mode already uses an aggregate
+                            # per-task rate budget. Applying the legacy 500-ms
+                            # per-socket delay on top creates unnecessary
+                            # idle gaps and may trip client read timeouts.
+                            # Ungated 1/4-task workloads retain their existing
+                            # per-connection delay and acceptance behavior.
+                            if args.chunk_delay_ms > 0 and not gate_expected[0]:
+                                with guard:
+                                    stats["connection_delay_sleeps"] += 1
                                 time.sleep(args.chunk_delay_ms / 1000.0)
                     except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
                         pass
