@@ -223,6 +223,30 @@ class LocalHttpRangeFixtureTest(unittest.TestCase):
         self.assertEqual(self.payload[7:71], data)
         self.wait_idle()
 
+    def test_short_range_probe_has_completed_response_evidence(self):
+        # A 512-byte GET is a completed short probe, not proof that the
+        # entire 32-MiB download task completed. Keep both counts visible.
+        self.wait_idle()
+        self.get_stats(reset=True)
+        status, headers, body = self.request(
+            "GET", "/fixture.bin?task=short-probe",
+            {"Range": "bytes=0-511"},
+        )
+        self.assertEqual(206, status)
+        self.assertEqual(self.payload[:512], body)
+        self.wait_idle()
+        snapshot = self.get_stats()
+        self.assertEqual(1, snapshot["task_get_started"]["short-probe"])
+        self.assertEqual(1, snapshot["task_get_completed"]["short-probe"])
+        self.assertEqual(0, snapshot["task_get_interrupted"].get("short-probe", 0))
+        self.assertEqual(512, snapshot["task_requested_bytes"]["short-probe"])
+        self.assertEqual(512, snapshot["task_bytes_sent"]["short-probe"])
+        self.assertEqual(0, snapshot["active_distinct_tasks"])
+        reset = self.get_stats(reset=True)
+        for field in ("task_get_started", "task_get_completed",
+                      "task_get_interrupted", "task_requested_bytes"):
+            self.assertEqual({}, reset[field])
+
     def test_invalid_ranges_and_paths_do_not_expose_files(self):
         for bad in ("bytes=999999-", "bytes=99-7", "garbage"):
             status, headers, data = self.request(
