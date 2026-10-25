@@ -20,6 +20,17 @@ RANGE = re.compile(r"^bytes=(\d+)-(\d*)$")
 # Only a GET of at least one 64-KiB data chunk admits a strict gated task.
 MIN_DATA_TRANSFER_BYTES = 64 * 1024
 
+class BurstReadyHTTPServer(ThreadingHTTPServer):
+    """Give the loopback fixture enough pending accepts for 16 segmented jobs.
+
+    Python 3.12's ThreadingHTTPServer inherits a listen backlog of just five.
+    The installed Windows benchmark opens >100 parallel Range connections;
+    a saturated fixture accept queue can cause ConnectException before any
+    download data GET. This changes only the local test server, not HyperGet.
+    """
+    request_queue_size = 256
+
+
 
 class TaskChunkPacer:
     """Share one byte-rate budget across all Range sockets of a task.
@@ -295,7 +306,7 @@ def main():
         def log_message(self, fmt, *values):
             return
 
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    server = BurstReadyHTTPServer(("127.0.0.1", 0), Handler)
     server.daemon_threads = True
     args.port_file.write_text(str(server.server_port), encoding="ascii")
     try:
