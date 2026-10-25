@@ -190,6 +190,9 @@ try {
                 $statusOutput = @(& $cliPath download show --status-lines @startIds 2>&1)
                 $diagnostics.Add("Installed CLI task status (exit $LASTEXITCODE; ID<TAB>Status):")
                 $diagnostics.AddRange([string[]]@($statusOutput | ForEach-Object { "$_" }))
+                $failureOutput = @(& $cliPath download show --diagnostic-lines @startIds 2>&1)
+                $diagnostics.Add("Installed CLI sanitized failure categories (exit $LASTEXITCODE; ID<TAB>Status<TAB>Class):")
+                $diagnostics.AddRange([string[]]@($failureOutput | ForEach-Object { "$_" }))
                 foreach ($task in $taskFiles) {
                     $length = if (Test-Path -LiteralPath $task.Path -PathType Leaf) {
                         (Get-Item -LiteralPath $task.Path).Length
@@ -221,6 +224,9 @@ try {
                 $statusOutput = @(& $cliPath download show --status-lines @startIds 2>&1)
                 $diagnostics.Add("Installed CLI task status (exit $LASTEXITCODE; ID<TAB>Status):")
                 $diagnostics.AddRange([string[]]@($statusOutput | ForEach-Object { "$_" }))
+                $failureOutput = @(& $cliPath download show --diagnostic-lines @startIds 2>&1)
+                $diagnostics.Add("Installed CLI sanitized failure categories (exit $LASTEXITCODE; ID<TAB>Status<TAB>Class):")
+                $diagnostics.AddRange([string[]]@($failureOutput | ForEach-Object { "$_" }))
                 foreach ($task in $taskFiles) {
                     $length = if (Test-Path -LiteralPath $task.Path -PathType Leaf) {
                         (Get-Item -LiteralPath $task.Path).Length
@@ -265,6 +271,9 @@ try {
                 $statusOutput = @(& $cliPath download show --status-lines @startIds 2>&1)
                 $diagnostics.Add('Installed CLI task status (ID<TAB>Status):')
                 $diagnostics.AddRange([string[]]@($statusOutput | ForEach-Object { "$_" }))
+                $failureOutput = @(& $cliPath download show --diagnostic-lines @startIds 2>&1)
+                $diagnostics.Add("Installed CLI sanitized failure categories (exit $LASTEXITCODE; ID<TAB>Status<TAB>Class):")
+                $diagnostics.AddRange([string[]]@($failureOutput | ForEach-Object { "$_" }))
                 $diagnostics | Set-Content -LiteralPath (Join-Path $destination 'failure-diagnostics.txt') -Encoding utf8
                 throw "Timed out or SHA mismatch for $scenario round ${round}: $($pending -join ', ')"
             }

@@ -10,6 +10,7 @@ import com.abdownloadmanager.desktop.pages.enterurl.FtpDownloadRequest
 import com.abdownloadmanager.shared.storage.appsettings.requireSupportedMaxConcurrentDownloads
 import ir.amirab.downloader.downloaditem.contexts.RemovedBy
 import ir.amirab.downloader.downloaditem.contexts.User
+import ir.amirab.downloader.downloaditem.DownloadStatus
 import ir.amirab.downloader.monitor.CompletedDownloadItemState
 import ir.amirab.downloader.monitor.ProcessingDownloadItemState
 import ir.amirab.downloader.monitor.statusOrFinished
@@ -98,7 +99,10 @@ class DefaultAppIPCServiceImpl : IDefaultAppIPCService, KoinComponent {
                 status = ShowDownloadIPC.DownloadStatus.fromDownloadStatus(
                     it.status
                 ),
-                percent = null
+                percent = null,
+                failureType = if (it.status == DownloadStatus.Error) {
+                    safeFailureType(downloadSystem.downloadErrorsFlow.value[it.id]?.throwableName)
+                } else null
             )
         }
     }

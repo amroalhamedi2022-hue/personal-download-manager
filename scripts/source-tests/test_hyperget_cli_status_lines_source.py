@@ -43,5 +43,27 @@ class HyperGetStatusLinesSourceTests(unittest.TestCase):
             self.assertIn(marker, self.benchmark)
 
 
+    def test_opt_in_error_class_diagnostics_without_secrets(self):
+        ipc = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/singleInstance/service/IDefaultAppIPCService.kt").read_text(encoding="utf-8")
+        impl = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/singleInstance/service/DefaultAppIPCServiceImpl.kt").read_text(encoding="utf-8")
+        guard = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/singleInstance/service/FailureDiagnosticType.kt").read_text(encoding="utf-8")
+        self.assertIn('val failureType: String? = null', ipc)
+        self.assertIn('downloadSystem.downloadErrorsFlow.value[it.id]?.throwableName', impl)
+        self.assertIn('it.status == DownloadStatus.Error', impl)
+        self.assertIn('safeFailureType(', impl)
+        self.assertIn('Regex("[A-Za-z_$][A-Za-z0-9_.$]{0,95}")', guard)
+        self.assertIn('?: "Unclassified"', guard)
+        self.assertNotIn('throwableMessage', impl)
+        self.assertNotIn('throwableMessage', self.show)
+        self.assertIn('"--diagnostic-lines"', self.show)
+        self.assertIn('download.failureType ?: "Unclassified"', self.show)
+        self.assertIn('echo("${download.id}\\t${download.status.displayName}\\t$type")', self.show)
+
+    def test_failure_diagnostics_cover_all_three_windows_failure_paths(self):
+        self.assertEqual(self.benchmark.count('download show --diagnostic-lines @startIds'), 3)
+        self.assertEqual(self.benchmark.count('ID<TAB>Status<TAB>Class'), 3)
+        self.assertIn('require(!statusLines || !diagnosticLines)', self.show)
+        self.assertIn('require(!watch || !diagnosticLines)', self.show)
+
 if __name__ == "__main__":
     unittest.main()

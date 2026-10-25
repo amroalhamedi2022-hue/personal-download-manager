@@ -49,7 +49,9 @@ data class ShowDownloadIPC(
     val folder: String,
     val id: Long,
     val percent: Int?,
-    val status: DownloadStatus
+    val status: DownloadStatus,
+    // Optional additive IPC field: never include URLs, exception messages or secrets.
+    val failureType: String? = null
 ) {
     @Serializable
     enum class DownloadStatus {
