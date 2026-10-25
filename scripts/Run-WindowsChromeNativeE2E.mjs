@@ -1,12 +1,12 @@
 // Real installed Windows Chrome MV3 extension -> HyperGet nativeMessaging.
 // Node 22 built-ins and Chrome DevTools Protocol; no new npm dependencies.
-// This checks the browser API, not HTTP download capture or cookies.
+// Exercises the actual browser API and an isolated SHA-verified HTTP download.
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { homedir, tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 
 const [chromeArg, extensionArg, evidenceArg] = process.argv.slice(2);
@@ -263,6 +263,29 @@ try {
     // HG-BROWSER-CHROME-04: browser extension -> native host -> installed
     // GUI IPC -> real loopback HTTP GET -> on-disk SHA-256. The fixture is
     // local, deterministic and has no cookies, credentials or external URLs.
+    //
+    // The prior installed run proved native pings but returned an error on
+    // the first browser 'add'. The previous PowerShell native-host smoke
+    // intentionally shut down the GUI. Before asserting the *warm app*
+    // browser download path, explicitly prove GUI/IPC readiness with the
+    // already-installed CLI. This uses the same public RPC path as the app,
+    // starts the GUI if needed, and does not create or modify any download.
+    // Browser-only cold-start/wake remains a separate release gate.
+    const guiExe = process.env.HYPERGET_GUI_EXE;
+    if (!guiExe || !existsSync(guiExe)) {
+      throw Error('Installed HyperGet GUI path missing for browser download acceptance');
+    }
+    const cliExe = join(dirname(guiExe), 'DownloadManagerCli.exe');
+    if (!existsSync(cliExe)) {
+      throw Error('Installed HyperGet CLI missing for IPC readiness check');
+    }
+    const warmup = spawnSync(cliExe,
+      ['download', 'show', '--status-lines', '9223372036854775807'],
+      { encoding: 'utf8', timeout: 45000, windowsHide: true });
+    if (warmup.error || warmup.status !== 0 || warmup.stdout?.trim()) {
+      // Never print CLI output: it could include local paths or app errors.
+      throw Error('Installed HyperGet GUI/IPC readiness check failed');
+    }
     const fixtureName = 'hyperget-browser-capture-' + process.pid + '.bin';
     const fixtureBytes = Buffer.alloc(2 * 1024 * 1024);
     for (let index = 0; index < fixtureBytes.length; index++) {
@@ -340,9 +363,23 @@ try {
         throw Error('Chrome native add request failed');
       }
       const addReply = evaluated.result?.value;
-      if (addReply?.id !== requestId || addReply.content?.isError !== false ||
-          addReply.content?.payload !== 'true') {
-        throw Error('Installed HyperGet rejected browser-origin add request');
+      if (addReply?.id !== requestId) {
+        throw Error('Installed HyperGet browser add reply correlation failed');
+      }
+      if (addReply.content?.isError === true) {
+        // Report only a fixed error category. Never print response payloads,
+        // exception text, URLs, headers, cookies, or local filesystem paths.
+        let safeType = 'UNCLASSIFIED';
+        try {
+          const candidate = JSON.parse(addReply.content.payload)?.errorType;
+          if (candidate === 'INVALID_REQUEST' || candidate === 'REQUEST_FAILED') {
+            safeType = candidate;
+          }
+        } catch { /* Do not expose malformed native payloads. */ }
+        throw Error('Installed HyperGet rejected browser-origin add request: ' + safeType);
+      }
+      if (addReply.content?.isError !== false || addReply.content?.payload !== 'true') {
+        throw Error('Installed HyperGet returned an unexpected browser add acknowledgment');
       }
 
       // Only look for our unique fixture filename under standard local user

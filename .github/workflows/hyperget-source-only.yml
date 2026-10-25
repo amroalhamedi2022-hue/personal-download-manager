@@ -20,6 +20,8 @@ on:
       - "downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/part/PartResponseDeadlineTest.kt"
       - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/downloaditem/http/HttpDownloadJob.kt"
       - "scripts/source-tests/test_hyperget_cli_status_lines_source.py"
+      - "scripts/source-tests/test_hyperget_chrome_capture_source.py"
+      - "scripts/Run-WindowsChromeNativeE2E.mjs"
       - "scripts/source-tests/test_hyperget_lifecycle_context_source.py"
       - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/DownloadManager.kt"
       - "downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/DownloadManagerLifecycleContextTest.kt"
@@ -97,6 +99,8 @@ jobs:
         run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_hls_body_source.py -v
       - name: Verify HLS MIME source contract
         run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_hls_mime_source.py -v
+      - name: Verify installed Chrome capture warm-start and privacy source contracts
+        run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_chrome_capture_source.py -v
       - name: Verify CLI status-lines source regression (previously omitted)
         run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_cli_status_lines_source.py -v
       - name: Verify lifecycle actor source regression
