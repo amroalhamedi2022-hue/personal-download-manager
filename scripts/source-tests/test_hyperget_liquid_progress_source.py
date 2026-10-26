@@ -107,6 +107,12 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("needs: change-scope", UI_WORKFLOW)
         self.assertIn("needs.change-scope.outputs.run", UI_WORKFLOW)
         self.assertIn("Run-WindowsLiquidProgressVisualE2E.ps1", UI_WORKFLOW)
+        self.assertIn("Parse PowerShell acceptance harnesses before installer build", UI_WORKFLOW)
+        self.assertIn("[System.Management.Automation.Language.Parser]::ParseFile", UI_WORKFLOW)
+        self.assertLess(
+            UI_WORKFLOW.index("Parse PowerShell acceptance harnesses before installer build"),
+            UI_WORKFLOW.index("Build Windows installer from same source SHA"),
+        )
         self.assertIn("windows-liquid-progress-visual", UI_WORKFLOW)
         scope = UI_WORKFLOW.split('case "$file" in', 1)[1].split("esac", 1)[0]
         self.assertNotIn("scripts/source-tests/test_hyperget_liquid_progress_source.py", scope)
