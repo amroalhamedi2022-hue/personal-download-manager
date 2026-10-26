@@ -1205,3 +1205,11 @@ The source/test/docs commits do not change the production downloader or Compose 
 **New targeted change:** the prior normalizer removed invisible Unicode prefixes but not suffixes. Extend trimming to both ends for BOM/zero-width characters, and include a sanitized plain-ASCII message only when output contains letters/spaces (the runner uses a fresh isolated install); all arbitrary rows, names, paths and URLs remain redacted. This is a diagnostic hypothesis, not a confirmed root cause.
 
 **Pre-build question:** does the two-sided normalization recover a valid ID/status row, capture the installed GUI while `Downloading` and fixture bytes advance, verify the completed 16 MiB SHA-256, and pass same-version reinstall plus silent uninstall? The prior artifact proves that source tests alone cannot establish this Windows CLI-output behavior or screenshot timing. The next build is justified because the script changes based on inspected exact-SHA evidence.
+
+## 2026-10-26 — source-contract failure caught and corrected before next UI verdict
+
+Source-only run [40274122171](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40274122171) failed two assertions because the previous generated script blob accidentally duplicated the visual harness body. The assertions correctly caught the duplicate CLI probes (6 instead of 3) and parser calls (4 instead of 2); this was a patch-composition defect, not a product or Windows compile failure.
+
+**Correction:** reconstructed `Run-WindowsLiquidProgressVisualE2E.ps1` from the exact known-good harness source at `d8e8f557693c7db398bc4b3e4cb57d4df8867c58`, then applied only the intended two-sided invisible-character normalization and safe plain-ASCII diagnostic. The expected script shape is again one server start, three CLI status probes, two active probes and one final-status probe. The latest source-only rerun must pass before accepting the next Windows visual result.
+
+The suffix-normalization hypothesis remains unverified until a fresh exact-SHA Windows run produces the screenshot/report or a more specific safe diagnostic.
