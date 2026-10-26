@@ -205,3 +205,22 @@ The last exact-head Windows attempt [40410263260](https://github.com/amroalhamed
 **Expected:** exact source checks and PowerShell parse pass; both installers build; 8 MiB size/SHA passes; the same task ID/status, max-concurrency=4, sentinel, registry/shortcut branding and synthetic WinCred survive each transition; cleanup verifies only harness-owned data and the synthetic credential are removed.
 
 **Why source tests are insufficient:** Python/source assertions cannot establish the packaged Windows CLI's actual output encoding, file bytes, installer replacement behavior, or real Credential Manager persistence. Run the Windows lifecycle gate after the wrapped-output regression commit. Status remains OPEN until the exact-head artifact says `Result=PASS`.
+
+
+## 2026-10-27 follow-up — root cause moved from CLI parsing to installer branding
+
+**Exact tested candidate:** `cd7d70f03662a49b0c4bbf04002ee3eddb58186c`.  
+**Run:** [40413377160](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40413377160).  
+**Proof artifact:** [12695775479](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40413377160/artifacts/12695775479), archive SHA-256 `0f13b9ca4e4fa6783bdd512de65351640da551f9a453de3ce5b062d0314f37bd`.
+
+The parser regression now works on the installed baseline: ID 0 was read as `Finished`; the real 8 MiB file size and SHA-256 matched the deterministic fixture. Both installers built (baseline SHA-256 `c22802b3201071cadb659bb223279de5a7e0e461ad4b3af61511af2dfceb6e09`; candidate SHA-256 `6df50383dd4758b92dd3ba7e9f40183d9499b41d26a385f4675325acd7c601b7`).
+
+The lifecycle then failed at the next real assertion: candidate Add/Remove Programs metadata reported `Download Manager`, not `HyperGet`. Inspection traced the path to `desktop/app/build.gradle.kts: appDisplayName = getPrettifiedAppName()` and `buildSrc/.../VersionUtil.kt: getPrettifiedAppName() returns "Download Manager"`. The shared runtime display-name constant is already HyperGet; the installer packaging input is stale.
+
+**Next patch:** switch the prettified display name to HyperGet and add a source contract that checks the packaging-to-NSIS display-name path while locking legacy `APP_NAME`, package ID, and `.personal-download-manager` storage unchanged.
+
+**Pre-build question:** will the installed candidate now show HyperGet in registry/shortcuts and pass the complete baseline → candidate upgrade → preserving-data candidate uninstall → baseline rollback → normal uninstall lifecycle?
+
+**Expected:** both snapshots build, transfer SHA passes, candidate branding switches to HyperGet, rollback restores baseline branding, task/history/settings/sentinel/WinCred survive all transitions, and test-only data/credential cleanup passes.
+
+**Why source tests are insufficient:** source strings cannot prove the Gradle template expansion, compiled installer, actual registry values, shortcut replacement, or credential persistence. A new exact-head Windows lifecycle run is required. **Status OPEN; no upgrade/rollback PASS claimed.**
