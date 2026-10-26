@@ -1410,3 +1410,18 @@ The current follow-up removes the query and strengthens the same milestone with 
 **Pre-build question:** does the row-scoped parser read the actual packaged baseline CLI's \`Finished\` state, and then allow the full baseline → HyperGet upgrade → candidate uninstall → baseline rollback → normal uninstall flow to pass?
 
 **Expected:** the 8 MiB transfer remains SHA-verified; the same task ID/status and max-concurrency=4, user-data sentinel, registry/shortcut branding, and synthetic WinCred survive every transition; normal uninstall preserves user data; the synthetic credential is deleted and absence verified. Source tests cannot establish the installed CLI's actual table wrapping or Windows NSIS/registry/Credential Manager behavior, so rerun the exact two-snapshot Windows gate after the parser patch. This is an internal acceptance test, not a release build or deliverable.
+
+
+## 2026-10-26 — row-boundary safety guard and exact-head rerun
+
+**Current parser/test commit:** [e235ee2e465e79b2ca2669821a0cc8c616837e95](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/e235ee2e465e79b2ca2669821a0cc8c616837e95).
+
+A follow-up review caught an important false-positive risk in the first row-scoped parser draft: it checked for a status token before checking whether the line began a *different* numeric download row. The order is now corrected so a new row closes the target-row window before any status can be accepted. The source contract explicitly locks that ordering. This is an acceptance-harness correction only; no downloader production behavior changed.
+
+**Exact-head checks observed so far:**
+- **PASS:** source-only safety suite [40392955570](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40392955570).
+- **PASS:** FTP Kotlin/JUnit [40392955073](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40392955073), queue lifecycle [40392955147](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40392955147), and HLS guarded-redirect unit [40392955040](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40392955040).
+- **NOT RERUN (scope-gated/skipped):** installed HTTP 1/4/16 matrix, installed GUI smoke, browser capture, JVM resource profile and installed FTP E2E on this exact commit. Their older successful runs remain historical evidence only.
+- **IN PROGRESS:** [cross-version Windows run 40392955509](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40392955509). PowerShell parsing and all cross-version source contracts passed; the baseline installer build is running. Candidate installer build and real lifecycle have not started at the last check.
+
+**Next gate:** inspect both installer hashes, then the real 8 MiB transfer/status parser and full upgrade → candidate uninstall → rollback → uninstall lifecycle. Do not count the milestone complete until the proof artifact records \`Result=PASS\` and the WinCred preservation/cleanup assertions.
