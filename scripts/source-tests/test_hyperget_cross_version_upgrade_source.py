@@ -94,7 +94,7 @@ class HyperGetCrossVersionUpgradeContracts(unittest.TestCase):
     def test_windows_path_literals_use_single_backslashes(self):
         # PowerShell single-quoted strings do not use backslash escaping.
         # A doubled separator here is two characters and breaks [char] casts.
-        self.assertIn("TrimEnd([char[]]@('\\\\','/'))", self.harness)
+        self.assertIn("TrimEnd([char[]]@('\\','/'))", self.harness)
         self.assertIn("$uninstallKey = 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\DownloadManager'", self.harness)
         self.assertIn("$appKey = 'HKCU:\\Software\\DownloadManager'", self.harness)
         self.assertIn("$startMenuRoot = Join-Path $env:APPDATA 'Microsoft\\Windows\\Start Menu\\Programs'", self.harness)
