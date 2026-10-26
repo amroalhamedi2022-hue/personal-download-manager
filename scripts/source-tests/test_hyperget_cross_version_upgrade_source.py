@@ -117,7 +117,7 @@ class HyperGetCrossVersionUpgradeContracts(unittest.TestCase):
             "$rowStartPattern = '^\s*' + [regex]::Escape([string]$Id) + '(?:\s|$)'",
             "$anyRowStartPattern = '^\s*\\d+(?:\s|$)'",
             "$insideTargetRow = $false",
-            "if ($insideTargetRow -and $statusMatch.Success)",
+            "if ($insideTargetRow) {",
             "if ($insideTargetRow -and $plain -match $anyRowStartPattern)",
             "$statusMatch = [regex]::Match($statusText, $statusPattern)",
             "$statusMatch = [regex]::Match($wrappedText, $statusPattern)",
