@@ -72,3 +72,7 @@ The profile workflow validation run [40253378123](https://github.com/amroalhamed
 
 ## Duplicate job removed from profile workflow
 The previous scope-gate rewrite had preserved a duplicate second `installed-jvm-profile` job and an orphaned shell tail after the first job's artifact-upload step. Removed everything after the first complete artifact-upload retention line and strengthened source checks to assert exactly one installed profile job and no trailing shell fragment. This is workflow-only cleanup; no app code changed.
+
+
+## Source-contract assertion aligned to case allowlist
+Source-only run [40254048011](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40254048011) failed because the profile source test still expected `else/fi` after the workflow scope gate had been changed to a `case/esac` allowlist. The workflow scope gate itself succeeded and skipped the expensive job for a docs/test-only commit. Updated the assertion to match the actual case block; this is test-only.

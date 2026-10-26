@@ -52,8 +52,9 @@ class WindowsJvmMemoryProfileContract(unittest.TestCase):
         self.assertIn("needs: change-scope", WORKFLOW)
         self.assertIn("if: needs.change-scope.outputs.run == 'true'", WORKFLOW)
         self.assertIn("runs-on: windows-2022", WORKFLOW)
-        self.assertIn("else", WORKFLOW)
-        self.assertIn("fi", WORKFLOW)
+        self.assertIn('case "$file" in', WORKFLOW)
+        self.assertIn(";;", WORKFLOW)
+        self.assertIn("esac", WORKFLOW)
 
     def test_profile_artifact_is_uploaded_even_if_jcmd_fails(self):
         self.assertIn("if: always()", WORKFLOW)

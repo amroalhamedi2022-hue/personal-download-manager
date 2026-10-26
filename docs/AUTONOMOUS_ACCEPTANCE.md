@@ -1096,3 +1096,6 @@ The relative-time unit workflow [40251917222](https://github.com/amroalhamedi202
 
 
 **Duplicate-job cleanup:** the scope-gate repair still retained a second copy of `installed-jvm-profile` plus an orphaned shell tail after the first job's artifact upload. This made the workflow invalid, despite the first job block being complete. Removed the duplicate tail; source contract now asserts exactly one installed profile job and that the workflow ends at the artifact retention line. The current commit is workflow/tests/docs only, so the scope gate should skip the expensive installer job.
+
+
+**Source-contract correction:** source-only run [40254048011](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40254048011) failed because the test still expected an `else/fi` conditional after the scope gate had been switched to a `case/esac` allowlist. The workflow itself ran the scope gate successfully and skipped the expensive profile job on a docs/test-only commit. Updated the source contract to assert `case`, `;;`, and `esac`; no production code changed.
