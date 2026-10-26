@@ -68,6 +68,17 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("if ([int]$preScreenshotStats.active_distinct_tasks -lt 1 -or", SCRIPT)
         self.assertIn("cancel-in-progress: false", UI_WORKFLOW)
 
+    def test_cli_status_rows_use_a_literal_tab_prefix(self):
+        # The old over-escaped regex never matched the CLI's actual ID<TAB>Status
+        # rows, so a completed transfer could be mistaken for a missed live window.
+        self.assertIn("$statusPrefix = ([string]$taskId) + [char]9", SCRIPT)
+        self.assertEqual(
+            SCRIPT.count("StartsWith($statusPrefix, [StringComparison]::Ordinal)"),
+            3,
+        )
+        self.assertIn("Substring($statusPrefix.Length) -ceq 'Finished'", SCRIPT)
+        self.assertNotIn(r"+ '\\t')", SCRIPT)
+
     def test_visual_workflow_runs_on_pr_ui_changes_and_uploads_evidence(self):
         self.assertIn("pull_request:", UI_WORKFLOW)
         self.assertIn("needs: change-scope", UI_WORKFLOW)

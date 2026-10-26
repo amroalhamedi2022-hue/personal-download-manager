@@ -107,6 +107,8 @@ public static class HyperGetLiquidProgressNative {
     $ids = @($addOutput | ForEach-Object { "$_".Trim() } | Where-Object { $_ -match '^\d+$' })
     if ($ids.Count -ne 1) { throw "Installed CLI did not return one task ID: $($addOutput -join ' ')" }
     $taskId = [long]$ids[0]
+    # CLI status rows are tab-delimited; use a literal tab prefix rather than a regex escape.
+    $statusPrefix = ([string]$taskId) + [char]9
 
     & $cliPath download resume $taskId
     if ($LASTEXITCODE -ne 0) { throw 'Installed CLI could not resume the visual test download.' }
@@ -132,7 +134,7 @@ public static class HyperGetLiquidProgressNative {
                 $statusOutput = @(& $cliPath download show --status-lines $taskId 2>&1)
                 if ($LASTEXITCODE -eq 0) {
                     $statusLine = @($statusOutput | ForEach-Object { "$_".Trim() } |
-                        Where-Object { $_ -match ('^' + [regex]::Escape([string]$taskId) + '\\t') } |
+                        Where-Object { $_.StartsWith($statusPrefix, [StringComparison]::Ordinal) } |
                         Select-Object -First 1)
                     if ($statusLine.Count -gt 0) {
                         $lastStatusLine = [string]$statusLine[0]
@@ -173,7 +175,7 @@ public static class HyperGetLiquidProgressNative {
     $statusAtCapture = $null
     if ($LASTEXITCODE -eq 0) {
         $statusLine = @($statusOutput | ForEach-Object { "$_".Trim() } |
-            Where-Object { $_ -match ('^' + [regex]::Escape([string]$taskId) + '\\t') } |
+            Where-Object { $_.StartsWith($statusPrefix, [StringComparison]::Ordinal) } |
             Select-Object -First 1)
         if ($statusLine.Count -gt 0) {
             $lastStatusLine = [string]$statusLine[0]
@@ -242,7 +244,8 @@ public static class HyperGetLiquidProgressNative {
 
     $finalStatusOutput = @(& $cliPath download show --status-lines $taskId 2>&1)
     $finalStatusLines = @($finalStatusOutput | ForEach-Object { "$_".Trim() } |
-        Where-Object { $_ -match ('^' + [regex]::Escape([string]$taskId) + '\tFinished$') })
+        Where-Object { $_.StartsWith($statusPrefix, [StringComparison]::Ordinal) } |
+        Where-Object { $_.Substring($statusPrefix.Length) -ceq 'Finished' })
     if ($LASTEXITCODE -ne 0 -or $finalStatusLines.Count -ne 1) {
         throw 'Final installed CLI status was not Finished after SHA-256 verification.'
     }

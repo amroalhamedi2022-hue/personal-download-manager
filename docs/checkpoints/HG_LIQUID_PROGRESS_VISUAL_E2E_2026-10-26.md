@@ -58,3 +58,18 @@ This follow-up makes two test-quality changes before the next purposeful Windows
 **Pre-build question:** does this exact source compile/install on Windows, capture the real GUI while the CLI status is Downloading, at least one fixture task is active and bytes advanced during the screenshot window, then finish the 16 MiB file with matching SHA-256 and pass same-version reinstall/uninstall?
 
 **Expected PASS:** screenshot + JSON report tied to the exact source SHA; BytesAdvancedBeforeScreenshot=true; final status Finished; expected/actual SHA-256 equal; installer lifecycle proof present. Source checks cannot prove these GUI/IPC/timing/file-byte properties. This is one targeted acceptance build, not a release. No main write, merge, auto-merge, paid service, or Torrent.
+
+
+## 2026-10-26 06:00 Asia/Jerusalem — exact-head artifact diagnosis and status-parser repair (Windows recheck required)
+
+**Observed run:** [40262112549](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40262112549) on source SHA `0edcde0598864071adc716d232046a8ec03f3010` compiled Compose, built one NSIS installer, installed it in an isolated directory, and launched the GUI. The live screenshot gate failed; installer lifecycle was skipped because that step depends on the visual step succeeding.
+
+**Artifact inspection:** `windows-liquid-progress-visual` artifact [12625646344](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40262112549/artifacts/12625646344) contains no screenshot/report, but it does contain the fixture and completed 16 MiB output. Both files are exactly 16,777,216 bytes and have matching SHA-256 `341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1`; the downloaded file is byte-identical to the fixture. The diagnostics show `TaskId=0`, 27 status polls, 16,777,472 response bytes, and zero active requests/tasks when the loop timed out. Thus transfer integrity succeeded, but screenshot-time acceptance did not.
+
+**Root cause found in the test harness:** two status-row filters used an over-escaped `\\t` regular expression inside PowerShell single quotes. That pattern searched for a literal backslash followed by `t`, not the CLI's actual tab delimiter, so the real `ID<TAB>Status` line was never recognized. This is a harness defect; it is not evidence of a production download or Compose rendering failure.
+
+**Repair prepared for exact-head recheck:** status rows now use a literal `[char]9` prefix with ordinal `StartsWith`, and final `Finished` parsing uses the suffix after that prefix. A source regression contract prevents the over-escaped filter from returning. The 16 MiB transfer + matching hash in the failed run are recorded as useful partial evidence only; they do not retroactively pass the screenshot gate.
+
+**Pre-build question:** does the corrected installed Windows test recognize the real CLI tab-delimited status row, capture the actual GUI while status is `Downloading` and fixture bytes are advancing, finish the 16 MiB file with matching SHA-256, then complete same-version reinstall and silent uninstall?
+
+**Expected PASS:** exact-SHA Windows run succeeds; `liquid-progress-active.png` and `liquid-progress-report.json` exist; report shows `Downloading`, active fixture task, `BytesAdvancedBeforeScreenshot=true`, final `Finished`, and identical expected/actual hashes; installer lifecycle proof exists. Source-only checks cannot establish installed IPC/status formatting, Windows screenshot timing, or actual file bytes. One targeted build is justified; no release is being produced.
