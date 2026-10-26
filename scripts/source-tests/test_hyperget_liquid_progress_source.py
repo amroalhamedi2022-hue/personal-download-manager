@@ -73,7 +73,8 @@ class LiquidProgressSourceContract(unittest.TestCase):
         # Normalize ANSI/BOM/zero-width prefixes before parsing ID<TAB>Status.
         # Never persist raw table rows, names, paths, or arbitrary CLI output.
         self.assertIn("function Get-NormalizedCliLines", SCRIPT)
-        self.assertIn("TrimStart([char[]]@", SCRIPT)
+        self.assertIn("$line = $line.Trim().Trim($invisible).Trim()", SCRIPT)
+        self.assertIn("[char]0x2060", SCRIPT)
         self.assertIn("function Get-DownloadStatusFromOutput", SCRIPT)
         self.assertIn("$columns = $line.Split([char[]]@([char]9))", SCRIPT)
         self.assertIn("$columns[0].Trim() -cne [string]$ExpectedId", SCRIPT)
@@ -83,6 +84,7 @@ class LiquidProgressSourceContract(unittest.TestCase):
         )
         self.assertIn("Get-DownloadStatusFromOutput -Lines $finalStatusOutput -ExpectedId $taskId", SCRIPT)
         self.assertIn("Task lookup message: $line", SCRIPT)
+        self.assertIn("Plain-text CLI message: $line", SCRIPT)
         self.assertNotIn("StartsWith($statusPrefix", SCRIPT)
         self.assertNotIn("Substring($statusPrefix.Length)", SCRIPT)
 

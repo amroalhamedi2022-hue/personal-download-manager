@@ -53,7 +53,8 @@ function Get-NormalizedCliLines {
         $line = [string]$entry
         # Normalize terminal decoration and invisible prefixes before parsing.
         $line = [regex]::Replace($line, "\x1B\[[0-?]*[ -/]*[@-~]", "")
-        $line = $line.Trim().TrimStart([char[]]@([char]0xFEFF, [char]0x200B, [char]0x200E, [char]0x200F))
+        $invisible = [char[]]@([char]0xFEFF, [char]0x200B, [char]0x200C, [char]0x200D, [char]0x200E, [char]0x200F, [char]0x2060)
+        $line = $line.Trim().Trim($invisible).Trim()
         if ($line.Length -gt 0) { $line }
     }
 }
@@ -83,6 +84,258 @@ function Get-SanitizedStatusPreview {
             $preview += 'Formatted table output detected; status-lines option may not have been parsed.'
         } elseif ($line -match '(?i)\b(usage|unknown option|invalid|missing|error|exception|argument|not found)\b') {
             $preview += 'CLI usage/error output detected (content redacted).'
+        } elseif ($line -match '^[A-Za-z][A-Za-z ]{0,39}
+        if ($preview.Count -ge 3) { break }
+    }
+    return $preview
+}
+
+$server = $null
+$started = $null
+$visible = @()
+try {
+    $server = Start-Process -FilePath 'python' -ArgumentList @(
+        ('"' + $fixtureScript + '"'), '--file', ('"' + $fixture + '"'),
+        '--port-file', ('"' + $portPath + '"'),
+        '--chunk-delay-ms', '80',
+        '--task-chunk-delay-ms', '180'
+    ) -PassThru -RedirectStandardOutput $serverOut -RedirectStandardError $serverErr
+    for ($attempt = 0; $attempt -lt 80 -and -not (Test-Path -LiteralPath $portPath); $attempt++) {
+        if ($server.HasExited) { throw "Loopback HTTP fixture exited: $($server.ExitCode)" }
+        Start-Sleep -Milliseconds 250
+    }
+    if (-not (Test-Path -LiteralPath $portPath)) { throw 'Loopback HTTP fixture did not publish a port.' }
+    $port = [int](Get-Content -LiteralPath $portPath -Raw)
+    if ($port -lt 1 -or $port -gt 65535) { throw 'Loopback HTTP fixture returned an invalid port.' }
+
+    # Reset counters and enable the fixture's shared per-task pacing mode.
+    # Without gate_tasks=1, task-chunk-delay-ms is intentionally inactive and
+    # segmented downloads can finish between expensive CLI status polls.
+    $baselineStats = Invoke-RestMethod -Uri "http://127.0.0.1:$port/stats?reset=1&gate_tasks=1" -TimeoutSec 5
+    if ([int]$baselineStats.gate_expected_tasks -ne 1) {
+        throw 'Loopback fixture did not enable the paced single-task visual workload.'
+    }
+
+    $started = Start-Process -FilePath $guiPath -PassThru
+    for ($attempt = 0; $attempt -lt 40; $attempt++) {
+        Start-Sleep -Milliseconds 500
+        $visible = @(Get-Process -ErrorAction SilentlyContinue | Where-Object {
+            $_.ProcessName -match 'DownloadManager' -and $_.MainWindowHandle -ne [IntPtr]::Zero
+        })
+        if ($visible.Count -gt 0) { break }
+        if ($started.HasExited) { throw 'Installed HyperGet GUI exited before showing its main window.' }
+    }
+    if ($visible.Count -eq 0) { throw 'Installed HyperGet GUI window was not detected.' }
+
+    Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class HyperGetLiquidProgressNative {
+    [DllImport("user32.dll")]
+    public static extern bool ShowWindow(IntPtr handle, int command);
+    [DllImport("user32.dll")]
+    public static extern bool SetForegroundWindow(IntPtr handle);
+}
+'@
+    $window = $visible | Select-Object -First 1
+    [HyperGetLiquidProgressNative]::ShowWindow($window.MainWindowHandle, 3) | Out-Null
+    [HyperGetLiquidProgressNative]::SetForegroundWindow($window.MainWindowHandle) | Out-Null
+
+    $fileName = 'hyperget-liquid-progress.bin'
+    $outputPath = Join-Path $downloadFolder $fileName
+    $url = "http://127.0.0.1:$port/fixture.bin?task=$fileName"
+    $addOutput = @(& $cliPath download add http --link $url --folder $downloadFolder --name $fileName 2>&1)
+    $addExit = $LASTEXITCODE
+    if ($addExit -ne 0) { throw "Installed CLI add failed ($addExit): $($addOutput -join ' ')" }
+    $ids = @($addOutput | ForEach-Object { "$_".Trim() } | Where-Object { $_ -match '^\d+$' })
+    if ($ids.Count -ne 1) { throw "Installed CLI did not return one task ID: $($addOutput -join ' ')" }
+    $taskId = [long]$ids[0]
+    $lastStatusCommandExitCode = $null
+    $lastStatusOutputPreview = @()
+
+    & $cliPath download resume $taskId
+    if ($LASTEXITCODE -ne 0) { throw 'Installed CLI could not resume the visual test download.' }
+
+    $ready = $false
+    $captureStats = $null
+    $statusAtCapture = $null
+    $lastStatusLine = ''
+    $statusPollClock = [System.Diagnostics.Stopwatch]::StartNew()
+    $lastStatusPollMilliseconds = -500
+    $statusPollCount = 0
+    # Poll cheap loopback counters at 100 ms, but spawn the installed CLI at
+    # most twice per second. The fixture's shared per-task pacer keeps the
+    # transfer live long enough for a reliable status observation.
+    for ($attempt = 0; $attempt -lt 300; $attempt++) {
+        $captureStats = Invoke-RestMethod -Uri "http://127.0.0.1:$port/stats" -TimeoutSec 5
+        if ([int]$captureStats.active_distinct_tasks -ge 1 -and
+            [long]$captureStats.bytes_sent -gt 0) {
+            $elapsedMilliseconds = $statusPollClock.ElapsedMilliseconds
+            if (($elapsedMilliseconds - $lastStatusPollMilliseconds) -ge 500) {
+                $lastStatusPollMilliseconds = $elapsedMilliseconds
+                $statusPollCount++
+                $statusOutput = @(& $cliPath download show --status-lines $taskId 2>&1)
+                $lastStatusCommandExitCode = $LASTEXITCODE
+                $lastStatusOutputPreview = @(Get-SanitizedStatusPreview -Lines $statusOutput)
+                if ($lastStatusCommandExitCode -eq 0) {
+                    $statusAtCapture = Get-DownloadStatusFromOutput -Lines $statusOutput -ExpectedId $taskId
+                    if ($null -ne $statusAtCapture) {
+                        $lastStatusLine = ([string]$taskId) + [char]9 + $statusAtCapture
+                    }
+                }
+                if ($statusAtCapture -eq 'Downloading') {
+                    $ready = $true
+                    break
+                }
+            }
+        }
+        Start-Sleep -Milliseconds 100
+    }
+    if (-not $ready) {
+        $diagnostics = [pscustomobject]@{
+            SourceSHA = $SourceSha
+            TaskId = $taskId
+            Reason = 'Could not prove live Downloading state before screenshot.'
+            LastStatusLine = $lastStatusLine
+            LastStatus = $statusAtCapture
+            StatusPollCount = $statusPollCount
+            LastStatusCommandExitCode = $lastStatusCommandExitCode
+            LastStatusOutputPreview = $lastStatusOutputPreview
+            LastStatusOutputLineCount = @($statusOutput).Count
+            LastFixtureStats = $captureStats
+        }
+        $diagnostics | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $root 'liquid-progress-diagnostics.json') -Encoding utf8
+        throw 'Could not prove a live data transfer with Downloading status before screenshot; sanitized diagnostics were saved.'
+    }
+
+    $bytesBeforeScreenshot = [long]$captureStats.bytes_sent
+    Start-Sleep -Milliseconds 900
+    $preScreenshotStats = Invoke-RestMethod -Uri "http://127.0.0.1:$port/stats" -TimeoutSec 5
+    $bytesAdvancedBeforeScreenshot = [long]$preScreenshotStats.bytes_sent -gt $bytesBeforeScreenshot
+    $statusOutput = @(& $cliPath download show --status-lines $taskId 2>&1)
+    $lastStatusCommandExitCode = $LASTEXITCODE
+    $lastStatusOutputPreview = @(Get-SanitizedStatusPreview -Lines $statusOutput)
+    $statusPollCount++
+    $statusAtCapture = $null
+    if ($lastStatusCommandExitCode -eq 0) {
+        $statusAtCapture = Get-DownloadStatusFromOutput -Lines $statusOutput -ExpectedId $taskId
+        if ($null -ne $statusAtCapture) {
+            $lastStatusLine = ([string]$taskId) + [char]9 + $statusAtCapture
+        }
+    }
+    if ([int]$preScreenshotStats.active_distinct_tasks -lt 1 -or
+        -not $bytesAdvancedBeforeScreenshot -or
+        $statusAtCapture -ne 'Downloading') {
+        $diagnostics = [pscustomobject]@{
+            SourceSHA = $SourceSha
+            TaskId = $taskId
+            Reason = 'The transfer was not proven active at screenshot time.'
+            LastStatusLine = $lastStatusLine
+            LastStatus = $statusAtCapture
+            StatusPollCount = $statusPollCount
+            LastStatusCommandExitCode = $lastStatusCommandExitCode
+            LastStatusOutputPreview = $lastStatusOutputPreview
+            LastStatusOutputLineCount = @($statusOutput).Count
+            BytesBeforeScreenshot = $bytesBeforeScreenshot
+            BytesAtScreenshot = [long]$preScreenshotStats.bytes_sent
+            BytesAdvancedBeforeScreenshot = $bytesAdvancedBeforeScreenshot
+            LastFixtureStats = $preScreenshotStats
+        }
+        $diagnostics | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $root 'liquid-progress-diagnostics.json') -Encoding utf8
+        throw 'Live transfer ended or stopped advancing before screenshot; sanitized diagnostics were saved.'
+    }
+    $captureStats = $preScreenshotStats
+    Add-Type -AssemblyName System.Drawing
+    Add-Type -AssemblyName System.Windows.Forms
+    $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+    $bitmap = [System.Drawing.Bitmap]::new($bounds.Width, $bounds.Height)
+    $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+    $screenshot = Join-Path $root 'liquid-progress-active.png'
+    try {
+        $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
+        $bitmap.Save($screenshot, [System.Drawing.Imaging.ImageFormat]::Png)
+    } finally {
+        $graphics.Dispose()
+        $bitmap.Dispose()
+    }
+
+    $completed = $false
+    $finalStats = $null
+    $actualSha = ''
+    for ($attempt = 0; $attempt -lt 240; $attempt++) {
+        $finalStats = Invoke-RestMethod -Uri "http://127.0.0.1:$port/stats" -TimeoutSec 5
+        if ([long]$finalStats.active_requests -eq 0 -and
+            [long]$finalStats.bytes_sent -ge $expectedBytes -and
+            (Test-Path -LiteralPath $outputPath -PathType Leaf) -and
+            (Get-Item -LiteralPath $outputPath).Length -eq $expectedBytes) {
+            $actualSha = (Get-FileHash -LiteralPath $outputPath -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actualSha -eq $expectedSha) {
+                $completed = $true
+                break
+            }
+        }
+        Start-Sleep -Milliseconds 500
+    }
+    if (-not $completed) {
+        $actualLength = if (Test-Path -LiteralPath $outputPath -PathType Leaf) {
+            (Get-Item -LiteralPath $outputPath).Length
+        } else { 0 }
+        throw "Liquid Progress download did not complete with expected SHA-256; bytes=$actualLength."
+    }
+
+    $finalStatusOutput = @(& $cliPath download show --status-lines $taskId 2>&1)
+    $finalStatusExitCode = $LASTEXITCODE
+    $finalStatusOutputPreview = @(Get-SanitizedStatusPreview -Lines $finalStatusOutput)
+    $finalStatus = $null
+    if ($finalStatusExitCode -eq 0) {
+        $finalStatus = Get-DownloadStatusFromOutput -Lines $finalStatusOutput -ExpectedId $taskId
+    }
+    if ($finalStatusExitCode -ne 0 -or $finalStatus -cne 'Finished') {
+        [pscustomobject]@{
+            SourceSHA = $SourceSha
+            TaskId = $taskId
+            Reason = 'Final CLI status was not proven as Finished after the output hash matched.'
+            FinalStatusCommandExitCode = $finalStatusExitCode
+            FinalStatusOutputPreview = $finalStatusOutputPreview
+            FinalStatusOutputLineCount = @($finalStatusOutput).Count
+            FinalStatus = $finalStatus
+            ExpectedBytes = $expectedBytes
+            ActualBytes = (Get-Item -LiteralPath $outputPath).Length
+            ExpectedSHA256 = $expectedSha
+            ActualSHA256 = $actualSha
+        } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $root 'liquid-progress-diagnostics.json') -Encoding utf8
+        throw "Final installed CLI status was not Finished after SHA-256 verification (exit=$finalStatusExitCode; output=$($finalStatusOutputPreview -join ' | '))."
+    }
+
+    [pscustomobject]@{
+        SourceSHA = $SourceSha
+        TaskId = $taskId
+        StatusAtCapture = $statusAtCapture
+        ActiveDistinctTasksAtCapture = [int]$captureStats.active_distinct_tasks
+        BytesSentAtCapture = [long]$captureStats.bytes_sent
+        BytesAdvancedBeforeScreenshot = $bytesAdvancedBeforeScreenshot
+        StatusPollCountAtCapture = $statusPollCount
+        ExpectedBytes = $expectedBytes
+        ActualBytes = (Get-Item -LiteralPath $outputPath).Length
+        ExpectedSHA256 = $expectedSha
+        ActualSHA256 = $actualSha
+        Screenshot = [IO.Path]::GetFileName($screenshot)
+        FinalStatus = $finalStatus
+        Verified = $true
+    } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $root 'liquid-progress-report.json') -Encoding utf8
+    Write-Host 'PASS: active Liquid Progress screenshot captured from installed Windows GUI; 16 MiB HTTP download SHA-256 verified.'
+} finally {
+    $visible | ForEach-Object { Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue }
+    if ($started -and -not $started.HasExited) {
+        Stop-Process -Id $started.Id -Force -ErrorAction SilentlyContinue
+    }
+    if ($server -and -not $server.HasExited) {
+        Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue
+    }
+}
+) {
+            # Safe in the isolated runner: plain ASCII words only, no paths, URLs or filenames.
+            $preview += "Plain-text CLI message: $line"
         } else {
             $preview += "Unclassified CLI output (characters=$($line.Length))."
         }

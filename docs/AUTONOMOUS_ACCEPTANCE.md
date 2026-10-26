@@ -1195,3 +1195,13 @@ Current branch head before this ledger update: `bdf68673ec28fe44adb6b9b43718ac90
 - **Installed JVM memory profile:** scope-skipped — [run 40273299427](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40273299427); no new memory improvement is claimed.
 
 The source/test/docs commits do not change the production downloader or Compose renderer. Do not close HG-UI-LIQUID-PROGRESS-01 until the active screenshot, `Downloading` status at capture, byte advancement, final SHA-256 equality, `Finished` status, and reinstall/uninstall proof are all present in an inspected exact-SHA artifact.
+
+## 2026-10-26 — second installed visual result and suffix-normalization repair
+
+**Run:** [40273070311](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40273070311), source SHA `d8e8f557693c7db398bc4b3e4cb57d4df8867c58`. Compose/installer build, silent isolated install and GUI launch **PASS**; screenshot-time status gate **FAIL**; same-version reinstall/uninstall **SKIPPED**.
+
+**Artifact:** [windows-liquid-progress-visual](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40273070311/artifacts/12628404908), ZIP SHA-256 `db7c80523b297810dfeac319dc222fadfd83ef44e7ba64afa124a773784490ab`. The fixture and downloaded output remain byte-identical at 16,777,216 bytes, SHA-256 `341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1`. Fixture counters prove one paced task, 256 chunks and 45.869 seconds aggregate pacing. The parser-normalization patch did not resolve the status row: task ID 0, 23 polls, exit 0, one unclassified 16-character line, and no screenshot/report.
+
+**New targeted change:** the prior normalizer removed invisible Unicode prefixes but not suffixes. Extend trimming to both ends for BOM/zero-width characters, and include a sanitized plain-ASCII message only when output contains letters/spaces (the runner uses a fresh isolated install); all arbitrary rows, names, paths and URLs remain redacted. This is a diagnostic hypothesis, not a confirmed root cause.
+
+**Pre-build question:** does the two-sided normalization recover a valid ID/status row, capture the installed GUI while `Downloading` and fixture bytes advance, verify the completed 16 MiB SHA-256, and pass same-version reinstall plus silent uninstall? The prior artifact proves that source tests alone cannot establish this Windows CLI-output behavior or screenshot timing. The next build is justified because the script changes based on inspected exact-SHA evidence.
