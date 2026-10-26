@@ -234,22 +234,29 @@ jobs:
             "FirefoxInstallerURL=$installerUrl"
           ) | Set-Content 'build/ci-release/native-host/firefox-runtime-sha256.txt'
           "HYPERGET_FIREFOX_EXE=$firefox" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-      - name: Download official Mozilla geckodriver and verify download origin
+      - name: Resolve official Mozilla geckodriver release without GitHub API quota
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $release = Invoke-RestMethod -Uri 'https://api.github.com/repos/mozilla/geckodriver/releases/latest' -Headers @{
-            'User-Agent' = 'HyperGet-Windows-Acceptance'
-            'Accept' = 'application/vnd.github+json'
+          # The unauthenticated releases API hit a shared-runner IP rate limit.
+          # Resolve GitHub's official /releases/latest redirect instead, then
+          # download the exact versioned asset from the same official repository.
+          $latestRelease = Invoke-WebRequest -Uri 'https://github.com/mozilla/geckodriver/releases/latest' -MaximumRedirection 10
+          $finalUri = $latestRelease.BaseResponse.RequestMessage.RequestUri
+          if (-not $finalUri) { $finalUri = $latestRelease.BaseResponse.ResponseUri }
+          $latestUri = [uri]$finalUri.AbsoluteUri
+          if ($latestUri.Scheme -ne 'https' -or $latestUri.Host -ne 'github.com') {
+            throw 'Unexpected official geckodriver latest-release redirect origin'
           }
-          $tag = [string]$release.tag_name
-          if ($tag -notmatch '^v\d+\.\d+\.\d+$') { throw 'Mozilla geckodriver release tag is invalid' }
-          $assets = @($release.assets | Where-Object { $_.name -match '^geckodriver-.*-win64\.zip$' })
-          if ($assets.Count -ne 1) { throw 'Expected one official geckodriver win64 archive' }
-          $uri = [uri]$assets[0].browser_download_url
+          $tagMatch = [regex]::Match($latestUri.AbsolutePath, '^/mozilla/geckodriver/releases/tag/(v\d+\.\d+\.\d+)$')
+          if (-not $tagMatch.Success) { throw 'Official geckodriver latest redirect did not resolve to a version tag' }
+          $tag = $tagMatch.Groups[1].Value
+          $assetName = "geckodriver-$tag-win64.zip"
+          $uri = [uri]"https://github.com/mozilla/geckodriver/releases/download/$tag/$assetName"
           if ($uri.Scheme -ne 'https' -or $uri.Host -ne 'github.com' -or
-              -not $uri.AbsolutePath.StartsWith("/mozilla/geckodriver/releases/download/$tag/")) {
-            throw 'Unexpected geckodriver download origin'
+              -not $uri.AbsolutePath.StartsWith("/mozilla/geckodriver/releases/download/$tag/") -or
+              [IO.Path]::GetFileName($uri.AbsolutePath) -cne $assetName) {
+            throw 'Unexpected geckodriver download origin or asset path'
           }
           $archive = Join-Path $env:RUNNER_TEMP 'geckodriver-win64.zip'
           Invoke-WebRequest -Uri $uri.AbsoluteUri -OutFile $archive

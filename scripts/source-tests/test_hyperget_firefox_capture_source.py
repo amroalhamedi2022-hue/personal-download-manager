@@ -54,11 +54,15 @@ class FirefoxInstalledCaptureSourceTest(unittest.TestCase):
     def test_windows_gate_uses_official_firefox_and_geckodriver_inputs(self):
         self.assertIn("product-details.mozilla.org", WORKFLOW)
         self.assertIn("archive.mozilla.org", WORKFLOW)
-        self.assertIn("api.github.com/repos/mozilla/geckodriver/releases/latest", WORKFLOW)
+        self.assertIn("https://github.com/mozilla/geckodriver/releases/latest", WORKFLOW)
+        self.assertIn(r"^/mozilla/geckodriver/releases/tag/(v\d+\.\d+\.\d+)$", WORKFLOW)
+        self.assertIn('assetName = "geckodriver-$tag-win64.zip"', WORKFLOW)
+        self.assertIn('"/mozilla/geckodriver/releases/download/$tag/"', WORKFLOW)
+        self.assertIn("GeckodriverArchiveSHA256", WORKFLOW)
+        self.assertNotIn("api.github.com/repos/mozilla/geckodriver/releases/latest", WORKFLOW)
         self.assertIn("npm run pack:firefox", WORKFLOW)
         self.assertIn("Run-WindowsFirefoxNativeE2E.mjs", WORKFLOW)
         self.assertIn("firefox-native-extension-report.json", WORKFLOW)
-        self.assertIn("Run-WindowsFirefoxNativeE2E.mjs", WORKFLOW)
         self.assertIn("test_hyperget_firefox_capture_source.py", WORKFLOW)
         self.assertIn("node --check scripts/Run-WindowsFirefoxNativeE2E.mjs", WORKFLOW)
 
