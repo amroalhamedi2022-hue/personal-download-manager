@@ -65,6 +65,16 @@ class StagedFileSourceContract(unittest.TestCase):
         self.assertIn("if (bytes.size > maxBytes)", self.resume_identity)
         self.assertIn("before.fileKey() != after.fileKey()", self.resume_identity)
 
+    def test_cancel_and_final_publish_share_lifecycle_lock(self):
+        self.assertIn("private val lifecycleLock = Any()", self.transfer)
+        self.assertIn("fun <T> commitIfActive(action: () -> T): T = synchronized(lifecycleLock)", self.transfer)
+        self.assertIn("if (committed) return", self.transfer)
+        self.assertIn("transfer.commitIfActive {", self.transfer)
+        self.assertIn(
+            "cancellationAtFinalPayloadBoundaryDoesNotPublishAndCanResumeFromFullStage",
+            self.regression,
+        )
+
     def test_resume_transport_uses_guarded_reader(self):
         self.assertIn("val old = loadFtpResumeIdentity(meta)", self.transfer)
         self.assertNotIn("Files.newInputStream(path).use(properties::load)", self.transfer)
