@@ -116,5 +116,15 @@ class FirefoxInstalledCaptureSourceTest(unittest.TestCase):
             self.assertIn("currentStage = '" + stage + "'", SCRIPT)
 
 
+    def test_long_running_acceptance_isolated_by_exact_pr_head(self):
+        # A later docs-only commit must not cancel a queued/running real browser E2E
+        # for the earlier source SHA; each expensive run is tied to its tested code.
+        self.assertIn(
+            "group: hyperget-installed-native-host-${{ github.event.pull_request.head.sha || github.sha }}",
+            WORKFLOW,
+        )
+        self.assertIn("cancel-in-progress: true", WORKFLOW)
+
+
 if __name__ == "__main__":
     unittest.main()
