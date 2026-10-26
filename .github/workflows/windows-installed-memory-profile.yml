@@ -12,6 +12,7 @@ on:
       - "scripts/Summarize-WindowsActiveBenchmark.ps1"
       - "scripts/Measure-WindowsDownloadManager.ps1"
       - "scripts/LocalHttpRangeFixture.py"
+      - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/part/PartDownloader.kt"
       - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/di/Di.kt"
       - "shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/util/TimeUtil.kt"
       - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/TableDownloadItem.kt"
@@ -47,7 +48,7 @@ jobs:
           run=false
           while IFS= read -r file; do
             case "$file" in
-              scripts/Collect-WindowsJvmMemoryProfile.ps1|scripts/Run-WindowsActiveBenchmarkMatrix.ps1|scripts/Summarize-WindowsActiveBenchmark.ps1|scripts/Measure-WindowsDownloadManager.ps1|scripts/LocalHttpRangeFixture.py|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/di/Di.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/TableDownloadItem.kt|shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/util/TimeUtil.kt)
+              .github/workflows/windows-installed-memory-profile.yml|downloader/core/src/commonMain/kotlin/ir/amirab/downloader/part/PartDownloader.kt|scripts/Collect-WindowsJvmMemoryProfile.ps1|scripts/Run-WindowsActiveBenchmarkMatrix.ps1|scripts/Summarize-WindowsActiveBenchmark.ps1|scripts/Measure-WindowsDownloadManager.ps1|scripts/LocalHttpRangeFixture.py|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/di/Di.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/TableDownloadItem.kt|shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/util/TimeUtil.kt)
                 run=true
                 ;;
             esac
@@ -91,6 +92,8 @@ jobs:
           python -m unittest scripts/source-tests/test_hyperget_http_dispatcher_bound_source.py -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m unittest scripts/source-tests/test_hyperget_memory_profile_source.py -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m unittest scripts/source-tests/test_hyperget_part_downloader_io_lifecycle_source.py -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Build exactly one internal Windows NSIS installer
