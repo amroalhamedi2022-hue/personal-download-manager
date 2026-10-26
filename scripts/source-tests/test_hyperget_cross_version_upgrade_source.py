@@ -8,6 +8,7 @@ ROOT = Path(__file__).resolve().parents[2]
 NSIS = ROOT / "desktop/app/resources/installer/nsis-script-template.nsi"
 VERSION_UTIL = ROOT / "buildSrc/src/main/kotlin/buildlogic/versioning/VersionUtil.kt"
 SHARED_BUILD = ROOT / "shared/app/build.gradle.kts"
+DESKTOP_BUILD = ROOT / "desktop/app/build.gradle.kts"
 HARNESS = ROOT / "scripts/Run-WindowsCrossVersionUpgradeRollbackE2E.ps1"
 WORKFLOW = ROOT / ".github/workflows/windows-cross-version-upgrade-rollback.yml"
 
@@ -18,6 +19,7 @@ class HyperGetCrossVersionUpgradeContracts(unittest.TestCase):
         cls.nsis = NSIS.read_text(encoding="utf-8")
         cls.version_util = VERSION_UTIL.read_text(encoding="utf-8")
         cls.shared_build = SHARED_BUILD.read_text(encoding="utf-8")
+        cls.desktop_build = DESKTOP_BUILD.read_text(encoding="utf-8")
         cls.harness = HARNESS.read_text(encoding="utf-8")
         cls.workflow = WORKFLOW.read_text(encoding="utf-8")
 
@@ -27,6 +29,12 @@ class HyperGetCrossVersionUpgradeContracts(unittest.TestCase):
         self.assertIn('provider { getAppName() }', self.shared_build)
         self.assertIn('provider { getAppDataDirName() }', self.shared_build)
         self.assertIn('provider { "HyperGet" }', self.shared_build)
+        # The packaged installer display name must follow HyperGet while technical IDs remain legacy-compatible.
+        self.assertIn('return "HyperGet"', self.version_util)
+        self.assertNotIn('return "Download Manager"', self.version_util)
+        self.assertIn("appDisplayName = getPrettifiedAppName()", self.desktop_build)
+        self.assertIn('!define APP_DISPLAY_NAME "{{ app_display_name }}"', self.nsis)
+        self.assertIn('WriteRegStr SHCTX "${REG_UNINSTALL_KEY}" "DisplayName" "${APP_DISPLAY_NAME}"', self.nsis)
 
     def test_known_brand_shortcuts_are_cleaned_before_replacement(self):
         start = self.nsis.index("!macro RemoveKnownBrandShortcuts")
