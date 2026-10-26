@@ -27,7 +27,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: windows-installed-ui-smoke-${{ github.ref }}
+  # Isolate each exact PR head so a later docs-only run cannot cancel a pending acceptance build.
+  group: windows-installed-ui-smoke-${{ github.event.pull_request.head.sha || github.sha }}
   # Preserve an active exact-SHA acceptance run when later docs-only commits arrive.
   cancel-in-progress: false
 
