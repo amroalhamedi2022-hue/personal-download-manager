@@ -16,6 +16,11 @@ on:
       - "scripts/source-tests/test_hyperget_active_benchmark_source.py"
       - "scripts/source-tests/test_hyperget_http_dispatcher_bound_source.py"
       - "scripts/source-tests/test_hyperget_memory_profile_source.py"
+      - "scripts/source-tests/test_hyperget_relative_time_refresh_source.py"
+      - "shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/util/TimeUtil.kt"
+      - "shared/app/src/commonTest/kotlin/com/abdownloadmanager/shared/util/TimeUtilRelativeRefreshTest.kt"
+      - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/TableDownloadItem.kt"
+      - ".github/workflows/hyperget-relative-time-refresh-tests.yml"
       - "scripts/Collect-WindowsJvmMemoryProfile.ps1"
       - ".github/workflows/windows-installed-memory-profile.yml"
       - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/di/Di.kt"
@@ -120,6 +125,8 @@ jobs:
         run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_http_dispatcher_bound_source.py -v
       - name: Verify installed JVM memory profile harness
         run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_memory_profile_source.py -v
+      - name: Verify relative-date refresh cadence
+        run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_relative_time_refresh_source.py -v
       - name: Verify local HTTP fixture and gated socket admission
         run: python3 -m unittest scripts/test_local_http_range_fixture.py -v
       - name: Verify local FTP fixture protocol

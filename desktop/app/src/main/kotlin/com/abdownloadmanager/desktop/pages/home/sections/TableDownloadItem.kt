@@ -42,6 +42,7 @@ import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.Instant
+import kotlin.math.absoluteValue
 
 val LocalDownloadItemProperties =
     compositionLocalOf<DownloadItemProperties> { error("not provided download properties") }
@@ -170,8 +171,11 @@ fun DateCell(
                 val now = Clock.System.now()
                 val period = now.periodUntil(instant, TimeZone.UTC)
                 val relativeTime = prettifyRelativeTime(period)
-                dateString = relativeTime
-                delay(1.seconds)
+                if (dateString != relativeTime) {
+                    dateString = relativeTime
+                }
+                val ageMillis = (now.toEpochMilliseconds() - date).absoluteValue
+                delay(relativeTimeRefreshDelayMillis(ageMillis))
             }
         } else {
             val dateTime = instant.toLocalDateTime(TimeZone.currentSystemDefault())

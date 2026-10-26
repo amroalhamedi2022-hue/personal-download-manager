@@ -1,0 +1,40 @@
+name: HyperGet relative-time refresh unit tests
+
+on:
+  pull_request:
+    branches: [codex/repair-rf00-rf01]
+    paths:
+      - ".github/workflows/hyperget-relative-time-refresh-tests.yml"
+      - "shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/util/TimeUtil.kt"
+      - "shared/app/src/commonTest/kotlin/com/abdownloadmanager/shared/util/TimeUtilRelativeRefreshTest.kt"
+      - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/TableDownloadItem.kt"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hyperget-relative-time-tests-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  relative-time-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out exact PR head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Set up JetBrains Runtime 25
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: jetbrains
+          java-package: jdk
+          java-version: "25"
+          cache: gradle
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Run shared app desktop unit tests (no installer/package)
+        shell: bash
+        run: ./gradlew --no-daemon --stacktrace :shared:app:desktopTest

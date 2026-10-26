@@ -44,3 +44,10 @@ Installed profile workflow [40249082722](https://github.com/amroalhamedi2022-hue
 Post-transfer process snapshot: 431.551 MiB Working Set, 473.309 MiB Private Bytes, 77 OS threads, 826 handles. G1 heap 122,880 KiB committed / 70,204 KiB used; class histogram 34,716,776 bytes / 636,147 objects. NMT total committed 339,598 KiB (~331.6 MiB), leaving about 141.7 MiB of process Private Bytes outside the NMT committed total in this sample. NMT categories: Java Heap 120 MiB; Metaspace 76,766 KiB (also represented under Class, so don't double count); Code 46,821 KiB; GC 45,611 KiB; Symbol 19,541 KiB; Thread 4,949 KiB. The JVM reserved 4 GiB heap address space but had only 120 MiB committed, so Xmx reduction is not yet justified. Skia cleanable wrappers are numerous, but one snapshot cannot prove a leak.
 
 Next: capture an NMT-enabled idle baseline and compare with a fresh post-transfer process to distinguish startup/native graphics allocations from transfer-related retained objects.
+
+
+## HG-UI-RELATIVE-TIME-CHURN-01 — production change queued for measured validation
+
+The idle/post NMT profile [40250121436](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40250121436) passed 21/21 SHA + 3/3 metrics. Private Bytes grew 247.590→501.965 MiB; NMT committed 216,238→338,879 KiB; heap used 45,341→90,541 KiB; Skia CleanableImpl 1,402→9,250; Compose LayoutNode 308→1,725. The source has an avoidable once-per-second relative-date refresh loop in visible desktop download rows.
+
+Changed the shared refresh helper to wake at the next display-unit boundary and avoid state writes when the formatted label is unchanged. Added four deterministic commonTest cases and a Python source contract. The new targeted workflow runs `:shared:app:desktopTest` without packaging; installed Windows HTTP acceptance and NMT before/after profiling are also triggered for these production files. Result is pending at checkpoint creation; do not claim a memory improvement before comparing the artifacts.

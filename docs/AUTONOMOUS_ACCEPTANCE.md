@@ -1059,3 +1059,19 @@ Exact source SHA `9f5577a2d557aed3223a04749187f316b2decb88`, installed diagnosti
 **Interpretation:** the 4 GiB reserved heap is virtual address space, not 4 GiB committed RAM. Used Java heap is ~69 MiB and committed heap 120 MiB, so simply lowering Xmx is not yet a justified fix. A sizable part of process-private memory is not explained by the NMT total; possible sources include native graphics/JNI allocations or other untracked mappings, but no root cause is claimed yet.
 
 **Next diagnostic:** add an idle baseline snapshot and a post-transfer snapshot from separate fresh GUI processes, both with NMT enabled, so we can compare Skia cleanables, heap, native categories and Private Bytes without conflating startup with the download workload. This remains diagnostic-only; NMT measurements are not used as a speed comparison.
+
+
+## 2026-10-26 — HG-UI-RELATIVE-TIME-CHURN-01 (production optimization + measured acceptance pending)
+
+The NMT baseline/post profile [40250121436](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40250121436) captured an idle GUI and a fresh GUI after 21 verified downloads. Artifact [12620660913](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40250121436/artifacts/12620660913), downloaded ZIP SHA-256 `dfd8711b74420596e8a1bf492aaa047999a3b3f19d66208de2da2c5b7a0cac08`; installer SHA-256 `7042fc2dce5dea1de15131f6dd45889d3293ee2b49c4630d8eb4b799899bbf33`. It passed 21/21 SHA hashes and 3/3 process CSVs.
+
+**Baseline → post-transfer (NMT enabled; diagnostic only):**
+- Private Bytes **247.590 → 501.965 MiB**; Working Set **219.008 → 463.945 MiB**.
+- NMT committed **216,238 → 338,879 KiB**; heap used **45,341 → 90,541 KiB**; heap committed **60 → 120 MiB**.
+- Class histogram **19,831,608 → 35,126,272 bytes**, **327,499 → 636,986 objects**.
+- Skia `CleanableImpl` **1,402 → 9,250**; Compose `LayoutNode` **308 → 1,725**.
+- OS threads **49 → 77**; handles **666 → 842**.
+
+**Actionable code finding:** desktop `DateCell` recomputed and assigned relative-date text every second for every visible row, even when the label had moved from seconds to minutes/hours/days. This does not prove it is the only native-memory cause, but it is avoidable UI work that correlates with Compose/Skia object growth. Implemented a boundary-aware refresh helper (next second/minute/hour/day boundary) and skip state writes when the label is unchanged. Added deterministic Kotlin tests and a source contract.
+
+**Purposeful acceptance question (before build):** does the new cadence preserve unit-boundary delays, pass shared desktop unit tests, and keep 63/63 SHA + 9/9 process metrics while reducing Skia/Compose churn or Private Bytes? Source tests cannot measure Compose/Skia runtime allocations. The dedicated Kotlin unit workflow, full installed Windows matrix and NMT before/after workflow are wired to the production source paths. No fixed memory threshold is claimed until measured.

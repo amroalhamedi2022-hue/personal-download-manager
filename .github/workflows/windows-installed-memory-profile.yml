@@ -14,6 +14,8 @@ on:
       - "scripts/Measure-WindowsDownloadManager.ps1"
       - "scripts/LocalHttpRangeFixture.py"
       - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/di/Di.kt"
+      - "shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/util/TimeUtil.kt"
+      - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/TableDownloadItem.kt"
   workflow_dispatch:
 
 permissions:
