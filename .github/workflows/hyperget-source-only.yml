@@ -31,6 +31,8 @@ on:
       - "scripts/source-tests/test_hyperget_http_part_admission_source.py"
       - "scripts/source-tests/test_hyperget_http_part_deadline_source.py"
       - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/part/PartDownloader.kt"
+      - "downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/part/PartDownloaderIoLifecycleTest.kt"
+      - "scripts/source-tests/test_hyperget_part_downloader_io_lifecycle_source.py"
       - "downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/part/PartResponseDeadlineTest.kt"
       - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/downloaditem/http/HttpDownloadJob.kt"
       - "scripts/source-tests/test_hyperget_cli_status_lines_source.py"
@@ -123,6 +125,8 @@ jobs:
         run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_http_part_admission_source.py -v
       - name: Verify HTTP pre-response liveness and cancellation contract
         run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_http_part_deadline_source.py -v
+      - name: Verify shared-I/O part streaming and cancellation lifecycle
+        run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_part_downloader_io_lifecycle_source.py -v
       - name: Verify installed HTTP 1/4/16 benchmark source contract (no app build)
         run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_active_benchmark_source.py -v
       - name: Verify bounded OkHttp dispatcher source contract
