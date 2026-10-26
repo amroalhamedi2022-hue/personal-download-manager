@@ -191,3 +191,25 @@ The suffix-normalization hypothesis remains unverified until a fresh exact-SHA W
 The first attempt to add foreground-window capture failed at workflow loading on exact SHA `10b1f48117a6faa5346e0762b3d16542b4a36859`: [run 40279415866](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40279415866) has no jobs, so **no Windows build or product test ran**. Root cause from direct YAML inspection: the embedded C# here-string lines in the workflow's `run: |` block were not indented to the YAML block level. This is a workflow-patch composition defect, not a Kotlin/Compose compile failure.
 
 Before retrying, correct the YAML block indentation and add a source regression asserting the embedded here-string stays inside the block. The next purposeful Windows run asks whether the exact corrected workflow can parse, build/install, foreground and crop the actual app window, observe live `Downloading` with advancing bytes, finish the 16 MiB file with matching SHA-256, and pass reinstall/uninstall. Source checks cannot establish YAML runner parsing, installed CLI behavior, Windows z-order or byte integrity. Do not count the parse-failure run as a build/test attempt.
+
+
+## 2026-10-26 08:32 Asia/Jerusalem — asynchronous live-status observation repair
+
+**Current source SHA:** `1bd68fa46fb53c4dca630b8b0e44ad4b9ca16c43` on the existing PR branch. No renderer change is claimed in this round.
+
+### Previous exact-head Windows result (before the harness fix)
+- Run [40279659330](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40279659330), SHA `ffb6a01a5e558501dc3d8588c34a95d4c451e333`: Windows distribution build **PASS** (88 Gradle tasks, 3m16s); one NSIS installer **PASS**, clean isolated install **PASS**, foreground/cropped idle GUI capture **PASS**, and six real idle/minimized CPU/RAM CSVs **PASS**. Internal installer SHA-256: `e0490d801fe6993fde41cac2b51475e36503424b2671901803a73d7c9671361a`.
+- Active visual gate **FAIL**; lifecycle reinstall/uninstall **SKIPPED** behind the failed gate. Artifact [12631058922](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40279659330/artifacts/12631058922), ZIP SHA-256 `7f14442f5720cc74669100a2e248a0afad29b38c568f5e17a769717b204262c8`. The 16,777,216-byte fixture and output are identical at SHA-256 `341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1`; fixture counters show 256 paced chunks, 45.852 aggregate pacing seconds, one distinct task, and nine GETs. This proves transfer integrity, **not** visual acceptance.
+- Sanitized diagnostics show task ID 0, 39 status polls, CLI exit code 0, and final output shaped as `0        Finished` (spaces, not tabs). No active screenshot/report was produced.
+
+### Root cause and repair
+Direct source inspection confirms the harness called `download add` synchronously before starting its status polling loop. In the failed run, polling observed the already-`Finished` row. The parser also assumed tab separators although the real CLI output used whitespace. Commit `1bd68fa4` now runs add (and a conditional resume) as a background process, polls status while the transfer is active, accepts whitespace-delimited status rows, checks the add process exit code/task ID, and records bounded status history/process diagnostics without persisting raw output.
+
+The source-contract test itself first failed because its embedded-C# check searched for a literal backslash-n instead of a newline. That test-only defect was corrected on the branch; the current exact-head source-only workflow **PASS**es at [run 40281908013](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40281908013). This was a test defect, not a product compile failure.
+
+### Purposeful Windows test question (current run)
+Can the installed CLI's background add allow a parseable `Downloading` observation while fixture bytes advance, then finish the 16 MiB file with matching SHA-256 and `Finished` status, and finally pass same-version reinstall plus silent uninstall? Source tests cannot establish CLI process timing, installed IPC/state visibility, Windows foreground capture, or actual transferred bytes.
+
+**Expected PASS evidence:** active app-window screenshot, JSON report with `StatusAtCapture=Downloading`, `BytesAdvancedBeforeScreenshot=true`, final `Finished`, matching expected/actual SHA-256, and lifecycle proof. Current Windows run [40281908053](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40281908053) has passed setup through the PowerShell parser gate and is preparing the Windows build; no result is claimed yet.
+
+**Remaining:** HG-UI-LIQUID-PROGRESS-01 stays OPEN until the exact-head artifact is inspected and all visual/hash/lifecycle gates pass. HTTP 1/4/16, browser E2E, memory, FTP, HLS and queue runs must be distinguished by their own job conclusions; a scope-skipped matrix is NOT a new PASS. No merge, release, main write, paid service or Torrent.
