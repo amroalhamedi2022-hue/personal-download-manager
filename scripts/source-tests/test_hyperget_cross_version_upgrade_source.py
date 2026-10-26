@@ -71,6 +71,10 @@ class HyperGetCrossVersionUpgradeContracts(unittest.TestCase):
         ):
             self.assertIn(expected, self.harness)
 
+        # Clikt's usage places options before positional IDs; preserve the tested CLI contract.
+        self.assertIn("download','show','--status-lines',([string]$Id)", self.harness)
+        self.assertNotIn("download','show',([string]$Id),'--status-lines'", self.harness)
+
     def test_synthetic_wincred_survives_upgrade_rollback_and_uninstall_without_logging_secrets(self):
         for expected in (
             'PersonalDownloadManager/FTP/',
