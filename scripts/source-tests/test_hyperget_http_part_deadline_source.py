@@ -15,7 +15,7 @@ class PartDeadlineContract(unittest.TestCase):
     def test_deadline_wraps_only_connect_not_streaming(self):
         self.assertIn("awaitPartResponseWithDeadline(PART_RESPONSE_DEADLINE_MILLIS)", self.source)
         self.assertIn("connectAndVerify()", self.source)
-        self.assertLess(self.source.index("awaitPartResponseWithDeadline(PART_RESPONSE_DEADLINE_MILLIS)"), self.source.index("thread = thread {"))
+        self.assertLess(self.source.index("awaitPartResponseWithDeadline(PART_RESPONSE_DEADLINE_MILLIS)"), self.source.index("withContext(Dispatchers.IO)"))
         self.assertIn("private const val PART_RESPONSE_DEADLINE_MILLIS = 45_000L", self.source)
 
     def test_caller_cancellation_not_reclassified_as_io(self):
