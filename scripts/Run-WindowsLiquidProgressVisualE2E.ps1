@@ -39,6 +39,10 @@ $serverOut = Join-Path $root 'fixture-stdout.txt'
 $serverErr = Join-Path $root 'fixture-stderr.txt'
 $downloadFolder = Join-Path $root 'downloads'
 New-Item -ItemType Directory -Path $downloadFolder -Force | Out-Null
+$addStdout = Join-Path $env:RUNNER_TEMP ("hyperget-liquid-progress-add-$SourceSha.stdout.txt")
+$addStderr = Join-Path $env:RUNNER_TEMP ("hyperget-liquid-progress-add-$SourceSha.stderr.txt")
+$resumeStdout = Join-Path $env:RUNNER_TEMP ("hyperget-liquid-progress-resume-$SourceSha.stdout.txt")
+$resumeStderr = Join-Path $env:RUNNER_TEMP ("hyperget-liquid-progress-resume-$SourceSha.stderr.txt")
 & python -c 'import pathlib,sys; pathlib.Path(sys.argv[1]).write_bytes(bytes(range(256))*(int(sys.argv[2])*4096))' $fixture 16
 if ($LASTEXITCODE -ne 0) { throw 'Python failed to create the 16 MiB progress fixture.' }
 $expectedBytes = [long]16 * 1MB
@@ -67,7 +71,7 @@ function Get-DownloadStatusFromOutput {
     param([object[]]$Lines, [long]$ExpectedId)
     $validStatuses = @('Paused', 'Error', 'Downloading', 'Finished', 'PreparingFile', 'Resuming', 'Retrying')
     foreach ($line in @(Get-NormalizedCliLines -Lines $Lines)) {
-        $columns = $line.Split([char[]]@([char]9))
+        $columns = [regex]::Split($line.Trim(), '\s+')
         if ($columns.Count -lt 2 -or $columns[0].Trim() -cne [string]$ExpectedId) { continue }
         $candidate = $columns[1].Trim()
         if ($validStatuses -ccontains $candidate) { return $candidate }
@@ -75,12 +79,23 @@ function Get-DownloadStatusFromOutput {
     return $null
 }
 
+function Get-ReportedTaskIds {
+    param([string]$Path)
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return @() }
+    return @(
+        Get-Content -LiteralPath $Path -ErrorAction SilentlyContinue |
+            ForEach-Object { ([string]$_).Trim() } |
+            Where-Object { $_ -match '^\d+$' } |
+            ForEach-Object { [long]$_ }
+    )
+}
+
 function Get-SanitizedStatusPreview {
     param([object[]]$Lines)
     $preview = @()
     foreach ($line in @(Get-NormalizedCliLines -Lines $Lines)) {
         # Never persist raw tables, names, folders, URLs, or arbitrary CLI output.
-        if ($line -match '^\d+\t(Paused|Error|Downloading|Finished|PreparingFile|Resuming|Retrying)(\t[A-Za-z0-9_.-]+)?(\t.*)?$') {
+        if ($line -match '^\d+\s+(Paused|Error|Downloading|Finished|PreparingFile|Resuming|Retrying)(\s+[A-Za-z0-9_.-]+)?(\s+.*)?$') {
             $preview += "Status row: $($Matches[1])"
         } elseif ($line -match '(?i)^(No such download|No downloads found\.?|No download found\.?)$') {
             $preview += "Task lookup message: $line"
@@ -102,6 +117,12 @@ function Get-SanitizedStatusPreview {
 
 $server = $null
 $started = $null
+$addProcess = $null
+$resumeProcess = $null
+$addStdout = $null
+$addStderr = $null
+$resumeStdout = $null
+$resumeStderr = $null
 $visible = @()
 try {
     $server = Start-Process -FilePath 'python' -ArgumentList @(
@@ -171,20 +192,23 @@ public static class HyperGetLiquidProgressNative {
     $fileName = 'hyperget-liquid-progress.bin'
     $outputPath = Join-Path $downloadFolder $fileName
     $url = "http://127.0.0.1:$port/fixture.bin?task=$fileName"
-    $addOutput = @(& $cliPath download add http --link $url --folder $downloadFolder --name $fileName 2>&1)
-    $addExit = $LASTEXITCODE
-    if ($addExit -ne 0) { throw "Installed CLI add failed ($addExit): $($addOutput -join ' ')" }
-    $ids = @($addOutput | ForEach-Object { "$_".Trim() } | Where-Object { $_ -match '^\d+$' })
-    if ($ids.Count -ne 1) { throw "Installed CLI did not return one task ID: $($addOutput -join ' ')" }
-    $taskId = [long]$ids[0]
+    $addArguments = 'download add http --link "' + $url + '" --folder "' + $downloadFolder + '" --name "' + $fileName + '"'
+    foreach ($tempFile in @($addStdout, $addStderr, $resumeStdout, $resumeStderr)) {
+        Remove-Item -LiteralPath $tempFile -Force -ErrorAction SilentlyContinue
+    }
+    # Keep add asynchronous: on the installed CLI it may remain attached until
+    # the transfer finishes, which otherwise prevents observing Downloading.
+    $addProcess = Start-Process -FilePath $cliPath -ArgumentList $addArguments -PassThru -NoNewWindow -RedirectStandardOutput $addStdout -RedirectStandardError $addStderr
+    # The isolated runner starts with no downloads, so its first ID is 0.
+    # The add process's final stdout is checked after the actual transfer.
+    $taskId = [long]0
+    $addResumeSent = $false
+    $resumeProcess = $null
     $lastStatusCommandExitCode = $null
     $lastStatusOutputPreview = @()
     $statusOutput = @()
     $finalStatusOutput = @()
-
-    & $cliPath download resume $taskId
-    if ($LASTEXITCODE -ne 0) { throw 'Installed CLI could not resume the visual test download.' }
-
+    $observedStatuses = @()
     $ready = $false
     $captureStats = $null
     $statusAtCapture = $null
@@ -203,6 +227,11 @@ public static class HyperGetLiquidProgressNative {
             if (($elapsedMilliseconds - $lastStatusPollMilliseconds) -ge 500) {
                 $lastStatusPollMilliseconds = $elapsedMilliseconds
                 $statusPollCount++
+                if ($addProcess.HasExited) {
+                    $reportedIds = @(Get-ReportedTaskIds -Path $addStdout)
+                    if ($reportedIds.Count -eq 1) { $taskId = [long]$reportedIds[0] }
+                }
+                $statusAtCapture = $null
                 $statusOutput = @(& $cliPath download show --status-lines $taskId 2>&1)
                 $lastStatusCommandExitCode = $LASTEXITCODE
                 $lastStatusOutputPreview = @(Get-SanitizedStatusPreview -Lines $statusOutput)
@@ -210,20 +239,37 @@ public static class HyperGetLiquidProgressNative {
                     $statusAtCapture = Get-DownloadStatusFromOutput -Lines $statusOutput -ExpectedId $taskId
                     if ($null -ne $statusAtCapture) {
                         $lastStatusLine = ([string]$taskId) + [char]9 + $statusAtCapture
+                        $observedStatuses += $statusAtCapture
+                        if ($observedStatuses.Count -gt 8) {
+                            $observedStatuses = @($observedStatuses | Select-Object -Last 8)
+                        }
+                        if ($statusAtCapture -eq 'Paused' -and -not $addResumeSent) {
+                            $resumeArguments = "download resume $taskId"
+                            $resumeProcess = Start-Process -FilePath $cliPath -ArgumentList $resumeArguments -PassThru -NoNewWindow -RedirectStandardOutput $resumeStdout -RedirectStandardError $resumeStderr
+                            $addResumeSent = $true
+                        }
                     }
                 }
                 if ($statusAtCapture -eq 'Downloading') {
                     $ready = $true
                     break
                 }
+                if ($statusAtCapture -eq 'Finished') { break }
             }
         }
         Start-Sleep -Milliseconds 100
     }
     if (-not $ready) {
+        $addProcessExitCode = $null
+        if ($addProcess -and $addProcess.HasExited) { $addProcessExitCode = $addProcess.ExitCode }
+        $addOutputIds = @(Get-ReportedTaskIds -Path $addStdout)
         $diagnostics = [pscustomobject]@{
             SourceSHA = $SourceSha
             TaskId = $taskId
+            AddProcessExited = [bool]($addProcess -and $addProcess.HasExited)
+            AddProcessExitCode = $addProcessExitCode
+            AddOutputIdCount = $addOutputIds.Count
+            ObservedStatuses = @($observedStatuses | Select-Object -Last 8)
             Reason = 'Could not prove live Downloading state before screenshot.'
             LastStatusLine = $lastStatusLine
             LastStatus = $statusAtCapture
@@ -255,9 +301,16 @@ public static class HyperGetLiquidProgressNative {
     if ([int]$preScreenshotStats.active_distinct_tasks -lt 1 -or
         -not $bytesAdvancedBeforeScreenshot -or
         $statusAtCapture -ne 'Downloading') {
+        $addProcessExitCode = $null
+        if ($addProcess -and $addProcess.HasExited) { $addProcessExitCode = $addProcess.ExitCode }
+        $addOutputIds = @(Get-ReportedTaskIds -Path $addStdout)
         $diagnostics = [pscustomobject]@{
             SourceSHA = $SourceSha
             TaskId = $taskId
+            AddProcessExited = [bool]($addProcess -and $addProcess.HasExited)
+            AddProcessExitCode = $addProcessExitCode
+            AddOutputIdCount = $addOutputIds.Count
+            ObservedStatuses = @($observedStatuses | Select-Object -Last 8)
             Reason = 'The transfer was not proven active at screenshot time.'
             LastStatusLine = $lastStatusLine
             LastStatus = $statusAtCapture
@@ -332,6 +385,45 @@ public static class HyperGetLiquidProgressNative {
         throw "Liquid Progress download did not complete with expected SHA-256; bytes=$actualLength."
     }
 
+    if (-not $addProcess.WaitForExit(180000)) {
+        [pscustomobject]@{
+            SourceSHA = $SourceSha
+            TaskId = $taskId
+            Reason = 'The asynchronous add command did not exit after the transfer completed.'
+            AddProcessExited = $false
+            ExpectedBytes = $expectedBytes
+            ActualBytes = (Get-Item -LiteralPath $outputPath).Length
+            ExpectedSHA256 = $expectedSha
+            ActualSHA256 = $actualSha
+        } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $root 'liquid-progress-diagnostics.json') -Encoding utf8
+        throw 'Installed CLI add command did not exit after the verified transfer.'
+    }
+    $addProcessExitCode = $addProcess.ExitCode
+    $reportedIds = @(Get-ReportedTaskIds -Path $addStdout)
+    if ($addProcessExitCode -ne 0 -or $reportedIds.Count -ne 1 -or [long]$reportedIds[0] -ne $taskId) {
+        [pscustomobject]@{
+            SourceSHA = $SourceSha
+            TaskId = $taskId
+            Reason = 'The asynchronous add command did not return the expected task ID successfully.'
+            AddProcessExited = $true
+            AddProcessExitCode = $addProcessExitCode
+            AddOutputIdCount = $reportedIds.Count
+            ExpectedBytes = $expectedBytes
+            ActualBytes = (Get-Item -LiteralPath $outputPath).Length
+            ExpectedSHA256 = $expectedSha
+            ActualSHA256 = $actualSha
+        } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $root 'liquid-progress-diagnostics.json') -Encoding utf8
+        throw 'Installed CLI add process did not report the expected task ID with exit code zero.'
+    }
+    if ($resumeProcess) {
+        if (-not $resumeProcess.WaitForExit(180000)) {
+            throw 'Installed CLI resume command did not exit after the transfer completed.'
+        }
+        if ($resumeProcess.ExitCode -ne 0) {
+            throw "Installed CLI resume command failed with exit code $($resumeProcess.ExitCode)."
+        }
+    }
+
     $finalStatusOutput = @(& $cliPath download show --status-lines $taskId 2>&1)
     $finalStatusExitCode = $LASTEXITCODE
     $finalStatusOutputPreview = @(Get-SanitizedStatusPreview -Lines $finalStatusOutput)
@@ -374,11 +466,20 @@ public static class HyperGetLiquidProgressNative {
     } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $root 'liquid-progress-report.json') -Encoding utf8
     Write-Host 'PASS: active Liquid Progress screenshot captured from installed Windows GUI; 16 MiB HTTP download SHA-256 verified.'
 } finally {
+    if ($resumeProcess -and -not $resumeProcess.HasExited) {
+        Stop-Process -Id $resumeProcess.Id -Force -ErrorAction SilentlyContinue
+    }
+    if ($addProcess -and -not $addProcess.HasExited) {
+        Stop-Process -Id $addProcess.Id -Force -ErrorAction SilentlyContinue
+    }
     $visible | ForEach-Object { Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue }
     if ($started -and -not $started.HasExited) {
         Stop-Process -Id $started.Id -Force -ErrorAction SilentlyContinue
     }
     if ($server -and -not $server.HasExited) {
         Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue
+    }
+    foreach ($tempFile in @($addStdout, $addStderr, $resumeStdout, $resumeStderr)) {
+        if ($tempFile) { Remove-Item -LiteralPath $tempFile -Force -ErrorAction SilentlyContinue }
     }
 }
