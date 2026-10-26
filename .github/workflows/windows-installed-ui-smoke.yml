@@ -6,6 +6,8 @@ on:
     branches: [codex/repair-rf00-rf01]
     paths:
       - ".github/workflows/windows-installed-ui-smoke.yml"
+      - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/di/Di.kt"
+      - "scripts/source-tests/test_hyperget_http_dispatcher_bound_source.py"
       - "desktop/app/resources/installer/nsis-script-template.nsi"
       - "scripts/Run-WindowsInstallerLifecycleE2E.ps1"
       - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/TableDownloadItem.kt"
@@ -16,6 +18,8 @@ on:
     branches: [codex/repair-rf00-rf01]
     paths:
       - ".github/workflows/windows-installed-ui-smoke.yml"
+      - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/di/Di.kt"
+      - "scripts/source-tests/test_hyperget_http_dispatcher_bound_source.py"
       - "desktop/app/resources/installer/nsis-script-template.nsi"
       - "scripts/Run-WindowsInstallerLifecycleE2E.ps1"
       - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/TableDownloadItem.kt"
@@ -56,7 +60,7 @@ jobs:
           run=false
           while IFS= read -r file; do
             case "$file" in
-              .github/workflows/windows-installed-ui-smoke.yml|desktop/app/resources/installer/nsis-script-template.nsi|scripts/Run-WindowsInstallerLifecycleE2E.ps1|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/TableDownloadItem.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/DownloadList.kt|scripts/Run-WindowsLiquidProgressVisualE2E.ps1|scripts/source-tests/test_hyperget_liquid_progress_source.py)
+              .github/workflows/windows-installed-ui-smoke.yml|desktop/app/resources/installer/nsis-script-template.nsi|scripts/Run-WindowsInstallerLifecycleE2E.ps1|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/TableDownloadItem.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/DownloadList.kt|scripts/Run-WindowsLiquidProgressVisualE2E.ps1|scripts/source-tests/test_hyperget_liquid_progress_source.py|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/di/Di.kt|scripts/source-tests/test_hyperget_http_dispatcher_bound_source.py)
                 run=true ;;
             esac
           done <<< "$changed"
