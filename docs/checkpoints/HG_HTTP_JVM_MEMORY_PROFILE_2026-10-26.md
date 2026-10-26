@@ -68,3 +68,7 @@ Run [40252512178](https://github.com/amroalhamedi2022-hue/personal-download-mana
 
 ## Scope gate aligned with the working Windows benchmark
 The profile workflow validation run [40253378123](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40253378123) failed before creating jobs. Replaced the scope block with the same known-good structure used by `windows-installed-active-benchmark.yml`: checkout `fetch-depth: 2`, diff only `HEAD^..HEAD`, and a shell `case` allowlist. The scope test now asserts those pieces. This commit changes workflow/tests/docs only, so no expensive package should run.
+
+
+## Duplicate job removed from profile workflow
+The previous scope-gate rewrite had preserved a duplicate second `installed-jvm-profile` job and an orphaned shell tail after the first job's artifact-upload step. Removed everything after the first complete artifact-upload retention line and strengthened source checks to assert exactly one installed profile job and no trailing shell fragment. This is workflow-only cleanup; no app code changed.

@@ -1093,3 +1093,6 @@ The relative-time unit workflow [40251917222](https://github.com/amroalhamedi202
 
 
 **Scope-gate validation repair:** the profile workflow's previous validation run [40253378123](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40253378123) was a push-time workflow-file failure with no jobs. Replaced the custom grep block with the same proven pattern used by the main Windows benchmark: checkout depth 2, `git diff --name-only HEAD^ HEAD`, and a shell `case` allowlist. The profile job remains conditional on the scope output; workflow/test/docs-only commits should skip packaging. Added source assertions for fetch depth and the case allowlist. No product code changed in this repair.
+
+
+**Duplicate-job cleanup:** the scope-gate repair still retained a second copy of `installed-jvm-profile` plus an orphaned shell tail after the first job's artifact upload. This made the workflow invalid, despite the first job block being complete. Removed the duplicate tail; source contract now asserts exactly one installed profile job and that the workflow ends at the artifact retention line. The current commit is workflow/tests/docs only, so the scope gate should skip the expensive installer job.
