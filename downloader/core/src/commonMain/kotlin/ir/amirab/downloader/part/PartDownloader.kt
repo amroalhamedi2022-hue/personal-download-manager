@@ -30,7 +30,6 @@ import java.net.SocketTimeoutException
 import okio.Buffer
 import okio.Source
 import okio.use
-import kotlin.concurrent.thread
 import kotlin.math.min
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
@@ -76,7 +75,8 @@ abstract class PartDownloader<
     val getDestWriter: () -> DestWriter,
     private val allowInternalRetries: Boolean = true,
 ) {
-    private var thread: Thread? = null
+    private val connectionLock = Any()
+    private var activeConnection: Connection<*>? = null
     private var scope: CoroutineScope? = null
     private var workerJob: Job? = null
     private val _statusFlow = part.statusFlow
@@ -104,7 +104,9 @@ abstract class PartDownloader<
             if (active) {
                 return
             }
-            stop = false
+            synchronized(connectionLock) {
+                stop = false
+            }
             active = true
         }
         val scope = CoroutineScope(SupervisorJob()).also {
@@ -189,17 +191,22 @@ abstract class PartDownloader<
 
     @Volatile
     var stop = false
+
+    /**
+     * Closing the active response is the cancellation signal for a blocking Okio read.
+     * Interrupting a newly-created thread is not sufficient for every Source implementation.
+     */
     fun stop() {
-        stop = true
-        thread?.interrupt()
+        val connectionToClose = synchronized(connectionLock) {
+            stop = true
+            activeConnection
+        }
+        runCatching { connectionToClose?.close() }
         scope?.coroutineContext?.job?.cancel()
     }
 
     suspend fun join() {
-        withContext(Dispatchers.IO) {
-            workerJob?.join()
-            thread?.join()
-        }
+        workerJob?.join()
     }
 
 
@@ -250,25 +257,42 @@ abstract class PartDownloader<
         val conn = awaitPartResponseWithDeadline(PART_RESPONSE_DEADLINE_MILLIS) {
             connectAndVerify()
         }
-        thread = thread {
-            if (stop || Thread.currentThread().isInterrupted) {
-                conn.close()
-                onCanceled(kotlinx.coroutines.CancellationException())
-                return@thread
+
+        // Register before entering the blocking body copy. If stop wins the race,
+        // close the just-acquired connection instead of leaking a response stream.
+        val registered = synchronized(connectionLock) {
+            if (stop) {
+                false
+            } else {
+                activeConnection = conn
+                true
             }
-//            thisLogger().info("going to copy data to destination $conn")
-            try {
+        }
+        if (!registered) {
+            runCatching { conn.close() }
+            onCanceled(kotlinx.coroutines.CancellationException("Part stopped before body copy started"))
+            return
+        }
+
+        try {
+            // Reuse the shared blocking-I/O dispatcher rather than allocating one raw
+            // JVM thread for every range part. stop() closes the Source first, so a
+            // blocking read can wake before the coroutine job is cancelled.
+            withContext(Dispatchers.IO) {
                 conn.use {
-                    // connection automatically closes the source
                     val connectionStream = it.source
                     getDestWriter().use { writer ->
                         copyDataSync(connectionStream, writer)
                     }
                 }
-            } catch (e: Exception) {
-                onCanceled(e)
-            } finally {
-                thread = null
+            }
+        } catch (e: Exception) {
+            onCanceled(e)
+        } finally {
+            synchronized(connectionLock) {
+                if (activeConnection === conn) {
+                    activeConnection = null
+                }
             }
         }
     }
@@ -302,7 +326,7 @@ abstract class PartDownloader<
         var firstLoop = true
         val bufferSize = DEFAULT_BUFFER_SIZE.toLong()
         while (true) {
-            if (stop || Thread.currentThread().isInterrupted) {
+            if (stop) {
                 onCanceled(kotlinx.coroutines.CancellationException())
                 break
             }
