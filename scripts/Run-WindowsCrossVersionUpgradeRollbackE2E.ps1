@@ -20,7 +20,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$runnerTemp = [IO.Path]::GetFullPath($env:RUNNER_TEMP).TrimEnd([char[]]@('\\','/'))
+$runnerTemp = [IO.Path]::GetFullPath($env:RUNNER_TEMP).TrimEnd([char[]]@('\','/'))
 if ([string]::IsNullOrWhiteSpace($runnerTemp)) { throw 'RUNNER_TEMP is unavailable.' }
 $root = Join-Path $runnerTemp 'hyperget-cross-version-upgrade-rollback'
 $installDir = Join-Path $root 'application'
@@ -33,13 +33,13 @@ $dataDir = Join-Path $env:USERPROFILE '.personal-download-manager'
 $markerToken = [guid]::NewGuid().ToString('D')
 $ownershipMarker = Join-Path $dataDir 'system/hyperget-upgrade-rollback-owned.txt'
 $sentinelFile = Join-Path $dataDir 'system/hyperget-upgrade-rollback-sentinel.json'
-$uninstallKey = 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\DownloadManager'
-$appKey = 'HKCU:\\Software\\DownloadManager'
-$startMenuRoot = Join-Path $env:APPDATA 'Microsoft\\Windows\\Start Menu\\Programs'
-$legacyStartMenuShortcut = Join-Path $startMenuRoot 'Download Manager\\Download Manager.lnk'
-$brandedStartMenuShortcut = Join-Path $startMenuRoot 'HyperGet\\HyperGet.lnk'
-$legacyDesktopShortcut = Join-Path $env:USERPROFILE 'Desktop\\Download Manager.lnk'
-$brandedDesktopShortcut = Join-Path $env:USERPROFILE 'Desktop\\HyperGet.lnk'
+$uninstallKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\DownloadManager'
+$appKey = 'HKCU:\Software\DownloadManager'
+$startMenuRoot = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'
+$legacyStartMenuShortcut = Join-Path $startMenuRoot 'Download Manager\Download Manager.lnk'
+$brandedStartMenuShortcut = Join-Path $startMenuRoot 'HyperGet\HyperGet.lnk'
+$legacyDesktopShortcut = Join-Path $env:USERPROFILE 'Desktop\Download Manager.lnk'
+$brandedDesktopShortcut = Join-Path $env:USERPROFILE 'Desktop\HyperGet.lnk'
 $downloadName = 'cross-version-upgrade-rollback.bin'
 $expectedDownloadSize = [long]8 * 1MB
 $downloadId = $null
@@ -62,7 +62,7 @@ Start-Transcript -Path $transcriptFile -Force | Out-Null
 $transcriptStarted = $true
 
 function Assert-UnderRunnerTemp([string] $Path, [string] $Label) {
-    $full = [IO.Path]::GetFullPath($Path).TrimEnd([char[]]@('\\','/'))
+    $full = [IO.Path]::GetFullPath($Path).TrimEnd([char[]]@('\','/'))
     $prefix = $runnerTemp + [IO.Path]::DirectorySeparatorChar
     if (-not $full.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) {
         throw ($Label + ' must be below RUNNER_TEMP; refused path: ' + $full)
@@ -418,8 +418,8 @@ try {
     }
     if ($testOwnedData -and (Test-Path -LiteralPath $ownershipMarker -PathType Leaf)) {
         $owner = (Get-Content -LiteralPath $ownershipMarker -Raw).Trim()
-        $actualDataPath = [IO.Path]::GetFullPath($dataDir).TrimEnd([char[]]@('\\','/'))
-        $expectedDataPath = [IO.Path]::GetFullPath((Join-Path $env:USERPROFILE '.personal-download-manager')).TrimEnd([char[]]@('\\','/'))
+        $actualDataPath = [IO.Path]::GetFullPath($dataDir).TrimEnd([char[]]@('\','/'))
+        $expectedDataPath = [IO.Path]::GetFullPath((Join-Path $env:USERPROFILE '.personal-download-manager')).TrimEnd([char[]]@('\','/'))
         if ($owner -eq $markerToken -and $actualDataPath.Equals($expectedDataPath, [StringComparison]::OrdinalIgnoreCase)) {
             try {
                 Remove-Item -LiteralPath $dataDir -Recurse -Force
