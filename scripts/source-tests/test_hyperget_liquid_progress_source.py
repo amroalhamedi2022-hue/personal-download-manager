@@ -51,7 +51,7 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("$addProcess = Start-Process -FilePath $cliPath -ArgumentList $addArguments", SCRIPT)
         self.assertIn("$taskId = [long]0", SCRIPT)
         self.assertIn("$addProcess.WaitForExit(180000)", SCRIPT)
-        self.assertIn("AddProcessExitCode = $addProcess.ExitCode", SCRIPT)
+        self.assertIn("AddProcessExitCode = $addProcessExitCode", SCRIPT)
         self.assertNotIn("$addOutput = @(& $cliPath download add", SCRIPT)
         self.assertIn("if ($statusAtCapture -eq 'Paused' -and -not $addResumeSent)", SCRIPT)
 
