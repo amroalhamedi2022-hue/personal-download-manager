@@ -216,8 +216,8 @@ class HyperGetCrossVersionUpgradeContracts(unittest.TestCase):
         # The Windows table's outer border was decoded as '?' before the numeric ID.
         row = "? 0 ? Finish? cross-version-upgrade? "
         normalized = row.strip(" ?")
-        self.assertRegex(normalized, r"^\\s*0(?:\\s|$)")
-        status_text = re.sub(r"^\\s*0(?:\\s|$)", "", normalized).lstrip(" ?")
+        self.assertRegex(normalized, r"^\s*0(?:\s|$)")
+        status_text = re.sub(r"^\s*0(?:\s|$)", "", normalized).lstrip(" ?")
         match = pattern.match(status_text)
         self.assertIsNotNone(match)
         self.assertEqual("Finished" if match.group("status").startswith("Finish") else match.group("status"), "Finished")
