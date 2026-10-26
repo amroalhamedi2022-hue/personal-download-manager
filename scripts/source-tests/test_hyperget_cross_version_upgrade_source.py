@@ -116,7 +116,7 @@ class HyperGetCrossVersionUpgradeContracts(unittest.TestCase):
             self.harness.index("function Wait-ForFinishedDownload")
         ]
         self.assertLess(parser.index("$insideTargetRow = $false"), parser.index("foreach ($plain in $normalizedLines)"))
-        self.assertLess(parser.index("if ($insideTargetRow -and $statusMatch.Success)"), parser.index("if ($insideTargetRow -and $plain -match $anyRowStartPattern)"))
+        self.assertLess(parser.index("if ($insideTargetRow -and $plain -match $anyRowStartPattern)"), parser.index("if ($insideTargetRow -and $statusMatch.Success)"))
 
 
     def test_synthetic_wincred_survives_upgrade_rollback_and_uninstall_without_logging_secrets(self):

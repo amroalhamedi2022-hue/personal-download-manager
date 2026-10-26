@@ -411,14 +411,16 @@ function Read-DownloadStatus([long] $Id) {
             continue
         }
 
+        # Check the row boundary before accepting a status token; a neighboring
+        # numeric ID row must never satisfy the requested download.
+        if ($insideTargetRow -and $plain -match $anyRowStartPattern) {
+            $insideTargetRow = $false
+        }
+
         if ($insideTargetRow -and $statusMatch.Success) {
             $status = $statusMatch.Groups['status'].Value
             $script:LastStatusProbe = ('id={0};wrapped-status={1}' -f $Id, $status)
             return $status
-        }
-
-        if ($insideTargetRow -and $plain -match $anyRowStartPattern) {
-            $insideTargetRow = $false
         }
     }
     return $null
