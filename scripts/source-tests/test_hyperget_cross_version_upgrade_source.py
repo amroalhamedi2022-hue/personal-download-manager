@@ -95,7 +95,29 @@ class HyperGetCrossVersionUpgradeContracts(unittest.TestCase):
         ):
             self.assertIn(expected, self.harness)
 
-        self.assertIn(r"-split '\r?\n'", self.harness)
+        self.assertIn(r"-split '\\r\\n|\\n|\\r'", self.harness)
+
+
+    def test_status_parser_handles_wrapped_cells_without_crossing_into_another_download(self):
+        for expected in (
+            "$rowStartPattern = '^\\s*' + [regex]::Escape([string]$Id) + '(?:\\s|$)'",
+            "$anyRowStartPattern = '^\\s*\\d+(?:\\s|$)'",
+            "$insideTargetRow = $false",
+            "if ($insideTargetRow -and $statusMatch.Success)",
+            "if ($insideTargetRow -and $plain -match $anyRowStartPattern)",
+            "$statusMatch = [regex]::Match($plain, $statusPattern)",
+        ):
+            self.assertIn(expected, self.harness)
+
+        # The parser must be row-scoped: it may accept a wrapped status cell, but must stop
+        # at the next numeric ID so a neighboring task can never satisfy this download.
+        parser = self.harness[
+            self.harness.index("function Read-DownloadStatus"):
+            self.harness.index("function Wait-ForFinishedDownload")
+        ]
+        self.assertLess(parser.index("$insideTargetRow = $false"), parser.index("foreach ($plain in $normalizedLines)"))
+        self.assertLess(parser.index("if ($insideTargetRow -and $statusMatch.Success)"), parser.index("if ($insideTargetRow -and $plain -match $anyRowStartPattern)"))
+
 
     def test_synthetic_wincred_survives_upgrade_rollback_and_uninstall_without_logging_secrets(self):
         for expected in (
