@@ -53,9 +53,15 @@ No result is claimed in this file yet. The source/compile pass is not a performa
 - Same-JVM snapshots: idle baseline 217.715 MiB WS / 243.234 MiB Private Bytes, 51 threads / 668 handles; after transfer 387.211 / 454.027 MiB, 114 threads / 1,008 handles; after 30 seconds idle 385.852 / 452.402 MiB, 87 threads / 904 handles. Heap used decreased from 39,692 KiB to 35,114 KiB. This indicates fewer threads than the earlier profile, but retained process memory remains material; do not claim a leak or a proven memory win from one-run comparisons.
 - **Windows lifecycle JUnit at \`319c6aa\`:** [run 40339189560](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40339189560) — Gradle BUILD SUCCESSFUL; \`PartDownloaderIoLifecycleTest\` 3/3 PASS, including permit saturation and release-after-failure. FTP 29/29 and HLS 29/29 also passed on that test head.
 
-### Stronger overflow regression — pending
+### Stronger overflow regression — PASS
 
-Review found the first saturation test asserted a peak of 48 but did not explicitly observe whether a 49th coroutine remained waiting while all permits were held. Added a deterministic contender-ready latch plus an overflow signal and bounded wait assertion in [\`b0b6e5c1\`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/b0b6e5c14ffd51ee071bda97392ab962a0fb3cb4), with a source-contract guard in [\`2859588b\`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/2859588b6056f478b46cd7c189db5164b161b3ad). Current Windows lifecycle run [40350134896](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40350134896) and current source checks are in progress at checkpoint update time. **Do not mark this strengthened regression PASS until the exact-head JUnit run completes.**
+Review found the first saturation test asserted a peak of 48 but did not explicitly observe whether a 49th coroutine remained waiting while all permits were held. Added a contender-ready latch plus overflow signal and bounded wait assertion in [\`b0b6e5c1\`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/b0b6e5c14ffd51ee071bda97392ab962a0fb3cb4), with source-contract guard in [\`2859588b\`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/2859588b6056f478b46cd7c189db5164b161b3ad).
+
+- **PASS — exact-head Windows lifecycle JUnit:** [run 40350134896](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40350134896), checkout SHA \`2859588b6056f478b46cd7c189db5164b161b3ad\`; Gradle BUILD SUCCESSFUL. \`PartDownloaderIoLifecycleTest\` 3/3, including the explicit assertion that the 49th contender stays suspended while all 48 permits are held, and release-after-copy-failure. Related suites: lifecycle context 4/4, queue batch resume 7/7, response deadline 4/4.
+- **PASS — exact-head source contract:** [run 40350134795](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40350134795).
+- The current PR head subsequently advanced for documentation only; the production \`PartDownloader.kt\` blob remains identical to the tested production SHA \`dd27731decbcd8cf1cb67feae42963be42d3bb7a\`.
+
+The strengthened lifecycle regression is accepted. Keep memory tuning OPEN: the measurements show fewer JVM threads and somewhat lower active memory in this run, but are not a controlled A/B.
 
 ### Decision
 
