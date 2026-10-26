@@ -43,6 +43,11 @@ $addStdout = Join-Path $env:RUNNER_TEMP ("hyperget-liquid-progress-add-$SourceSh
 $addStderr = Join-Path $env:RUNNER_TEMP ("hyperget-liquid-progress-add-$SourceSha.stderr.txt")
 $resumeStdout = Join-Path $env:RUNNER_TEMP ("hyperget-liquid-progress-resume-$SourceSha.stdout.txt")
 $resumeStderr = Join-Path $env:RUNNER_TEMP ("hyperget-liquid-progress-resume-$SourceSha.stderr.txt")
+foreach ($redirectPath in @($addStdout, $addStderr, $resumeStdout, $resumeStderr)) {
+    if ([string]::IsNullOrWhiteSpace($redirectPath)) {
+        throw 'RUNNER_TEMP did not produce valid CLI redirection paths.'
+    }
+}
 & python -c 'import pathlib,sys; pathlib.Path(sys.argv[1]).write_bytes(bytes(range(256))*(int(sys.argv[2])*4096))' $fixture 16
 if ($LASTEXITCODE -ne 0) { throw 'Python failed to create the 16 MiB progress fixture.' }
 $expectedBytes = [long]16 * 1MB
@@ -119,10 +124,6 @@ $server = $null
 $started = $null
 $addProcess = $null
 $resumeProcess = $null
-$addStdout = $null
-$addStderr = $null
-$resumeStdout = $null
-$resumeStderr = $null
 $visible = @()
 try {
     $server = Start-Process -FilePath 'python' -ArgumentList @(

@@ -213,3 +213,12 @@ Can the installed CLI's background add allow a parseable `Downloading` observati
 **Expected PASS evidence:** active app-window screenshot, JSON report with `StatusAtCapture=Downloading`, `BytesAdvancedBeforeScreenshot=true`, final `Finished`, matching expected/actual SHA-256, and lifecycle proof. Current Windows run [40281908053](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40281908053) has passed setup through the PowerShell parser gate and is preparing the Windows build; no result is claimed yet.
 
 **Remaining:** HG-UI-LIQUID-PROGRESS-01 stays OPEN until the exact-head artifact is inspected and all visual/hash/lifecycle gates pass. HTTP 1/4/16, browser E2E, memory, FTP, HLS and queue runs must be distinguished by their own job conclusions; a scope-skipped matrix is NOT a new PASS. No merge, release, main write, paid service or Torrent.
+
+
+## 2026-10-26 08:58 Asia/Jerusalem — root cause found: CLI output paths were reset to null
+
+Run [40281908053](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40281908053) built and installed the Windows app and launched the GUI, but failed before producing active-visual diagnostics. The PowerShell error was 'Cannot bind argument to parameter LiteralPath because it is null.'
+
+Source inspection confirmed a harness-only defect: the four CLI stdout/stderr paths were created from RUNNER_TEMP, then overwritten with null immediately before the main try. The async add could not preserve its task ID output, and the later status/task-ID probe received a null path. The artifact contains the 16 MiB fixture and port/log files, but no diagnostics JSON or active screenshot. Do not count this as visual acceptance or as a product download failure.
+
+**Fix committed with this checkpoint:** remove the late null resets; fail early if any redirect path is blank; add a source-contract regression for single assignment, no null reset, guard-before-process, and output redirection wiring. The next purposeful Windows run will test installed CLI capture, active Downloading, advancing fixture bytes, final 16 MiB SHA-256, Finished, and same-version reinstall/silent uninstall. Acceptance stays **OPEN** until its artifact is inspected.

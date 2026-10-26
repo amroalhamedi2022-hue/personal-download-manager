@@ -55,6 +55,22 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertNotIn("$addOutput = @(& $cliPath download add", SCRIPT)
         self.assertIn("if ($statusAtCapture -eq 'Paused' -and -not $addResumeSent)", SCRIPT)
 
+    def test_cli_redirect_paths_are_not_overwritten_before_async_add(self):
+        # The previous Windows run failed because paths were assigned, then
+        # reset to None before Start-Process/Get-ReportedTaskIds used them.
+        for variable in ("addStdout", "addStderr", "resumeStdout", "resumeStderr"):
+            assignment = "$" + variable + " = Join-Path $env:RUNNER_TEMP"
+            self.assertEqual(SCRIPT.count(assignment), 1)
+            self.assertNotIn("$" + variable + " = $null", SCRIPT)
+        guard = "RUNNER_TEMP did not produce valid CLI redirection paths."
+        self.assertIn(guard, SCRIPT)
+        self.assertLess(
+            SCRIPT.index(guard),
+            SCRIPT.index("$addProcess = Start-Process -FilePath $cliPath -ArgumentList $addArguments"),
+        )
+        self.assertIn("-RedirectStandardOutput $addStdout -RedirectStandardError $addStderr", SCRIPT)
+        self.assertIn("Get-ReportedTaskIds -Path $addStdout", SCRIPT)
+
     def test_visual_fixture_is_paced_and_failure_diagnostics_are_preserved(self):
         self.assertIn("/stats?reset=1&gate_tasks=1", SCRIPT)
         self.assertIn("liquid-progress-diagnostics.json", SCRIPT)
