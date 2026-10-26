@@ -82,7 +82,7 @@ class HyperGetCrossVersionUpgradeContracts(unittest.TestCase):
         self.assertNotIn("Arguments @('download','show',([string]$Id),'--status-lines')", self.harness)
         self.assertIn(r"\x1B\[[0-?]*[ -/]*[@-~]", self.harness)
         self.assertIn("[│┃|]", self.harness)
-        self.assertIn(r"$statusPattern = '^(?<status>Downloading|Finished|Finish(?:[?…�])?|Error|Paused|PreparingFile|Resuming|Retrying)(?=$|[\\s?])'", self.harness)
+        self.assertIn(r"$statusPattern = '^(?<status>Downloading|Finished|Finish(?:[?…�])?|Error|Paused|PreparingFile|Resuming|Retrying)(?=$|[\s?])'", self.harness)
         self.assertIn("$statusText = [regex]::Replace($plain, $rowStartPattern, '')", self.harness)
         self.assertIn("$statusText = $statusText.TrimStart([char[]]@(' ', '?'))", self.harness)
         self.assertIn("if ($status -like 'Finish*') { $status = 'Finished' }", self.harness)
@@ -114,8 +114,8 @@ class HyperGetCrossVersionUpgradeContracts(unittest.TestCase):
 
     def test_status_parser_handles_wrapped_cells_without_crossing_into_another_download(self):
         for expected in (
-            "$rowStartPattern = '^\\s*' + [regex]::Escape([string]$Id) + '(?:\\s|$)'",
-            "$anyRowStartPattern = '^\\s*\\d+(?:\\s|$)'",
+            "$rowStartPattern = '^\s*' + [regex]::Escape([string]$Id) + '(?:\s|$)'",
+            "$anyRowStartPattern = '^\s*\\d+(?:\s|$)'",
             "$insideTargetRow = $false",
             "if ($insideTargetRow -and $statusMatch.Success)",
             "if ($insideTargetRow -and $plain -match $anyRowStartPattern)",
@@ -192,7 +192,7 @@ class HyperGetCrossVersionUpgradeContracts(unittest.TestCase):
     def test_narrow_baseline_table_finish_truncation_is_normalized(self):
         # Reproduce the Windows transcript shape: "0 ? Finish? cross-version-upgrade...".
         pattern = re.compile(
-            r"^(?P<status>Downloading|Finished|Finish(?:[?…�])?|Error|Paused|PreparingFile|Resuming|Retrying)(?=$|[\\s?])"
+            r"^(?P<status>Downloading|Finished|Finish(?:[?…�])?|Error|Paused|PreparingFile|Resuming|Retrying)(?=$|[\s?])"
         )
         cases = {
             "Finished cross-version-upgrade.bin": "Finished",
