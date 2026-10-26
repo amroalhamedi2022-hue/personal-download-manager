@@ -1078,3 +1078,6 @@ The NMT baseline/post profile [40250121436](https://github.com/amroalhamedi2022-
 
 
 **Unit-test correction:** first targeted desktop test run [40251458528](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40251458528) compiled the new helper and ran 32 tests; 31 passed, with one incorrect expectation in the new test: at age 58 seconds the next seconds label changes in 1 second, not 2. Corrected that assertion and added a half-second boundary case (500 ms). No production compile error was reported; rerun of the targeted test is pending.
+
+
+**CI cost guard:** the NMT profile now has a lightweight latest-commit scope gate. A prior test-only commit re-triggered the diagnostic workflow because GitHub path filters consider the whole PR diff; the gate now skips expensive installer/profile work for docs and test-only commits while preserving manual dispatch and all relevant production/benchmark-script paths. Source-only CI continues to validate the gate.

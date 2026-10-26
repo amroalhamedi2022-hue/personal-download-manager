@@ -41,6 +41,12 @@ class WindowsJvmMemoryProfileContract(unittest.TestCase):
         self.assertIn("$javaPid", PROFILE)
         self.assertNotIn("& $jcmd $gui.Id", PROFILE)
 
+    def test_expensive_profile_is_scoped_to_relevant_latest_commit(self):
+        self.assertIn("change-scope:", WORKFLOW)
+        self.assertIn("git diff --name-only HEAD^ HEAD", WORKFLOW)
+        self.assertIn("needs: change-scope", WORKFLOW)
+        self.assertIn("workflow_dispatch", WORKFLOW)
+
     def test_profile_artifact_is_uploaded_even_if_jcmd_fails(self):
         self.assertIn("if: always()", WORKFLOW)
         self.assertIn("jvm-profile", WORKFLOW)
