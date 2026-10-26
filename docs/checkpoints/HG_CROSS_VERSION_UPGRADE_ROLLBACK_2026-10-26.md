@@ -192,3 +192,16 @@ A follow-up review caught an important false-positive risk in the first row-scop
 - **IN PROGRESS:** [cross-version Windows run 40392955509](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40392955509). PowerShell parsing and all cross-version source contracts passed; the baseline installer build is running. Candidate installer build and real lifecycle have not started at the last check.
 
 **Next gate:** inspect both installer hashes, then the real 8 MiB transfer/status parser and full upgrade → candidate uninstall → rollback → uninstall lifecycle. Do not count the milestone complete until the proof artifact records \`Result=PASS\` and the WinCred preservation/cleanup assertions.
+
+
+## 2026-10-27 follow-up — pre-build regression for the exact wrapped Windows row
+
+The last exact-head Windows attempt [40410263260](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40410263260) built both snapshots and proved the baseline output file was exactly 8,388,608 bytes with matching SHA-256, but the harness did not reach upgrade/rollback: native table border bytes appeared as `? 0 ? Finish?`, and the parser failed to recognize the ID row. This is a harness false-negative after a real transfer, not evidence of a transfer failure.
+
+**Current candidate at pre-build:** `d1cc6e31064facc93ced65380ae8b5ff3f7e41a7`. The edge-marker trim and a source regression for the outer-border row are present; the latest test commit corrected the Python regex escaping. The next regression now mirrors the *wrapped* two-line transcript rather than only a single-line approximation.
+
+**Pre-build question:** does the exact installed baseline parse the wrapped row as `Finished` and proceed through the complete upgrade → preserving-data uninstall → rollback → normal uninstall flow?
+
+**Expected:** exact source checks and PowerShell parse pass; both installers build; 8 MiB size/SHA passes; the same task ID/status, max-concurrency=4, sentinel, registry/shortcut branding and synthetic WinCred survive each transition; cleanup verifies only harness-owned data and the synthetic credential are removed.
+
+**Why source tests are insufficient:** Python/source assertions cannot establish the packaged Windows CLI's actual output encoding, file bytes, installer replacement behavior, or real Credential Manager persistence. Run the Windows lifecycle gate after the wrapped-output regression commit. Status remains OPEN until the exact-head artifact says `Result=PASS`.
