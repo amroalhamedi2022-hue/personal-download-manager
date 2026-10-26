@@ -22,7 +22,7 @@ $ErrorActionPreference = 'Stop'
 
 $runnerTemp = [IO.Path]::GetFullPath($env:RUNNER_TEMP).TrimEnd([char[]]@('\','/'))
 if ([string]::IsNullOrWhiteSpace($runnerTemp)) { throw 'RUNNER_TEMP is unavailable.' }
-$root = Join-Path $runnerTemp 'hyperget-cross-version-upgrade-rollback'
+$root = Join-Path $runnerTemp 'hyperget-cross-version-upgrade-rollback-e2e'
 $installDir = Join-Path $root 'application'
 $fixtureDir = Join-Path $root 'fixture'
 $downloadDir = Join-Path $root 'downloads'
