@@ -1105,3 +1105,13 @@ The relative-time unit workflow [40251917222](https://github.com/amroalhamedi202
 
 
 **Stabilization diagnostic added:** after the immediate post-transfer NMT/heap/class/thread snapshot, the installed profile workflow now waits 30 seconds and captures a third snapshot from the same JVM. This will help distinguish immediately retained UI objects from resources that settle/release after idle; the current completed artifact predates this new step, so stabilized values remain NOT TESTED until a relevant future profile run.
+
+
+## 2026-10-26 — HG-UI-LIQUID-PROGRESS-01 (installed visual acceptance pending)
+The previous exact PR head 3581ad1d98c4219bf0725dd07fae170311f222e5 had terminal-success CI for the HTTP 1/4/16 matrix (63/63 SHA-verified downloads, 9/9 process CSVs), installed FTP Pause/REST/resume, Chrome+Firefox browser capture, HLS, queue/lifecycle, and JVM profile collection. The main list still used a flat determinate gradient strip and had no installed screenshot captured during a live download.
+
+The new bounded M06 implementation adds a shared list-level Compose animation State only while a row is Downloading. Rows read that State inside Canvas drawing, avoiding one infinite transition per row and avoiding frame-by-frame row recomposition. The existing status-specific gradient and determinate progress remain; a clipped glossy band and two subtle bubbles move only during active Downloading. No dependency was added.
+
+Acceptance question before Windows build: does this exact source compile/install, capture the actual installed GUI while the CLI reports Downloading and the loopback fixture reports a live data transfer, and finish a 16 MiB file with exact SHA-256? Source tests cannot prove Compose API compatibility, installed IPC, Windows screen capture, real transfer or file integrity, so the existing installed UI workflow now runs this targeted E2E on relevant PR changes. Expected evidence: liquid-progress-active.png, JSON report, active status/task count, and matching expected/actual hashes. Result remains NOT TESTED until the workflow and artifact are inspected.
+
+Checkpoint: docs/checkpoints/HG_LIQUID_PROGRESS_VISUAL_E2E_2026-10-26.md. No main write, merge, release, paid service or Torrent.

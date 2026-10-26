@@ -1,0 +1,63 @@
+"""Source contracts for HyperGet's shared Liquid Progress and real Windows visual gate."""
+from pathlib import Path
+import unittest
+
+ROOT = Path(__file__).resolve().parents[2]
+TABLE = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/TableDownloadItem.kt").read_text(encoding="utf-8")
+LIST = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/DownloadList.kt").read_text(encoding="utf-8")
+SCRIPT = (ROOT / "scripts/Run-WindowsLiquidProgressVisualE2E.ps1").read_text(encoding="utf-8")
+UI_WORKFLOW = (ROOT / ".github/workflows/windows-installed-ui-smoke.yml").read_text(encoding="utf-8")
+SOURCE_WORKFLOW = (ROOT / ".github/workflows/hyperget-source-only.yml").read_text(encoding="utf-8")
+
+
+class LiquidProgressSourceContract(unittest.TestCase):
+    def test_one_shared_clock_is_created_only_when_a_download_is_active(self):
+        self.assertIn("hasActiveDownload = downloadList.any", LIST)
+        self.assertIn("rememberInfiniteTransition()", LIST)
+        self.assertIn("infiniteRepeatable(", LIST)
+        self.assertIn("LocalLiquidProgressPhase provides liquidProgressPhase", LIST)
+        self.assertNotIn("rememberInfiniteTransition", TABLE)
+
+    def test_progress_phase_is_read_in_draw_not_by_each_row_composition(self):
+        progress = TABLE.split("private fun ProgressStatus(", 1)[1]
+        self.assertIn("Canvas(", progress)
+        self.assertIn("liquidProgressPhase.value", progress)
+        self.assertIn("drawRoundRect(", progress)
+        self.assertIn("drawCircle(", progress)
+        self.assertIn("Brush.horizontalGradient(", progress)
+        self.assertIn("clip(CircleShape)", progress)
+        self.assertIn("isLiquidActive = status == DownloadProgressStatus.Downloading", TABLE)
+
+    def test_installed_windows_e2e_captures_only_a_proven_live_transfer(self):
+        for marker in (
+            "download add http",
+            "download resume",
+            "active_distinct_tasks",
+            "statusAtCapture",
+            "CopyFromScreen",
+            "Get-FileHash",
+            "liquid-progress-active.png",
+            "liquid-progress-report.json",
+            "FinalStatus = 'Finished'",
+            "Verified = $true",
+        ):
+            self.assertIn(marker, SCRIPT)
+        self.assertIn("StatusAtCapture = $statusAtCapture", SCRIPT)
+        self.assertIn("$actualSha -eq $expectedSha", SCRIPT)
+
+    def test_visual_workflow_runs_on_pr_ui_changes_and_uploads_evidence(self):
+        self.assertIn("pull_request:", UI_WORKFLOW)
+        self.assertIn("needs: change-scope", UI_WORKFLOW)
+        self.assertIn("needs.change-scope.outputs.run", UI_WORKFLOW)
+        self.assertIn("Run-WindowsLiquidProgressVisualE2E.ps1", UI_WORKFLOW)
+        self.assertIn("windows-liquid-progress-visual", UI_WORKFLOW)
+        self.assertIn("liquid-progress-active.png", SCRIPT)
+
+    def test_fast_source_gate_checks_the_contract_without_building(self):
+        self.assertIn("scripts/source-tests/test_hyperget_liquid_progress_source.py", SOURCE_WORKFLOW)
+        self.assertIn("test_hyperget_liquid_progress_source.py -v", SOURCE_WORKFLOW)
+        self.assertIn("NO APP BUILD", SOURCE_WORKFLOW)
+
+
+if __name__ == "__main__":
+    unittest.main()

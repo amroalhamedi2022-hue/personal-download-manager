@@ -8,6 +8,20 @@ on:
       - ".github/workflows/windows-installed-ui-smoke.yml"
       - "desktop/app/resources/installer/nsis-script-template.nsi"
       - "scripts/Run-WindowsInstallerLifecycleE2E.ps1"
+      - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/TableDownloadItem.kt"
+      - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/DownloadList.kt"
+      - "scripts/Run-WindowsLiquidProgressVisualE2E.ps1"
+      - "scripts/source-tests/test_hyperget_liquid_progress_source.py"
+  pull_request:
+    branches: [codex/repair-rf00-rf01]
+    paths:
+      - ".github/workflows/windows-installed-ui-smoke.yml"
+      - "desktop/app/resources/installer/nsis-script-template.nsi"
+      - "scripts/Run-WindowsInstallerLifecycleE2E.ps1"
+      - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/TableDownloadItem.kt"
+      - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/DownloadList.kt"
+      - "scripts/Run-WindowsLiquidProgressVisualE2E.ps1"
+      - "scripts/source-tests/test_hyperget_liquid_progress_source.py"
 
 permissions:
   contents: read
@@ -17,16 +31,48 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  change-scope:
+    name: Decide whether the latest commit needs an installed UI run
+    runs-on: ubuntu-24.04
+    outputs:
+      run: ${{ steps.scope.outputs.run }}
+    steps:
+      - name: Check out exact PR head and parent for scope detection
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 2
+      - name: Gate expensive installed GUI packaging on the latest commit
+        id: scope
+        shell: bash
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          changed="$(git diff --name-only HEAD^ HEAD)"
+          run=false
+          while IFS= read -r file; do
+            case "$file" in
+              .github/workflows/windows-installed-ui-smoke.yml|desktop/app/resources/installer/nsis-script-template.nsi|scripts/Run-WindowsInstallerLifecycleE2E.ps1|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/TableDownloadItem.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/DownloadList.kt|scripts/Run-WindowsLiquidProgressVisualE2E.ps1|scripts/source-tests/test_hyperget_liquid_progress_source.py)
+                run=true ;;
+            esac
+          done <<< "$changed"
+          echo "run=$run" >> "$GITHUB_OUTPUT"
   install-launch-and-capture:
     name: Clean silent NSIS install and GUI launch
+    needs: change-scope
+    if: needs.change-scope.outputs.run == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: windows-2022
     timeout-minutes: 90
     env:
       SKIP_ANDROID_BUILD: "true"
 
     steps:
-      - name: Check out source
+      - name: Check out exact PR head (not synthetic merge)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Set up JetBrains Runtime 25
         uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
@@ -82,7 +128,11 @@ jobs:
           if ($apps.Count -lt 1) { throw 'Installed desktop executable not found.' }
           $main = $apps | Sort-Object FullName | Select-Object -First 1
           Write-Host "Installed app: $($main.FullName)"
+          $cliApps = @(Get-ChildItem -LiteralPath $isolated -Recurse -File -Filter 'DownloadManagerCli.exe')
+          if ($cliApps.Count -ne 1) { throw "Expected one installed CLI executable, found $($cliApps.Count)." }
+          Write-Host "Installed CLI: $($cliApps[0].FullName)"
           "IDM_SMOKE_EXECUTABLE=$($main.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "IDM_SMOKE_CLI=$($cliApps[0].FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Launch installed desktop app and capture Windows GUI
         shell: pwsh
@@ -133,6 +183,14 @@ jobs:
             }
           }
 
+      - name: Verify real Liquid Progress while an installed download is active
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $output = Join-Path $PWD 'build/ci-release/liquid-progress-visual'
+          $sourceSha = (git rev-parse HEAD).Trim()
+          & ./scripts/Run-WindowsLiquidProgressVisualE2E.ps1 -GuiExecutable $env:IDM_SMOKE_EXECUTABLE -CliExecutable $env:IDM_SMOKE_CLI -SourceSha $sourceSha -OutputDirectory $output
+
       - name: Verify isolated NSIS same-version reinstall and silent uninstall
         shell: pwsh
         run: |
@@ -146,6 +204,15 @@ jobs:
           if (-not (Test-Path -LiteralPath $proof -PathType Leaf)) {
             throw 'Installer lifecycle acceptance proof was not written.'
           }
+
+      - name: Upload active Liquid Progress screenshot and verified transfer report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-liquid-progress-visual
+          path: build/ci-release/liquid-progress-visual/*
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Upload real Windows reinstall/uninstall acceptance evidence
         if: always()

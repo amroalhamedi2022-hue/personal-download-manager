@@ -2,6 +2,7 @@ package com.abdownloadmanager.desktop.pages.home.sections
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -11,6 +12,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
@@ -46,6 +50,11 @@ import kotlin.math.absoluteValue
 
 val LocalDownloadItemProperties =
     compositionLocalOf<DownloadItemProperties> { error("not provided download properties") }
+
+// One list-level animation clock is shared by every visible download row.
+// Reading this State in Canvas keeps animation frames in the draw phase rather than
+// triggering a recomposition for every row on every frame.
+val LocalLiquidProgressPhase = compositionLocalOf<State<Float>> { mutableStateOf(0f) }
 
 
 data class DownloadItemProperties(
@@ -452,7 +461,9 @@ private fun ProgressAndPercent(
         if (status != DownloadProgressStatus.Added) {
             Spacer(Modifier.height(2.5.dp))
             ProgressStatus(
-                percent, background
+                percent = percent,
+                background = background,
+                isLiquidActive = status == DownloadProgressStatus.Downloading,
             )
         }
     }
@@ -462,7 +473,9 @@ private fun ProgressAndPercent(
 private fun ProgressStatus(
     percent: Int?,
     background: Brush = myColors.primaryGradient,
+    isLiquidActive: Boolean,
 ) {
+    val liquidProgressPhase = LocalLiquidProgressPhase.current
     Box(
         Modifier
             .fillMaxWidth()
@@ -471,18 +484,58 @@ private fun ProgressStatus(
             .background(myColors.surface)
     ) {
         if (percent != null) {
-            val w = (percent / 100f).coerceIn(0f..1f)
-            Spacer(
+            val targetWidth = (percent / 100f).coerceIn(0f..1f)
+            val animatedWidth = animateFloatAsState(
+                targetValue = targetWidth,
+                animationSpec = tween(220),
+            ).value
+            Canvas(
                 Modifier
+                    .fillMaxWidth(animatedWidth)
                     .height(5.dp)
-                    .fillMaxWidth(
-                        animateFloatAsState(
-                            w,
-                            tween(100)
-                        ).value
+                    .clip(CircleShape)
+            ) {
+                drawRect(brush = background)
+                if (isLiquidActive && size.width > 1f) {
+                    // The single shared phase is observed only in the draw lambda.
+                    // A glossy band and two tiny bubbles create a liquid/glass cue
+                    // without adding one infinite animation to every table row.
+                    val phase = liquidProgressPhase.value.coerceIn(0f, 1f)
+                    val shimmerWidth = (size.width * 0.24f)
+                        .coerceAtMost(size.width)
+                        .coerceAtLeast(1f)
+                    val shimmerStart = -shimmerWidth + (size.width + shimmerWidth) * phase
+                    drawRoundRect(
+                        brush = Brush.horizontalGradient(
+                            colors = listOf(
+                                Color.Transparent,
+                                Color.White.copy(alpha = 0.30f),
+                                Color.Transparent,
+                            ),
+                            startX = shimmerStart,
+                            endX = shimmerStart + shimmerWidth,
+                        ),
+                        topLeft = Offset(shimmerStart, 0f),
+                        size = Size(shimmerWidth, size.height),
+                        cornerRadius = CornerRadius(size.height / 2f),
                     )
-                    .background(background)
-            )
+                    if (size.width > 14.dp.toPx()) {
+                        val firstX = size.width * (0.12f + phase * 0.76f)
+                        val secondPhase = (phase + 0.5f) % 1f
+                        val secondX = size.width * (0.12f + secondPhase * 0.76f)
+                        drawCircle(
+                            color = Color.White.copy(alpha = 0.28f),
+                            radius = 1.4.dp.toPx(),
+                            center = Offset(firstX, size.height * 0.34f),
+                        )
+                        drawCircle(
+                            color = Color.White.copy(alpha = 0.20f),
+                            radius = 1.dp.toPx(),
+                            center = Offset(secondX, size.height * 0.70f),
+                        )
+                    }
+                }
+            }
         }
     }
 }
