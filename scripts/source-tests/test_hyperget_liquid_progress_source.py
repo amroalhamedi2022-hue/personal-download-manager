@@ -45,6 +45,21 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("StatusAtCapture = $statusAtCapture", SCRIPT)
         self.assertIn("$actualSha -eq $expectedSha", SCRIPT)
 
+    def test_visual_fixture_is_paced_and_failure_diagnostics_are_preserved(self):
+        self.assertIn("/stats?reset=1&gate_tasks=1", SCRIPT)
+        self.assertIn("liquid-progress-diagnostics.json", SCRIPT)
+        self.assertIn("LastFixtureStats = $captureStats", SCRIPT)
+        self.assertIn("LastStatusLine = $lastStatusLine", SCRIPT)
+        self.assertLess(
+            SCRIPT.index("/stats?reset=1&gate_tasks=1"),
+            SCRIPT.index("download resume"),
+        )
+        # Avoid launching a new CLI process on every fast stats poll. First
+        # prove payload movement, then query the installed CLI status.
+        active_gate = SCRIPT.index("if ([int]$captureStats.active_distinct_tasks -ge 1")
+        status_launch = SCRIPT.index("$statusOutput = @(& $cliPath download show")
+        self.assertLess(active_gate, status_launch)
+
     def test_visual_workflow_runs_on_pr_ui_changes_and_uploads_evidence(self):
         self.assertIn("pull_request:", UI_WORKFLOW)
         self.assertIn("needs: change-scope", UI_WORKFLOW)
