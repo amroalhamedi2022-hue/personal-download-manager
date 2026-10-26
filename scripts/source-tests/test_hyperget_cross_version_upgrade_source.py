@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Source contracts for HyperGet's cross-version Windows upgrade/rollback gate."""
 from pathlib import Path
+import re
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -81,7 +82,10 @@ class HyperGetCrossVersionUpgradeContracts(unittest.TestCase):
         self.assertNotIn("Arguments @('download','show',([string]$Id),'--status-lines')", self.harness)
         self.assertIn(r"\x1B\[[0-?]*[ -/]*[@-~]", self.harness)
         self.assertIn("[│┃|]", self.harness)
-        self.assertIn("Downloading|Finished|Error|Paused|PreparingFile|Resuming|Retrying", self.harness)
+        self.assertIn(r"$statusPattern = '^(?<status>Downloading|Finished|Finish(?:[?…�])?|Error|Paused|PreparingFile|Resuming|Retrying)(?=$|[\\s?])'", self.harness)
+        self.assertIn("$statusText = [regex]::Replace($plain, $rowStartPattern, '')", self.harness)
+        self.assertIn("$statusText = $statusText.TrimStart([char[]]@(' ', '?'))", self.harness)
+        self.assertIn("if ($status -like 'Finish*') { $status = 'Finished' }", self.harness)
 
     def test_baseline_transfer_gate_reports_status_and_loopback_progress_on_failure(self):
         for expected in (
@@ -115,7 +119,8 @@ class HyperGetCrossVersionUpgradeContracts(unittest.TestCase):
             "$insideTargetRow = $false",
             "if ($insideTargetRow -and $statusMatch.Success)",
             "if ($insideTargetRow -and $plain -match $anyRowStartPattern)",
-            "$statusMatch = [regex]::Match($plain, $statusPattern)",
+            "$statusMatch = [regex]::Match($statusText, $statusPattern)",
+            "$statusMatch = [regex]::Match($wrappedText, $statusPattern)",
         ):
             self.assertIn(expected, self.harness)
 
@@ -183,6 +188,30 @@ class HyperGetCrossVersionUpgradeContracts(unittest.TestCase):
         self.assertIn("$appKey = 'HKCU:\\Software\\DownloadManager'", self.harness)
         self.assertIn("$startMenuRoot = Join-Path $env:APPDATA 'Microsoft\\Windows\\Start Menu\\Programs'", self.harness)
         self.assertNotIn("\\\\", self.harness)
+
+    def test_narrow_baseline_table_finish_truncation_is_normalized(self):
+        # Reproduce the Windows transcript shape: "0 ? Finish? cross-version-upgrade...".
+        pattern = re.compile(
+            r"^(?P<status>Downloading|Finished|Finish(?:[?…�])?|Error|Paused|PreparingFile|Resuming|Retrying)(?=$|[\\s?])"
+        )
+        cases = {
+            "Finished cross-version-upgrade.bin": "Finished",
+            "Finish? cross-version-upgrade.bin": "Finished",
+            "Finish… cross-version-upgrade.bin": "Finished",
+            "Downloading cross-version-upgrade.bin": "Downloading",
+            "Error cross-version-upgrade.bin": "Error",
+        }
+        for cell, expected in cases.items():
+            with self.subTest(cell=cell):
+                match = pattern.match(cell)
+                self.assertIsNotNone(match)
+                status = match.group("status")
+                if status.startswith("Finish"):
+                    status = "Finished"
+                self.assertEqual(status, expected)
+
+        self.assertIsNone(pattern.match("FinishAgain cross-version-upgrade.bin"))
+        self.assertIn("fixed-width table can truncate Finished to Finish", self.harness)
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

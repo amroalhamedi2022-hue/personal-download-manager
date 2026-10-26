@@ -373,7 +373,9 @@ function Read-DownloadStatus([long] $Id) {
     $script:LastStatusProbe = 'no matching row'
     $rowStartPattern = '^\s*' + [regex]::Escape([string]$Id) + '(?:\s|$)'
     $anyRowStartPattern = '^\s*\d+(?:\s|$)'
-    $statusPattern = '\b(?<status>Downloading|Finished|Error|Paused|PreparingFile|Resuming|Retrying)\b'
+    # The baseline CLI's fixed-width table can truncate Finished to Finish…; PowerShell may render the ellipsis as '?'.
+    # Match only the status cell at the start of the ID row (or a wrapped continuation), never a download name.
+    $statusPattern = '^(?<status>Downloading|Finished|Finish(?:[?…�])?|Error|Paused|PreparingFile|Resuming|Retrying)(?=$|[\s?])'
     $normalizedLines = @(
         foreach ($entry in $output) {
             # Native PowerShell capture may yield one multiline string or multiple line objects;
@@ -399,10 +401,15 @@ function Read-DownloadStatus([long] $Id) {
             continue
         }
 
-        $statusMatch = [regex]::Match($plain, $statusPattern)
         if ($plain -match $rowStartPattern) {
+            # Strip the requested numeric ID first, then parse only the first status cell.
+            # This avoids mistaking a download name containing a status word for the state.
+            $statusText = [regex]::Replace($plain, $rowStartPattern, '')
+            $statusText = $statusText.TrimStart([char[]]@(' ', '?'))
+            $statusMatch = [regex]::Match($statusText, $statusPattern)
             if ($statusMatch.Success) {
                 $status = $statusMatch.Groups['status'].Value
+                if ($status -like 'Finish*') { $status = 'Finished' }
                 $script:LastStatusProbe = ('id={0};status={1}' -f $Id, $status)
                 return $status
             }
@@ -417,10 +424,16 @@ function Read-DownloadStatus([long] $Id) {
             $insideTargetRow = $false
         }
 
-        if ($insideTargetRow -and $statusMatch.Success) {
-            $status = $statusMatch.Groups['status'].Value
-            $script:LastStatusProbe = ('id={0};wrapped-status={1}' -f $Id, $status)
-            return $status
+        if ($insideTargetRow) {
+            # Wrapped status cells may begin after table/ellipsis characters.
+            $wrappedText = $plain.TrimStart([char[]]@(' ', '?'))
+            $statusMatch = [regex]::Match($wrappedText, $statusPattern)
+            if ($statusMatch.Success) {
+                $status = $statusMatch.Groups['status'].Value
+                if ($status -like 'Finish*') { $status = 'Finished' }
+                $script:LastStatusProbe = ('id={0};wrapped-status={1}' -f $Id, $status)
+                return $status
+            }
         }
     }
     if ($script:LastStatusProbe -eq 'no matching row') {

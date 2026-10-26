@@ -1,3 +1,27 @@
+## 2026-10-27 — cross-version Windows gate: real transfer succeeded; status parser false-negative (OPEN)
+
+**Prior exact candidate SHA:** `69d6120442e7abbe092e1af95a146579f6a0a42a`.  
+**Windows run:** [40401156337](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40401156337).  
+**Proof artifact:** [12689113834](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40401156337/artifacts/12689113834), archive SHA-256 `4cbc9fb96fa5b410ef7b824b0253e220fe454c29a6cc082d6f2c86dfe50df8c8`.
+
+### Evidence from the failed gate
+- **PASS:** baseline installer built from exact base SHA `6c386abeae95e8e0460308d17c033558cbd60f15`; installer SHA-256 `363aa5751ba15574a856c361d5e4a38244996371105680ca7cd4785c9e8a2691`.
+- **PASS:** candidate installer built from exact PR SHA `69d6120442e7abbe092e1af95a146579f6a0a42a`; installer SHA-256 `ec6b0f4b5cef89694fb3748fbab5b8ddda6f9997bfd81d805d7c7fe89314661e`.
+- **PASS:** direct baseline CLI invocation added the loopback task; the fixture saw 9 requests and 8,388,864 response bytes. The final file was exactly 8,388,608 bytes and its SHA-256 matched the expected fixture.
+- **FAIL (test harness, after transfer):** status remained `UNPARSED`. The baseline CLI's fixed-width table appeared in the transcript as `0 ? Finish? ...`; the parser only recognized the full word `Finished`. The script stopped before upgrade, rollback and WinCred lifecycle assertions. Test-owned data cleanup passed.
+- This run disproves the earlier URL-validation suspicion for this attempt: the URL passed and the real transfer completed. Do not mark upgrade/rollback or WinCred preservation as PASS.
+
+### Controlled fix staged before the next Windows build
+The parser now reads only the status cell after the requested numeric ID, recognizes the truncated `Finish?`/ellipsis representation as `Finished`, and retains the existing row-boundary guard so a neighboring download cannot satisfy the poll. A source regression exercises full, truncated, wrapped and unrelated status cells.
+
+**Pre-build question:** can the baseline CLI's narrow Windows table be parsed as `Finished` after the verified 8 MiB transfer, allowing the full upgrade → candidate uninstall → rollback → normal uninstall and synthetic WinCred lifecycle to execute?  
+**Expected:** source contracts pass; on Windows the baseline status becomes `Finished`, then settings/history/shortcuts/registry and synthetic WinCred remain valid through upgrade and rollback, with final SHA and cleanup checks passing.  
+**Why source tests are insufficient:** only the packaged baseline process on Windows reproduces the actual CLI table width, native output decoding and real Windows install/uninstall/credential-store transitions.
+
+**Acceptance remains OPEN.** The new Windows run must build both exact snapshots and record `Result=PASS` before this milestone can close. No production downloader code was changed in this parser-only fix; no merge, release or final EXE delivery is authorized by this checkpoint.
+
+---
+
 ## 2026-10-26 — latest exact-head cross-version gate: HTTP setup still fails (OPEN)
 
 **Exact candidate SHA:** 78c830d4005c64c347073fb96a7dfa88666e9e70.  
