@@ -80,3 +80,7 @@ Source-only run [40254048011](https://github.com/amroalhamedi2022-hue/personal-d
 
 ## Relative-time unit workflow scope gate
 Added the same tested latest-commit scope pattern to the targeted desktop unit-test workflow: checkout depth 2, diff `HEAD^..HEAD`, case allowlist for TimeUtil, its commonTest, and TableDownloadItem; manual dispatch still forces a run. This avoids repeated Gradle compile/test jobs for docs-only follow-up commits. The source contract validates the gate.
+
+
+## Stabilized JVM snapshot added
+The memory-profile workflow now captures a third profile 30 seconds after the immediate post-transfer snapshot, using the same running JVM and NMT configuration. This is intended to show whether Skia cleanables, heap use, NMT committed memory and Private Bytes settle after idle. The existing completed artifact predates this step; stabilized results remain NOT TESTED until the next relevant profile run.

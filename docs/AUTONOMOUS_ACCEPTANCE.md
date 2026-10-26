@@ -1102,3 +1102,6 @@ The relative-time unit workflow [40251917222](https://github.com/amroalhamedi202
 
 
 **CI cost guard:** the new relative-time Gradle test workflow now uses a latest-commit scope gate. This prevents the common PR-path-filter behavior from recompiling the shared desktop tests for every subsequent docs/test-only commit. The production TimeUtil/UI and Kotlin unit-test paths still trigger the targeted test; manual dispatch still runs it.
+
+
+**Stabilization diagnostic added:** after the immediate post-transfer NMT/heap/class/thread snapshot, the installed profile workflow now waits 30 seconds and captures a third snapshot from the same JVM. This will help distinguish immediately retained UI objects from resources that settle/release after idle; the current completed artifact predates this new step, so stabilized values remain NOT TESTED until a relevant future profile run.
