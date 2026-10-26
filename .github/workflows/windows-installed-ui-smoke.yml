@@ -177,19 +177,19 @@ jobs:
             }
             Write-Host "Detected $($visible.Count) GUI process(es)."
             Add-Type -TypeDefinition @'
-using System;
-using System.Runtime.InteropServices;
-public static class HyperGetUiSmokeNative {
-    [StructLayout(LayoutKind.Sequential)]
-    public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
-    [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr handle, int command);
-    [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr handle);
-    [DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr handle);
-    [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
-    [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr handle, out RECT rect);
-    [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr handle, IntPtr insertAfter, int x, int y, int cx, int cy, uint flags);
-}
-'@
+          using System;
+          using System.Runtime.InteropServices;
+          public static class HyperGetUiSmokeNative {
+              [StructLayout(LayoutKind.Sequential)]
+              public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
+              [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr handle, int command);
+              [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr handle);
+              [DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr handle);
+              [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+              [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr handle, out RECT rect);
+              [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr handle, IntPtr insertAfter, int x, int y, int cx, int cy, uint flags);
+          }
+          '@
             Add-Type -AssemblyName System.Drawing
             $window = $visible | Select-Object -First 1
             $windowHandle = $window.MainWindowHandle

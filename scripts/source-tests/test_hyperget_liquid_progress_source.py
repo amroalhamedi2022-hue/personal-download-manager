@@ -130,6 +130,8 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("SetWindowPos", UI_WORKFLOW)
         self.assertIn("CopyFromScreen(", UI_WORKFLOW)
         self.assertNotIn("PrimaryScreen.Bounds", UI_WORKFLOW)
+        embedded = UI_WORKFLOW.split("Add-Type -TypeDefinition @'\\n", 1)[1].split("\\n          '@", 1)[0]
+        self.assertTrue(all(line.startswith("          ") for line in embedded.splitlines()))
         scope = UI_WORKFLOW.split('case "$file" in', 1)[1].split("esac", 1)[0]
         self.assertIn("scripts/source-tests/test_hyperget_liquid_progress_source.py", scope)
         self.assertIn("liquid-progress-active.png", SCRIPT)
