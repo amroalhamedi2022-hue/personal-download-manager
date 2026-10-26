@@ -96,6 +96,12 @@ class HyperGetCrossVersionUpgradeContracts(unittest.TestCase):
             self.assertIn(expected, self.harness)
 
         self.assertIn(r"-split '\r\n|\n|\r'", self.harness)
+        self.assertIn("no matching row; lineCount=", self.harness)
+        self.assertIn("$normalizedLines | Select-Object -First 8", self.harness)
+        self.assertIn("[redacted]", self.harness)
+        self.assertIn("'[URL]'", self.harness)
+        self.assertIn("'[PATH]'", self.harness)
+        self.assertIn("$safeLine.Length -gt 120", self.harness)
 
 
     def test_status_parser_handles_wrapped_cells_without_crossing_into_another_download(self):
