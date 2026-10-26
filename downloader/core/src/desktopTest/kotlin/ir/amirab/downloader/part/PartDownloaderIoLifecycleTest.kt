@@ -10,6 +10,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.MutableStateFlow
 import okio.Buffer
 import okio.FileSystem
@@ -88,17 +89,24 @@ class PartDownloaderIoLifecycleTest {
     @Test
     fun sharedBodyCopyPermitNeverExceedsConfiguredParallelism() = runBlocking {
         assertEquals(48, PART_BODY_COPY_PARALLELISM)
+        val taskCount = PART_BODY_COPY_PARALLELISM * 2
         val active = AtomicInteger(0)
         val peak = AtomicInteger(0)
+        val ready = CountDownLatch(taskCount)
         val entered = CountDownLatch(PART_BODY_COPY_PARALLELISM)
+        val overflowEntered = CompletableDeferred<Unit>()
         val release = CompletableDeferred<Unit>()
 
         coroutineScope {
-            val jobs = List(PART_BODY_COPY_PARALLELISM * 2) {
+            val jobs = List(taskCount) {
                 launch(Dispatchers.Default) {
+                    ready.countDown()
                     withPartBodyCopyPermit {
                         val now = active.incrementAndGet()
                         peak.updateAndGet { previous -> maxOf(previous, now) }
+                        if (now > PART_BODY_COPY_PARALLELISM) {
+                            overflowEntered.complete(Unit)
+                        }
                         entered.countDown()
                         try {
                             release.await()
@@ -110,6 +118,10 @@ class PartDownloaderIoLifecycleTest {
             }
             try {
                 assertTrue(
+                    ready.await(5, TimeUnit.SECONDS),
+                    "all body-copy contenders should reach the permit gate",
+                )
+                assertTrue(
                     entered.await(5, TimeUnit.SECONDS),
                     "the shared permit pool should admit its full configured capacity",
                 )
@@ -117,6 +129,14 @@ class PartDownloaderIoLifecycleTest {
                     PART_BODY_COPY_PARALLELISM,
                     active.get(),
                     "no more than the configured number of body copies may hold permits",
+                )
+                val overflowWasAdmitted = withTimeoutOrNull(250L) {
+                    overflowEntered.await()
+                    true
+                } ?: false
+                assertFalse(
+                    overflowWasAdmitted,
+                    "the 49th body copy must remain suspended while all 48 permits are held",
                 )
             } finally {
                 release.complete(Unit)
