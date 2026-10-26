@@ -353,10 +353,13 @@ function Read-MaxConcurrent {
     return $numbers[-1]
 }
 function Read-DownloadStatus([long] $Id) {
-    $output = Invoke-AppCli -Arguments @('download','show','--status-lines',([string]$Id)) -Purpose ('read download ' + $Id)
-    $pattern = '^\s*' + [regex]::Escape([string]$Id) + '\t(?<status>[A-Za-z]+)\s*$'
+    # The exact baseline predates --status-lines; parse its standard table output.
+    $output = Invoke-AppCli -Arguments @('download','show',([string]$Id)) -Purpose ('read download ' + $Id)
+    $pattern = '^\s*' + [regex]::Escape([string]$Id) + '\s+(?<status>Downloading|Finished|Error|Paused|PreparingFile|Resuming|Retrying)\b'
     foreach ($line in $output) {
-        if ([string]$line -match $pattern) { return $Matches.status }
+        $plain = [regex]::Replace([string]$line, '\x1B\[[0-?]*[ -/]*[@-~]', '')
+        $plain = $plain -replace '[│┃|]', ' '
+        if ($plain -match $pattern) { return $Matches.status }
     }
     return $null
 }
