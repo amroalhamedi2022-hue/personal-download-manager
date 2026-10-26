@@ -4,6 +4,11 @@ import ir.amirab.downloader.connection.Connection
 import ir.amirab.downloader.connection.IResponseInfo
 import ir.amirab.downloader.destination.DestWriter
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.joinAll
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.flow.MutableStateFlow
 import okio.Buffer
@@ -16,8 +21,10 @@ import java.io.IOException
 import java.nio.file.Files
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.Test
 import kotlin.test.assertFalse
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class PartDownloaderIoLifecycleTest {
@@ -76,6 +83,63 @@ class PartDownloaderIoLifecycleTest {
     ) : PartDownloader<TestPart>(part, { writer }) {
         override fun howMuchCanRead(maxAllowed: Long): Long = maxAllowed
         override suspend fun connectAndVerify(): Connection<TestResponseInfo> = connection
+    }
+
+    @Test
+    fun sharedBodyCopyPermitNeverExceedsConfiguredParallelism() = runBlocking {
+        assertEquals(48, PART_BODY_COPY_PARALLELISM)
+        val active = AtomicInteger(0)
+        val peak = AtomicInteger(0)
+        val entered = CountDownLatch(PART_BODY_COPY_PARALLELISM)
+        val release = CompletableDeferred<Unit>()
+
+        coroutineScope {
+            val jobs = List(PART_BODY_COPY_PARALLELISM * 2) {
+                launch(Dispatchers.Default) {
+                    withPartBodyCopyPermit {
+                        val now = active.incrementAndGet()
+                        peak.updateAndGet { previous -> maxOf(previous, now) }
+                        entered.countDown()
+                        try {
+                            release.await()
+                        } finally {
+                            active.decrementAndGet()
+                        }
+                    }
+                }
+            }
+            try {
+                assertTrue(
+                    entered.await(5, TimeUnit.SECONDS),
+                    "the shared permit pool should admit its full configured capacity",
+                )
+                assertEquals(
+                    PART_BODY_COPY_PARALLELISM,
+                    active.get(),
+                    "no more than the configured number of body copies may hold permits",
+                )
+            } finally {
+                release.complete(Unit)
+            }
+            jobs.joinAll()
+        }
+
+        assertEquals(0, active.get())
+        assertEquals(PART_BODY_COPY_PARALLELISM, peak.get())
+    }
+
+    @Test
+    fun bodyCopyPermitIsReleasedAfterCopyFailure() = runBlocking {
+        val failed = runCatching {
+            withPartBodyCopyPermit<Unit> {
+                throw IOException("synthetic body-copy failure")
+            }
+        }
+        assertTrue(failed.isFailure, "the synthetic copy failure should propagate")
+        assertTrue(
+            withTimeout(1_000L) { withPartBodyCopyPermit { true } },
+            "a failed copy must not leak its shared permit",
+        )
     }
 
     @Test
