@@ -223,5 +223,49 @@ class HyperGetCrossVersionUpgradeContracts(unittest.TestCase):
         self.assertEqual("Finished" if match.group("status").startswith("Finish") else match.group("status"), "Finished")
         self.assertIn("fixed-width table can truncate Finished to Finish", self.harness)
 
+    def test_observed_wrapped_windows_border_row_and_neighbor_boundary(self):
+        # Exact safe shape captured in the failed Windows transcript:
+        # the outer border became '?' and the narrow table clipped Finished to Finish?.
+        status_pattern = re.compile(
+            r"^(?P<status>Downloading|Finished|Finish(?:[?…�])?|Error|Paused|PreparingFile|Resuming|Retrying)(?=$|[\\s?])"
+        )
+
+        def parse_status(raw_lines, target_id):
+            normalized = [line.strip(" ?") for line in raw_lines if line.strip()]
+            row_start = re.compile(r"^\\s*" + re.escape(str(target_id)) + r"(?:\\s|$)")
+            any_row_start = re.compile(r"^\\s*\\d+(?:\\s|$)")
+            inside_target = False
+            for line in normalized:
+                if row_start.match(line):
+                    status_text = row_start.sub("", line, count=1).lstrip(" ?")
+                    match = status_pattern.match(status_text)
+                    if match:
+                        status = match.group("status")
+                        return "Finished" if status.startswith("Finish") else status
+                    inside_target = True
+                    continue
+                if inside_target and any_row_start.match(line):
+                    inside_target = False
+                if inside_target:
+                    match = status_pattern.match(line.lstrip(" ?"))
+                    if match:
+                        status = match.group("status")
+                        return "Finished" if status.startswith("Finish") else status
+            return None
+
+        self.assertIn("$plain.Trim([char[]]@(' ', '?'))", self.harness)
+        self.assertEqual(parse_status(["? 0 ? Finish?", "cross-version-upgrade? [PATH]"], 0), "Finished")
+        # A neighboring task's Finished cell must not satisfy the requested ID.
+        self.assertIsNone(parse_status(["? 0 ?", "????????", "? 1 ? Finished other.bin?"], 0))
+
+        parser = self.harness[
+            self.harness.index("function Read-DownloadStatus"):
+            self.harness.index("function Wait-ForFinishedDownload")
+        ]
+        self.assertLess(
+            parser.index("if ($insideTargetRow -and $plain -match $anyRowStartPattern)"),
+            parser.index("if ($insideTargetRow) {"),
+        )
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
