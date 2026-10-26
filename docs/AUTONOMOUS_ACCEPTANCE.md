@@ -1178,3 +1178,5 @@ Before the next purposeful Windows build, the harness now rate-limits installed 
 No production renderer change is claimed in this harness-only repair. No main write, merge, release, paid API or Torrent.
 
 **Follow-up CI scope guard:** source-only contract changes remain in the workflow path trigger, but no longer independently trigger an expensive installer/UI build. The workflow-file change in this commit intentionally causes one exact-SHA Windows recheck; future test-only edits continue through fast source CI without rebuilding the app.
+
+**Fast source-gate correction:** the first source-only run on the normalization patch caught a stale contract assertion that still expected a hard-coded `FinalStatus = 'Finished'` after the report was correctly changed to use the parser-derived `$finalStatus`. No PowerShell/Compose compile failure was involved. Updated the contract to require the parsed value and the explicit Finished gate; this is a test-only correction and is excluded from the expensive installer scope.

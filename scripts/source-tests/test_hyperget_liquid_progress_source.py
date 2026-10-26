@@ -38,7 +38,8 @@ class LiquidProgressSourceContract(unittest.TestCase):
             "Get-FileHash",
             "liquid-progress-active.png",
             "liquid-progress-report.json",
-            "FinalStatus = 'Finished'",
+            "FinalStatus = $finalStatus",
+            "$finalStatus -cne 'Finished'",
             "Verified = $true",
         ):
             self.assertIn(marker, SCRIPT)
