@@ -50,6 +50,10 @@ class PartDownloaderIoLifecycleContract(unittest.TestCase):
         self.assertIn("finally", helper)
         self.assertIn("partBodyCopyPermits.release()", helper)
         self.assertIn("sharedBodyCopyPermitNeverExceedsConfiguredParallelism", self.test)
+        self.assertIn("val taskCount = PART_BODY_COPY_PARALLELISM * 2", self.test)
+        self.assertIn("val overflowEntered = CompletableDeferred<Unit>()", self.test)
+        self.assertIn("withTimeoutOrNull(250L)", self.test)
+        self.assertIn("the 49th body copy must remain suspended", self.test)
         self.assertIn("bodyCopyPermitIsReleasedAfterCopyFailure", self.test)
 
     def test_body_copy_permit_wraps_io_dispatch_and_connection_lifetime(self):
