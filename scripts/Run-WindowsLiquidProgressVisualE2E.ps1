@@ -53,8 +53,12 @@ function Get-NormalizedCliLines {
         $line = [string]$entry
         # Normalize terminal decoration and invisible prefixes before parsing.
         $line = [regex]::Replace($line, "\x1B\[[0-?]*[ -/]*[@-~]", "")
+        $line = [regex]::Replace($line, "\x1B\][^\x07]*(?:\x07|\x1B\\\\)", "")
         $invisible = [char[]]@([char]0xFEFF, [char]0x200B, [char]0x200C, [char]0x200D, [char]0x200E, [char]0x200F, [char]0x2060)
-        $line = $line.Trim().Trim($invisible).Trim()
+        foreach ($character in $invisible) {
+            $line = $line.Replace([string]$character, '')
+        }
+        $line = $line.Trim()
         if ($line.Length -gt 0) { $line }
     }
 }
@@ -88,7 +92,8 @@ function Get-SanitizedStatusPreview {
             # Safe in the isolated runner: plain ASCII words only, no paths, URLs or filenames.
             $preview += "Plain-text CLI message: $line"
         } else {
-            $preview += "Unclassified CLI output (characters=$($line.Length))."
+            $codes = @($line.ToCharArray() | Select-Object -First 32 | ForEach-Object { 'U+{0:X4}' -f [int][char]$_ }) -join ' '
+            $preview += "Unclassified CLI output (characters=$($line.Length); codepoints=$codes)."
         }
         if ($preview.Count -ge 3) { break }
     }
@@ -136,15 +141,32 @@ try {
 using System;
 using System.Runtime.InteropServices;
 public static class HyperGetLiquidProgressNative {
+    [StructLayout(LayoutKind.Sequential)]
+    public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
     [DllImport("user32.dll")]
     public static extern bool ShowWindow(IntPtr handle, int command);
     [DllImport("user32.dll")]
     public static extern bool SetForegroundWindow(IntPtr handle);
+    [DllImport("user32.dll")]
+    public static extern bool BringWindowToTop(IntPtr handle);
+    [DllImport("user32.dll")]
+    public static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")]
+    public static extern bool GetWindowRect(IntPtr handle, out RECT rect);
+    [DllImport("user32.dll")]
+    public static extern bool SetWindowPos(IntPtr handle, IntPtr insertAfter, int x, int y, int cx, int cy, uint flags);
 }
 '@
     $window = $visible | Select-Object -First 1
-    [HyperGetLiquidProgressNative]::ShowWindow($window.MainWindowHandle, 3) | Out-Null
-    [HyperGetLiquidProgressNative]::SetForegroundWindow($window.MainWindowHandle) | Out-Null
+    $windowHandle = $window.MainWindowHandle
+    [HyperGetLiquidProgressNative]::ShowWindow($windowHandle, 3) | Out-Null
+    [HyperGetLiquidProgressNative]::SetWindowPos($windowHandle, [IntPtr](-1), 0, 0, 0, 0, [uint32](0x0001 -bor 0x0002 -bor 0x0040)) | Out-Null
+    [HyperGetLiquidProgressNative]::BringWindowToTop($windowHandle) | Out-Null
+    [HyperGetLiquidProgressNative]::SetForegroundWindow($windowHandle) | Out-Null
+    Start-Sleep -Milliseconds 250
+    if ([HyperGetLiquidProgressNative]::GetForegroundWindow() -ne $windowHandle) {
+        throw 'Foreground window is not the installed HyperGet window; refusing an obscured screenshot.'
+    }
 
     $fileName = 'hyperget-liquid-progress.bin'
     $outputPath = Join-Path $downloadFolder $fileName
@@ -252,14 +274,34 @@ public static class HyperGetLiquidProgressNative {
         throw 'Live transfer ended or stopped advancing before screenshot; sanitized diagnostics were saved.'
     }
     $captureStats = $preScreenshotStats
+    # Re-assert foreground immediately before capture; crop to the actual app window.
+    [HyperGetLiquidProgressNative]::ShowWindow($windowHandle, 3) | Out-Null
+    [HyperGetLiquidProgressNative]::SetWindowPos($windowHandle, [IntPtr](-1), 0, 0, 0, 0, [uint32](0x0001 -bor 0x0002 -bor 0x0040)) | Out-Null
+    [HyperGetLiquidProgressNative]::BringWindowToTop($windowHandle) | Out-Null
+    [HyperGetLiquidProgressNative]::SetForegroundWindow($windowHandle) | Out-Null
+    Start-Sleep -Milliseconds 150
+    if ([HyperGetLiquidProgressNative]::GetForegroundWindow() -ne $windowHandle) {
+        throw 'Foreground window changed before active Liquid Progress capture.'
+    }
+    $windowRect = [HyperGetLiquidProgressNative+RECT]::new()
+    if (-not [HyperGetLiquidProgressNative]::GetWindowRect($windowHandle, [ref]$windowRect)) {
+        throw 'Could not obtain installed HyperGet window bounds.'
+    }
+    $windowWidth = $windowRect.Right - $windowRect.Left
+    $windowHeight = $windowRect.Bottom - $windowRect.Top
+    if ($windowWidth -lt 200 -or $windowHeight -lt 150) {
+        throw 'Installed HyperGet window bounds are too small for visual acceptance.'
+    }
     Add-Type -AssemblyName System.Drawing
-    Add-Type -AssemblyName System.Windows.Forms
-    $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
-    $bitmap = [System.Drawing.Bitmap]::new($bounds.Width, $bounds.Height)
+    $bitmap = [System.Drawing.Bitmap]::new($windowWidth, $windowHeight)
     $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
     $screenshot = Join-Path $root 'liquid-progress-active.png'
     try {
-        $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
+        $graphics.CopyFromScreen(
+            [System.Drawing.Point]::new($windowRect.Left, $windowRect.Top),
+            [System.Drawing.Point]::Empty,
+            [System.Drawing.Size]::new($windowWidth, $windowHeight)
+        )
         $bitmap.Save($screenshot, [System.Drawing.Imaging.ImageFormat]::Png)
     } finally {
         $graphics.Dispose()

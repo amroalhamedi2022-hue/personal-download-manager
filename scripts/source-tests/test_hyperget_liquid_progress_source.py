@@ -77,8 +77,10 @@ class LiquidProgressSourceContract(unittest.TestCase):
         # Normalize ANSI/BOM/zero-width prefixes before parsing ID<TAB>Status.
         # Never persist raw table rows, names, paths, or arbitrary CLI output.
         self.assertIn("function Get-NormalizedCliLines", SCRIPT)
-        self.assertIn("$line = $line.Trim().Trim($invisible).Trim()", SCRIPT)
+        self.assertIn("$line = $line.Replace([string]$character, '')", SCRIPT)
+        self.assertIn("$line = $line.Trim()", SCRIPT)
         self.assertIn("[char]0x2060", SCRIPT)
+        self.assertIn("codepoints=$codes", SCRIPT)
         self.assertIn("function Get-DownloadStatusFromOutput", SCRIPT)
         self.assertIn("$columns = $line.Split([char[]]@([char]9))", SCRIPT)
         self.assertIn("$columns[0].Trim() -cne [string]$ExpectedId", SCRIPT)
@@ -89,6 +91,11 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("Get-DownloadStatusFromOutput -Lines $finalStatusOutput -ExpectedId $taskId", SCRIPT)
         self.assertIn("Task lookup message: $line", SCRIPT)
         self.assertIn("Plain-text CLI message: $line", SCRIPT)
+        self.assertIn("Foreground window changed before active Liquid Progress capture.", SCRIPT)
+        self.assertIn("GetForegroundWindow", SCRIPT)
+        self.assertIn("GetWindowRect", SCRIPT)
+        self.assertIn("SetWindowPos", SCRIPT)
+        self.assertNotIn("PrimaryScreen.Bounds", SCRIPT)
         self.assertNotIn("StartsWith($statusPrefix", SCRIPT)
         self.assertNotIn("Substring($statusPrefix.Length)", SCRIPT)
 
@@ -118,9 +125,19 @@ class LiquidProgressSourceContract(unittest.TestCase):
             UI_WORKFLOW.index("Build Windows installer from same source SHA"),
         )
         self.assertIn("windows-liquid-progress-visual", UI_WORKFLOW)
+        self.assertIn("GetForegroundWindow", UI_WORKFLOW)
+        self.assertIn("GetWindowRect", UI_WORKFLOW)
+        self.assertIn("SetWindowPos", UI_WORKFLOW)
+        self.assertIn("CopyFromScreen(", UI_WORKFLOW)
+        self.assertNotIn("PrimaryScreen.Bounds", UI_WORKFLOW)
         scope = UI_WORKFLOW.split('case "$file" in', 1)[1].split("esac", 1)[0]
         self.assertIn("scripts/source-tests/test_hyperget_liquid_progress_source.py", scope)
         self.assertIn("liquid-progress-active.png", SCRIPT)
+
+    def test_unknown_cli_output_diagnostics_are_bounded_and_nonverbatim(self):
+        self.assertIn("Select-Object -First 32", SCRIPT)
+        self.assertIn("codepoints=$codes", SCRIPT)
+        self.assertNotIn("Unclassified CLI output (characters=$($line.Length)).", SCRIPT)
 
     def test_fast_source_gate_checks_the_contract_without_building(self):
         self.assertIn("scripts/source-tests/test_hyperget_liquid_progress_source.py", SOURCE_WORKFLOW)
