@@ -125,9 +125,8 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertEqual(SCRIPT.count("$server = $null"), 1)
         self.assertEqual(SCRIPT.count("Start-Process -FilePath 'python'"), 1)
         self.assertEqual(SCRIPT.count("download show --status-lines $taskId"), 3)
-        self.assertNotIn("\n) {\n            # Safe in the isolated runner:", SCRIPT)
-        self.assertIn("elseif ($line -match '^[A-Za-z][A-Za-z ]{0,39}    unittest.main()
-)", SCRIPT)
+        self.assertNotIn(chr(10) + ") {" + chr(10) + "            # Safe in the isolated runner:", SCRIPT)
+        self.assertIn("Plain-text CLI message: $line", SCRIPT)
         self.assertTrue(SCRIPT.rstrip().endswith("}"))
 
 
