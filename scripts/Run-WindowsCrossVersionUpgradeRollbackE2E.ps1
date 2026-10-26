@@ -617,8 +617,30 @@ try {
     if (-not (Test-Path -LiteralPath $portFile)) { throw 'Local HTTP fixture server did not open a port.' }
     $port = [int](Get-Content -LiteralPath $portFile -Raw)
     $url = "http://127.0.0.1:$port/fixture.bin"
+    # Validate and log only the synthetic loopback endpoint shape before passing it to the app.
+    # Do not log arbitrary download URLs, query strings, headers, or credentials.
+    try {
+        $parsedLoopbackUrl = [System.Uri]::new($url, [System.UriKind]::Absolute)
+    } catch {
+        throw 'Loopback HTTP URL preflight failed: URI was not absolute.'
+    }
+    if ($parsedLoopbackUrl.Scheme -ne 'http' -or
+        $parsedLoopbackUrl.Host -ne '127.0.0.1' -or
+        $parsedLoopbackUrl.Port -lt 1 -or
+        $parsedLoopbackUrl.AbsolutePath -ne '/fixture.bin' -or
+        -not [string]::IsNullOrEmpty($parsedLoopbackUrl.Query)) {
+        throw 'Loopback HTTP URL preflight failed: unexpected scheme, host, port, path, or query.'
+    }
+    Write-Host ("Loopback URL preflight PASS: host=127.0.0.1 port={0} path=/fixture.bin; no query; length={1}" -f $parsedLoopbackUrl.Port, $url.Length)
     $script:FixtureStatsUrl = "http://127.0.0.1:$port/stats"
-    $addOutput = Invoke-AppCli -Arguments @('download','add','http','--link',$url,'--folder',$downloadDir,'--name',$downloadName,'--start') -Purpose 'create baseline HTTP download'
+    # Match the direct native CLI invocation used by the already-passing installed HTTP E2E.
+    # This removes the wrapper/splatting difference from this cross-version test.
+    $addOutputRaw = & $script:CurrentCliPath download add http --link $url --folder $downloadDir --name $downloadName --start 2>&1
+    $addExitCode = $LASTEXITCODE
+    $addOutput = @($addOutputRaw | ForEach-Object { "$_" })
+    if ($addExitCode -ne 0) {
+        throw ('CLI create baseline HTTP download failed with exit ' + $addExitCode + ': ' + ($addOutput -join ' | '))
+    }
     $idLines = @(
         foreach ($line in $addOutput) {
             $value = ([string]$line).Trim()

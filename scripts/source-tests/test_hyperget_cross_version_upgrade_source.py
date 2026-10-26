@@ -57,7 +57,7 @@ class HyperGetCrossVersionUpgradeContracts(unittest.TestCase):
             "if ($testCreatedRoot -and (Test-Path -LiteralPath $root))",
             "Refusing to modify pre-existing product registry key",
             "settings','max-concurrent-downloads','--set','4",
-            "download','add','http",
+            "$script:CurrentCliPath download add http --link $url --folder $downloadDir --name $downloadName --start",
             "download','show',",
             "Finished",
             "UpgradeDataAndHistory=PASS",
@@ -70,6 +70,10 @@ class HyperGetCrossVersionUpgradeContracts(unittest.TestCase):
             "CandidateInstallerSHA256=",
         ):
             self.assertIn(expected, self.harness)
+
+        self.assertIn("Loopback URL preflight PASS: host=127.0.0.1 port=", self.harness)
+        self.assertIn("[System.Uri]::new($url, [System.UriKind]::Absolute)", self.harness)
+        self.assertIn("$addExitCode = $LASTEXITCODE", self.harness)
 
         # The exact base snapshot predates --status-lines; poll through its default table.
         self.assertIn("Invoke-AppCli -Arguments @('download','show',([string]$Id))", self.harness)

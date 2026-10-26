@@ -1,3 +1,26 @@
+## 2026-10-26 — latest exact-head cross-version gate: HTTP setup still fails (OPEN)
+
+**Exact candidate SHA:** 78c830d4005c64c347073fb96a7dfa88666e9e70.  
+**Run:** [40397222265](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40397222265).  
+**Proof artifact:** [12687572255](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40397222265/artifacts/12687572255), archive SHA-256 `94703509c35388c42cc130b3955b7e69d559f17233a57fd1b793e3be3f4f16ce`.
+
+### What passed / failed
+- **PASS:** all other exact-head gates completed successfully: source safety [40397222487](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40397222487), installed HTTP 1/4/16 [40397222283](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40397222283), FTP Kotlin/WinCred [40397222194](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40397222194), relative-time tests [40397222409](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40397222409), JVM profile [40397222210](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40397222210), installed FTP E2E [40397222391](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40397222391), Chrome/Firefox capture [40397222328](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40397222328), GUI smoke [40397222303](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40397222303), queue/I/O lifecycle [40397222290](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40397222290), and HLS [40397222279](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40397222279).
+- **PASS:** both cross-version installers built from the exact source snapshots. Baseline installer SHA-256: `b9d2d40068bc0b7dc7e8d268a5d1dec87795dc0965a571c4842064feb7d3782f`; candidate installer SHA-256: `92416aab86f9d3a961d49749261410407cf9776a6d7c68369ede57cc68202388`.
+- **FAIL:** the baseline CLI's add-download request was rejected by the GUI-side `HttpDownloadCredentials.validate` with `url is not valid` before the HTTP fixture sent any bytes. The run never reached the upgrade/rollback or WinCred lifecycle assertions. Test-owned data cleanup passed.
+- **Important correction:** the current script already uses `http://127.0.0.1:<port>/fixture.bin` with no query. The earlier hypothesis that the `?task=upgrade-rollback` query alone caused this failure is **not supported** by the latest run and must not be repeated as the root cause.
+
+### Next controlled experiment
+Before the next Windows build, add a safe loopback-URI preflight (log scheme/host/port/path and length only, never arbitrary URLs/secrets) and invoke the baseline CLI directly with the same native argument form used by the previously passing installed HTTP E2E, instead of the wrapper/splatting helper. Add source regression assertions for that contract.
+
+**Pre-build question:** does the direct invocation pass the exact loopback URL through the installed CLI/GUI IPC and complete the 8 MiB download with the expected SHA-256?  
+**Expected:** preflight shows host 127.0.0.1, a nonzero port, path /fixture.bin, no query; CLI adds the task; 8,388,608 bytes and matching SHA-256 are proven, then the full upgrade → candidate uninstall → rollback → normal uninstall and synthetic WinCred checks continue.  
+**Why source tests are insufficient:** only the packaged baseline process on Windows can reveal the actual argument/IPC behavior; URL shape assertions cannot prove bytes or Windows state transitions.
+
+**Acceptance remains OPEN.** No production downloader code changed in this diagnostic experiment. Do not mark transfer, upgrade, rollback, or WinCred lifecycle PASS until the new exact-head artifact records `Result=PASS`.
+
+---
+
 ## 2026-10-25 — two installed Windows functional milestones PASS (no final release)
 
 ### HTTP/HTTPS engine queue — localhost HTTP 1/4/16 acceptance
