@@ -65,6 +65,14 @@ try {
     $port = [int](Get-Content -LiteralPath $portPath -Raw)
     if ($port -lt 1 -or $port -gt 65535) { throw 'Loopback HTTP fixture returned an invalid port.' }
 
+    # Reset counters and enable the fixture's shared per-task pacing mode.
+    # Without gate_tasks=1, task-chunk-delay-ms is intentionally inactive and
+    # segmented downloads can finish between expensive CLI status polls.
+    $baselineStats = Invoke-RestMethod -Uri "http://127.0.0.1:$port/stats?reset=1&gate_tasks=1" -TimeoutSec 5
+    if ([int]$baselineStats.gate_expected_tasks -ne 1) {
+        throw 'Loopback fixture did not enable the paced single-task visual workload.'
+    }
+
     $started = Start-Process -FilePath $guiPath -PassThru
     for ($attempt = 0; $attempt -lt 40; $attempt++) {
         Start-Sleep -Milliseconds 500
@@ -106,27 +114,46 @@ public static class HyperGetLiquidProgressNative {
     $ready = $false
     $captureStats = $null
     $statusAtCapture = $null
-    for ($attempt = 0; $attempt -lt 200; $attempt++) {
+    $lastStatusLine = ''
+    # Poll lightweight loopback counters frequently, but launch the CLI status
+    # process only after real payload bytes are moving. Repeated CLI startup
+    # can otherwise miss a short unpaced transfer; the fixture is paced above
+    # so a genuine active window remains available for the screenshot.
+    for ($attempt = 0; $attempt -lt 300; $attempt++) {
         $captureStats = Invoke-RestMethod -Uri "http://127.0.0.1:$port/stats" -TimeoutSec 5
-        $statusOutput = @(& $cliPath download show --status-lines $taskId 2>&1)
-        if ($LASTEXITCODE -eq 0) {
-            $statusLine = @($statusOutput | ForEach-Object { "$_".Trim() } |
-                Where-Object { $_ -match ('^' + [regex]::Escape([string]$taskId) + '\t') } |
-                Select-Object -First 1)
-            if ($statusLine.Count -gt 0) {
-                $statusAtCapture = (($statusLine[0] -split ([string][char]9), 2)[1]).Trim()
+        if ([int]$captureStats.active_distinct_tasks -ge 1 -and
+            [long]$captureStats.bytes_sent -gt 0) {
+            $statusOutput = @(& $cliPath download show --status-lines $taskId 2>&1)
+            if ($LASTEXITCODE -eq 0) {
+                $statusLine = @($statusOutput | ForEach-Object { "$_".Trim() } |
+                    Where-Object { $_ -match ('^' + [regex]::Escape([string]$taskId) + '\t') } |
+                    Select-Object -First 1)
+                if ($statusLine.Count -gt 0) {
+                    $lastStatusLine = [string]$statusLine[0]
+                    $statusParts = $lastStatusLine.Split([char]9, 2)
+                    if ($statusParts.Count -eq 2) {
+                        $statusAtCapture = $statusParts[1].Trim()
+                    }
+                }
+            }
+            if ($statusAtCapture -eq 'Downloading') {
+                $ready = $true
+                break
             }
         }
-        if ([int]$captureStats.active_distinct_tasks -ge 1 -and
-            [long]$captureStats.bytes_sent -gt 0 -and
-            $statusAtCapture -eq 'Downloading') {
-            $ready = $true
-            break
-        }
-        Start-Sleep -Milliseconds 250
+        Start-Sleep -Milliseconds 100
     }
     if (-not $ready) {
-        throw 'Could not prove a live data transfer with Downloading status before screenshot.'
+        $diagnostics = [pscustomobject]@{
+            SourceSHA = $SourceSha
+            TaskId = $taskId
+            Reason = 'Could not prove live Downloading state before screenshot.'
+            LastStatusLine = $lastStatusLine
+            LastStatus = $statusAtCapture
+            LastFixtureStats = $captureStats
+        }
+        $diagnostics | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $root 'liquid-progress-diagnostics.json') -Encoding utf8
+        throw 'Could not prove a live data transfer with Downloading status before screenshot; sanitized diagnostics were saved.'
     }
 
     Start-Sleep -Milliseconds 900
