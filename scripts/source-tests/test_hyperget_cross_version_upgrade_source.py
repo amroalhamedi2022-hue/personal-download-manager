@@ -71,6 +71,32 @@ class HyperGetCrossVersionUpgradeContracts(unittest.TestCase):
         ):
             self.assertIn(expected, self.harness)
 
+    def test_synthetic_wincred_survives_upgrade_rollback_and_uninstall_without_logging_secrets(self):
+        for expected in (
+            'PersonalDownloadManager/FTP/',
+            'CredWriteW',
+            'CredReadW',
+            'CredDeleteW',
+            'CredFree',
+            'CredPersistLocalMachine = 2',
+            "Assert-SyntheticWinCred -Stage 'baseline before upgrade'",
+            "Assert-SyntheticWinCred -Stage 'upgrade to HyperGet'",
+            "Assert-SyntheticWinCred -Stage 'candidate uninstall before rollback'",
+            "Assert-SyntheticWinCred -Stage 'rollback to baseline'",
+            "Assert-SyntheticWinCred -Stage 'normal uninstall'",
+            'SyntheticWinCredPreservedAcrossUpgradeRollbackAndUninstall=PASS',
+            'SyntheticWinCredCleanup=PASS',
+        ):
+            self.assertIn(expected, self.harness)
+
+        self.assertIn('$url = "http://127.0.0.1:$port/fixture.bin"', self.harness)
+        self.assertNotIn('fixture.bin?task=upgrade-rollback', self.harness)
+        for line in self.harness.splitlines():
+            if 'Write-Host' in line:
+                self.assertNotIn('$script:WinCredPassword', line)
+                self.assertNotIn('$script:WinCredReference', line)
+                self.assertNotIn('$target', line.lower())
+
     def test_workflow_builds_both_exact_snapshots_without_publishing_exes(self):
         for expected in (
             "runs-on: windows-2022",

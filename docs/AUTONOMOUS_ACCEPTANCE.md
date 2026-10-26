@@ -1339,3 +1339,18 @@ Production implementation \`Semaphore(48)\` was built and installed at productio
 The 48-permit production experiment passes its functional acceptance gates. Keep resource optimization open because the one-run memory comparison is not a controlled A/B.
 
 The internal installer is not a release. Still NOT TESTED/OPEN: cross-version upgrade/rollback and existing-data migration, external HTTPS/FTP, HLS restart, controlled CPU/RAM A/B, full IDM visual comparison, final branded single \`HyperGet.exe\`, and independent final Windows recheck. PR #3 remains Draft; no main write, merge, release, paid service/runner, or Torrent.
+
+
+## 2026-10-26 — Cross-version Windows gate: fixture URL failure and WinCred lifecycle strengthening
+
+**Failed exact-head run:** [40367433598](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40367433598); candidate `91101cfaea25973a7b6979331b2e9710ff18bfa8`, base `6c386abeae95e8e0460308d17c033558cbd60f15`.
+
+- **PASS:** baseline installer build, SHA-256 `4ef3c7fe2cb10b98d62e85de0076b2e19866d372d4d57f6d518de690e2c5135a`.
+- **PASS:** candidate installer build, SHA-256 `07cdce6ee137ac434dd7f4cf8140538ed8dcf90b28ac09133552a2032fb51d60`.
+- **FAIL:** first HTTP add failed before transfer because the harness used an unnecessary query string that `HttpUrlUtils.isValidUrl` rejected. This is a harness fixture defect, not a demonstrated product regression. No upgrade/rollback acceptance was reached.
+- **PASS cleanup:** the test-owned `.personal-download-manager` directory was removed only after ownership-marker verification.
+- Failure proof artifact [12670788928](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40367433598/artifacts/12670788928), ZIP SHA-256 `95322b99a2e7c51f86167ad9f33b6f2e56aab5545dc0edbe48fa05980523cbdd`.
+
+The current follow-up removes the query and strengthens the same milestone with a synthetic UUID-based Windows Credential Manager entry in the existing `PersonalDownloadManager/FTP/` namespace. The harness verifies the credential after baseline creation, HyperGet upgrade, candidate uninstall, baseline rollback, and normal uninstall, then deletes it and verifies absence. Secret bytes are compared in memory and cleared; neither the secret nor the opaque target is written to logs/proof. Source contracts now guard these lifecycle points and redaction.
+
+**Status after this source patch:** the previous run remains **FAIL**; the fix and strengthened test are committed on the existing PR branch, but the new exact-head PowerShell/installer/upgrade run is **PENDING**. Do not mark upgrade/rollback or WinCred persistence PASS until its proof artifact says `Result=PASS`. The internal installers from the failed run are not release deliverables.

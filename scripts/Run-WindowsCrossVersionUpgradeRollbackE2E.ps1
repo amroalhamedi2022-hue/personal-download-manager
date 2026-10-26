@@ -56,6 +56,188 @@ $script:TestTouchedInstaller = $false
 $stage = 'preflight'
 $script:CurrentCliPath = Join-Path $installDir 'DownloadManagerCli.exe'
 $script:SentinelSha = $null
+$script:WinCredReference = [guid]::NewGuid().ToString('D')
+$script:WinCredUsername = 'synthetic-upgrade-rollback'
+$script:WinCredPassword = 'Synthetic-HyperGet-Only-Δ-2468'
+$script:WinCredCreated = $false
+
+if (-not ('HyperGetWinCredSyntheticFixture' -as [type])) {
+Add-Type -TypeDefinition @'
+using System;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.ComTypes;
+using System.Text;
+
+public static class HyperGetWinCredSyntheticFixture
+{
+    private const uint CredTypeGeneric = 1;
+    private const uint CredPersistLocalMachine = 2;
+    private const int ErrorNotFound = 1168;
+    private const string Prefix = "PersonalDownloadManager/FTP/";
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct CredentialW
+    {
+        public uint Flags;
+        public uint Type;
+        [MarshalAs(UnmanagedType.LPWStr)] public string TargetName;
+        [MarshalAs(UnmanagedType.LPWStr)] public string Comment;
+        public FILETIME LastWritten;
+        public uint CredentialBlobSize;
+        public IntPtr CredentialBlob;
+        public uint Persist;
+        public uint AttributeCount;
+        public IntPtr Attributes;
+        [MarshalAs(UnmanagedType.LPWStr)] public string TargetAlias;
+        [MarshalAs(UnmanagedType.LPWStr)] public string UserName;
+    }
+
+    [DllImport("Advapi32.dll", EntryPoint = "CredWriteW", CharSet = CharSet.Unicode, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool CredWriteW(ref CredentialW credential, uint flags);
+
+    [DllImport("Advapi32.dll", EntryPoint = "CredReadW", CharSet = CharSet.Unicode, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool CredReadW(string target, uint type, uint flags, out IntPtr credential);
+
+    [DllImport("Advapi32.dll", EntryPoint = "CredDeleteW", CharSet = CharSet.Unicode, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool CredDeleteW(string target, uint type, uint flags);
+
+    [DllImport("Advapi32.dll", SetLastError = true)]
+    private static extern void CredFree(IntPtr buffer);
+
+    public static void Write(string reference, string username, string password)
+    {
+        if (String.IsNullOrWhiteSpace(username) || String.IsNullOrEmpty(password))
+            throw new ArgumentException("Synthetic WinCred fixture input is invalid.");
+
+        byte[] secret = Encoding.Unicode.GetBytes(password);
+        IntPtr memory = IntPtr.Zero;
+        try
+        {
+            memory = Marshal.AllocHGlobal(secret.Length);
+            Marshal.Copy(secret, 0, memory, secret.Length);
+            CredentialW credential = new CredentialW
+            {
+                Flags = 0,
+                Type = CredTypeGeneric,
+                TargetName = Target(reference),
+                Comment = null,
+                LastWritten = new FILETIME(),
+                CredentialBlobSize = (uint)secret.Length,
+                CredentialBlob = memory,
+                Persist = CredPersistLocalMachine,
+                AttributeCount = 0,
+                Attributes = IntPtr.Zero,
+                TargetAlias = null,
+                UserName = username
+            };
+            if (!CredWriteW(ref credential, 0))
+                throw new Win32Exception(Marshal.GetLastWin32Error(), "Synthetic WinCred write failed.");
+        }
+        finally
+        {
+            if (memory != IntPtr.Zero)
+            {
+                byte[] zeros = new byte[secret.Length];
+                Marshal.Copy(zeros, 0, memory, zeros.Length);
+                Array.Clear(zeros, 0, zeros.Length);
+                Marshal.FreeHGlobal(memory);
+            }
+            Array.Clear(secret, 0, secret.Length);
+        }
+    }
+
+    public static void AssertPresent(string reference, string username, string password, string stage)
+    {
+        IntPtr pointer = IntPtr.Zero;
+        if (!CredReadW(Target(reference), CredTypeGeneric, 0, out pointer))
+            throw new Win32Exception(Marshal.GetLastWin32Error(), "Synthetic WinCred read failed at " + stage + ".");
+
+        try
+        {
+            CredentialW credential = (CredentialW)Marshal.PtrToStructure(pointer, typeof(CredentialW));
+            if (credential.Type != CredTypeGeneric || credential.Persist != CredPersistLocalMachine)
+                throw new InvalidOperationException("Synthetic WinCred metadata mismatch at " + stage + ".");
+            if (!String.Equals(credential.UserName, username, StringComparison.Ordinal))
+                throw new InvalidOperationException("Synthetic WinCred username mismatch at " + stage + ".");
+
+            byte[] expected = Encoding.Unicode.GetBytes(password);
+            byte[] actual = null;
+            try
+            {
+                if (credential.CredentialBlob == IntPtr.Zero || credential.CredentialBlobSize != (uint)expected.Length)
+                    throw new InvalidOperationException("Synthetic WinCred blob length mismatch at " + stage + ".");
+                actual = new byte[expected.Length];
+                Marshal.Copy(credential.CredentialBlob, actual, 0, actual.Length);
+                int difference = 0;
+                for (int i = 0; i < expected.Length; i++)
+                    difference |= expected[i] ^ actual[i];
+                if (difference != 0)
+                    throw new InvalidOperationException("Synthetic WinCred secret mismatch at " + stage + ".");
+            }
+            finally
+            {
+                Array.Clear(expected, 0, expected.Length);
+                if (actual != null) Array.Clear(actual, 0, actual.Length);
+            }
+        }
+        finally
+        {
+            CredFree(pointer);
+        }
+    }
+
+    public static void DeleteAndAssertAbsent(string reference)
+    {
+        string target = Target(reference);
+        if (!CredDeleteW(target, CredTypeGeneric, 0))
+        {
+            int deleteError = Marshal.GetLastWin32Error();
+            if (deleteError != ErrorNotFound)
+                throw new Win32Exception(deleteError, "Synthetic WinCred delete failed.");
+        }
+
+        IntPtr pointer = IntPtr.Zero;
+        if (CredReadW(target, CredTypeGeneric, 0, out pointer))
+        {
+            CredFree(pointer);
+            throw new InvalidOperationException("Synthetic WinCred entry remained after cleanup.");
+        }
+        int readError = Marshal.GetLastWin32Error();
+        if (readError != ErrorNotFound)
+            throw new Win32Exception(readError, "Synthetic WinCred absence check failed.");
+    }
+
+    private static string Target(string reference)
+    {
+        Guid parsed;
+        if (!Guid.TryParseExact(reference, "D", out parsed))
+            throw new ArgumentException("Synthetic WinCred reference must be a UUID.");
+        return Prefix + parsed.ToString("D");
+    }
+}
+'@
+}
+
+function Write-SyntheticWinCred {
+    [HyperGetWinCredSyntheticFixture]::Write($script:WinCredReference, $script:WinCredUsername, $script:WinCredPassword)
+    $script:WinCredCreated = $true
+    Assert-SyntheticWinCred -Stage 'baseline before upgrade'
+}
+
+function Assert-SyntheticWinCred([string] $Stage) {
+    [HyperGetWinCredSyntheticFixture]::AssertPresent($script:WinCredReference, $script:WinCredUsername, $script:WinCredPassword, $Stage)
+    Write-Host ("PASS: synthetic WinCred entry survived " + $Stage + "; target and secret redacted.")
+}
+
+function Remove-SyntheticWinCred {
+    [HyperGetWinCredSyntheticFixture]::DeleteAndAssertAbsent($script:WinCredReference)
+    $script:WinCredCreated = $false
+    Write-Host 'PASS: synthetic WinCred fixture removed and absence verified; target and secret redacted.'
+}
 
 New-Item -ItemType Directory -Path $proofDir -Force | Out-Null
 Start-Transcript -Path $transcriptFile -Force | Out-Null
@@ -275,7 +457,7 @@ try {
     }
     if (-not (Test-Path -LiteralPath $portFile)) { throw 'Local HTTP fixture server did not open a port.' }
     $port = [int](Get-Content -LiteralPath $portFile -Raw)
-    $url = "http://127.0.0.1:$port/fixture.bin?task=upgrade-rollback"
+    $url = "http://127.0.0.1:$port/fixture.bin"
     $addOutput = Invoke-AppCli -Arguments @('download','add','http','--link',$url,'--folder',$downloadDir,'--name',$downloadName,'--start') -Purpose 'create baseline HTTP download'
     $idLines = @(
         foreach ($line in $addOutput) {
@@ -289,6 +471,8 @@ try {
     Wait-ForFinishedDownload -Id $downloadId -FilePath $downloadPath
     Stop-AppGracefully
     $baselineMetadata = Get-InstallMetadata -Label 'Baseline after real transfer'
+    $stage = 'write synthetic WinCred fixture before upgrade'
+    Write-SyntheticWinCred
 
     $stage = 'upgrade baseline to HyperGet candidate'
     Install-Snapshot -InstallerPath ([IO.Path]::GetFullPath($CandidateInstaller)) -Label 'HyperGet candidate'
@@ -301,6 +485,7 @@ try {
     if (-not (Test-Path -LiteralPath $sentinelFile -PathType Leaf)) { throw 'Upgrade deleted user data.' }
     Start-AppAndWait
     Assert-UserState -Label 'Upgrade to HyperGet'
+    Assert-SyntheticWinCred -Stage 'upgrade to HyperGet'
     Stop-AppGracefully
 
     $stage = 'remove candidate while preserving user data before rollback'
@@ -325,6 +510,7 @@ try {
     if ((Get-FileHash -LiteralPath $sentinelFile -Algorithm SHA256).Hash.ToLowerInvariant() -ne $script:SentinelSha) {
         throw 'Candidate uninstall changed the user-data sentinel before rollback.'
     }
+    Assert-SyntheticWinCred -Stage 'candidate uninstall before rollback'
     $stage = 'reinstall baseline snapshot after preserving-data rollback'
     Install-Snapshot -InstallerPath ([IO.Path]::GetFullPath($BaselineInstaller)) -Label 'Rollback to baseline'
     $rollbackMetadata = Get-InstallMetadata -Label 'Rollback to baseline'
@@ -333,6 +519,7 @@ try {
         throw ('Rollback did not restore baseline metadata: name=' + $rollbackMetadata.DisplayName + ' version=' + $rollbackMetadata.DisplayVersion)
     }
     Assert-ShortcutBrand -Brand 'Download Manager'
+    Assert-SyntheticWinCred -Stage 'rollback to baseline'
     Start-AppAndWait
     Assert-UserState -Label 'Rollback to baseline'
     Stop-AppGracefully
@@ -360,6 +547,8 @@ try {
     foreach ($path in @($legacyStartMenuShortcut,$brandedStartMenuShortcut,$legacyDesktopShortcut,$brandedDesktopShortcut)) {
         if (Test-Path -LiteralPath $path) { throw ('Uninstall left product shortcut ' + $path + '.') }
     }
+    Assert-SyntheticWinCred -Stage 'normal uninstall'
+    Remove-SyntheticWinCred
 
     $stage = 'write passing proof'
     @(
@@ -385,6 +574,8 @@ try {
         'CandidateUninstallBeforeRollback=PASS'
         'ShortcutTransitions=PASS'
         'NormalUninstallPreservesUserData=PASS'
+        'SyntheticWinCredPreservedAcrossUpgradeRollbackAndUninstall=PASS'
+        'SyntheticWinCredCleanup=PASS'
     ) | Set-Content -LiteralPath $proofFile -Encoding utf8
     Write-Host ("PASS: cross-version upgrade and rollback completed. Proof: " + $proofFile)
 } catch {
@@ -416,6 +607,17 @@ try {
             }
         }
     }
+    if ($script:WinCredCreated) {
+        try {
+            [HyperGetWinCredSyntheticFixture]::DeleteAndAssertAbsent($script:WinCredReference)
+            $script:WinCredCreated = $false
+            Write-Host 'Cleaned up synthetic WinCred fixture after an incomplete run; target and secret redacted.'
+        } catch {
+            Write-Warning 'Synthetic WinCred cleanup failed after an incomplete run; target and secret redacted.'
+        }
+    }
+    $script:WinCredPassword = $null
+    $script:WinCredReference = $null
     if ($testOwnedData -and (Test-Path -LiteralPath $ownershipMarker -PathType Leaf)) {
         $owner = (Get-Content -LiteralPath $ownershipMarker -Raw).Trim()
         $actualDataPath = [IO.Path]::GetFullPath($dataDir).TrimEnd([char[]]@('\','/'))

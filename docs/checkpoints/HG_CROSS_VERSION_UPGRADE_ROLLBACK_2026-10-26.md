@@ -1,48 +1,53 @@
 # HyperGet cross-version upgrade / rollback checkpoint — 2026-10-26
 
-**Status: IN PROGRESS — no functional PASS claimed yet.**  
+**Status: FAIL on the previous exact head; harness correction committed in this checkpoint, new Windows acceptance run required.**  
 **PR:** [#3](https://github.com/amroalhamedi2022-hue/personal-download-manager/pull/3)  
 **Branch:** `automation/idm-ftp-cancel-and-category-flush`  
-**Acceptance candidate at test trigger:** `98fcbec764f66ec7fc84e6348a17ca754c142202`  
-**Base:** exact `pull_request.base.sha` (or the explicit base ref on manual dispatch).
+**Failed candidate SHA:** `91101cfaea25973a7b6979331b2e9710ff18bfa8`  
+**Base SHA:** `6c386abeae95e8e0460308d17c033558cbd60f15`  
+**Failed run:** [40367433598](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40367433598)  
+**Failure artifact:** [hyperget-cross-version-upgrade-rollback-proof, ID 12670788928](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40367433598/artifacts/12670788928)
 
 ## Milestone and question
 
-Prove that an installer built from the existing base snapshot can be upgraded to the HyperGet candidate and safely rolled back without losing the existing user-data directory, a real completed download-history record, or a persisted max-concurrency setting. Also prove that the visible branding, registry version and Start Menu/Desktop shortcuts follow the installed snapshot.
+Prove that the exact base installer can be upgraded to HyperGet and safely rolled back without losing a real completed download-history record, persisted max-concurrency setting, user-data marker, or synthetic Windows Credential Manager entry. Also prove visible branding, registry metadata, and Start Menu/Desktop shortcuts follow each installed snapshot.
 
-**Pre-build question:** does the real Windows installer preserve the existing `.personal-download-manager` data and app state across base → HyperGet, then across a data-preserving HyperGet uninstall → base reinstall, and remove stale branding shortcuts in both directions?
+**Pre-build question:** can the two exact source snapshots build, and does a real Windows install → HTTP transfer → HyperGet upgrade → preserving-data uninstall → baseline rollback → normal uninstall preserve all state and the synthetic WinCred record?
 
-**Expected result:** both exact source snapshots build one internal NSIS installer; an 8 MiB loopback HTTP download completes with exact SHA-256; max-concurrent is set to 4; candidate install reports `HyperGet`; rollback restores the baseline display name/version; the same task ID remains `Finished`; setting and sentinel remain unchanged; normal uninstall removes the app/registry/shortcuts but leaves user data until the harness removes its own marked test tree.
+**Expected result:** both snapshots build one internal NSIS installer; an 8 MiB loopback HTTP download completes with exact SHA-256; max-concurrent stays 4; the candidate reports `HyperGet`; rollback restores baseline name/version; the same task ID stays `Finished`; the sentinel, history, and synthetic WinCred record remain intact at each transition; cleanup removes the synthetic credential and only the harness-owned data tree.
 
-**Why source tests are insufficient:** NSIS section order, registry metadata, shortcut creation/deletion, executable replacement, IPC readiness and persisted application state are observable only after both installers run against the same Windows profile. The harness refuses to start if its install directory, expected data directory, product registry keys or product shortcuts already exist. It deletes only a data tree created by this run and guarded by a random ownership marker.
+**Why source tests are insufficient:** URL validation, NSIS replacement, registry metadata, shortcut creation/deletion, executable replacement, IPC readiness, actual download bytes, and Windows Credential Manager persistence are observable only in the installed Windows process/user profile. The harness refuses pre-existing install/data/registry/shortcut paths and removes test data only after validating its random ownership marker.
 
-## Changes in this milestone
+## Evidence from failed exact-head run
 
-- Installer now removes only this product's known legacy `Download Manager` and branded `HyperGet` shortcuts before creating the selected brand's shortcuts, and cleans both names on uninstall.
-- Added `scripts/Run-WindowsCrossVersionUpgradeRollbackE2E.ps1` for real install → HTTP download/history → upgrade → verify → candidate uninstall preserving data → baseline reinstall/verify → normal uninstall.
-- Added `scripts/source-tests/test_hyperget_cross_version_upgrade_source.py` to guard the stable app/package/data identities, shortcut cleanup ordering, harness safety gates and workflow evidence policy.
-- Added `.github/workflows/windows-cross-version-upgrade-rollback.yml`. It builds the exact base and candidate snapshots on the standard `windows-2022` runner, uses no paid service/API, and uploads only text proof/transcript—not installers.
+Run [40367433598](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40367433598) checked out baseline `6c386abeae95e8e0460308d17c033558cbd60f15` and candidate `91101cfaea25973a7b6979331b2e9710ff18bfa8`.
+
+- **PASS:** baseline installer build; SHA-256 `4ef3c7fe2cb10b98d62e85de0076b2e19866d372d4d57f6d518de690e2c5135a`.
+- **PASS:** candidate installer build; SHA-256 `07cdce6ee137ac434dd7f4cf8140538ed8dcf90b28ac09133552a2032fb51d60`.
+- **FAIL:** the first real HTTP download was rejected before transfer by `HttpUrlUtils.isValidUrl` because the harness added the unnecessary query `?task=upgrade-rollback` to the local fixture URL. The installed app returned `IllegalArgumentException: url is not valid`; no upgrade/rollback acceptance was reached.
+- **PASS cleanup:** the harness removed only the test-created `.personal-download-manager` tree after its ownership-marker/path check.
+- Artifact archive SHA-256: `95322b99a2e7c51f86167ad9f33b6f2e56aab5545dc0edbe48fa05980523cbdd`.
+
+## Correction and strengthened gate in this checkpoint
+
+- Remove the unneeded query string; use the already accepted loopback URL shape `http://127.0.0.1:<port>/fixture.bin`.
+- Add a synthetic, random-UUID WinCred generic credential under the existing `PersonalDownloadManager/FTP/` namespace using the same Windows Credential Manager API contract and `CRED_PERSIST_LOCAL_MACHINE`.
+- Read/verify username, credential persistence mode, and exact UTF-16LE secret bytes after baseline creation, candidate upgrade, candidate uninstall, baseline rollback, and normal uninstall.
+- Keep the synthetic secret and opaque target out of logs/proof; zero local byte buffers; delete the fixture and verify absence on success and best-effort cleanup on failure.
+- Extend source-contract tests for the URL shape, lifecycle assertions, cleanup, and log redaction.
 
 ## Acceptance gates
 
 | Requirement | Current state |
 |---|---|
-| NSIS shortcut cleanup implementation | Implemented; Windows verification pending |
-| PowerShell syntax + source contracts before builds | Pending latest-head run |
-| Base installer build + SHA-256 | Pending latest-head run |
-| Candidate installer build + SHA-256 | Pending latest-head run |
-| Real HTTP 8 MiB output + SHA-256 | Pending latest-head run |
-| Persisted max-concurrent=4 across upgrade and rollback | Pending latest-head run |
-| Same download ID/status survives upgrade and rollback | Pending latest-head run |
-| Registry display name/version changes and restores | Pending latest-head run |
-| Start Menu/Desktop shortcut transitions | Pending latest-head run |
-| Normal uninstall preserves user data | Pending latest-head run |
+| Baseline and candidate installer builds on failed head | PASS; hashes above |
+| Real HTTP transfer/history on failed head | FAIL — invalid fixture URL; fixed in current source |
+| Upgrade branding/registry/shortcuts | NOT TESTED on failed head |
+| Data/settings/history preserved across upgrade and rollback | NOT TESTED on failed head |
+| Synthetic WinCred survives upgrade, candidate uninstall, rollback, and normal uninstall | Added to current harness; NOT TESTED until new exact-head run |
+| Synthetic WinCred cleanup and secret redaction | Source guard added; Windows result pending |
 | Independent final Windows recheck | NOT COMPLETE |
 
-## Failure handling / evidence discipline
+## Next action
 
-- An earlier workflow dispatch for the first harness draft was triggered before its syntax/route corrections. It is tied to the older workflow SHA and must not be used to accept this milestone.
-- Only the run whose checkout log records the corrected candidate SHA can close this gate.
-- A source-only PASS is not installer acceptance; a build PASS without the state-preservation checks is not upgrade acceptance.
-- The internal installers are test fixtures only. They are not release artifacts and must not be delivered as `HyperGet.exe`.
-- PR #3 remains Draft. No merge, direct `main` write, release, Torrent, or browser-repository write is part of this milestone.
+Run the source-contract and PowerShell parser gates first, then build the exact base/candidate snapshots and rerun the full Windows lifecycle. Do not close this milestone until the proof artifact records `Result=PASS`, matching download SHA-256, preserved setting/task/sentinel, WinCred lifecycle PASS, and successful cleanup. Internal installers are test fixtures only, never delivery artifacts. PR #3 stays Draft; no main write, merge, release, paid runner/API, browser-repository write, or Torrent.
