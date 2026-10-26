@@ -20,6 +20,9 @@ class StagedFileSourceContract(unittest.TestCase):
         cls.regression = (
             ROOT / "downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/ftp/FtpStagedIdentityTest.kt"
         ).read_text(encoding="utf-8")
+        cls.transfer_tests = (
+            ROOT / "downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/ftp/FtpTransferClientTest.kt"
+        ).read_text(encoding="utf-8")
 
     def test_opened_stage_never_follows_symlinks(self):
         self.assertIn("LinkOption.NOFOLLOW_LINKS", self.output)
@@ -72,7 +75,7 @@ class StagedFileSourceContract(unittest.TestCase):
         self.assertIn("transfer.commitIfActive {", self.transfer)
         self.assertIn(
             "cancellationAtFinalPayloadBoundaryDoesNotPublishAndCanResumeFromFullStage",
-            self.regression,
+            self.transfer_tests,
         )
 
     def test_resume_transport_uses_guarded_reader(self):
