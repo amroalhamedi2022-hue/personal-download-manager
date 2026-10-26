@@ -68,6 +68,10 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("StatusPollCountAtCapture = $statusPollCount", SCRIPT)
         self.assertIn("if ([int]$preScreenshotStats.active_distinct_tasks -lt 1 -or", SCRIPT)
         self.assertIn("cancel-in-progress: false", UI_WORKFLOW)
+        self.assertIn(
+            "group: windows-installed-ui-smoke-${{ github.event.pull_request.head.sha || github.sha }}",
+            UI_WORKFLOW,
+        )
 
     def test_cli_status_parser_normalizes_terminal_prefixes_and_tab_columns(self):
         # Normalize ANSI/BOM/zero-width prefixes before parsing ID<TAB>Status.
