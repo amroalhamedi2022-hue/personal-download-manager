@@ -656,10 +656,11 @@ val appModule = module {
             .Builder()
             .dispatcher(Dispatcher().apply {
                 // Bound asynchronous response setup so segmented-download bursts do not
-                // create an unbounded OkHttp callback-thread burst. The installed
-                // 1/4/16 matrix is the runtime gate for active-task fairness.
-                maxRequests = 64
-                maxRequestsPerHost = 64
+                // create an unbounded OkHttp callback-thread burst. Keep headroom
+                // above the required 16-task workload; the installed 1/4/16 matrix
+                // is the runtime gate for fairness and resource impact.
+                maxRequests = 32
+                maxRequestsPerHost = 32
             })
             .sslSocketFactory(
                 appSSLFactoryProvider.createSSLSocketFactory(),
