@@ -26,3 +26,7 @@ The first profile workflow [40246220683](https://github.com/amroalhamedi2022-hue
 
 ## JVM profile attempt: harness lifetime issue fixed
 Run [40246308828](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40246308828) built and installed the app and passed **21/21 SHA hashes + 3/3 resource CSVs**, but profile collection failed because Run-WindowsActiveBenchmarkMatrix.ps1 deliberately stopped the GUI in its finally block. This is not a production app failure and no jcmd output was captured. Added opt-in -KeepGuiRunning; normal benchmark cleanup remains the default, while the diagnostic workflow now preserves the GUI for post-transfer jcmd. New exact-head run pending.
+
+
+## JVM target PID correction
+The second attempt [40247117339](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40247117339) passed 21/21 SHA + 3/3 metrics and preserved the GUI, but the JVM attach failed because the script targeted the NSIS native launcher (PID 552), not the HotSpot JVM. Artifact [12619336316](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40247117339/artifacts/12619336316) shows `jcmd -l` listed JVM PID 1336 as `com.abdownloadmanager.desktop.AppKt`; the launcher correctly reported `jvm.dll not loaded by target process`. Updated the profiler to parse and target the actual JVM main-class PID. New exact-head run pending.

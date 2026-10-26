@@ -26,6 +26,9 @@ class WindowsJvmMemoryProfileContract(unittest.TestCase):
         self.assertIn("[switch] $KeepGuiRunning", MATRIX_SCRIPT)
         self.assertIn("-KeepGuiRunning", WORKFLOW)
         self.assertIn("if ($KeepGuiRunning)", MATRIX_SCRIPT)
+        self.assertIn("com\\.abdownloadmanager\\.desktop\\.AppKt", PROFILE)
+        self.assertIn("$javaPid", PROFILE)
+        self.assertNotIn("& $jcmd $gui.Id", PROFILE)
 
     def test_profile_artifact_is_uploaded_even_if_jcmd_fails(self):
         self.assertIn("if: always()", WORKFLOW)

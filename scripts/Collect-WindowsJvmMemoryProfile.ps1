@@ -29,30 +29,34 @@ $jcmd = Join-Path $env:JAVA_HOME 'bin\jcmd.exe'
 if (-not (Test-Path -LiteralPath $jcmd -PathType Leaf)) {
     throw 'JDK jcmd.exe is unavailable; JVM memory profile cannot be collected.'
 }
-$baseName = [IO.Path]::GetFileNameWithoutExtension($guiPath)
-$gui = Get-Process -Name $baseName -ErrorAction SilentlyContinue |
-    Sort-Object StartTime |
-    Select-Object -First 1
-if ($null -eq $gui) {
-    throw 'Installed HyperGet GUI is not running after the transfer benchmark.'
-}
-$processSnapshot = [pscustomobject]@{
-    SourceSha = $SourceSha
-    CapturedUtc = [DateTime]::UtcNow.ToString('o')
-    ProcessId = $gui.Id
-    ProcessName = $gui.ProcessName
-    WorkingSetMiB = [Math]::Round($gui.WorkingSet64 / 1MB, 3)
-    PrivateBytesMiB = [Math]::Round($gui.PrivateMemorySize64 / 1MB, 3)
-    Handles = $gui.HandleCount
-    Threads = $gui.Threads.Count
-}
-$processSnapshot | ConvertTo-Json -Depth 3 |
-    Set-Content -LiteralPath (Join-Path $root 'process-snapshot.json') -Encoding utf8
 $jcmdList = & $jcmd -l 2>&1
 $jcmdList | Set-Content -LiteralPath (Join-Path $root 'jcmd-process-list.txt') -Encoding utf8
 if ($LASTEXITCODE -ne 0) {
     throw "jcmd process enumeration failed with exit code $LASTEXITCODE."
 }
+# The NSIS launcher is a tiny native stub, not the JVM. jcmd -l identifies the
+# actual HotSpot process by its main class; attach only to that PID.
+$jvmMatch = [regex]::Match(
+    ($jcmdList -join "`n"),
+    '(?m)^\s*(\d+)\s+com\.abdownloadmanager\.desktop\.AppKt(?:\s|$)'
+)
+if (-not $jvmMatch.Success) {
+    throw 'Installed HyperGet JVM main class was not found in jcmd -l output.'
+}
+$javaPid = [int]$jvmMatch.Groups[1].Value
+$javaProcess = Get-Process -Id $javaPid -ErrorAction Stop
+$processSnapshot = [pscustomobject]@{
+    SourceSha = $SourceSha
+    CapturedUtc = [DateTime]::UtcNow.ToString('o')
+    JvmProcessId = $javaPid
+    JvmProcessName = $javaProcess.ProcessName
+    WorkingSetMiB = [Math]::Round($javaProcess.WorkingSet64 / 1MB, 3)
+    PrivateBytesMiB = [Math]::Round($javaProcess.PrivateMemorySize64 / 1MB, 3)
+    Handles = $javaProcess.HandleCount
+    Threads = $javaProcess.Threads.Count
+}
+$processSnapshot | ConvertTo-Json -Depth 3 |
+    Set-Content -LiteralPath (Join-Path $root 'process-snapshot.json') -Encoding utf8
 $commands = @(
     @{ Name = 'vm-version'; Command = 'VM.version' },
     @{ Name = 'heap-info'; Command = 'GC.heap_info' },
@@ -61,7 +65,7 @@ $commands = @(
 )
 foreach ($entry in $commands) {
     $target = Join-Path $root ($entry.Name + '.txt')
-    $output = & $jcmd $gui.Id $entry.Command 2>&1
+    $output = & $jcmd $javaPid $entry.Command 2>&1
     $exitCode = $LASTEXITCODE
     $output | Set-Content -LiteralPath $target -Encoding utf8
     if ($exitCode -ne 0) {
@@ -74,4 +78,4 @@ foreach ($entry in $commands) {
     "JcmdVersion=$((& $jcmd -J-version 2>&1 | Select-Object -First 1) -join ' ')"
     "ProfileStatus=PASS"
 ) | Set-Content -LiteralPath (Join-Path $root 'profile-status.txt') -Encoding utf8
-Write-Host "JVM heap/class/thread profile captured for installed HyperGet PID $($gui.Id)."
+Write-Host "JVM heap/class/thread profile captured for installed HyperGet JVM PID $javaPid."
