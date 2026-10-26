@@ -46,6 +46,15 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("StatusAtCapture = $statusAtCapture", SCRIPT)
         self.assertIn("$actualSha -eq $expectedSha", SCRIPT)
 
+    def test_download_add_runs_asynchronously_so_live_status_can_be_observed(self):
+        self.assertIn("$addArguments = 'download add http --link", SCRIPT)
+        self.assertIn("$addProcess = Start-Process -FilePath $cliPath -ArgumentList $addArguments", SCRIPT)
+        self.assertIn("$taskId = [long]0", SCRIPT)
+        self.assertIn("$addProcess.WaitForExit(180000)", SCRIPT)
+        self.assertIn("AddProcessExitCode = $addProcess.ExitCode", SCRIPT)
+        self.assertNotIn("$addOutput = @(& $cliPath download add", SCRIPT)
+        self.assertIn("if ($statusAtCapture -eq 'Paused' -and -not $addResumeSent)", SCRIPT)
+
     def test_visual_fixture_is_paced_and_failure_diagnostics_are_preserved(self):
         self.assertIn("/stats?reset=1&gate_tasks=1", SCRIPT)
         self.assertIn("liquid-progress-diagnostics.json", SCRIPT)
@@ -82,7 +91,9 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("[char]0x2060", SCRIPT)
         self.assertIn("codepoints=$codes", SCRIPT)
         self.assertIn("function Get-DownloadStatusFromOutput", SCRIPT)
-        self.assertIn("$columns = $line.Split([char[]]@([char]9))", SCRIPT)
+        self.assertIn("$columns = [regex]::Split($line.Trim(), '\\s+')", SCRIPT)
+        self.assertIn("Status row: $($Matches[1])", SCRIPT)
+        self.assertIn("Plain-text CLI message: $line", SCRIPT)
         self.assertIn("$columns[0].Trim() -cne [string]$ExpectedId", SCRIPT)
         self.assertEqual(
             SCRIPT.count("Get-DownloadStatusFromOutput -Lines $statusOutput -ExpectedId $taskId"),
@@ -130,7 +141,7 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("SetWindowPos", UI_WORKFLOW)
         self.assertIn("CopyFromScreen(", UI_WORKFLOW)
         self.assertNotIn("PrimaryScreen.Bounds", UI_WORKFLOW)
-        embedded = UI_WORKFLOW.split("Add-Type -TypeDefinition @'\\n", 1)[1].split("\\n          '@", 1)[0]
+        embedded = UI_WORKFLOW.split("Add-Type -TypeDefinition @'\n", 1)[1].split("\n          '@", 1)[0]
         self.assertTrue(all(line.startswith("          ") for line in embedded.splitlines()))
         scope = UI_WORKFLOW.split('case "$file" in', 1)[1].split("esac", 1)[0]
         self.assertIn("scripts/source-tests/test_hyperget_liquid_progress_source.py", scope)
