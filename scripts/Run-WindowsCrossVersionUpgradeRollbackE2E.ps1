@@ -56,6 +56,8 @@ $script:TestTouchedInstaller = $false
 $stage = 'preflight'
 $script:CurrentCliPath = Join-Path $installDir 'DownloadManagerCli.exe'
 $script:SentinelSha = $null
+$script:FixtureStatsUrl = $null
+$script:LastStatusProbe = 'not queried'
 $script:WinCredReference = [guid]::NewGuid().ToString('D')
 $script:WinCredUsername = 'synthetic-upgrade-rollback'
 $script:WinCredPassword = 'Synthetic-HyperGet-Only-Δ-2468'
@@ -352,32 +354,111 @@ function Read-MaxConcurrent {
     if ($numbers.Count -eq 0) { throw ('No numeric max-concurrent setting in CLI output: ' + ($output -join ' | ')) }
     return $numbers[-1]
 }
+function Get-FixtureStatsSummary {
+    if ([string]::IsNullOrWhiteSpace($script:FixtureStatsUrl)) { return 'unavailable=no-fixture-url' }
+    try {
+        $stats = Invoke-RestMethod -Uri $script:FixtureStatsUrl -TimeoutSec 3
+        return ('requests={0};bytesSent={1};peakRequests={2};peakDistinctTasks={3}' -f
+            [long]$stats.total_requests,
+            [long]$stats.bytes_sent,
+            [long]$stats.peak_requests,
+            [long]$stats.peak_distinct_tasks)
+    } catch {
+        return ('unavailable=' + $_.Exception.GetType().Name)
+    }
+}
 function Read-DownloadStatus([long] $Id) {
-    # The exact baseline predates --status-lines; parse its standard table output.
+    # The exact baseline predates machine-readable status flags; inspect its standard table.
     $output = Invoke-AppCli -Arguments @('download','show',([string]$Id)) -Purpose ('read download ' + $Id)
-    $pattern = '^\s*' + [regex]::Escape([string]$Id) + '\s+(?<status>Downloading|Finished|Error|Paused|PreparingFile|Resuming|Retrying)\b'
+    $script:LastStatusProbe = 'no matching row'
+    $idPattern = '(?<!\d)' + [regex]::Escape([string]$Id) + '(?!\d)'
+    $statusPattern = $idPattern + '.*?\b(?<status>Downloading|Finished|Error|Paused|PreparingFile|Resuming|Retrying)\b'
     foreach ($line in $output) {
         $plain = [regex]::Replace([string]$line, '\x1B\[[0-?]*[ -/]*[@-~]', '')
         $plain = $plain -replace '[│┃|]', ' '
-        if ($plain -match $pattern) { return $Matches.status }
+        if ($plain -match 'No downloads found') {
+            $script:LastStatusProbe = 'CLI reported no downloads'
+            continue
+        }
+        if ($plain -match $statusPattern) {
+            $script:LastStatusProbe = ('id={0};status={1}' -f $Id, $Matches.status)
+            return $Matches.status
+        }
+        if ($plain -match $idPattern) {
+            $script:LastStatusProbe = 'matching ID row without recognized status'
+        }
     }
     return $null
 }
 function Wait-ForFinishedDownload([long] $Id, [string] $FilePath) {
     $deadline = [DateTime]::UtcNow.AddSeconds(180)
+    $lastStatus = '__not-observed__'
+    $unrecognizedSince = $null
+    $noBytesStatus = $null
+    $noBytesSince = $null
+    $lastFileState = 'not-inspected'
     while ([DateTime]::UtcNow -lt $deadline) {
         $status = Read-DownloadStatus -Id $Id
-        if ($status -eq 'Error') { throw ('Download ' + $Id + ' entered Error status.') }
-        if ($status -eq 'Finished' -and (Test-Path -LiteralPath $FilePath -PathType Leaf)) {
-            $item = Get-Item -LiteralPath $FilePath
-            if ($item.Length -eq $expectedDownloadSize) {
-                $hash = (Get-FileHash -LiteralPath $FilePath -Algorithm SHA256).Hash.ToLowerInvariant()
-                if ($hash -eq $expectedDownloadSha) { return }
+        if ($status -ne $lastStatus) {
+            $displayStatus = if ($null -eq $status) { 'UNPARSED' } else { [string]$status }
+            Write-Host ("Baseline download status: id={0}, state={1}" -f $Id, $displayStatus)
+            $lastStatus = $status
+        }
+        if ($null -eq $status) {
+            if ($null -eq $unrecognizedSince) { $unrecognizedSince = [DateTime]::UtcNow }
+            if (([DateTime]::UtcNow - $unrecognizedSince).TotalSeconds -ge 30) {
+                $fixture = Get-FixtureStatsSummary
+                throw ("Baseline download status was not observable for 30 seconds; id={0}; lastProbe={1}; fixture={2}" -f $Id, $script:LastStatusProbe, $fixture)
             }
+        } else {
+            $unrecognizedSince = $null
+        }
+        if ($status -eq 'Error') {
+            throw ('Download ' + $Id + ' entered Error status; fixture=' + (Get-FixtureStatsSummary))
+        }
+        if ($status -in @('Paused','Downloading')) {
+            if ($status -ne $noBytesStatus) {
+                $noBytesStatus = $status
+                $noBytesSince = [DateTime]::UtcNow
+            } elseif ($null -ne $noBytesSince -and ([DateTime]::UtcNow - $noBytesSince).TotalSeconds -ge 20) {
+                $fixture = Get-FixtureStatsSummary
+                if ($fixture -match 'bytesSent=0(?:;|$)') {
+                    throw ("Baseline download remained {0} after --start with zero fixture bytes; id={1}; lastProbe={2}; fixture={3}" -f $status, $Id, $script:LastStatusProbe, $fixture)
+                }
+                $noBytesSince = [DateTime]::UtcNow
+            }
+        } else {
+            $noBytesStatus = $null
+            $noBytesSince = $null
+        }
+        if ($status -eq 'Finished') {
+            if (Test-Path -LiteralPath $FilePath -PathType Leaf) {
+                $item = Get-Item -LiteralPath $FilePath
+                $lastFileState = 'length=' + $item.Length
+                if ($item.Length -eq $expectedDownloadSize) {
+                    $hash = (Get-FileHash -LiteralPath $FilePath -Algorithm SHA256).Hash.ToLowerInvariant()
+                    if ($hash -eq $expectedDownloadSha) { return }
+                    $lastFileState = 'length=' + $item.Length + ';sha256=mismatch'
+                }
+            } else {
+                $lastFileState = 'missing'
+            }
+        } elseif (Test-Path -LiteralPath $FilePath -PathType Leaf) {
+            $item = Get-Item -LiteralPath $FilePath
+            $lastFileState = 'length=' + $item.Length
         }
         Start-Sleep -Milliseconds 500
     }
-    throw ('Download ' + $Id + ' did not reach Finished with exact size and SHA-256 within 180 seconds.')
+    $fixture = Get-FixtureStatsSummary
+    if (Test-Path -LiteralPath $FilePath -PathType Leaf) {
+        $item = Get-Item -LiteralPath $FilePath
+        $lastFileState = 'length=' + $item.Length
+        if ($item.Length -eq $expectedDownloadSize) {
+            $hash = (Get-FileHash -LiteralPath $FilePath -Algorithm SHA256).Hash.ToLowerInvariant()
+            $lastFileState += ';sha256=' + $(if ($hash -eq $expectedDownloadSha) { 'match' } else { 'mismatch' })
+        }
+    }
+    throw ("Download {0} did not reach Finished with exact size and SHA-256; lastStatus={1}; lastProbe={2}; file={3}; fixture={4}" -f $Id, $lastStatus, $script:LastStatusProbe, $lastFileState, $fixture)
 }
 function Assert-UserState([string] $Label) {
     if (-not (Test-Path -LiteralPath $sentinelFile -PathType Leaf)) { throw ($Label + ' lost the user-data sentinel.') }
@@ -461,6 +542,7 @@ try {
     if (-not (Test-Path -LiteralPath $portFile)) { throw 'Local HTTP fixture server did not open a port.' }
     $port = [int](Get-Content -LiteralPath $portFile -Raw)
     $url = "http://127.0.0.1:$port/fixture.bin"
+    $script:FixtureStatsUrl = "http://127.0.0.1:$port/stats"
     $addOutput = Invoke-AppCli -Arguments @('download','add','http','--link',$url,'--folder',$downloadDir,'--name',$downloadName,'--start') -Purpose 'create baseline HTTP download'
     $idLines = @(
         foreach ($line in $addOutput) {
@@ -470,6 +552,7 @@ try {
     )
     if ($idLines.Count -ne 1) { throw ('Expected exactly one numeric download ID; CLI output: ' + ($addOutput -join ' | ')) }
     $downloadId = [long]$idLines[0]
+    Write-Host ("Baseline HTTP download created: id={0}; expectedBytes={1}; fixture={2}" -f $downloadId, $expectedDownloadSize, (Get-FixtureStatsSummary))
     $downloadPath = Join-Path $downloadDir $downloadName
     Wait-ForFinishedDownload -Id $downloadId -FilePath $downloadPath
     Stop-AppGracefully

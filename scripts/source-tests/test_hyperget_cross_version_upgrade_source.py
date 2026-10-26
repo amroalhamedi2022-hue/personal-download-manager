@@ -79,6 +79,22 @@ class HyperGetCrossVersionUpgradeContracts(unittest.TestCase):
         self.assertIn("[│┃|]", self.harness)
         self.assertIn("Downloading|Finished|Error|Paused|PreparingFile|Resuming|Retrying", self.harness)
 
+    def test_baseline_transfer_gate_reports_status_and_loopback_progress_on_failure(self):
+        for expected in (
+            "$script:FixtureStatsUrl = $null",
+            "function Get-FixtureStatsSummary",
+            "bytesSent={1}",
+            "Baseline HTTP download created: id={0}",
+            "Baseline download status: id={0}, state={1}",
+            "Baseline download status was not observable for 30 seconds",
+            "remained {0} after --start with zero fixture bytes",
+            "lastStatus={1}",
+            "lastProbe={2}",
+            "file={3}",
+            "fixture={4}",
+        ):
+            self.assertIn(expected, self.harness)
+
     def test_synthetic_wincred_survives_upgrade_rollback_and_uninstall_without_logging_secrets(self):
         for expected in (
             'PersonalDownloadManager/FTP/',
