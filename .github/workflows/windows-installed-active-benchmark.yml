@@ -6,6 +6,7 @@ on:
     branches: [codex/repair-rf00-rf01]
     paths:
       - ".github/workflows/windows-installed-active-benchmark.yml"
+      - "scripts/source-tests/test_hyperget_http_dispatcher_bound_source.py"
       - "scripts/Run-WindowsActiveBenchmarkMatrix.ps1"
       - "scripts/LocalHttpRangeFixture.py"
       - "scripts/test_local_http_range_fixture.py"
@@ -18,6 +19,7 @@ on:
     branches: [codex/repair-rf00-rf01]
     paths:
       - ".github/workflows/windows-installed-active-benchmark.yml"
+      - "scripts/source-tests/test_hyperget_http_dispatcher_bound_source.py"
       - "scripts/Run-WindowsActiveBenchmarkMatrix.ps1"
       - "scripts/Summarize-WindowsActiveBenchmark.ps1"
       - "scripts/Measure-WindowsDownloadManager.ps1"
@@ -61,7 +63,7 @@ jobs:
           run=false
           while IFS= read -r file; do
             case "$file" in
-              .github/workflows/windows-installed-active-benchmark.yml|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/di/Di.kt|shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/util/TimeUtil.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/TableDownloadItem.kt|scripts/Run-WindowsActiveBenchmarkMatrix.ps1|scripts/LocalHttpRangeFixture.py|scripts/test_local_http_range_fixture.py|downloader/core/src/commonMain/kotlin/ir/amirab/downloader/part/PartDownloader.kt|downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/part/PartResponseDeadlineTest.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/cli/settings/*|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/singleInstance/service/*)
+              .github/workflows/windows-installed-active-benchmark.yml|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/di/Di.kt|shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/util/TimeUtil.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/TableDownloadItem.kt|scripts/Run-WindowsActiveBenchmarkMatrix.ps1|scripts/LocalHttpRangeFixture.py|scripts/test_local_http_range_fixture.py|scripts/source-tests/test_hyperget_http_dispatcher_bound_source.py|downloader/core/src/commonMain/kotlin/ir/amirab/downloader/part/PartDownloader.kt|downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/part/PartResponseDeadlineTest.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/cli/settings/*|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/singleInstance/service/*)
                 run=true
                 ;;
             esac
