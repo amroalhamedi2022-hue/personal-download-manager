@@ -80,12 +80,17 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertNotIn(r"+ '\\t')", SCRIPT)
 
     def test_cli_status_probe_captures_sanitized_failure_diagnostics(self):
-        self.assertEqual(SCRIPT.count("download show $taskId --status-lines"), 3)
+        self.assertEqual(SCRIPT.count("download show --status-lines $taskId"), 3)
+        self.assertNotIn("download show $taskId --status-lines", SCRIPT)
         self.assertIn("$lastStatusCommandExitCode = $LASTEXITCODE", SCRIPT)
         self.assertIn("LastStatusCommandExitCode = $lastStatusCommandExitCode", SCRIPT)
         self.assertIn("LastStatusOutputPreview = $lastStatusOutputPreview", SCRIPT)
         self.assertIn("FinalStatusOutputPreview = $finalStatusOutputPreview", SCRIPT)
         self.assertIn("Get-SanitizedStatusPreview", SCRIPT)
+        self.assertIn("Formatted table output detected", SCRIPT)
+        self.assertIn("LastStatusOutputLineCount = @($statusOutput).Count", SCRIPT)
+        self.assertIn("return $preview", SCRIPT)
+        self.assertNotIn("return ,$preview", SCRIPT)
 
     def test_visual_workflow_runs_on_pr_ui_changes_and_uploads_evidence(self):
         self.assertIn("pull_request:", UI_WORKFLOW)

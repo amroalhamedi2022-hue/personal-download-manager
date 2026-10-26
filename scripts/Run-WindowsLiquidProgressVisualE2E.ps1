@@ -51,22 +51,25 @@ function Get-SanitizedStatusPreview {
     param([object[]]$Lines)
     $preview = @()
     foreach ($entry in @($Lines)) {
-        $line = "$entry".Trim()
+        $line = [string]$entry
+        # Remove terminal decoration before classifying; never persist raw table
+        # rows because they may contain a user's names, folders, or other data.
+        $line = [regex]::Replace($line, "\x1B\[[0-?]*[ -/]*[@-~]", "").Trim()
         if (-not $line) { continue }
-        if ($line -match '^\d+\t[A-Za-z]+$') {
-            $preview += $line
-        } elseif ($line -match '(?i)no downloads found') {
+        if ($line -match '^\d+\t(Paused|Error|Downloading|Finished|PreparingFile|Resuming|Retrying)(\t[A-Za-z0-9_.-]+)?$') {
+            $preview += "Status row: $($Matches[1])"
+        } elseif ($line -match '(?i)^No downloads found\.?$') {
             $preview += 'No downloads found.'
-        } elseif ($line -match '(?i)(usage|missing|unknown|invalid|error|exception|argument|not found)') {
-            $safe = $line -replace 'https?://\S+', '[url]' -replace '[A-Za-z]:\\\S+', '[path]'
-            if ($safe.Length -gt 160) { $safe = $safe.Substring(0, 160) }
-            $preview += $safe
+        } elseif ($line -match '(?i)\b(ID\s+Status|ID\s+Status\s+Name|Name\s+Folder)\b') {
+            $preview += 'Formatted table output detected; status-lines option may not have been parsed.'
+        } elseif ($line -match '(?i)\b(usage|unknown option|invalid|missing|error|exception|argument|not found)\b') {
+            $preview += 'CLI usage/error output detected (content redacted).'
         } else {
-            $preview += '[non-status output omitted]'
+            $preview += "Unclassified CLI output (characters=$($line.Length))."
         }
         if ($preview.Count -ge 3) { break }
     }
-    return ,$preview
+    return $preview
 }
 
 $server = $null
@@ -155,7 +158,7 @@ public static class HyperGetLiquidProgressNative {
             if (($elapsedMilliseconds - $lastStatusPollMilliseconds) -ge 500) {
                 $lastStatusPollMilliseconds = $elapsedMilliseconds
                 $statusPollCount++
-                $statusOutput = @(& $cliPath download show $taskId --status-lines 2>&1)
+                $statusOutput = @(& $cliPath download show --status-lines $taskId 2>&1)
                 $lastStatusCommandExitCode = $LASTEXITCODE
                 $lastStatusOutputPreview = @(Get-SanitizedStatusPreview -Lines $statusOutput)
                 if ($lastStatusCommandExitCode -eq 0) {
@@ -188,6 +191,7 @@ public static class HyperGetLiquidProgressNative {
             StatusPollCount = $statusPollCount
             LastStatusCommandExitCode = $lastStatusCommandExitCode
             LastStatusOutputPreview = $lastStatusOutputPreview
+            LastStatusOutputLineCount = @($statusOutput).Count
             LastFixtureStats = $captureStats
         }
         $diagnostics | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $root 'liquid-progress-diagnostics.json') -Encoding utf8
@@ -198,7 +202,7 @@ public static class HyperGetLiquidProgressNative {
     Start-Sleep -Milliseconds 900
     $preScreenshotStats = Invoke-RestMethod -Uri "http://127.0.0.1:$port/stats" -TimeoutSec 5
     $bytesAdvancedBeforeScreenshot = [long]$preScreenshotStats.bytes_sent -gt $bytesBeforeScreenshot
-    $statusOutput = @(& $cliPath download show $taskId --status-lines 2>&1)
+    $statusOutput = @(& $cliPath download show --status-lines $taskId 2>&1)
     $lastStatusCommandExitCode = $LASTEXITCODE
     $lastStatusOutputPreview = @(Get-SanitizedStatusPreview -Lines $statusOutput)
     $statusPollCount++
@@ -227,6 +231,7 @@ public static class HyperGetLiquidProgressNative {
             StatusPollCount = $statusPollCount
             LastStatusCommandExitCode = $lastStatusCommandExitCode
             LastStatusOutputPreview = $lastStatusOutputPreview
+            LastStatusOutputLineCount = @($statusOutput).Count
             BytesBeforeScreenshot = $bytesBeforeScreenshot
             BytesAtScreenshot = [long]$preScreenshotStats.bytes_sent
             BytesAdvancedBeforeScreenshot = $bytesAdvancedBeforeScreenshot
@@ -274,7 +279,7 @@ public static class HyperGetLiquidProgressNative {
         throw "Liquid Progress download did not complete with expected SHA-256; bytes=$actualLength."
     }
 
-    $finalStatusOutput = @(& $cliPath download show $taskId --status-lines 2>&1)
+    $finalStatusOutput = @(& $cliPath download show --status-lines $taskId 2>&1)
     $finalStatusExitCode = $LASTEXITCODE
     $finalStatusOutputPreview = @(Get-SanitizedStatusPreview -Lines $finalStatusOutput)
     $finalStatusLines = @($finalStatusOutput | ForEach-Object { "$_".Trim() } |
@@ -287,6 +292,7 @@ public static class HyperGetLiquidProgressNative {
             Reason = 'Final CLI status was not proven as Finished after the output hash matched.'
             FinalStatusCommandExitCode = $finalStatusExitCode
             FinalStatusOutputPreview = $finalStatusOutputPreview
+            FinalStatusOutputLineCount = @($finalStatusOutput).Count
             ExpectedBytes = $expectedBytes
             ActualBytes = (Get-Item -LiteralPath $outputPath).Length
             ExpectedSHA256 = $expectedSha
