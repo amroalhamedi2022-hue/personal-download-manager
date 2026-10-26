@@ -1495,3 +1495,18 @@ A follow-up review caught an important false-positive risk in the first row-scop
 - **IN PROGRESS:** [cross-version Windows run 40392955509](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40392955509). PowerShell parsing and all cross-version source contracts passed; the baseline installer build is running. Candidate installer build and real lifecycle have not started at the last check.
 
 **Next gate:** inspect both installer hashes, then the real 8 MiB transfer/status parser and full upgrade → candidate uninstall → rollback → uninstall lifecycle. Do not count the milestone complete until the proof artifact records \`Result=PASS\` and the WinCred preservation/cleanup assertions.
+
+
+## 2026-10-27 — cross-version status parser: reproduce the wrapped outer-border row (PRE-BUILD)
+
+**Last Windows candidate checked:** `e986936bb5ffd7f4fa6183e7cf50a53281b8afd2`; run [40410263260](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40410263260). Both exact-snapshot installers built and the baseline's 8 MiB loopback file matched its expected SHA-256, but the acceptance harness failed to recognize the status because the Windows table border decoded to `?` before ID `0`. Upgrade/rollback and WinCred lifecycle were not reached.
+
+**Current PR head at pre-build review:** `d1cc6e31064facc93ced65380ae8b5ff3f7e41a7`. The harness now trims only the observed edge marker characters `' '` and `'?'` before parsing the row, and the source test includes the outer-border case. The last commit corrected over-escaped whitespace regexes in that test. No new exact-head Windows run is recorded yet.
+
+**Pre-build question:** does the packaged baseline CLI's real wrapped output `? 0 ? Finish?` parse as this task's `Finished` state after the already SHA-verified 8 MiB transfer, without accepting a neighboring task's state?
+
+**Expected result:** source contracts and PowerShell parsing pass; both exact snapshots build; the 8 MiB transfer remains byte/SHA verified; status is recognized as `Finished`; then upgrade → candidate uninstall → baseline rollback → normal uninstall verifies history, max-concurrency=4, sentinel, branding/shortcuts/registry, and synthetic WinCred persistence/cleanup.
+
+**Why source tests are insufficient:** only the packaged baseline process reproduces the actual Windows console encoding and table wrapping, and only an installed Windows run can verify the NSIS, registry, shortcut, IPC, and Credential Manager transitions. This build is justified specifically to test those behaviors, not as a release build.
+
+**Current gate:** OPEN. Do not claim upgrade, rollback, or WinCred lifecycle PASS until a new exact-head proof artifact records `Result=PASS`. No merge, release, final EXE delivery, or Torrent.
