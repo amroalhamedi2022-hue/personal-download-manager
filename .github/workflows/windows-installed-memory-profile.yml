@@ -88,6 +88,23 @@ jobs:
           "HYPERGET_PROFILE_GUI=$($gui[0].FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "HYPERGET_PROFILE_CLI=$($cli[0].FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
+      - name: Capture idle installed JVM baseline with NMT
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # NMT is enabled only for this GUI process; it is not written to GITHUB_ENV.
+          $env:JAVA_TOOL_OPTIONS = '-XX:NativeMemoryTracking=summary'
+          $launcher = Start-Process -FilePath $env:HYPERGET_PROFILE_GUI -PassThru
+          try {
+            Start-Sleep -Seconds 20
+            & ./scripts/Collect-WindowsJvmMemoryProfile.ps1 -GuiExecutable $env:HYPERGET_PROFILE_GUI -SourceSha $env:HYPERGET_TESTED_SHA -OutputDirectory 'build/ci-release/jvm-profile-before'
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          } finally {
+            if ($launcher -and -not $launcher.HasExited) { Stop-Process -Id $launcher.Id -Force -ErrorAction SilentlyContinue }
+            Start-Sleep -Seconds 2
+            Get-Process -Name 'DownloadManager' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          }
+
       - name: Run one measured installed 1/4/16 round (21 SHA-verified downloads)
         shell: pwsh
         run: |
@@ -116,6 +133,7 @@ jobs:
             build/ci-release/active-transfer-bench/round-summary.csv
             build/ci-release/active-transfer-bench/benchmark-report.md
             build/ci-release/active-transfer-bench/failure-diagnostics.txt
+            build/ci-release/jvm-profile-before/**
             build/ci-release/jvm-profile/**
           if-no-files-found: warn
           retention-days: 7
