@@ -37,8 +37,10 @@ Implementation follows the official Compose guidance to cache size-dependent Bru
 
 ## Acceptance status
 
-- Production change and source regression are being committed together on the existing PR branch.
-- Windows compile, installed visual gate, exact SHA-256, 1/4/16 matrix and JVM profile are PENDING until the exact-source runs complete and artifacts are inspected.
+- **PASS on exact tested production SHA `869af00b39ba1977321fadb7ffbc8b022bd78148`:** source contracts, Windows Compose build/install, inspected active Liquid Progress screenshot, 16 MiB SHA-256 integrity, same-version reinstall/silent uninstall, 63/63 HTTP 1/4/16 transfers with 9/9 resource CSVs, JVM profile collection, FTP JUnit, HLS guarded redirect/segment SHA, queue lifecycle and installed FTP pause/REST-resume.
+- **Measured but not causally proven:** third-round 16-task peak Working Set/Private Bytes fell versus the prior same-harness run; CPU peak increased, and stabilized Private Bytes remain elevated. Do not claim an overall performance win or a confirmed leak.
+- **Still NOT TESTED / NOT COMPLETE:** current-head full browser-to-host E2E, cross-version upgrade/rollback and existing-data migration, external HTTPS/FTP and HLS restart, controlled IDM parity, final single deliverable `HyperGet.exe`, and independent final Windows recheck.
+- Detailed evidence and artifact hashes are recorded below. This closes the renderer-cache acceptance slice only; it does not accept the full product.
 - No release, main-branch write, merge, paid service/runner, or Torrent functionality.
 
 
