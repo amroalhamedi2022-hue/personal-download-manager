@@ -92,7 +92,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          & ./scripts/Run-WindowsActiveBenchmarkMatrix.ps1 -GuiExecutable $env:HYPERGET_PROFILE_GUI -CliExecutable $env:HYPERGET_PROFILE_CLI -SourceSha $env:HYPERGET_TESTED_SHA -OutputDirectory 'build/ci-release/active-transfer-bench' -Rounds 1 -SampleSeconds 8 -FileSizeMiB 32 -ServerChunkDelayMs 500 -CompletionTimeoutSeconds 300 -KeepGuiRunning
+          & ./scripts/Run-WindowsActiveBenchmarkMatrix.ps1 -GuiExecutable $env:HYPERGET_PROFILE_GUI -CliExecutable $env:HYPERGET_PROFILE_CLI -SourceSha $env:HYPERGET_TESTED_SHA -OutputDirectory 'build/ci-release/active-transfer-bench' -Rounds 1 -SampleSeconds 8 -FileSizeMiB 32 -ServerChunkDelayMs 500 -CompletionTimeoutSeconds 300 -KeepGuiRunning -EnableNativeMemoryTracking
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & ./scripts/Summarize-WindowsActiveBenchmark.ps1 -Directory 'build/ci-release/active-transfer-bench' -SourceSha $env:HYPERGET_TESTED_SHA -Rounds 1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

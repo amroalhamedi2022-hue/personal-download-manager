@@ -18,7 +18,8 @@ param(
     [ValidateRange(10, 500)][int] $ServerChunkDelayMs = 500,
     [ValidateRange(8, 128)][int] $FileSizeMiB = 32,
     [ValidateRange(120, 600)][int] $CompletionTimeoutSeconds = 300,
-    [switch] $KeepGuiRunning
+    [switch] $KeepGuiRunning,
+    [switch] $EnableNativeMemoryTracking
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -90,7 +91,26 @@ try {
     $port = [int](Get-Content -LiteralPath $portPath -Raw)
     if ($port -lt 1 -or $port -gt 65535) { throw 'Invalid fixture server port.' }
     $url = "http://127.0.0.1:$port/fixture.bin"
-    $gui = Start-Process -FilePath $guiPath -PassThru
+    $originalJavaToolOptions = $env:JAVA_TOOL_OPTIONS
+    if ($EnableNativeMemoryTracking) {
+        $nmtOption = '-XX:NativeMemoryTracking=summary'
+        $baseJavaToolOptions = [string]$originalJavaToolOptions
+        $baseJavaToolOptions = ($baseJavaToolOptions -replace '(?i)(?:^|\s)-XX:NativeMemoryTracking=\S+', '').Trim()
+        $env:JAVA_TOOL_OPTIONS = (@($baseJavaToolOptions, $nmtOption) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) -join ' '
+    }
+    try {
+        # JAVA_TOOL_OPTIONS is set only for GUI startup; restore it before CLI
+        # commands so its startup banner cannot contaminate machine-readable output.
+        $gui = Start-Process -FilePath $guiPath -PassThru
+    } finally {
+        if ($EnableNativeMemoryTracking) {
+            if ($null -eq $originalJavaToolOptions) {
+                Remove-Item Env:JAVA_TOOL_OPTIONS -ErrorAction SilentlyContinue
+            } else {
+                $env:JAVA_TOOL_OPTIONS = $originalJavaToolOptions
+            }
+        }
+    }
     $foundApp = $false
     for ($wait = 0; $wait -lt 40; $wait++) {
         Start-Sleep -Milliseconds 500

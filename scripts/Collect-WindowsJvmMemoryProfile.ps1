@@ -58,14 +58,17 @@ $processSnapshot = [pscustomobject]@{
 $processSnapshot | ConvertTo-Json -Depth 3 |
     Set-Content -LiteralPath (Join-Path $root 'process-snapshot.json') -Encoding utf8
 $commands = @(
-    @{ Name = 'vm-version'; Command = 'VM.version' },
-    @{ Name = 'heap-info'; Command = 'GC.heap_info' },
-    @{ Name = 'class-histogram'; Command = 'GC.class_histogram' },
-    @{ Name = 'thread-dump'; Command = 'Thread.print' }
+    @{ Name = 'vm-version'; Args = @('VM.version') },
+    @{ Name = 'vm-flags'; Args = @('VM.flags') },
+    @{ Name = 'heap-info'; Args = @('GC.heap_info') },
+    @{ Name = 'class-histogram'; Args = @('GC.class_histogram') },
+    @{ Name = 'thread-dump'; Args = @('Thread.print') },
+    @{ Name = 'native-memory-summary'; Args = @('VM.native_memory', 'summary') }
 )
 foreach ($entry in $commands) {
     $target = Join-Path $root ($entry.Name + '.txt')
-    $output = & $jcmd $javaPid $entry.Command 2>&1
+    $commandArgs = @($javaPid) + @($entry.Args)
+    $output = & $jcmd @commandArgs 2>&1
     $exitCode = $LASTEXITCODE
     $output | Set-Content -LiteralPath $target -Encoding utf8
     if ($exitCode -ne 0) {
@@ -74,7 +77,7 @@ foreach ($entry in $commands) {
 }
 @(
     "SourceSHA=$SourceSha"
-    "GuiProcessId=$($gui.Id)"
+    "JvmProcessId=$javaPid"
     "JcmdVersion=$((& $jcmd -J-version 2>&1 | Select-Object -First 1) -join ' ')"
     "ProfileStatus=PASS"
 ) | Set-Content -LiteralPath (Join-Path $root 'profile-status.txt') -Encoding utf8
