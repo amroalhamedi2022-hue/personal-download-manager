@@ -60,6 +60,14 @@ class LiquidProgressSourceContract(unittest.TestCase):
         status_launch = SCRIPT.index("$statusOutput = @(& $cliPath download show")
         self.assertLess(active_gate, status_launch)
 
+    def test_status_cli_polling_is_rate_limited_and_capture_revalidates_live_bytes(self):
+        self.assertIn("$lastStatusPollMilliseconds = -500", SCRIPT)
+        self.assertIn("($elapsedMilliseconds - $lastStatusPollMilliseconds) -ge 500", SCRIPT)
+        self.assertIn("BytesAdvancedBeforeScreenshot = $bytesAdvancedBeforeScreenshot", SCRIPT)
+        self.assertIn("StatusPollCountAtCapture = $statusPollCount", SCRIPT)
+        self.assertIn("if ([int]$preScreenshotStats.active_distinct_tasks -lt 1 -or", SCRIPT)
+        self.assertIn("cancel-in-progress: false", UI_WORKFLOW)
+
     def test_visual_workflow_runs_on_pr_ui_changes_and_uploads_evidence(self):
         self.assertIn("pull_request:", UI_WORKFLOW)
         self.assertIn("needs: change-scope", UI_WORKFLOW)

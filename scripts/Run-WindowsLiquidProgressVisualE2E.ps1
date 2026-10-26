@@ -115,30 +115,37 @@ public static class HyperGetLiquidProgressNative {
     $captureStats = $null
     $statusAtCapture = $null
     $lastStatusLine = ''
-    # Poll lightweight loopback counters frequently, but launch the CLI status
-    # process only after real payload bytes are moving. Repeated CLI startup
-    # can otherwise miss a short unpaced transfer; the fixture is paced above
-    # so a genuine active window remains available for the screenshot.
+    $statusPollClock = [System.Diagnostics.Stopwatch]::StartNew()
+    $lastStatusPollMilliseconds = -500
+    $statusPollCount = 0
+    # Poll cheap loopback counters at 100 ms, but spawn the installed CLI at
+    # most twice per second. The fixture's shared per-task pacer keeps the
+    # transfer live long enough for a reliable status observation.
     for ($attempt = 0; $attempt -lt 300; $attempt++) {
         $captureStats = Invoke-RestMethod -Uri "http://127.0.0.1:$port/stats" -TimeoutSec 5
         if ([int]$captureStats.active_distinct_tasks -ge 1 -and
             [long]$captureStats.bytes_sent -gt 0) {
-            $statusOutput = @(& $cliPath download show --status-lines $taskId 2>&1)
-            if ($LASTEXITCODE -eq 0) {
-                $statusLine = @($statusOutput | ForEach-Object { "$_".Trim() } |
-                    Where-Object { $_ -match ('^' + [regex]::Escape([string]$taskId) + '\t') } |
-                    Select-Object -First 1)
-                if ($statusLine.Count -gt 0) {
-                    $lastStatusLine = [string]$statusLine[0]
-                    $statusParts = $lastStatusLine.Split([char]9, 2)
-                    if ($statusParts.Count -eq 2) {
-                        $statusAtCapture = $statusParts[1].Trim()
+            $elapsedMilliseconds = $statusPollClock.ElapsedMilliseconds
+            if (($elapsedMilliseconds - $lastStatusPollMilliseconds) -ge 500) {
+                $lastStatusPollMilliseconds = $elapsedMilliseconds
+                $statusPollCount++
+                $statusOutput = @(& $cliPath download show --status-lines $taskId 2>&1)
+                if ($LASTEXITCODE -eq 0) {
+                    $statusLine = @($statusOutput | ForEach-Object { "$_".Trim() } |
+                        Where-Object { $_ -match ('^' + [regex]::Escape([string]$taskId) + '\\t') } |
+                        Select-Object -First 1)
+                    if ($statusLine.Count -gt 0) {
+                        $lastStatusLine = [string]$statusLine[0]
+                        $statusParts = $lastStatusLine.Split([char]9, 2)
+                        if ($statusParts.Count -eq 2) {
+                            $statusAtCapture = $statusParts[1].Trim()
+                        }
                     }
                 }
-            }
-            if ($statusAtCapture -eq 'Downloading') {
-                $ready = $true
-                break
+                if ($statusAtCapture -eq 'Downloading') {
+                    $ready = $true
+                    break
+                }
             }
         }
         Start-Sleep -Milliseconds 100
@@ -150,13 +157,51 @@ public static class HyperGetLiquidProgressNative {
             Reason = 'Could not prove live Downloading state before screenshot.'
             LastStatusLine = $lastStatusLine
             LastStatus = $statusAtCapture
+            StatusPollCount = $statusPollCount
             LastFixtureStats = $captureStats
         }
         $diagnostics | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $root 'liquid-progress-diagnostics.json') -Encoding utf8
         throw 'Could not prove a live data transfer with Downloading status before screenshot; sanitized diagnostics were saved.'
     }
 
+    $bytesBeforeScreenshot = [long]$captureStats.bytes_sent
     Start-Sleep -Milliseconds 900
+    $preScreenshotStats = Invoke-RestMethod -Uri "http://127.0.0.1:$port/stats" -TimeoutSec 5
+    $bytesAdvancedBeforeScreenshot = [long]$preScreenshotStats.bytes_sent -gt $bytesBeforeScreenshot
+    $statusOutput = @(& $cliPath download show --status-lines $taskId 2>&1)
+    $statusPollCount++
+    $statusAtCapture = $null
+    if ($LASTEXITCODE -eq 0) {
+        $statusLine = @($statusOutput | ForEach-Object { "$_".Trim() } |
+            Where-Object { $_ -match ('^' + [regex]::Escape([string]$taskId) + '\\t') } |
+            Select-Object -First 1)
+        if ($statusLine.Count -gt 0) {
+            $lastStatusLine = [string]$statusLine[0]
+            $statusParts = $lastStatusLine.Split([char]9, 2)
+            if ($statusParts.Count -eq 2) {
+                $statusAtCapture = $statusParts[1].Trim()
+            }
+        }
+    }
+    if ([int]$preScreenshotStats.active_distinct_tasks -lt 1 -or
+        -not $bytesAdvancedBeforeScreenshot -or
+        $statusAtCapture -ne 'Downloading') {
+        $diagnostics = [pscustomobject]@{
+            SourceSHA = $SourceSha
+            TaskId = $taskId
+            Reason = 'The transfer was not proven active at screenshot time.'
+            LastStatusLine = $lastStatusLine
+            LastStatus = $statusAtCapture
+            StatusPollCount = $statusPollCount
+            BytesBeforeScreenshot = $bytesBeforeScreenshot
+            BytesAtScreenshot = [long]$preScreenshotStats.bytes_sent
+            BytesAdvancedBeforeScreenshot = $bytesAdvancedBeforeScreenshot
+            LastFixtureStats = $preScreenshotStats
+        }
+        $diagnostics | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $root 'liquid-progress-diagnostics.json') -Encoding utf8
+        throw 'Live transfer ended or stopped advancing before screenshot; sanitized diagnostics were saved.'
+    }
+    $captureStats = $preScreenshotStats
     Add-Type -AssemblyName System.Drawing
     Add-Type -AssemblyName System.Windows.Forms
     $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
@@ -208,6 +253,8 @@ public static class HyperGetLiquidProgressNative {
         StatusAtCapture = $statusAtCapture
         ActiveDistinctTasksAtCapture = [int]$captureStats.active_distinct_tasks
         BytesSentAtCapture = [long]$captureStats.bytes_sent
+        BytesAdvancedBeforeScreenshot = $bytesAdvancedBeforeScreenshot
+        StatusPollCountAtCapture = $statusPollCount
         ExpectedBytes = $expectedBytes
         ActualBytes = (Get-Item -LiteralPath $outputPath).Length
         ExpectedSHA256 = $expectedSha

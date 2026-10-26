@@ -45,3 +45,16 @@ Source contracts cannot prove Kotlin/Compose API compatibility, Windows native G
 **Repair pushed:** `570cd36f5bb07581c7c5fc2b5a0134233bbf1595` enables `/stats?reset=1&gate_tasks=1` before starting the GUI/download, polls lightweight fixture counters frequently, and only launches the status CLI after actual payload bytes are moving. On failure it writes sanitized `liquid-progress-diagnostics.json` with task status and fixture counters. `0073a746fa0b78ee359bdfb9d63b4cea4b76a4e1` adds source-contract coverage for paced-mode activation, polling order and diagnostic retention.
 
 **Next acceptance question:** on the new exact source SHA, does Windows compile/install and capture `liquid-progress-active.png` while CLI status is `Downloading` and loopback data bytes are actively moving, then finish the 16 MiB file with matching SHA-256? Expected: screenshot + JSON report with active counters and identical hashes; installer lifecycle step also must run and pass. Source checks cannot prove this. Status remains **NOT TESTED** until the new Windows run and artifact are inspected.
+
+## 2026-10-26 04:58 Asia/Jerusalem — strengthen screenshot-time proof and prevent CI cancellation
+
+The prior harness repair was present in source, but the subsequent exact-head workflow run was cancelled and later runs scope-skipped the expensive UI job because their newest commit only changed documentation. Therefore there is still **no passing screenshot artifact** for the repaired harness.
+
+This follow-up makes two test-quality changes before the next purposeful Windows build:
+- CLI status polling is rate-limited to at most twice per second while cheap fixture counters remain polled every 100 ms, avoiding repeated process-start overhead.
+- After the 900 ms animation observation window, the test rechecks the installed CLI status, requires at least one live data task, and proves the fixture byte count advanced immediately before screenshot capture. The JSON report records this evidence and the status-poll count; failure diagnostics retain the last safe status and fixture counters.
+- The installed-UI workflow no longer cancels an already-running exact-SHA acceptance job merely because a newer docs-only commit arrives. Its scope gate still skips unrelated commits.
+
+**Pre-build question:** does this exact source compile/install on Windows, capture the real GUI while the CLI status is Downloading, at least one fixture task is active and bytes advanced during the screenshot window, then finish the 16 MiB file with matching SHA-256 and pass same-version reinstall/uninstall?
+
+**Expected PASS:** screenshot + JSON report tied to the exact source SHA; BytesAdvancedBeforeScreenshot=true; final status Finished; expected/actual SHA-256 equal; installer lifecycle proof present. Source checks cannot prove these GUI/IPC/timing/file-byte properties. This is one targeted acceptance build, not a release. No main write, merge, auto-merge, paid service, or Torrent.
