@@ -38,7 +38,7 @@ class HyperGetCrossVersionUpgradeContracts(unittest.TestCase):
             '$DESKTOP\\HyperGet.lnk',
         ):
             self.assertIn(expected, macro)
-        install_section = self.nsis.index('Section "${APP_DISPLAY_NAME}"')
+        install_section = self.nsis.index('Section "' + "$" + '{APP_DISPLAY_NAME}"')
         install_cleanup = self.nsis.index("!insertmacro RemoveKnownBrandShortcuts", install_section)
         install_clear = self.nsis.index("!insertmacro clearFiles", install_section)
         self.assertLess(install_cleanup, install_clear)
@@ -55,7 +55,7 @@ class HyperGetCrossVersionUpgradeContracts(unittest.TestCase):
             "Refusing to modify pre-existing product registry key",
             "settings','max-concurrent-downloads','--set','4",
             "download','add','http",
-            "download','show',"$",
+            "download','show',",
             "Finished",
             "UpgradeDataAndHistory=PASS",
             "RollbackDataAndHistory=PASS",
@@ -80,7 +80,10 @@ class HyperGetCrossVersionUpgradeContracts(unittest.TestCase):
             self.assertIn(expected, self.workflow)
         self.assertGreaterEqual(self.workflow.count("createReleaseFolderForCi"), 2)
         self.assertNotIn("gh release create", self.workflow.lower())
-        self.assertNotIn("actions/upload-artifact", self.workflow.split("path:")[0].lower())
+        upload_step = self.workflow[self.workflow.index("name: Upload cross-version acceptance proof"):]
+        self.assertIn("cross-version-upgrade-rollback.txt", upload_step)
+        self.assertNotIn("*.exe", upload_step.lower())
+        self.assertNotIn("installer.exe", upload_step.lower())
 
 
 if __name__ == "__main__":
