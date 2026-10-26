@@ -47,19 +47,38 @@ if ((Get-Item -LiteralPath $fixture).Length -ne $expectedBytes) {
 }
 $expectedSha = (Get-FileHash -LiteralPath $fixture -Algorithm SHA256).Hash.ToLowerInvariant()
 
+function Get-NormalizedCliLines {
+    param([object[]]$Lines)
+    foreach ($entry in @($Lines)) {
+        $line = [string]$entry
+        # Normalize terminal decoration and invisible prefixes before parsing.
+        $line = [regex]::Replace($line, "\x1B\[[0-?]*[ -/]*[@-~]", "")
+        $line = $line.Trim().TrimStart([char[]]@([char]0xFEFF, [char]0x200B, [char]0x200E, [char]0x200F))
+        if ($line.Length -gt 0) { $line }
+    }
+}
+
+function Get-DownloadStatusFromOutput {
+    param([object[]]$Lines, [long]$ExpectedId)
+    $validStatuses = @('Paused', 'Error', 'Downloading', 'Finished', 'PreparingFile', 'Resuming', 'Retrying')
+    foreach ($line in @(Get-NormalizedCliLines -Lines $Lines)) {
+        $columns = $line.Split([char[]]@([char]9))
+        if ($columns.Count -lt 2 -or $columns[0].Trim() -cne [string]$ExpectedId) { continue }
+        $candidate = $columns[1].Trim()
+        if ($validStatuses -ccontains $candidate) { return $candidate }
+    }
+    return $null
+}
+
 function Get-SanitizedStatusPreview {
     param([object[]]$Lines)
     $preview = @()
-    foreach ($entry in @($Lines)) {
-        $line = [string]$entry
-        # Remove terminal decoration before classifying; never persist raw table
-        # rows because they may contain a user's names, folders, or other data.
-        $line = [regex]::Replace($line, "\x1B\[[0-?]*[ -/]*[@-~]", "").Trim()
-        if (-not $line) { continue }
+    foreach ($line in @(Get-NormalizedCliLines -Lines $Lines)) {
+        # Never persist raw tables, names, folders, URLs, or arbitrary CLI output.
         if ($line -match '^\d+\t(Paused|Error|Downloading|Finished|PreparingFile|Resuming|Retrying)(\t[A-Za-z0-9_.-]+)?$') {
             $preview += "Status row: $($Matches[1])"
-        } elseif ($line -match '(?i)^No downloads found\.?$') {
-            $preview += 'No downloads found.'
+        } elseif ($line -match '(?i)^(No such download|No downloads found\.?|No download found\.?)$') {
+            $preview += "Task lookup message: $line"
         } elseif ($line -match '(?i)\b(ID\s+Status|ID\s+Status\s+Name|Name\s+Folder)\b') {
             $preview += 'Formatted table output detected; status-lines option may not have been parsed.'
         } elseif ($line -match '(?i)\b(usage|unknown option|invalid|missing|error|exception|argument|not found)\b') {
@@ -132,8 +151,6 @@ public static class HyperGetLiquidProgressNative {
     $ids = @($addOutput | ForEach-Object { "$_".Trim() } | Where-Object { $_ -match '^\d+$' })
     if ($ids.Count -ne 1) { throw "Installed CLI did not return one task ID: $($addOutput -join ' ')" }
     $taskId = [long]$ids[0]
-    # CLI status rows are tab-delimited; use a literal tab prefix rather than a regex escape.
-    $statusPrefix = ([string]$taskId) + [char]9
     $lastStatusCommandExitCode = $null
     $lastStatusOutputPreview = @()
 
@@ -162,15 +179,9 @@ public static class HyperGetLiquidProgressNative {
                 $lastStatusCommandExitCode = $LASTEXITCODE
                 $lastStatusOutputPreview = @(Get-SanitizedStatusPreview -Lines $statusOutput)
                 if ($lastStatusCommandExitCode -eq 0) {
-                    $statusLine = @($statusOutput | ForEach-Object { "$_".Trim() } |
-                        Where-Object { $_.StartsWith($statusPrefix, [StringComparison]::Ordinal) } |
-                        Select-Object -First 1)
-                    if ($statusLine.Count -gt 0) {
-                        $lastStatusLine = [string]$statusLine[0]
-                        $statusParts = $lastStatusLine.Split([char]9, 2)
-                        if ($statusParts.Count -eq 2) {
-                            $statusAtCapture = $statusParts[1].Trim()
-                        }
+                    $statusAtCapture = Get-DownloadStatusFromOutput -Lines $statusOutput -ExpectedId $taskId
+                    if ($null -ne $statusAtCapture) {
+                        $lastStatusLine = ([string]$taskId) + [char]9 + $statusAtCapture
                     }
                 }
                 if ($statusAtCapture -eq 'Downloading') {
@@ -208,15 +219,9 @@ public static class HyperGetLiquidProgressNative {
     $statusPollCount++
     $statusAtCapture = $null
     if ($lastStatusCommandExitCode -eq 0) {
-        $statusLine = @($statusOutput | ForEach-Object { "$_".Trim() } |
-            Where-Object { $_.StartsWith($statusPrefix, [StringComparison]::Ordinal) } |
-            Select-Object -First 1)
-        if ($statusLine.Count -gt 0) {
-            $lastStatusLine = [string]$statusLine[0]
-            $statusParts = $lastStatusLine.Split([char]9, 2)
-            if ($statusParts.Count -eq 2) {
-                $statusAtCapture = $statusParts[1].Trim()
-            }
+        $statusAtCapture = Get-DownloadStatusFromOutput -Lines $statusOutput -ExpectedId $taskId
+        if ($null -ne $statusAtCapture) {
+            $lastStatusLine = ([string]$taskId) + [char]9 + $statusAtCapture
         }
     }
     if ([int]$preScreenshotStats.active_distinct_tasks -lt 1 -or
@@ -282,10 +287,11 @@ public static class HyperGetLiquidProgressNative {
     $finalStatusOutput = @(& $cliPath download show --status-lines $taskId 2>&1)
     $finalStatusExitCode = $LASTEXITCODE
     $finalStatusOutputPreview = @(Get-SanitizedStatusPreview -Lines $finalStatusOutput)
-    $finalStatusLines = @($finalStatusOutput | ForEach-Object { "$_".Trim() } |
-        Where-Object { $_.StartsWith($statusPrefix, [StringComparison]::Ordinal) } |
-        Where-Object { $_.Substring($statusPrefix.Length) -ceq 'Finished' })
-    if ($finalStatusExitCode -ne 0 -or $finalStatusLines.Count -ne 1) {
+    $finalStatus = $null
+    if ($finalStatusExitCode -eq 0) {
+        $finalStatus = Get-DownloadStatusFromOutput -Lines $finalStatusOutput -ExpectedId $taskId
+    }
+    if ($finalStatusExitCode -ne 0 -or $finalStatus -cne 'Finished') {
         [pscustomobject]@{
             SourceSHA = $SourceSha
             TaskId = $taskId
@@ -293,6 +299,7 @@ public static class HyperGetLiquidProgressNative {
             FinalStatusCommandExitCode = $finalStatusExitCode
             FinalStatusOutputPreview = $finalStatusOutputPreview
             FinalStatusOutputLineCount = @($finalStatusOutput).Count
+            FinalStatus = $finalStatus
             ExpectedBytes = $expectedBytes
             ActualBytes = (Get-Item -LiteralPath $outputPath).Length
             ExpectedSHA256 = $expectedSha
@@ -314,7 +321,7 @@ public static class HyperGetLiquidProgressNative {
         ExpectedSHA256 = $expectedSha
         ActualSHA256 = $actualSha
         Screenshot = [IO.Path]::GetFileName($screenshot)
-        FinalStatus = 'Finished'
+        FinalStatus = $finalStatus
         Verified = $true
     } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $root 'liquid-progress-report.json') -Encoding utf8
     Write-Host 'PASS: active Liquid Progress screenshot captured from installed Windows GUI; 16 MiB HTTP download SHA-256 verified.'

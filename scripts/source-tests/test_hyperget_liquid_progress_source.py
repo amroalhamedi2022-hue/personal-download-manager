@@ -68,16 +68,21 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("if ([int]$preScreenshotStats.active_distinct_tasks -lt 1 -or", SCRIPT)
         self.assertIn("cancel-in-progress: false", UI_WORKFLOW)
 
-    def test_cli_status_rows_use_a_literal_tab_prefix(self):
-        # The old over-escaped regex never matched the CLI's actual ID<TAB>Status
-        # rows, so a completed transfer could be mistaken for a missed live window.
-        self.assertIn("$statusPrefix = ([string]$taskId) + [char]9", SCRIPT)
+    def test_cli_status_parser_normalizes_terminal_prefixes_and_tab_columns(self):
+        # Normalize ANSI/BOM/zero-width prefixes before parsing ID<TAB>Status.
+        # Never persist raw table rows, names, paths, or arbitrary CLI output.
+        self.assertIn("function Get-NormalizedCliLines", SCRIPT)
+        self.assertIn("TrimStart([char[]]@", SCRIPT)
+        self.assertIn("function Get-DownloadStatusFromOutput", SCRIPT)
+        self.assertIn("$columns = $line.Split([char[]]@([char]9))", SCRIPT)
+        self.assertIn("$columns[0].Trim() -cne [string]$ExpectedId", SCRIPT)
         self.assertEqual(
-            SCRIPT.count("StartsWith($statusPrefix, [StringComparison]::Ordinal)"),
+            SCRIPT.count("Get-DownloadStatusFromOutput -Lines $statusOutput -ExpectedId $taskId"),
             3,
         )
-        self.assertIn("Substring($statusPrefix.Length) -ceq 'Finished'", SCRIPT)
-        self.assertNotIn(r"+ '\\t')", SCRIPT)
+        self.assertIn("Task lookup message: $line", SCRIPT)
+        self.assertNotIn("StartsWith($statusPrefix", SCRIPT)
+        self.assertNotIn("Substring($statusPrefix.Length)", SCRIPT)
 
     def test_cli_status_probe_captures_sanitized_failure_diagnostics(self):
         self.assertEqual(SCRIPT.count("download show --status-lines $taskId"), 3)
@@ -87,6 +92,7 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("LastStatusOutputPreview = $lastStatusOutputPreview", SCRIPT)
         self.assertIn("FinalStatusOutputPreview = $finalStatusOutputPreview", SCRIPT)
         self.assertIn("Get-SanitizedStatusPreview", SCRIPT)
+        self.assertIn("No such download", SCRIPT)
         self.assertIn("Formatted table output detected", SCRIPT)
         self.assertIn("LastStatusOutputLineCount = @($statusOutput).Count", SCRIPT)
         self.assertIn("return $preview", SCRIPT)
