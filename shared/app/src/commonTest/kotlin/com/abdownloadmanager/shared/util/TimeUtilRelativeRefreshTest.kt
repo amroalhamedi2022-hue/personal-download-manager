@@ -7,7 +7,8 @@ class TimeUtilRelativeRefreshTest {
     @Test
     fun secondLabelsWakeAtTheNextSecondBoundary() {
         assertEquals(1_000L, relativeTimeRefreshDelayMillis(0L))
-        assertEquals(2_000L, relativeTimeRefreshDelayMillis(58_000L))
+        assertEquals(1_000L, relativeTimeRefreshDelayMillis(58_000L))
+        assertEquals(500L, relativeTimeRefreshDelayMillis(58_500L))
         assertEquals(1L, relativeTimeRefreshDelayMillis(59_999L))
         assertEquals(1_000L, relativeTimeRefreshDelayMillis(-10L))
     }

@@ -51,3 +51,7 @@ Next: capture an NMT-enabled idle baseline and compare with a fresh post-transfe
 The idle/post NMT profile [40250121436](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40250121436) passed 21/21 SHA + 3/3 metrics. Private Bytes grew 247.590→501.965 MiB; NMT committed 216,238→338,879 KiB; heap used 45,341→90,541 KiB; Skia CleanableImpl 1,402→9,250; Compose LayoutNode 308→1,725. The source has an avoidable once-per-second relative-date refresh loop in visible desktop download rows.
 
 Changed the shared refresh helper to wake at the next display-unit boundary and avoid state writes when the formatted label is unchanged. Added four deterministic commonTest cases and a Python source contract. The new targeted workflow runs `:shared:app:desktopTest` without packaging; installed Windows HTTP acceptance and NMT before/after profiling are also triggered for these production files. Result is pending at checkpoint creation; do not claim a memory improvement before comparing the artifacts.
+
+
+## Relative-time test expectation corrected
+The first targeted desktop test run [40251458528](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40251458528) compiled the code and ran 32 tests; 31 passed. One new test incorrectly expected a 2-second wait at exactly 58 seconds, where the next seconds label boundary is 1 second. Corrected the expected value to 1 second and added an explicit 500 ms boundary assertion. This is a test expectation fix, not a production compile defect; rerun pending.
