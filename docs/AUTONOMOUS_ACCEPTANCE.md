@@ -1176,3 +1176,5 @@ Before the next purposeful Windows build, the harness now rate-limits installed 
 **Pre-build question:** does this exact source recognize the installed CLI's actual status row during a paced transfer, capture the visible GUI while status is `Downloading` and bytes advance, complete the 16 MiB download with matching SHA-256, and then pass same-version reinstall plus silent uninstall? Source tests cannot prove installed CLI output, IPC, Windows screenshot timing, or file bytes. Expected evidence is the active screenshot, exact-SHA JSON report, final `Finished` status, matching hashes, and lifecycle record.
 
 No production renderer change is claimed in this harness-only repair. No main write, merge, release, paid API or Torrent.
+
+**Follow-up CI scope guard:** source-only contract changes remain in the workflow path trigger, but no longer independently trigger an expensive installer/UI build. The workflow-file change in this commit intentionally causes one exact-SHA Windows recheck; future test-only edits continue through fast source CI without rebuilding the app.
