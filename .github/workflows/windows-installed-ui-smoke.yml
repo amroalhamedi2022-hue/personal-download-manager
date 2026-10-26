@@ -75,6 +75,26 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
+      - name: Parse PowerShell acceptance harnesses before installer build
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $scripts = @(
+            'scripts/Run-WindowsLiquidProgressVisualE2E.ps1',
+            'scripts/Run-WindowsInstallerLifecycleE2E.ps1'
+          )
+          foreach ($scriptPath in $scripts) {
+            $tokens = $null
+            $parseErrors = $null
+            $fullPath = (Resolve-Path -LiteralPath $scriptPath).Path
+            [System.Management.Automation.Language.Parser]::ParseFile($fullPath, [ref]$tokens, [ref]$parseErrors) | Out-Null
+            if ($parseErrors.Count -gt 0) {
+              $details = @($parseErrors | ForEach-Object { "$($_.Extent.StartLineNumber):$($_.Extent.StartColumnNumber) $($_.Message)" }) -join "`n"
+              throw "PowerShell parse failed for $scriptPath`n$details"
+            }
+            Write-Host "PASS: PowerShell parse: $scriptPath"
+          }
+
       - name: Set up JetBrains Runtime 25
         uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
