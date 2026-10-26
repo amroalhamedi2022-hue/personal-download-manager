@@ -59,6 +59,7 @@ class HyperGetCrossVersionUpgradeContracts(unittest.TestCase):
             "Finished",
             "UpgradeDataAndHistory=PASS",
             "RollbackDataAndHistory=PASS",
+            "CandidateUninstallBeforeRollback=PASS",
             "NormalUninstallPreservesUserData=PASS",
             "BaselineSourceSHA=",
             "CandidateSourceSHA=",
