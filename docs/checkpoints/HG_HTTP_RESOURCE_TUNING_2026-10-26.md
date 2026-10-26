@@ -3,7 +3,7 @@
 Date: 2026-10-26  
 PR: [#3](https://github.com/amroalhamedi2022-hue/personal-download-manager/pull/3)  
 Branch: `automation/idm-ftp-cancel-and-category-flush`  
-Status: **32-cap trial rejected; 64/64 restored; exact-head revalidation pending**
+Status: **32-cap trial rejected; 64/64 restored and exact-head Windows revalidation PASS; memory optimization remains open**
 
 ## Purpose
 
@@ -35,16 +35,34 @@ Evaluate whether lowering OkHttp's global and per-host asynchronous request caps
 
 Reject the 32/32 tuning. Restore `maxRequests = 64` and `maxRequestsPerHost = 64`; update the source regression contract to lock the verified baseline. Do not weaken any integrity, concurrency, or timing gates.
 
-## Next exact-head validation
+## Exact-head 64/64 revalidation — PASS
 
-**Pre-build question:** does the restored 64/64 configuration compile and pass the installed Windows matrix again, with 63/63 matching SHA-256, 1/4/16 distinct active tasks, 9/9 CPU/RAM CSVs, and durations within the established guard?
+The production rollback is now validated on exact source SHA `915fe579db44b26b485d048e8f00b9487aec0a22`.
 
-Expected: the functional gates remain green and the 16-task duration returns near the 64/64 baseline. The installed JVM profile should also run on this exact SHA so memory evidence is not inferred from an older commit.
+- Installed Windows HTTP matrix: [run 40333126121](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40333126121).
+- Evidence artifact: [windows-active-http-1-4-16-evidence, ID 12655724146](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40333126121/artifacts/12655724146); artifact ZIP SHA-256 `24e17186a69c4aec3256fecaa5a5a6f1b32eba95762e98643eb760a2eb523520`.
+- **63/63** distinct 32 MiB downloads verified against the local fixture SHA-256 `e09320c5b00b34bb704802136c599a95b3996332ba84d7c7f21112b6231b6bd0`.
+- Three rounds each at 1/4/16 distinct simultaneously transferring tasks; peak distinct task counts were 1/4/16, with 128 peak HTTP connections at 16 tasks.
+- **9/9** process-tree CPU/RAM measurement CSVs were produced and validated.
+- Third 16-task round peak: 502.059 MiB Working Set, 562.102 MiB Private Bytes, 200 process-tree threads and 1,684 handles in the sampled process tree. This is functional acceptance, **not a resource improvement claim**; this run's memory was higher than the earlier 64/64 baseline, so memory remains open and comparisons need controlled repeatability.
 
-Status until new runs are inspected:
-- Source contract for 64/64: **PENDING CI**.
-- Installed HTTP 1/4/16: **PENDING exact-head Windows run**.
-- Installed JVM profile: **PENDING exact-head Windows run**.
-- Cross-version upgrade/rollback, external HTTPS/FTP, HLS restart, final branded single `HyperGet.exe`, and independent final Windows recheck: **OPEN / NOT TESTED**.
+## Exact-head JVM profile — PASS, diagnostic only
+
+- Installed JVM profile: [run 40333126363](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40333126363).
+- Artifact: [hyperget-installed-jvm-memory-profile, ID 12655992771](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40333126363/artifacts/12655992771); ZIP SHA-256 `d399f29e6dfbde436e544b2e88e35a10c5f0f64f470084b6324fb81c21286834`.
+- **21/21** profile downloads matched SHA-256, **3/3** resource CSVs and all requested JVM diagnostic captures passed.
+- Same-JVM process snapshot after the transfer: 566.922 MiB Working Set / 616.012 MiB Private Bytes, 133 threads / 1,074 handles. After 30 seconds idle: 374.961 MiB / 442.191 MiB, 121 threads / 1,032 handles. Used heap fell from 73,995 KiB to 35,384 KiB.
+- Skia `CleanableImpl` objects fell from 11,249 during the transfer profile to 3,645 after stabilization; Compose `LayoutNode` count remained 1,759. These are diagnostic snapshots, not proof of a leak or its absence. The profile makes bounded body-copy scheduling a worthwhile experiment.
+
+## Other exact-head gates
+
+- Installed Liquid Progress + 16 MiB SHA + same-version reinstall/silent uninstall: **PASS**, [Windows UI run 40333125751](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40333125751). Internal installer SHA-256 `af6fb7805d79a933d4d2ca8f32ac3d19184e052a205a330348d21ad3f5bfdc7f`; not a deliverable.
+- HLS guarded redirect/segment/assembly JUnit: **29 tests PASS**, [run 40333125794](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40333125794).
+- FTP Windows Kotlin/JUnit: **29 tests PASS**, [run 40333126023](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40333126023).
+- Source-only safety checks: **PASS**, [run 40333125785](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40333125785).
+
+## Remaining gates
+
+Cross-version upgrade/rollback and existing-data migration; HTTPS/external FTP and HLS restart; controlled CPU/RAM optimization and IDM comparison; full branded single `HyperGet.exe`; and independent final Windows recheck remain **OPEN / NOT TESTED**.
 
 No main write, merge, release, paid service/runner, or Torrent.
