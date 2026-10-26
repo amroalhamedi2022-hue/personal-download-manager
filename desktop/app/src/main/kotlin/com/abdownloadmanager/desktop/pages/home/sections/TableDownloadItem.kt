@@ -2,7 +2,6 @@ package com.abdownloadmanager.desktop.pages.home.sections
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -11,12 +10,15 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -485,57 +487,138 @@ private fun ProgressStatus(
     ) {
         if (percent != null) {
             val targetWidth = (percent / 100f).coerceIn(0f..1f)
+            // Keep the animation State itself here; read its value in the draw phase
+            // so each animation frame does not recompose every download row.
             val animatedWidth = animateFloatAsState(
                 targetValue = targetWidth,
                 animationSpec = tween(220),
-            ).value
-            Canvas(
+            )
+            Spacer(
                 Modifier
-                    .fillMaxWidth(animatedWidth)
+                    .fillMaxWidth()
                     .height(5.dp)
-                    .clip(CircleShape)
-            ) {
-                drawRect(brush = background)
-                if (isLiquidActive && size.width > 1f) {
-                    // The single shared phase is observed only in the draw lambda.
-                    // A glossy band and two tiny bubbles create a liquid/glass cue
-                    // without adding one infinite animation to every table row.
-                    val phase = liquidProgressPhase.value.coerceIn(0f, 1f)
-                    val shimmerWidth = (size.width * 0.24f)
-                        .coerceAtMost(size.width)
-                        .coerceAtLeast(1f)
-                    val shimmerStart = -shimmerWidth + (size.width + shimmerWidth) * phase
-                    drawRoundRect(
-                        brush = Brush.horizontalGradient(
-                            colors = listOf(
-                                Color.Transparent,
-                                Color.White.copy(alpha = 0.30f),
-                                Color.Transparent,
-                            ),
-                            startX = shimmerStart,
-                            endX = shimmerStart + shimmerWidth,
-                        ),
-                        topLeft = Offset(shimmerStart, 0f),
-                        size = Size(shimmerWidth, size.height),
-                        cornerRadius = CornerRadius(size.height / 2f),
-                    )
-                    if (size.width > 14.dp.toPx()) {
-                        val firstX = size.width * (0.12f + phase * 0.76f)
-                        val secondPhase = (phase + 0.5f) % 1f
-                        val secondX = size.width * (0.12f + secondPhase * 0.76f)
-                        drawCircle(
-                            color = Color.White.copy(alpha = 0.28f),
-                            radius = 1.4.dp.toPx(),
-                            center = Offset(firstX, size.height * 0.34f),
-                        )
-                        drawCircle(
-                            color = Color.White.copy(alpha = 0.20f),
-                            radius = 1.dp.toPx(),
-                            center = Offset(secondX, size.height * 0.70f),
-                        )
+                    .drawWithCache {
+                        // This full-track size is stable while progress animates. Caching
+                        // the shader brushes here avoids creating a new gradient shader
+                        // for every row and every animation frame.
+                        val shimmerWidth = (size.width * 0.24f)
+                            .coerceAtMost(size.width)
+                            .coerceAtLeast(1f)
+                        val shimmerBrush = if (isLiquidActive && size.width > 1f) {
+                            Brush.horizontalGradient(
+                                colors = listOf(
+                                    Color.Transparent,
+                                    Color.White.copy(alpha = 0.30f),
+                                    Color.Transparent,
+                                ),
+                                startX = 0f,
+                                endX = shimmerWidth,
+                            )
+                        } else {
+                            null
+                        }
+                        onDrawBehind {
+                            val fillWidth = (size.width * animatedWidth.value)
+                                .coerceIn(0f, size.width)
+                            if (fillWidth > 0f && size.width > 0f) {
+                                val fillScale = fillWidth / size.width
+                                val capRadius = size.height / 2f
+                                val fillCornerRadius = CornerRadius(
+                                    x = (capRadius / fillScale).coerceAtMost(size.width / 2f),
+                                    y = capRadius,
+                                )
+
+                                // Draw the gradient at a stable full-track size, then
+                                // scale the canvas to the animated fill width. This keeps
+                                // the existing gradient distribution while reusing its shader.
+                                withTransform({
+                                    scale(
+                                        scaleX = fillScale,
+                                        scaleY = 1f,
+                                        pivot = Offset.Zero,
+                                    )
+                                }) {
+                                    drawRoundRect(
+                                        brush = background,
+                                        topLeft = Offset.Zero,
+                                        size = Size(size.width, size.height),
+                                        cornerRadius = fillCornerRadius,
+                                    )
+                                }
+
+                                if (isLiquidActive && fillWidth > 1f && shimmerBrush != null) {
+                                    val phase = liquidProgressPhase.value.coerceIn(0f, 1f)
+                                    val shimmerStart = -shimmerWidth + (fillWidth + shimmerWidth) * phase
+                                    clipRect(right = fillWidth) {
+                                        withTransform({
+                                            translate(left = shimmerStart, top = 0f)
+                                        }) {
+                                            drawRoundRect(
+                                                brush = shimmerBrush,
+                                                topLeft = Offset.Zero,
+                                                size = Size(shimmerWidth, size.height),
+                                                cornerRadius = CornerRadius(size.height / 2f),
+                                            )
+                                        }
+                                        if (fillWidth > 14.dp.toPx()) {
+                                            val firstX = fillWidth * (0.12f + phase * 0.76f)
+                                            val secondPhase = (phase + 0.5f) % 1f
+                                            val secondX = fillWidth * (0.12f + secondPhase * 0.76f)
+                                            drawCircle(
+                                                color = Color.White.copy(alpha = 0.28f),
+                                                radius = 1.4.dp.toPx(),
+                                                center = Offset(firstX, size.height * 0.34f),
+                                            )
+                                            drawCircle(
+                                                color = Color.White.copy(alpha = 0.20f),
+                                                radius = 1.dp.toPx(),
+                                                center = Offset(secondX, size.height * 0.70f),
+                                            )
+                                        }
+                                    }
+
+                                    // Restore the rounded ends after clipping the shimmer to
+                                    // the fill, matching the previous pill-shaped progress cap.
+                                    clipRect(left = 0f, right = capRadius.coerceAtMost(fillWidth)) {
+                                        withTransform({
+                                            scale(
+                                                scaleX = fillScale,
+                                                scaleY = 1f,
+                                                pivot = Offset.Zero,
+                                            )
+                                        }) {
+                                            drawRoundRect(
+                                                brush = background,
+                                                topLeft = Offset.Zero,
+                                                size = Size(size.width, size.height),
+                                                cornerRadius = fillCornerRadius,
+                                            )
+                                        }
+                                    }
+                                    clipRect(
+                                        left = (fillWidth - capRadius).coerceAtLeast(0f),
+                                        right = fillWidth,
+                                    ) {
+                                        withTransform({
+                                            scale(
+                                                scaleX = fillScale,
+                                                scaleY = 1f,
+                                                pivot = Offset.Zero,
+                                            )
+                                        }) {
+                                            drawRoundRect(
+                                                brush = background,
+                                                topLeft = Offset.Zero,
+                                                size = Size(size.width, size.height),
+                                                cornerRadius = fillCornerRadius,
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
-                }
-            }
+            )
         }
     }
 }

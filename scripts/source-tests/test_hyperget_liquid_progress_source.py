@@ -20,14 +20,33 @@ class LiquidProgressSourceContract(unittest.TestCase):
 
     def test_progress_phase_is_read_in_draw_not_by_each_row_composition(self):
         progress = TABLE.split("private fun ProgressStatus(", 1)[1]
-        self.assertIn("Canvas(", progress)
+        self.assertIn("Spacer(", progress)
+        self.assertIn("drawWithCache", progress)
+        self.assertNotIn("Canvas(", progress)
+        self.assertIn(".clip(CircleShape)", progress)
         self.assertIn("liquidProgressPhase.value", progress)
+        self.assertIn("animatedWidth.value", progress)
         self.assertIn("drawRoundRect(", progress)
         self.assertIn("drawCircle(", progress)
         self.assertIn("Brush.horizontalGradient(", progress)
-        self.assertIn("clip(CircleShape)", progress)
+        self.assertIn("clipRect(right = fillWidth)", progress)
         self.assertIn("isLiquidActive = status == DownloadProgressStatus.Downloading", TABLE)
 
+    def test_frame_dependent_gradient_shaders_are_cached_at_stable_track_size(self):
+        progress = TABLE.split("private fun ProgressStatus(", 1)[1]
+        cache_builder = progress.split(".drawWithCache {", 1)[1].split("onDrawBehind {", 1)[0]
+        draw_body = progress.split("onDrawBehind {", 1)[1]
+        self.assertIn("val shimmerBrush = if (isLiquidActive", cache_builder)
+        self.assertIn("Brush.horizontalGradient(", cache_builder)
+        self.assertNotIn("Brush.horizontalGradient(", draw_body)
+        self.assertNotIn("Canvas(", progress)
+        self.assertIn("val animatedWidth = animateFloatAsState(", progress)
+        animation_state = progress.split("val animatedWidth = animateFloatAsState(", 1)[1].split("Spacer(", 1)[0]
+        self.assertNotIn(".value", animation_state)
+        self.assertIn("animatedWidth.value", draw_body)
+        self.assertIn("liquidProgressPhase.value", draw_body)
+        self.assertIn("val fillScale = fillWidth / size.width", draw_body)
+        self.assertIn("scale(", draw_body)
     def test_installed_windows_e2e_captures_only_a_proven_live_transfer(self):
         for marker in (
             "download add http",
