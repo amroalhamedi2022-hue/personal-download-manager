@@ -34,3 +34,14 @@ Source contracts cannot prove Kotlin/Compose API compatibility, Windows native G
 - Live screenshot, active Downloading status, 16 MiB final SHA-256: NOT TESTED until the Windows workflow completes and its artifact is inspected.
 - Existing HTTP 1/4/16, FTP, HLS, browser and memory evidence is historical exact-SHA evidence, not retroactively proof for this UI commit.
 - No main write, merge, auto-merge, paid runner/API, release, or Torrent.
+
+
+## 2026-10-26 04:30 Asia/Jerusalem — diagnose and repair visual-E2E false negative (Windows recheck pending)
+
+**Observed exact-head result:** installed UI workflow [40257834591](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40257834591) compiled the Compose UI, built and silently installed one NSIS installer, and launched/captured the installed GUI successfully. The new visual-transfer step then failed at `scripts/Run-WindowsLiquidProgressVisualE2E.ps1:129` with `Could not prove a live data transfer with Downloading status before screenshot`. This is a real acceptance **FAIL**, not a source/compile failure. Installer SHA-256 from the run log: `949283b4eb8450d0ab6ca7f67f6a30f6751ad9166411881f4860f2343198ea8c`. The uploaded visual artifact (`12624295283`) is diagnostic-only and does not establish a captured live screenshot or final SHA.
+
+**Root-cause analysis:** the script passed `--task-chunk-delay-ms 180` but never activated the fixture's pacing mode. `LocalHttpRangeFixture.py` applies the aggregate per-task pacer only when the `/stats` endpoint has been reset with `gate_tasks` > 0; otherwise only the legacy per-connection delay applies. The script also launched a fresh CLI process on every 250-ms poll, which added overhead and could miss the brief live window. The failure therefore points to a test-harness timing defect; it does **not** prove a Liquid Progress rendering defect or an engine download defect.
+
+**Repair pushed:** `570cd36f5bb07581c7c5fc2b5a0134233bbf1595` enables `/stats?reset=1&gate_tasks=1` before starting the GUI/download, polls lightweight fixture counters frequently, and only launches the status CLI after actual payload bytes are moving. On failure it writes sanitized `liquid-progress-diagnostics.json` with task status and fixture counters. `0073a746fa0b78ee359bdfb9d63b4cea4b76a4e1` adds source-contract coverage for paced-mode activation, polling order and diagnostic retention.
+
+**Next acceptance question:** on the new exact source SHA, does Windows compile/install and capture `liquid-progress-active.png` while CLI status is `Downloading` and loopback data bytes are actively moving, then finish the 16 MiB file with matching SHA-256? Expected: screenshot + JSON report with active counters and identical hashes; installer lifecycle step also must run and pass. Source checks cannot prove this. Status remains **NOT TESTED** until the new Windows run and artifact are inspected.
