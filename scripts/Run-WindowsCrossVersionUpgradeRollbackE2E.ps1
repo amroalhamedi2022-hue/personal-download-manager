@@ -298,7 +298,29 @@ try {
     Assert-UserState -Label 'Upgrade to HyperGet'
     Stop-AppGracefully
 
-    $stage = 'rollback HyperGet candidate to baseline'
+    $stage = 'remove candidate while preserving user data before rollback'
+    $candidateUninstaller = Join-Path $installDir 'uninstall.exe'
+    $candidateUninstall = Start-Process -FilePath $candidateUninstaller -ArgumentList @('/S') -PassThru
+    if (-not $candidateUninstall.WaitForExit(180000)) {
+        Stop-Process -Id $candidateUninstall.Id -Force -ErrorAction SilentlyContinue
+        throw 'HyperGet candidate uninstall timed out before rollback.'
+    }
+    if ($candidateUninstall.ExitCode -ne 0) { throw ('HyperGet candidate uninstall exit code ' + $candidateUninstall.ExitCode + '.') }
+    Start-Sleep -Seconds 2
+    foreach ($name in @('DownloadManager.exe','DownloadManagerCli.exe','uninstall.exe')) {
+        if (Test-Path -LiteralPath (Join-Path $installDir $name)) { throw ('Candidate uninstall left ' + $name + ' behind.') }
+    }
+    foreach ($key in @($uninstallKey,$appKey)) {
+        if (Test-Path -LiteralPath $key) { throw ('Candidate uninstall left registry key ' + $key + '.') }
+    }
+    foreach ($path in @($legacyStartMenuShortcut,$brandedStartMenuShortcut,$legacyDesktopShortcut,$brandedDesktopShortcut)) {
+        if (Test-Path -LiteralPath $path) { throw ('Candidate uninstall left product shortcut ' + $path + '.') }
+    }
+    if (-not (Test-Path -LiteralPath $sentinelFile -PathType Leaf)) { throw 'Candidate uninstall removed user data before rollback.' }
+    if ((Get-FileHash -LiteralPath $sentinelFile -Algorithm SHA256).Hash.ToLowerInvariant() -ne $script:SentinelSha) {
+        throw 'Candidate uninstall changed the user-data sentinel before rollback.'
+    }
+    $stage = 'reinstall baseline snapshot after preserving-data rollback'
     Install-Snapshot -InstallerPath ([IO.Path]::GetFullPath($BaselineInstaller)) -Label 'Rollback to baseline'
     $rollbackMetadata = Get-InstallMetadata -Label 'Rollback to baseline'
     if ($rollbackMetadata.DisplayName -ne 'Download Manager' -or
@@ -355,6 +377,7 @@ try {
         "UserDataSentinelSHA256=$script:SentinelSha"
         'UpgradeDataAndHistory=PASS'
         'RollbackDataAndHistory=PASS'
+        'CandidateUninstallBeforeRollback=PASS'
         'ShortcutTransitions=PASS'
         'NormalUninstallPreservesUserData=PASS'
     ) | Set-Content -LiteralPath $proofFile -Encoding utf8
