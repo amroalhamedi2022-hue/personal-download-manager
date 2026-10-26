@@ -38,16 +38,33 @@ class FtpTransferClient {
     private class ActiveTransfer(val client: FTPClient) {
         val cancelled = AtomicBoolean(false)
         val dataStream = AtomicReference<InputStream?>(null)
+        private val lifecycleLock = Any()
+        private var committed = false
 
         fun ensureNotCancelled() {
             if (cancelled.get()) throw IOException("FTP transfer cancelled")
         }
 
         fun cancel() {
-            cancelled.set(true)
-            // Closing retrieveFileStream's input also closes its data socket.
-            runCatching { dataStream.get()?.close() }
-            runCatching { client.disconnect() }
+            synchronized(lifecycleLock) {
+                // Once publication wins the lock, a later Pause cannot turn a
+                // committed file back into a cancelled transfer.
+                if (committed) return
+                cancelled.set(true)
+                // Closing retrieveFileStream's input also closes its data socket.
+                runCatching { dataStream.get()?.close() }
+                runCatching { client.disconnect() }
+            }
+        }
+
+        /**
+         * Serialize the final no-overwrite publication with cancellation.
+         * If cancel obtains the lock first, no final file is published. If
+         * publication obtains it first, cancel returns only after commit.
+         */
+        fun <T> commitIfActive(action: () -> T): T = synchronized(lifecycleLock) {
+            ensureNotCancelled()
+            action().also { committed = true }
         }
     }
 
@@ -246,11 +263,12 @@ class FtpTransferClient {
             if (identity.size != null && downloaded != identity.size) {
                 throw IOException("FTP byte-count mismatch: expected ${identity.size}, got $downloaded")
             }
-            transfer.ensureNotCancelled()
-            // Never use ATOMIC_MOVE here: it can replace a file that appeared
-            // while RETR was running, even without REPLACE_EXISTING.
-            publishFtpStagedFile(part, absolute, downloaded, stagedFileKey, stagedCreationTime)
-            Files.deleteIfExists(meta)
+            transfer.commitIfActive {
+                // Never use ATOMIC_MOVE here: it can replace a file that appeared
+                // while RETR was running, even without REPLACE_EXISTING.
+                publishFtpStagedFile(part, absolute, downloaded, stagedFileKey, stagedCreationTime)
+                Files.deleteIfExists(meta)
+            }
             return TransferResult(absolute, downloaded - existing, existing, identity.size, identity.modificationTime)
         } finally {
             activeTransfer.compareAndSet(transfer, null)
