@@ -52,6 +52,9 @@ class HyperGetCrossVersionUpgradeContracts(unittest.TestCase):
         for expected in (
             "RUNNER_TEMP",
             "Refusing to touch pre-existing user data",
+            "Refusing to use pre-existing test root",
+            "$script:TestTouchedInstaller = $true",
+            "if ($testCreatedRoot -and (Test-Path -LiteralPath $root))",
             "Refusing to modify pre-existing product registry key",
             "settings','max-concurrent-downloads','--set','4",
             "download','add','http",

@@ -51,6 +51,8 @@ $candidateInstallerSha = $null
 $server = $null
 $transcriptStarted = $false
 $testOwnedData = $false
+$testCreatedRoot = $false
+$script:TestTouchedInstaller = $false
 $stage = 'preflight'
 $script:CurrentCliPath = Join-Path $installDir 'DownloadManagerCli.exe'
 $script:SentinelSha = $null
@@ -81,6 +83,7 @@ function Install-Snapshot([string] $InstallerPath, [string] $Label) {
     if (-not (Test-Path -LiteralPath $InstallerPath -PathType Leaf)) {
         throw ($Label + ' installer missing: ' + $InstallerPath)
     }
+    $script:TestTouchedInstaller = $true
     $process = Start-Process -FilePath $InstallerPath -ArgumentList @('/S', ("/D=" + $installDir)) -PassThru
     if (-not $process.WaitForExit(180000)) {
         Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
@@ -212,6 +215,7 @@ try {
     foreach ($path in @($BaselineInstaller,$CandidateInstaller)) {
         if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw ('Installer missing: ' + $path) }
     }
+    if (Test-Path -LiteralPath $root) { throw ('Refusing to use pre-existing test root: ' + $root) }
     if (Test-Path -LiteralPath $installDir) { throw ('Refusing to overwrite pre-existing test install path: ' + $installDir) }
     if (Test-Path -LiteralPath $dataDir) { throw ('Refusing to touch pre-existing user data: ' + $dataDir) }
     foreach ($key in @($uninstallKey,$appKey)) {
@@ -222,6 +226,7 @@ try {
     }
 
     New-Item -ItemType Directory -Path $root,$fixtureDir,$downloadDir -Force | Out-Null
+    $testCreatedRoot = $true
     $baselineInstallerSha = (Get-FileHash -LiteralPath $BaselineInstaller -Algorithm SHA256).Hash.ToLowerInvariant()
     $candidateInstallerSha = (Get-FileHash -LiteralPath $CandidateInstaller -Algorithm SHA256).Hash.ToLowerInvariant()
     if ($baselineInstallerSha -eq $candidateInstallerSha) { throw 'Baseline and candidate installer bytes are identical; refusing a false cross-version pass.' }
@@ -395,18 +400,20 @@ try {
     if ($server -and -not $server.HasExited) {
         Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue
     }
-    if (Test-Path -LiteralPath $script:CurrentCliPath -PathType Leaf) {
-        try { & $script:CurrentCliPath gui exit 2>&1 | Out-Null } catch {}
-    }
-    Start-Sleep -Milliseconds 500
-    Get-Process -Name 'DownloadManager' -ErrorAction SilentlyContinue |
-        Stop-Process -Force -ErrorAction SilentlyContinue
-    if (Test-Path -LiteralPath (Join-Path $installDir 'uninstall.exe') -PathType Leaf) {
-        try {
-            $cleanup = Start-Process -FilePath (Join-Path $installDir 'uninstall.exe') -ArgumentList @('/S') -PassThru
-            if (-not $cleanup.WaitForExit(60000)) { Stop-Process -Id $cleanup.Id -Force -ErrorAction SilentlyContinue }
-        } catch {
-            Write-Warning ("Best-effort test install cleanup failed: " + $_.Exception.Message)
+    if ($script:TestTouchedInstaller) {
+        if (Test-Path -LiteralPath $script:CurrentCliPath -PathType Leaf) {
+            try { & $script:CurrentCliPath gui exit 2>&1 | Out-Null } catch {}
+        }
+        Start-Sleep -Milliseconds 500
+        Get-Process -Name 'DownloadManager' -ErrorAction SilentlyContinue |
+            Stop-Process -Force -ErrorAction SilentlyContinue
+        if (Test-Path -LiteralPath (Join-Path $installDir 'uninstall.exe') -PathType Leaf) {
+            try {
+                $cleanup = Start-Process -FilePath (Join-Path $installDir 'uninstall.exe') -ArgumentList @('/S') -PassThru
+                if (-not $cleanup.WaitForExit(60000)) { Stop-Process -Id $cleanup.Id -Force -ErrorAction SilentlyContinue }
+            } catch {
+                Write-Warning ("Best-effort test install cleanup failed: " + $_.Exception.Message)
+            }
         }
     }
     if ($testOwnedData -and (Test-Path -LiteralPath $ownershipMarker -PathType Leaf)) {
@@ -424,11 +431,13 @@ try {
             Write-Warning 'Did not remove user data because the ownership marker/path check failed.'
         }
     }
-    foreach ($path in @($legacyStartMenuShortcut,$brandedStartMenuShortcut,$legacyDesktopShortcut,$brandedDesktopShortcut)) {
-        Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
+    if ($script:TestTouchedInstaller) {
+        foreach ($path in @($legacyStartMenuShortcut,$brandedStartMenuShortcut,$legacyDesktopShortcut,$brandedDesktopShortcut)) {
+            Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
+        }
     }
     if ($transcriptStarted) { Stop-Transcript | Out-Null }
-    if (Test-Path -LiteralPath $root) {
+    if ($testCreatedRoot -and (Test-Path -LiteralPath $root)) {
         try { Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction Stop } catch {
             Write-Warning ("Could not remove test build/install directory: " + $_.Exception.Message)
         }
