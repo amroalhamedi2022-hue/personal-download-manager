@@ -73,7 +73,8 @@ class HyperGetCrossVersionUpgradeContracts(unittest.TestCase):
 
         # The exact base snapshot predates --status-lines; poll through its default table.
         self.assertIn("Invoke-AppCli -Arguments @('download','show',([string]$Id))", self.harness)
-        self.assertNotIn("--status-lines", self.harness)
+        self.assertNotIn("Arguments @('download','show','--status-lines'", self.harness)
+        self.assertNotIn("Arguments @('download','show',([string]$Id),'--status-lines')", self.harness)
         self.assertIn(r"\x1B\[[0-?]*[ -/]*[@-~]", self.harness)
         self.assertIn("[│┃|]", self.harness)
         self.assertIn("Downloading|Finished|Error|Paused|PreparingFile|Resuming|Retrying", self.harness)
