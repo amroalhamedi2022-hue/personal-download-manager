@@ -37,3 +37,26 @@ The cap is 48 rather than 32: the rejected 32/32 experiment changed OkHttp reque
 ## Status before build
 
 No result is claimed in this file yet. The source/compile pass is not a performance result. If active-task overlap or SHA integrity fails, or throughput materially regresses without a measurable resource benefit, revert the production cap rather than weakening tests. No paid service/runner, new dependency, main write, auto-merge, release or Torrent.
+
+
+## Post-build evidence — 2026-10-26
+
+**Production source tested:** \`dd27731decbcd8cf1cb67feae42963be42d3bb7a\` (the bounded \`Semaphore(48)\` implementation).  
+**Current PR head at follow-up:** \`2859588b6056f478b46cd7c189db5164b161b3ad\`. Comparing \`dd27731...319c6aa\` shows only the lifecycle JUnit and source-contract test files changed; the production \`PartDownloader.kt\` blob is identical (\`5e1e4cbde0d3bd33c802ca7013b1ee281d141cea\`). The later commits \`b0b6e5c1\` and \`2859588b\` strengthen only the test and its source contract.
+
+### Installed Windows results — PASS
+
+- **HTTP 1/4/16 matrix:** [run 40339095923](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40339095923). Installed one internal NSIS test installer; 63/63 distinct 32 MiB downloads matched the fixture SHA-256; three rounds each at 1/4/16, 16/16 distinct active tasks, and 9/9 process-tree CPU/RAM CSVs validated. Every round completed within the 300-second per-round guard.
+- Evidence artifact [12659995827](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40339095923/artifacts/12659995827), ZIP SHA-256 \`4c7c1d5b1f7dc2e0179df76a82de7ef737c662a45b8aa4670f79c2774f15e5cf\`.
+- Third 16-task round peak: **481.914 MiB Working Set / 553.676 MiB Private Bytes**. The previous 64/64 acceptance run recorded 502.059 / 562.102 MiB. This is a favorable single-run comparison, not a controlled A/B or proof of causality.
+- **Installed JVM profile:** [run 40339095875](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40339095875), 21/21 SHA-verified transfers, 3/3 resource CSVs and JVM diagnostics captured. Artifact [12659296456](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40339095875/artifacts/12659296456), ZIP SHA-256 \`6267fdaf8dd01fe95725442af4df1f551276a0a1834fbc08b86efac791c80cc4\`. Internal test installer SHA-256: \`4d63cbff6010f4d6f0764acfc359fa269efa10bd0caf51478545f079aa36e380\` (not a release deliverable).
+- Same-JVM snapshots: idle baseline 217.715 MiB WS / 243.234 MiB Private Bytes, 51 threads / 668 handles; after transfer 387.211 / 454.027 MiB, 114 threads / 1,008 handles; after 30 seconds idle 385.852 / 452.402 MiB, 87 threads / 904 handles. Heap used decreased from 39,692 KiB to 35,114 KiB. This indicates fewer threads than the earlier profile, but retained process memory remains material; do not claim a leak or a proven memory win from one-run comparisons.
+- **Windows lifecycle JUnit at \`319c6aa\`:** [run 40339189560](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40339189560) — Gradle BUILD SUCCESSFUL; \`PartDownloaderIoLifecycleTest\` 3/3 PASS, including permit saturation and release-after-failure. FTP 29/29 and HLS 29/29 also passed on that test head.
+
+### Stronger overflow regression — pending
+
+Review found the first saturation test asserted a peak of 48 but did not explicitly observe whether a 49th coroutine remained waiting while all permits were held. Added a deterministic contender-ready latch plus an overflow signal and bounded wait assertion in [\`b0b6e5c1\`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/b0b6e5c14ffd51ee071bda97392ab962a0fb3cb4), with a source-contract guard in [\`2859588b\`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/2859588b6056f478b46cd7c189db5164b161b3ad). Current Windows lifecycle run [40350134896](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40350134896) and current source checks are in progress at checkpoint update time. **Do not mark this strengthened regression PASS until the exact-head JUnit run completes.**
+
+### Decision
+
+The production body-copy bound has passed installed HTTP integrity/concurrency and the JVM profiling workload on its production SHA, and the initial lifecycle test passed. Keep the \`Semaphore(48)\` experiment pending the strengthened exact-head JUnit result. Memory optimization remains open; no IDM parity claim, final branded \`HyperGet.exe\`, cross-version upgrade/rollback, external HTTPS/FTP, HLS restart, or independent final Windows recheck is claimed. No main write, merge, release, paid service/runner, or Torrent.
