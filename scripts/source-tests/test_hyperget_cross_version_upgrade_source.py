@@ -227,13 +227,13 @@ class HyperGetCrossVersionUpgradeContracts(unittest.TestCase):
         # Exact safe shape captured in the failed Windows transcript:
         # the outer border became '?' and the narrow table clipped Finished to Finish?.
         status_pattern = re.compile(
-            r"^(?P<status>Downloading|Finished|Finish(?:[?…�])?|Error|Paused|PreparingFile|Resuming|Retrying)(?=$|[\\s?])"
+            r"^(?P<status>Downloading|Finished|Finish(?:[?…�])?|Error|Paused|PreparingFile|Resuming|Retrying)(?=$|[\s?])"
         )
 
         def parse_status(raw_lines, target_id):
             normalized = [line.strip(" ?") for line in raw_lines if line.strip()]
-            row_start = re.compile(r"^\\s*" + re.escape(str(target_id)) + r"(?:\\s|$)")
-            any_row_start = re.compile(r"^\\s*\\d+(?:\\s|$)")
+            row_start = re.compile(r"^\s*" + re.escape(str(target_id)) + r"(?:\s|$)")
+            any_row_start = re.compile(r"^\s*\d+(?:\s|$)")
             inside_target = False
             for line in normalized:
                 if row_start.match(line):
