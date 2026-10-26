@@ -1115,3 +1115,14 @@ The new bounded M06 implementation adds a shared list-level Compose animation St
 Acceptance question before Windows build: does this exact source compile/install, capture the actual installed GUI while the CLI reports Downloading and the loopback fixture reports a live data transfer, and finish a 16 MiB file with exact SHA-256? Source tests cannot prove Compose API compatibility, installed IPC, Windows screen capture, real transfer or file integrity, so the existing installed UI workflow now runs this targeted E2E on relevant PR changes. Expected evidence: liquid-progress-active.png, JSON report, active status/task count, and matching expected/actual hashes. Result remains NOT TESTED until the workflow and artifact are inspected.
 
 Checkpoint: docs/checkpoints/HG_LIQUID_PROGRESS_VISUAL_E2E_2026-10-26.md. No main write, merge, release, paid service or Torrent.
+
+
+## 2026-10-26 — HG-UI-LIQUID-PROGRESS-01 follow-up: visual test harness pacing repair
+
+**Exact-head failure:** Windows installed UI run [40257834591](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40257834591) passed Compose compile, NSIS packaging/install and GUI launch, but failed the live-transfer proof in `scripts/Run-WindowsLiquidProgressVisualE2E.ps1:129`. The failure is **FAIL** for visual acceptance; the uploaded visual artifact ID `12624295283` is not a passing screenshot/report. Installer SHA-256: `949283b4eb8450d0ab6ca7f67f6a30f6751ad9166411881f4860f2343198ea8c`.
+
+**Diagnosis:** `--task-chunk-delay-ms` only enables aggregate per-task pacing after the fixture stats endpoint is reset with a positive `gate_tasks` value. The previous visual script did not activate that mode, and launched the CLI status process on every short poll. A segmented 16 MiB download could therefore finish between observations. Evidence supports a visual-test harness race; it does not establish a production rendering or download-engine defect.
+
+**Fix on PR branch:** commit `570cd36f5bb07581c7c5fc2b5a0134233bbf1595` resets `/stats?reset=1&gate_tasks=1`, polls loopback counters cheaply, queries installed CLI status only after payload bytes are moving, and writes sanitized `liquid-progress-diagnostics.json` if the live state is not proven. Commit `0073a746fa0b78ee359bdfb9d63b4cea4b76a4e1` adds source-contract assertions for pacing activation, polling order and diagnostics.
+
+**Expected Windows acceptance on the new exact source SHA:** installed build/install succeeds; screenshot `liquid-progress-active.png` is captured while the CLI reports `Downloading` and fixture counters show active data; 16 MiB output reaches `Finished` and its SHA-256 matches; same-version reinstall/silent uninstall proof completes. This remains **NOT TESTED** until the new run and artifact are inspected. Source-only tests cannot validate the installed GUI, timing, IPC, screenshot, or file bytes.
