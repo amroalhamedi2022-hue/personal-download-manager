@@ -423,6 +423,380 @@ function Read-DownloadStatus([long] $Id) {
             return $status
         }
     }
+    if ($script:LastStatusProbe -eq 'no matching row') {
+        # On a failed poll, emit a short diagnostic shape rather than silently
+        # repeating the same generic message. Redact URLs, paths, fixture names,
+        # profile paths, and synthetic WinCred values before they reach CI logs.
+        $preview = @(
+            $normalizedLines | Select-Object -First 8 | ForEach-Object {
+                $safeLine = [string]$_
+                foreach ($sensitive in @(
+                    $script:WinCredReference, $script:WinCredUsername, $script:WinCredPassword,
+                    $env:USERPROFILE, $runnerTemp, $installDir, $downloadDir, $fixtureDir, $downloadName
+                )) {
+                    $value = [string]$sensitive
+                    if (-not [string]::IsNullOrEmpty($value)) {
+                        $safeLine = $safeLine.Replace($value, '[redacted]')
+                    }
+                }
+                $safeLine = [regex]::Replace($safeLine, '(?i)https?://\S+', '[URL]')
+                $safeLine = [regex]::Replace($safeLine, '(?i)\b[A-Z]:\\.*([long] $Id, [string] $FilePath) {
+    $deadline = [DateTime]::UtcNow.AddSeconds(180)
+    $lastStatus = '__not-observed__'
+    $unrecognizedSince = $null
+    $noBytesStatus = $null
+    $noBytesSince = $null
+    $lastFileState = 'not-inspected'
+    while ([DateTime]::UtcNow -lt $deadline) {
+        $status = Read-DownloadStatus -Id $Id
+        if ($status -ne $lastStatus) {
+            $displayStatus = if ($null -eq $status) { 'UNPARSED' } else { [string]$status }
+            Write-Host ("Baseline download status: id={0}, state={1}" -f $Id, $displayStatus)
+            $lastStatus = $status
+        }
+        if ($null -eq $status) {
+            if ($null -eq $unrecognizedSince) { $unrecognizedSince = [DateTime]::UtcNow }
+            if (([DateTime]::UtcNow - $unrecognizedSince).TotalSeconds -ge 30) {
+                $fixture = Get-FixtureStatsSummary
+                $fileSummary = 'missing'
+                if (Test-Path -LiteralPath $FilePath -PathType Leaf) {
+                    $item = Get-Item -LiteralPath $FilePath
+                    $fileSummary = 'length=' + $item.Length
+                    if ($item.Length -eq $expectedDownloadSize) {
+                        $hash = (Get-FileHash -LiteralPath $FilePath -Algorithm SHA256).Hash.ToLowerInvariant()
+                        $fileSummary += ';sha256=' + $(if ($hash -eq $expectedDownloadSha) { 'match' } else { 'mismatch' })
+                    }
+                }
+                throw ("Baseline download status was not observable for 30 seconds; id={0}; lastProbe={1}; file={2}; fixture={3}" -f $Id, $script:LastStatusProbe, $fileSummary, $fixture)
+            }
+        } else {
+            $unrecognizedSince = $null
+        }
+        if ($status -eq 'Error') {
+            throw ('Download ' + $Id + ' entered Error status; fixture=' + (Get-FixtureStatsSummary))
+        }
+        if ($status -in @('Paused','Downloading')) {
+            if ($status -ne $noBytesStatus) {
+                $noBytesStatus = $status
+                $noBytesSince = [DateTime]::UtcNow
+            } elseif ($null -ne $noBytesSince -and ([DateTime]::UtcNow - $noBytesSince).TotalSeconds -ge 20) {
+                $fixture = Get-FixtureStatsSummary
+                if ($fixture -match 'bytesSent=0(?:;|$)') {
+                    throw ("Baseline download remained {0} after --start with zero fixture bytes; id={1}; lastProbe={2}; fixture={3}" -f $status, $Id, $script:LastStatusProbe, $fixture)
+                }
+                $noBytesSince = [DateTime]::UtcNow
+            }
+        } else {
+            $noBytesStatus = $null
+            $noBytesSince = $null
+        }
+        if ($status -eq 'Finished') {
+            if (Test-Path -LiteralPath $FilePath -PathType Leaf) {
+                $item = Get-Item -LiteralPath $FilePath
+                $lastFileState = 'length=' + $item.Length
+                if ($item.Length -eq $expectedDownloadSize) {
+                    $hash = (Get-FileHash -LiteralPath $FilePath -Algorithm SHA256).Hash.ToLowerInvariant()
+                    if ($hash -eq $expectedDownloadSha) { return }
+                    $lastFileState = 'length=' + $item.Length + ';sha256=mismatch'
+                }
+            } else {
+                $lastFileState = 'missing'
+            }
+        } elseif (Test-Path -LiteralPath $FilePath -PathType Leaf) {
+            $item = Get-Item -LiteralPath $FilePath
+            $lastFileState = 'length=' + $item.Length
+        }
+        Start-Sleep -Milliseconds 500
+    }
+    $fixture = Get-FixtureStatsSummary
+    if (Test-Path -LiteralPath $FilePath -PathType Leaf) {
+        $item = Get-Item -LiteralPath $FilePath
+        $lastFileState = 'length=' + $item.Length
+        if ($item.Length -eq $expectedDownloadSize) {
+            $hash = (Get-FileHash -LiteralPath $FilePath -Algorithm SHA256).Hash.ToLowerInvariant()
+            $lastFileState += ';sha256=' + $(if ($hash -eq $expectedDownloadSha) { 'match' } else { 'mismatch' })
+        }
+    }
+    throw ("Download {0} did not reach Finished with exact size and SHA-256; lastStatus={1}; lastProbe={2}; file={3}; fixture={4}" -f $Id, $lastStatus, $script:LastStatusProbe, $lastFileState, $fixture)
+}
+function Assert-UserState([string] $Label) {
+    if (-not (Test-Path -LiteralPath $sentinelFile -PathType Leaf)) { throw ($Label + ' lost the user-data sentinel.') }
+    $sentinelHash = (Get-FileHash -LiteralPath $sentinelFile -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($sentinelHash -ne $script:SentinelSha) { throw ($Label + ' changed the user-data sentinel.') }
+    $setting = Read-MaxConcurrent
+    if ($setting -ne 4) { throw ($Label + ' did not preserve max-concurrent=4; got ' + $setting + '.') }
+    $status = Read-DownloadStatus -Id $downloadId
+    if ($status -ne 'Finished') { throw ($Label + ' did not preserve download ' + $downloadId + ' as Finished; status=' + $status + '.') }
+    $downloadPath = Join-Path $downloadDir $downloadName
+    if (-not (Test-Path -LiteralPath $downloadPath -PathType Leaf)) { throw ($Label + ' lost the completed download output.') }
+    $hash = (Get-FileHash -LiteralPath $downloadPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($hash -ne $expectedDownloadSha) { throw ($Label + ' changed the completed download output SHA-256.') }
+    Write-Host ("PASS: " + $Label + " preserved setting=4, task=" + $downloadId + " Finished, sentinel and output SHA-256.")
+}
+
+try {
+    Assert-UnderRunnerTemp -Path $installDir -Label 'Install directory'
+    if ($BaselineSourceSha -eq $CandidateSourceSha) { throw 'Baseline and candidate source SHAs must differ.' }
+    foreach ($path in @($BaselineInstaller,$CandidateInstaller)) {
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw ('Installer missing: ' + $path) }
+    }
+    if (Test-Path -LiteralPath $root) { throw ('Refusing to use pre-existing test root: ' + $root) }
+    if (Test-Path -LiteralPath $installDir) { throw ('Refusing to overwrite pre-existing test install path: ' + $installDir) }
+    if (Test-Path -LiteralPath $dataDir) { throw ('Refusing to touch pre-existing user data: ' + $dataDir) }
+    foreach ($key in @($uninstallKey,$appKey)) {
+        if (Test-Path -LiteralPath $key) { throw ('Refusing to modify pre-existing product registry key: ' + $key) }
+    }
+    foreach ($path in @($legacyStartMenuShortcut,$brandedStartMenuShortcut,$legacyDesktopShortcut,$brandedDesktopShortcut)) {
+        if (Test-Path -LiteralPath $path) { throw ('Refusing to modify pre-existing product shortcut: ' + $path) }
+    }
+
+    New-Item -ItemType Directory -Path $root,$fixtureDir,$downloadDir -Force | Out-Null
+    $testCreatedRoot = $true
+    $baselineInstallerSha = (Get-FileHash -LiteralPath $BaselineInstaller -Algorithm SHA256).Hash.ToLowerInvariant()
+    $candidateInstallerSha = (Get-FileHash -LiteralPath $CandidateInstaller -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($baselineInstallerSha -eq $candidateInstallerSha) { throw 'Baseline and candidate installer bytes are identical; refusing a false cross-version pass.' }
+
+    $stage = 'install baseline snapshot'
+    Install-Snapshot -InstallerPath ([IO.Path]::GetFullPath($BaselineInstaller)) -Label 'Baseline'
+    $baselineMetadata = Get-InstallMetadata -Label 'Baseline'
+    if ($baselineMetadata.DisplayName -ne 'Download Manager') {
+        throw ("Expected baseline legacy display name 'Download Manager'; got '" + $baselineMetadata.DisplayName + "'.")
+    }
+    Assert-ShortcutBrand -Brand 'Download Manager'
+
+    # The profile data directory was absent at preflight, so this marker
+    # proves that cleanup may remove only this run's newly created data tree.
+    New-Item -ItemType Directory -Path (Join-Path $dataDir 'system') -Force | Out-Null
+    Set-Content -LiteralPath $ownershipMarker -Value $markerToken -NoNewline -Encoding utf8
+    $testOwnedData = $true
+    Set-Content -LiteralPath $sentinelFile -Value ('upgrade-rollback-proof:' + $markerToken) -NoNewline -Encoding utf8
+    $script:SentinelSha = (Get-FileHash -LiteralPath $sentinelFile -Algorithm SHA256).Hash.ToLowerInvariant()
+
+    $stage = 'create real persisted state on baseline'
+    Start-AppAndWait
+    Invoke-AppCli -Arguments @('settings','max-concurrent-downloads','--set','4') -Purpose 'set baseline concurrency' | Out-Null
+    if ((Read-MaxConcurrent) -ne 4) { throw 'Baseline failed to persist max-concurrent=4.' }
+
+    $fixture = Join-Path $fixtureDir 'upgrade-rollback-fixture.bin'
+    & python -c 'import pathlib,sys; pathlib.Path(sys.argv[1]).write_bytes(bytes(range(256))*32768)' $fixture
+    if ($LASTEXITCODE -ne 0) { throw 'Unable to create deterministic 8 MiB HTTP fixture.' }
+    $expectedDownloadSha = (Get-FileHash -LiteralPath $fixture -Algorithm SHA256).Hash.ToLowerInvariant()
+    $portFile = Join-Path $fixtureDir 'port.txt'
+    $fixtureScript = Join-Path (Split-Path $PSScriptRoot -Parent) 'scripts/LocalHttpRangeFixture.py'
+    if (-not (Test-Path -LiteralPath $fixtureScript -PathType Leaf)) { throw ('Local HTTP fixture script missing: ' + $fixtureScript) }
+    $serverOut = Join-Path $fixtureDir 'server-stdout.txt'
+    $serverErr = Join-Path $fixtureDir 'server-stderr.txt'
+    $serverArgs = @(
+        ('"' + $fixtureScript + '"'), '--file', ('"' + $fixture + '"'),
+        '--port-file', ('"' + $portFile + '"'), '--chunk-delay-ms', '5'
+    )
+    $server = Start-Process -FilePath 'python' -ArgumentList $serverArgs -WorkingDirectory (Split-Path $PSScriptRoot -Parent) -PassThru -RedirectStandardOutput $serverOut -RedirectStandardError $serverErr
+    for ($attempt = 0; $attempt -lt 80 -and -not (Test-Path -LiteralPath $portFile); $attempt++) {
+        if ($server.HasExited) {
+            $serverError = Get-Content -LiteralPath $serverErr -Raw -ErrorAction SilentlyContinue
+            throw ('Local HTTP fixture server exited. ' + $serverError)
+        }
+        Start-Sleep -Milliseconds 250
+    }
+    if (-not (Test-Path -LiteralPath $portFile)) { throw 'Local HTTP fixture server did not open a port.' }
+    $port = [int](Get-Content -LiteralPath $portFile -Raw)
+    $url = "http://127.0.0.1:$port/fixture.bin"
+    $script:FixtureStatsUrl = "http://127.0.0.1:$port/stats"
+    $addOutput = Invoke-AppCli -Arguments @('download','add','http','--link',$url,'--folder',$downloadDir,'--name',$downloadName,'--start') -Purpose 'create baseline HTTP download'
+    $idLines = @(
+        foreach ($line in $addOutput) {
+            $value = ([string]$line).Trim()
+            if ($value -match '^\d+$') { $value }
+        }
+    )
+    if ($idLines.Count -ne 1) { throw ('Expected exactly one numeric download ID; CLI output: ' + ($addOutput -join ' | ')) }
+    $downloadId = [long]$idLines[0]
+    Write-Host ("Baseline HTTP download created: id={0}; expectedBytes={1}; fixture={2}" -f $downloadId, $expectedDownloadSize, (Get-FixtureStatsSummary))
+    $downloadPath = Join-Path $downloadDir $downloadName
+    Wait-ForFinishedDownload -Id $downloadId -FilePath $downloadPath
+    Stop-AppGracefully
+    $baselineMetadata = Get-InstallMetadata -Label 'Baseline after real transfer'
+    $stage = 'write synthetic WinCred fixture before upgrade'
+    Write-SyntheticWinCred
+
+    $stage = 'upgrade baseline to HyperGet candidate'
+    Install-Snapshot -InstallerPath ([IO.Path]::GetFullPath($CandidateInstaller)) -Label 'HyperGet candidate'
+    $candidateMetadata = Get-InstallMetadata -Label 'HyperGet candidate'
+    if ($candidateMetadata.DisplayName -ne 'HyperGet') { throw ("Candidate display name is '" + $candidateMetadata.DisplayName + "', expected HyperGet.") }
+    if ($candidateMetadata.DisplayVersion -eq $baselineMetadata.DisplayVersion) {
+        throw 'Baseline and candidate DisplayVersion are identical; the run cannot prove a versioned upgrade.'
+    }
+    Assert-ShortcutBrand -Brand 'HyperGet'
+    if (-not (Test-Path -LiteralPath $sentinelFile -PathType Leaf)) { throw 'Upgrade deleted user data.' }
+    Start-AppAndWait
+    Assert-UserState -Label 'Upgrade to HyperGet'
+    Assert-SyntheticWinCred -Stage 'upgrade to HyperGet'
+    Stop-AppGracefully
+
+    $stage = 'remove candidate while preserving user data before rollback'
+    $candidateUninstaller = Join-Path $installDir 'uninstall.exe'
+    $candidateUninstall = Start-Process -FilePath $candidateUninstaller -ArgumentList @('/S') -PassThru
+    if (-not $candidateUninstall.WaitForExit(180000)) {
+        Stop-Process -Id $candidateUninstall.Id -Force -ErrorAction SilentlyContinue
+        throw 'HyperGet candidate uninstall timed out before rollback.'
+    }
+    if ($candidateUninstall.ExitCode -ne 0) { throw ('HyperGet candidate uninstall exit code ' + $candidateUninstall.ExitCode + '.') }
+    Start-Sleep -Seconds 2
+    foreach ($name in @('DownloadManager.exe','DownloadManagerCli.exe','uninstall.exe')) {
+        if (Test-Path -LiteralPath (Join-Path $installDir $name)) { throw ('Candidate uninstall left ' + $name + ' behind.') }
+    }
+    foreach ($key in @($uninstallKey,$appKey)) {
+        if (Test-Path -LiteralPath $key) { throw ('Candidate uninstall left registry key ' + $key + '.') }
+    }
+    foreach ($path in @($legacyStartMenuShortcut,$brandedStartMenuShortcut,$legacyDesktopShortcut,$brandedDesktopShortcut)) {
+        if (Test-Path -LiteralPath $path) { throw ('Candidate uninstall left product shortcut ' + $path + '.') }
+    }
+    if (-not (Test-Path -LiteralPath $sentinelFile -PathType Leaf)) { throw 'Candidate uninstall removed user data before rollback.' }
+    if ((Get-FileHash -LiteralPath $sentinelFile -Algorithm SHA256).Hash.ToLowerInvariant() -ne $script:SentinelSha) {
+        throw 'Candidate uninstall changed the user-data sentinel before rollback.'
+    }
+    Assert-SyntheticWinCred -Stage 'candidate uninstall before rollback'
+    $stage = 'reinstall baseline snapshot after preserving-data rollback'
+    Install-Snapshot -InstallerPath ([IO.Path]::GetFullPath($BaselineInstaller)) -Label 'Rollback to baseline'
+    $rollbackMetadata = Get-InstallMetadata -Label 'Rollback to baseline'
+    if ($rollbackMetadata.DisplayName -ne 'Download Manager' -or
+        $rollbackMetadata.DisplayVersion -ne $baselineMetadata.DisplayVersion) {
+        throw ('Rollback did not restore baseline metadata: name=' + $rollbackMetadata.DisplayName + ' version=' + $rollbackMetadata.DisplayVersion)
+    }
+    Assert-ShortcutBrand -Brand 'Download Manager'
+    Assert-SyntheticWinCred -Stage 'rollback to baseline'
+    Start-AppAndWait
+    Assert-UserState -Label 'Rollback to baseline'
+    Stop-AppGracefully
+
+    $stage = 'normal uninstall preserves user data'
+    $uninstaller = Join-Path $installDir 'uninstall.exe'
+    $uninstall = Start-Process -FilePath $uninstaller -ArgumentList @('/S') -PassThru
+    if (-not $uninstall.WaitForExit(180000)) {
+        Stop-Process -Id $uninstall.Id -Force -ErrorAction SilentlyContinue
+        throw 'Baseline silent uninstall timed out.'
+    }
+    if ($uninstall.ExitCode -ne 0) { throw ('Baseline silent uninstall exit code ' + $uninstall.ExitCode + '.') }
+    Start-Sleep -Seconds 2
+    foreach ($name in @('DownloadManager.exe','DownloadManagerCli.exe','uninstall.exe')) {
+        if (Test-Path -LiteralPath (Join-Path $installDir $name)) { throw ('Uninstall left ' + $name + ' behind.') }
+    }
+    foreach ($key in @($uninstallKey,$appKey)) {
+        if (Test-Path -LiteralPath $key) { throw ('Uninstall left registry key ' + $key + '.') }
+    }
+    if (-not (Test-Path -LiteralPath $sentinelFile -PathType Leaf)) {
+        throw 'Normal uninstall removed user data; this must remain opt-in.'
+    }
+    $afterUninstallSentinelSha = (Get-FileHash -LiteralPath $sentinelFile -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($afterUninstallSentinelSha -ne $script:SentinelSha) { throw 'Normal uninstall changed user data.' }
+    foreach ($path in @($legacyStartMenuShortcut,$brandedStartMenuShortcut,$legacyDesktopShortcut,$brandedDesktopShortcut)) {
+        if (Test-Path -LiteralPath $path) { throw ('Uninstall left product shortcut ' + $path + '.') }
+    }
+    Assert-SyntheticWinCred -Stage 'normal uninstall'
+    Remove-SyntheticWinCred
+
+    $stage = 'write passing proof'
+    @(
+        'Result=PASS'
+        "BaselineSourceSHA=$BaselineSourceSha"
+        "CandidateSourceSHA=$CandidateSourceSha"
+        "BaselineInstallerSHA256=$baselineInstallerSha"
+        "CandidateInstallerSHA256=$candidateInstallerSha"
+        "BaselineDisplayName=$($baselineMetadata.DisplayName)"
+        "BaselineDisplayVersion=$($baselineMetadata.DisplayVersion)"
+        "CandidateDisplayName=$($candidateMetadata.DisplayName)"
+        "CandidateDisplayVersion=$($candidateMetadata.DisplayVersion)"
+        "BaselineGuiSHA256=$($baselineMetadata.GuiSha256)"
+        "CandidateGuiSHA256=$($candidateMetadata.GuiSha256)"
+        "DownloadId=$downloadId"
+        "DownloadBytes=$expectedDownloadSize"
+        "DownloadExpectedSHA256=$expectedDownloadSha"
+        "DownloadActualSHA256=$((Get-FileHash -LiteralPath $downloadPath -Algorithm SHA256).Hash.ToLowerInvariant())"
+        'MaxConcurrentPreserved=4'
+        "UserDataSentinelSHA256=$script:SentinelSha"
+        'UpgradeDataAndHistory=PASS'
+        'RollbackDataAndHistory=PASS'
+        'CandidateUninstallBeforeRollback=PASS'
+        'ShortcutTransitions=PASS'
+        'NormalUninstallPreservesUserData=PASS'
+        'SyntheticWinCredPreservedAcrossUpgradeRollbackAndUninstall=PASS'
+        'SyntheticWinCredCleanup=PASS'
+    ) | Set-Content -LiteralPath $proofFile -Encoding utf8
+    Write-Host ("PASS: cross-version upgrade and rollback completed. Proof: " + $proofFile)
+} catch {
+    @(
+        'Result=FAIL'
+        "Stage=$stage"
+        "BaselineSourceSHA=$BaselineSourceSha"
+        "CandidateSourceSHA=$CandidateSourceSha"
+        ("Error=" + $_.Exception.Message)
+    ) | Set-Content -LiteralPath $proofFile -Encoding utf8
+    throw
+} finally {
+    if ($server -and -not $server.HasExited) {
+        Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue
+    }
+    if ($script:TestTouchedInstaller) {
+        if (Test-Path -LiteralPath $script:CurrentCliPath -PathType Leaf) {
+            try { & $script:CurrentCliPath gui exit 2>&1 | Out-Null } catch {}
+        }
+        Start-Sleep -Milliseconds 500
+        Get-Process -Name 'DownloadManager' -ErrorAction SilentlyContinue |
+            Stop-Process -Force -ErrorAction SilentlyContinue
+        if (Test-Path -LiteralPath (Join-Path $installDir 'uninstall.exe') -PathType Leaf) {
+            try {
+                $cleanup = Start-Process -FilePath (Join-Path $installDir 'uninstall.exe') -ArgumentList @('/S') -PassThru
+                if (-not $cleanup.WaitForExit(60000)) { Stop-Process -Id $cleanup.Id -Force -ErrorAction SilentlyContinue }
+            } catch {
+                Write-Warning ("Best-effort test install cleanup failed: " + $_.Exception.Message)
+            }
+        }
+    }
+    if ($script:WinCredCreated) {
+        try {
+            [HyperGetWinCredSyntheticFixture]::DeleteAndAssertAbsent($script:WinCredReference)
+            $script:WinCredCreated = $false
+            Write-Host 'Cleaned up synthetic WinCred fixture after an incomplete run; target and secret redacted.'
+        } catch {
+            Write-Warning 'Synthetic WinCred cleanup failed after an incomplete run; target and secret redacted.'
+        }
+    }
+    $script:WinCredPassword = $null
+    $script:WinCredReference = $null
+    if ($testOwnedData -and (Test-Path -LiteralPath $ownershipMarker -PathType Leaf)) {
+        $owner = (Get-Content -LiteralPath $ownershipMarker -Raw).Trim()
+        $actualDataPath = [IO.Path]::GetFullPath($dataDir).TrimEnd([char[]]@('\','/'))
+        $expectedDataPath = [IO.Path]::GetFullPath((Join-Path $env:USERPROFILE '.personal-download-manager')).TrimEnd([char[]]@('\','/'))
+        if ($owner -eq $markerToken -and $actualDataPath.Equals($expectedDataPath, [StringComparison]::OrdinalIgnoreCase)) {
+            try {
+                Remove-Item -LiteralPath $dataDir -Recurse -Force
+                Write-Host 'Removed only the test-created .personal-download-manager tree after ownership-marker verification.'
+            } catch {
+                Write-Warning ("Could not remove test-owned data tree: " + $_.Exception.Message)
+            }
+        } else {
+            Write-Warning 'Did not remove user data because the ownership marker/path check failed.'
+        }
+    }
+    if ($script:TestTouchedInstaller) {
+        foreach ($path in @($legacyStartMenuShortcut,$brandedStartMenuShortcut,$legacyDesktopShortcut,$brandedDesktopShortcut)) {
+            Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
+        }
+    }
+    if ($transcriptStarted) { Stop-Transcript | Out-Null }
+    if ($testCreatedRoot -and (Test-Path -LiteralPath $root)) {
+        try { Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction Stop } catch {
+            Write-Warning ("Could not remove test build/install directory: " + $_.Exception.Message)
+        }
+    }
+}
+, '[PATH]')
+                if ($safeLine.Length -gt 120) { $safeLine = $safeLine.Substring(0, 120) }
+                $safeLine
+            }
+        )
+        $script:LastStatusProbe = 'no matching row; lineCount=' + $normalizedLines.Count + '; sample=' + ($preview -join ' || ')
+    }
     return $null
 }
 function Wait-ForFinishedDownload([long] $Id, [string] $FilePath) {
