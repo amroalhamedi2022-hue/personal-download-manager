@@ -22,6 +22,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -39,6 +40,22 @@ const val RetryDelay = 1_000L
 
 // Bounds only the pre-response connection phase; long streaming bodies remain unrestricted.
 private const val PART_RESPONSE_DEADLINE_MILLIS = 45_000L
+
+// Keep the number of blocking response-body copies below the JVM IO worker ceiling.
+// The shared semaphore is acquired before switching to Dispatchers.IO, so waiting parts
+// suspend instead of occupying blocking-I/O workers. This does not cap task admission
+// or change the independent OkHttp request-dispatch limits.
+internal const val PART_BODY_COPY_PARALLELISM = 48
+private val partBodyCopyPermits = Semaphore(PART_BODY_COPY_PARALLELISM)
+
+internal suspend fun <T> withPartBodyCopyPermit(block: suspend () -> T): T {
+    partBodyCopyPermits.acquire()
+    try {
+        return block()
+    } finally {
+        partBodyCopyPermits.release()
+    }
+}
 
 /**
  * A suspended HTTP call may otherwise leave a part Connecting forever while the
@@ -275,14 +292,15 @@ abstract class PartDownloader<
         }
 
         try {
-            // Reuse the shared blocking-I/O dispatcher rather than allocating one raw
-            // JVM thread for every range part. stop() closes the Source first, so a
-            // blocking read can wake before the coroutine job is cancelled.
-            withContext(Dispatchers.IO) {
-                conn.use {
-                    val connectionStream = it.source
-                    getDestWriter().use { writer ->
-                        copyDataSync(connectionStream, writer)
+            // Bound blocking body copies separately from task admission and OkHttp requests.
+            // Keep the connection in use() while waiting for a permit so cancellation closes
+            // the response even if this part never enters the blocking copy section.
+            conn.use { connection ->
+                withPartBodyCopyPermit {
+                    withContext(Dispatchers.IO) {
+                        getDestWriter().use { writer ->
+                            copyDataSync(connection.source, writer)
+                        }
                     }
                 }
             }
