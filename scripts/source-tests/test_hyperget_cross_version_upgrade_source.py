@@ -95,7 +95,7 @@ class HyperGetCrossVersionUpgradeContracts(unittest.TestCase):
         ):
             self.assertIn(expected, self.harness)
 
-        self.assertIn(r"-split '\\r\\n|\\n|\\r'", self.harness)
+        self.assertIn(r"-split '\r\n|\n|\r'", self.harness)
 
 
     def test_status_parser_handles_wrapped_cells_without_crossing_into_another_download(self):
