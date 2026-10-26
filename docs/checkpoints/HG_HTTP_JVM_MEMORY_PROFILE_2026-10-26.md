@@ -55,3 +55,12 @@ Changed the shared refresh helper to wake at the next display-unit boundary and 
 
 ## Relative-time test expectation corrected
 The first targeted desktop test run [40251458528](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40251458528) compiled the code and ran 32 tests; 31 passed. One new test incorrectly expected a 2-second wait at exactly 58 seconds, where the next seconds label boundary is 1 second. Corrected the expected value to 1 second and added an explicit 500 ms boundary assertion. This is a test expectation fix, not a production compile defect; rerun pending.
+
+
+## Relative-time optimization — exact runtime outcome
+The common desktop test workflow [40251917222](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40251917222) passed after correcting the one incorrect expected delay. Installed HTTP matrix [40251458455](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40251458455) passed 63/63 SHA and 9/9 CPU/RAM. Artifact ZIP SHA-256 `f1ff63ef8447e5d70e4f3d57f9f3b0d5c63aa6228ddb6eff9efdccc0d3b92ea3`.
+
+CPU decreased in final rounds at 1/4/16 workloads, but the full 16-way peak Private Bytes rose slightly 582.375→590.879 MiB. The NMT one-round profile [40251917240](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40251917240) passed 21/21 SHA + 3/3 metrics; post Private Bytes 462.977 MiB vs prior 501.965 MiB, NMT committed 317,587 KiB vs 338,879 KiB. Yet Skia CleanableImpl count increased 10,538→20,710 while total histogram bytes stayed close (~35 MB). This is mixed evidence: retain the lower-frequency relative-date updates for reduced periodic CPU work, but memory is still NOT CLOSED and requires repeatable profiling/retention analysis.
+
+## Memory profile workflow scope-gate repair
+Run [40252512178](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40252512178) failed with no runnable jobs because the change-scope block in the workflow was malformed. Rebuilt the complete jobs block and switched from `git diff HEAD^ HEAD` (requires parent history) to `git show --format= --name-only HEAD`, which works with the default shallow checkout. Added source assertions for the complete conditional and `needs` dependency. Current fix changes workflow/tests/docs only; expensive profile should skip while source-only CI validates the gate.

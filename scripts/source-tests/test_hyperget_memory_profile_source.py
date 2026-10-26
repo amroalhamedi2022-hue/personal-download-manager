@@ -43,9 +43,14 @@ class WindowsJvmMemoryProfileContract(unittest.TestCase):
 
     def test_expensive_profile_is_scoped_to_relevant_latest_commit(self):
         self.assertIn("change-scope:", WORKFLOW)
-        self.assertIn("git diff --name-only HEAD^ HEAD", WORKFLOW)
+        self.assertIn("git show --format= --name-only HEAD", WORKFLOW)
         self.assertIn("needs: change-scope", WORKFLOW)
         self.assertIn("workflow_dispatch", WORKFLOW)
+        self.assertIn("needs: change-scope", WORKFLOW)
+        self.assertIn("if: needs.change-scope.outputs.run == 'true'", WORKFLOW)
+        self.assertIn("runs-on: windows-2022", WORKFLOW)
+        self.assertIn("else", WORKFLOW)
+        self.assertIn("fi", WORKFLOW)
 
     def test_profile_artifact_is_uploaded_even_if_jcmd_fails(self):
         self.assertIn("if: always()", WORKFLOW)
