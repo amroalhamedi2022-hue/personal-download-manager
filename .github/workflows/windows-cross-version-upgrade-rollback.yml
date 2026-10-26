@@ -1,0 +1,171 @@
+name: HyperGet Windows cross-version upgrade and rollback acceptance
+
+on:
+  pull_request:
+    branches: [codex/repair-rf00-rf01]
+    paths:
+      - ".github/workflows/windows-cross-version-upgrade-rollback.yml"
+      - "scripts/Run-WindowsCrossVersionUpgradeRollbackE2E.ps1"
+      - "scripts/source-tests/test_hyperget_cross_version_upgrade_source.py"
+      - "desktop/app/resources/installer/nsis-script-template.nsi"
+      - "shared/app/build.gradle.kts"
+      - "buildSrc/src/main/kotlin/buildlogic/versioning/VersionUtil.kt"
+      - "scripts/LocalHttpRangeFixture.py"
+  workflow_dispatch:
+    inputs:
+      base_ref:
+        description: Exact base ref or SHA to install first
+        required: true
+        default: codex/repair-rf00-rf01
+      candidate_ref:
+        description: Candidate ref or SHA to upgrade to, then roll back from
+        required: true
+        default: automation/idm-ftp-cancel-and-category-flush
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hyperget-cross-version-upgrade-${{ github.event.pull_request.head.sha || inputs.candidate_ref || github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  change-scope:
+    runs-on: ubuntu-24.04
+    outputs:
+      run: ${{ steps.scope.outputs.run }}
+    steps:
+      - name: Check out exact candidate source for scope detection
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || inputs.candidate_ref || github.sha }}
+          fetch-depth: 2
+          persist-credentials: false
+      - id: scope
+        shell: bash
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          changed="$(git diff --name-only HEAD^ HEAD)"
+          printf 'Latest candidate commit changed files:\n%s\n' "$changed"
+          run=false
+          while IFS= read -r file; do
+            case "$file" in
+              .github/workflows/windows-cross-version-upgrade-rollback.yml|scripts/Run-WindowsCrossVersionUpgradeRollbackE2E.ps1|scripts/source-tests/test_hyperget_cross_version_upgrade_source.py|desktop/app/resources/installer/nsis-script-template.nsi|shared/app/build.gradle.kts|buildSrc/src/main/kotlin/buildlogic/versioning/VersionUtil.kt|scripts/LocalHttpRangeFixture.py)
+                run=true ;;
+            esac
+          done <<< "$changed"
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+
+  cross-version-upgrade-rollback:
+    needs: change-scope
+    if: needs.change-scope.outputs.run == 'true'
+    runs-on: windows-2022
+    timeout-minutes: 150
+    env:
+      SKIP_ANDROID_BUILD: "true"
+    steps:
+      - name: Check out exact base snapshot
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha || inputs.base_ref }}
+          path: baseline
+          persist-credentials: false
+      - name: Check out exact candidate snapshot
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || inputs.candidate_ref || github.sha }}
+          path: candidate
+          persist-credentials: false
+      - name: Verify exact source snapshots and create isolated paths
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $baseSha = (git -C baseline rev-parse HEAD).Trim()
+          $candidateSha = (git -C candidate rev-parse HEAD).Trim()
+          if ($baseSha -eq $candidateSha) { throw 'Base and candidate resolved to the same commit.' }
+          Write-Host "Baseline source SHA: $baseSha"
+          Write-Host "Candidate source SHA: $candidateSha"
+          "BASE_SOURCE_SHA=$baseSha" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "CANDIDATE_SOURCE_SHA=$candidateSha" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          $buildRoot = Join-Path $env:RUNNER_TEMP 'hyperget-cross-version-upgrade-rollback/builds'
+          New-Item -ItemType Directory -Path $buildRoot -Force | Out-Null
+          "HYPERGET_TEST_BUILD_ROOT=$buildRoot" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Set up JetBrains Runtime 25
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: jetbrains
+          java-package: jdk
+          java-version: "25"
+          cache: gradle
+      - name: Parse acceptance PowerShell and run source contracts before builds
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $scriptPath = (Resolve-Path 'candidate/scripts/Run-WindowsCrossVersionUpgradeRollbackE2E.ps1').Path
+          $tokens = $null
+          $parseErrors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile($scriptPath, [ref]$tokens, [ref]$parseErrors) | Out-Null
+          if ($parseErrors.Count -gt 0) {
+            $parseErrors | ForEach-Object { Write-Host "$($_.Extent.StartLineNumber):$($_.Message)" }
+            throw "Cross-version PowerShell harness has $($parseErrors.Count) parser errors."
+          }
+          Write-Host 'PASS: PowerShell parser accepted cross-version harness.'
+          python candidate/scripts/source-tests/test_hyperget_cross_version_upgrade_source.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Cross-version source contracts failed before installer builds.' }
+      - name: Build baseline Windows installer from exact base SHA
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Push-Location baseline
+          try {
+            & ./gradlew.bat --no-daemon --stacktrace --dependency-verification strict createReleaseFolderForCi
+            if ($LASTEXITCODE -ne 0) { throw "Baseline Gradle packaging failed: $LASTEXITCODE" }
+          } finally {
+            Pop-Location
+          }
+          $binaries = @(Get-ChildItem -LiteralPath 'baseline/build/ci-release/binaries' -File -Recurse -Filter '*.exe')
+          if ($binaries.Count -ne 1) { throw "Expected one baseline NSIS installer; found $($binaries.Count)." }
+          $destination = Join-Path $env:HYPERGET_TEST_BUILD_ROOT 'baseline-installer.exe'
+          Copy-Item -LiteralPath $binaries[0].FullName -Destination $destination -Force
+          $hash = (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash.ToLowerInvariant()
+          Write-Host "Baseline installer SHA256: $hash"
+          "BASELINE_INSTALLER_PATH=$destination" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "BASELINE_INSTALLER_SHA256=$hash" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Build candidate Windows installer from exact PR head SHA
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Push-Location candidate
+          try {
+            & ./gradlew.bat --no-daemon --stacktrace --dependency-verification strict createReleaseFolderForCi
+            if ($LASTEXITCODE -ne 0) { throw "Candidate Gradle packaging failed: $LASTEXITCODE" }
+          } finally {
+            Pop-Location
+          }
+          $binaries = @(Get-ChildItem -LiteralPath 'candidate/build/ci-release/binaries' -File -Recurse -Filter '*.exe')
+          if ($binaries.Count -ne 1) { throw "Expected one candidate NSIS installer; found $($binaries.Count)." }
+          $destination = Join-Path $env:HYPERGET_TEST_BUILD_ROOT 'candidate-installer.exe'
+          Copy-Item -LiteralPath $binaries[0].FullName -Destination $destination -Force
+          $hash = (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash.ToLowerInvariant()
+          Write-Host "Candidate installer SHA256: $hash"
+          "CANDIDATE_INSTALLER_PATH=$destination" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "CANDIDATE_INSTALLER_SHA256=$hash" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Run real baseline to HyperGet upgrade to baseline rollback
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $proof = Join-Path $PWD 'candidate/build/ci-release/upgrade-rollback-evidence'
+          & ./candidate/scripts/Run-WindowsCrossVersionUpgradeRollbackE2E.ps1 -BaselineInstaller $env:BASELINE_INSTALLER_PATH -CandidateInstaller $env:CANDIDATE_INSTALLER_PATH -BaselineSourceSha $env:BASE_SOURCE_SHA -CandidateSourceSha $env:CANDIDATE_SOURCE_SHA -OutputDirectory $proof
+      - name: Upload cross-version acceptance proof
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: hyperget-cross-version-upgrade-rollback-proof
+          path: |
+            candidate/build/ci-release/upgrade-rollback-evidence/cross-version-upgrade-rollback.txt
+            candidate/build/ci-release/upgrade-rollback-evidence/cross-version-upgrade-rollback-transcript.txt
+          if-no-files-found: warn
+          retention-days: 7
