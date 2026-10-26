@@ -169,6 +169,18 @@ FunctionEnd
 	Delete "$DESKTOP\${APP_DISPLAY_NAME}.lnk"
 !macroend
 
+; Display branding changed from "Download Manager" to "HyperGet".
+; Remove only this product's two known shortcut names so upgrade and rollback
+; never leave a stale shortcut pointing at the shared DownloadManager.exe.
+!macro RemoveKnownBrandShortcuts
+    Delete "$SMPROGRAMS\Download Manager\Download Manager.lnk"
+    RMDir "$SMPROGRAMS\Download Manager"
+    Delete "$SMPROGRAMS\HyperGet\HyperGet.lnk"
+    RMDir "$SMPROGRAMS\HyperGet"
+    Delete "$DESKTOP\Download Manager.lnk"
+    Delete "$DESKTOP\HyperGet.lnk"
+!macroend
+
 ; Do not launch the GUI after /S: scripted/enterprise installs should stay silent.
 ; Interactive users retain the existing MUI_FINISHPAGE_RUN option.
 ; This also prevents a second, unintended GUI during CPU/RAM benchmarks.
@@ -178,6 +190,8 @@ Section "${APP_DISPLAY_NAME}"
 
     DetailPrint "Closing app (if any)"
     !insertmacro closeApp
+    DetailPrint "Removing stale HyperGet/legacy product shortcuts"
+    !insertmacro RemoveKnownBrandShortcuts
     DetailPrint "clearing old app (if any)"
     !insertmacro clearFiles
     DetailPrint "writing new data"
@@ -224,6 +238,7 @@ Section "Uninstall"
 
     !insertmacro RemoveStartMenu
     !insertmacro RemoveDesktopShortCut
+    !insertmacro RemoveKnownBrandShortcuts
 
     DeleteRegKey SHCTX "${REG_UNINSTALL_KEY}"
     DeleteRegKey SHCTX "${REG_APP_KEY}"
