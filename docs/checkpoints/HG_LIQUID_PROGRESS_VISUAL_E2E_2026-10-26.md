@@ -147,3 +147,21 @@ Source-only run [40274122171](https://github.com/amroalhamedi2022-hue/personal-d
 **Correction:** reconstructed `Run-WindowsLiquidProgressVisualE2E.ps1` from the exact known-good harness source at `d8e8f557693c7db398bc4b3e4cb57d4df8867c58`, then applied only the intended two-sided invisible-character normalization and safe plain-ASCII diagnostic. The expected script shape is again one server start, three CLI status probes, two active probes and one final-status probe. The latest source-only rerun must pass before accepting the next Windows visual result.
 
 The suffix-normalization hypothesis remains unverified until a fresh exact-SHA Windows run produces the screenshot/report or a more specific safe diagnostic.
+
+## 2026-10-26 07:32 Asia/Jerusalem — repair malformed visual harness and add anti-duplication guard
+
+**Exact PR head at source verification:** `f85dd261d98c457bb3d82fdec1c1397a54ed4b44` on `automation/idm-ftp-cancel-and-category-flush`, base `codex/repair-rf00-rf01`.
+
+**Defect found by direct source inspection:** the previous patch composition left `Get-SanitizedStatusPreview` truncated at its plain-text fallback and appended a second, orphaned copy of the main test body after `finally`. That made the PowerShell harness malformed even though earlier reports had described it as reconstructed. The existing source contract was also accidentally malformed while adding the new regression assertion. Both defects are now corrected.
+
+**Repair:** commit `d3fafa4d07097102793b532a2f85c84ecd654640` repairs the status-preview function, removes the orphaned duplicate tail, and initializes status-output arrays before the polling loop. Commit `f85dd261d98c457bb3d82fdec1c1397a54ed4b44` repairs the regression-test syntax and adds explicit guards for a single preview function, one fixture-server start, exactly three CLI status probes, no duplicate tail, and a complete final block.
+
+**Current exact-head evidence:**
+- Source-only safety workflow **PASS** — [run 40275128435](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40275128435); the shared Liquid Progress source contract passed on this head.
+- Directly re-fetched static invariants **PASS 11/11**: shared animation ownership, draw-phase reads, live-transfer gate, pacing, byte-advance check, parser normalization, safe diagnostics, workflow wiring, source-only wiring, no duplicate/truncation, and regression guard. This is supplemental source inspection, not a substitute for the Python test workflow or PowerShell execution.
+- Installed Windows UI run [40275128473](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40275128473) is still pending and has not yet produced job/artifact evidence at inspection time.
+- HTTP 1/4/16 workflow [40275128479](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40275128479) skipped its expensive matrix on the current test-only head; this is not new transfer evidence. Browser capture [40275128339](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40275128339) also scope-skipped its expensive E2E. FTP Kotlin [40275128338], installed FTP [40275128340], HLS [40275128425], and queue lifecycle [40275128388] were still in progress at the last poll.
+
+**Pre-build question:** does this repaired exact-head PowerShell script parse and, with the installed app, capture a real screenshot while status is `Downloading` and fixture bytes advance, then finish 16 MiB with matching SHA-256 and pass same-version reinstall/silent uninstall?
+
+**Expected PASS:** active screenshot + exact-SHA JSON report; active task and advancing bytes at capture; final `Finished`; expected/actual hashes equal; lifecycle proof present. Prior runs prove file transfer integrity but do **not** pass screenshot-time acceptance. Keep HG-UI-LIQUID-PROGRESS-01 open until the exact-head Windows artifact is inspected. No renderer change, main write, merge, release, paid service, or Torrent in this repair.
