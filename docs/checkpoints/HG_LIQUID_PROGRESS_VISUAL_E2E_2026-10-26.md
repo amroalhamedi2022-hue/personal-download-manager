@@ -184,3 +184,10 @@ The suffix-normalization hypothesis remains unverified until a fresh exact-SHA W
 **Next targeted repair (not yet run):** strip known invisible/format characters anywhere in CLI lines (not just at their edges); if a status line remains unrecognized, record bounded character-code diagnostics rather than raw output; assert that the GUI is foreground before capture and crop to its window bounds. Keep the transfer/hash assertions strict. The next purposeful Windows build will test this exact hypothesis; no production renderer change is claimed until a clean active screenshot is inspected.
 
 **Current gate:** HG-UI-LIQUID-PROGRESS-01 remains **OPEN / NOT ACCEPTED**. Reinstall/uninstall proof remains **NOT TESTED** on this run. No main write, merge, release, paid service or Torrent.
+
+
+## 2026-10-26 08:23 Asia/Jerusalem — workflow YAML parse failure caught before build
+
+The first attempt to add foreground-window capture failed at workflow loading on exact SHA `10b1f48117a6faa5346e0762b3d16542b4a36859`: [run 40279415866](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40279415866) has no jobs, so **no Windows build or product test ran**. Root cause from direct YAML inspection: the embedded C# here-string lines in the workflow's `run: |` block were not indented to the YAML block level. This is a workflow-patch composition defect, not a Kotlin/Compose compile failure.
+
+Before retrying, correct the YAML block indentation and add a source regression asserting the embedded here-string stays inside the block. The next purposeful Windows run asks whether the exact corrected workflow can parse, build/install, foreground and crop the actual app window, observe live `Downloading` with advancing bytes, finish the 16 MiB file with matching SHA-256, and pass reinstall/uninstall. Source checks cannot establish YAML runner parsing, installed CLI behavior, Windows z-order or byte integrity. Do not count the parse-failure run as a build/test attempt.
