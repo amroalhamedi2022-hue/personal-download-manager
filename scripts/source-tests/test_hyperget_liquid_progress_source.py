@@ -118,5 +118,18 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("NO APP BUILD", SOURCE_WORKFLOW)
 
 
+    def test_visual_harness_has_one_complete_body_and_no_truncated_branch(self):
+        # Prevent a patch-composition error from appending a second script body
+        # or leaving an unterminated status-preview condition.
+        self.assertEqual(SCRIPT.count("function Get-SanitizedStatusPreview {"), 1)
+        self.assertEqual(SCRIPT.count("$server = $null"), 1)
+        self.assertEqual(SCRIPT.count("Start-Process -FilePath 'python'"), 1)
+        self.assertEqual(SCRIPT.count("download show --status-lines $taskId"), 3)
+        self.assertNotIn("\n) {\n            # Safe in the isolated runner:", SCRIPT)
+        self.assertIn("elseif ($line -match '^[A-Za-z][A-Za-z ]{0,39}    unittest.main()
+)", SCRIPT)
+        self.assertTrue(SCRIPT.rstrip().endswith("}"))
+
+
 if __name__ == "__main__":
     unittest.main()
