@@ -18,7 +18,37 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  change-scope:
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.scope.outputs.run }}
+    steps:
+      - name: Check out exact PR head and its parent
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 2
+      - id: scope
+        shell: bash
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          changed="$(git diff --name-only HEAD^ HEAD)"
+          run=false
+          while IFS= read -r file; do
+            case "$file" in
+              shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/util/TimeUtil.kt|shared/app/src/commonTest/kotlin/com/abdownloadmanager/shared/util/TimeUtilRelativeRefreshTest.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/TableDownloadItem.kt)
+                run=true
+                ;;
+            esac
+          done <<< "$changed"
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+
   relative-time-tests:
+    needs: change-scope
+    if: needs.change-scope.outputs.run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:

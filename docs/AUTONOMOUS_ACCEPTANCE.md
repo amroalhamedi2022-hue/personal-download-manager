@@ -1099,3 +1099,6 @@ The relative-time unit workflow [40251917222](https://github.com/amroalhamedi202
 
 
 **Source-contract correction:** source-only run [40254048011](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40254048011) failed because the test still expected an `else/fi` conditional after the scope gate had been switched to a `case/esac` allowlist. The workflow itself ran the scope gate successfully and skipped the expensive profile job on a docs/test-only commit. Updated the source contract to assert `case`, `;;`, and `esac`; no production code changed.
+
+
+**CI cost guard:** the new relative-time Gradle test workflow now uses a latest-commit scope gate. This prevents the common PR-path-filter behavior from recompiling the shared desktop tests for every subsequent docs/test-only commit. The production TimeUtil/UI and Kotlin unit-test paths still trigger the targeted test; manual dispatch still runs it.

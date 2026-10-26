@@ -6,6 +6,7 @@ ROOT = Path(__file__).resolve().parents[2]
 TIME_UTIL = (ROOT / "shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/util/TimeUtil.kt").read_text(encoding="utf-8")
 TABLE = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/TableDownloadItem.kt").read_text(encoding="utf-8")
 KOTLIN_TEST = (ROOT / "shared/app/src/commonTest/kotlin/com/abdownloadmanager/shared/util/TimeUtilRelativeRefreshTest.kt").read_text(encoding="utf-8")
+KOTLIN_WORKFLOW = (ROOT / ".github/workflows/hyperget-relative-time-refresh-tests.yml").read_text(encoding="utf-8")
 
 
 class RelativeTimeRefreshSourceContract(unittest.TestCase):
@@ -20,6 +21,14 @@ class RelativeTimeRefreshSourceContract(unittest.TestCase):
         self.assertIn("age < 3_600_000L", TIME_UTIL)
         self.assertIn("age < 86_400_000L", TIME_UTIL)
         self.assertIn("coerceAtLeast(1L)", TIME_UTIL)
+
+    def test_expensive_unit_compile_is_scoped_to_relevant_latest_commit(self):
+        self.assertIn("fetch-depth: 2", KOTLIN_WORKFLOW)
+        self.assertIn("git diff --name-only HEAD^ HEAD", KOTLIN_WORKFLOW)
+        self.assertIn("needs: change-scope", KOTLIN_WORKFLOW)
+        self.assertIn("if: needs.change-scope.outputs.run == 'true'", KOTLIN_WORKFLOW)
+        self.assertIn('case "$file" in', KOTLIN_WORKFLOW)
+        self.assertIn("esac", KOTLIN_WORKFLOW)
 
     def test_kotlin_unit_tests_cover_all_display_units(self):
         for marker in ("secondLabelsWake", "minuteLabelsWake", "hourLabelsWake", "dayAndOlderLabels"):

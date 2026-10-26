@@ -76,3 +76,7 @@ The previous scope-gate rewrite had preserved a duplicate second `installed-jvm-
 
 ## Source-contract assertion aligned to case allowlist
 Source-only run [40254048011](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40254048011) failed because the profile source test still expected `else/fi` after the workflow scope gate had been changed to a `case/esac` allowlist. The workflow scope gate itself succeeded and skipped the expensive job for a docs/test-only commit. Updated the assertion to match the actual case block; this is test-only.
+
+
+## Relative-time unit workflow scope gate
+Added the same tested latest-commit scope pattern to the targeted desktop unit-test workflow: checkout depth 2, diff `HEAD^..HEAD`, case allowlist for TimeUtil, its commonTest, and TableDownloadItem; manual dispatch still forces a run. This avoids repeated Gradle compile/test jobs for docs-only follow-up commits. The source contract validates the gate.
