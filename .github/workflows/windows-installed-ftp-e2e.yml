@@ -55,8 +55,39 @@ jobs:
           python3 -m py_compile scripts/LocalFtpFixture.py scripts/test_local_ftp_fixture.py
           python3 -m unittest scripts/test_local_ftp_fixture.py
 
+  change-scope:
+    name: Gate installed FTP build on relevant latest-commit changes
+    runs-on: ubuntu-24.04
+    outputs:
+      run: ${{ steps.scope.outputs.run }}
+    steps:
+      - name: Check out exact PR head and parent for scope detection
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 2
+      - name: Run installed FTP only for relevant latest-commit changes
+        id: scope
+        shell: bash
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          changed="$(git diff --name-only HEAD^ HEAD)"
+          run=false
+          while IFS= read -r file; do
+            case "$file" in
+              scripts/LocalFtpFixture.py|scripts/test_local_ftp_fixture.py|scripts/Run-WindowsInstalledFtpE2E.ps1|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/AppComponent.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/cli/download/add/**|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/enterurl/**|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/singleInstance/service/**|downloader/core/src/**/ftp/**)
+                run=true ;;
+            esac
+          done <<< "$changed"
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+
   installed-ftp:
     name: Installed GUI/CLI authenticated FTP pause, restart, REST resume and SHA-256
+    needs: [fixture-contract, change-scope]
+    if: needs.change-scope.outputs.run == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: windows-2022
     timeout-minutes: 60
     env:
