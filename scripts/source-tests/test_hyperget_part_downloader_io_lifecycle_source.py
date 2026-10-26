@@ -42,6 +42,24 @@ class PartDownloaderIoLifecycleContract(unittest.TestCase):
         self.assertIn("conn.close()", download_body)
         self.assertIn("if (activeConnection === conn)", download_body)
 
+    def test_shared_body_copy_gate_is_global_and_released_in_finally(self):
+        self.assertIn("internal const val PART_BODY_COPY_PARALLELISM = 48", self.part)
+        self.assertIn("private val partBodyCopyPermits = Semaphore(PART_BODY_COPY_PARALLELISM)", self.part)
+        helper = self.part.split("internal suspend fun <T> withPartBodyCopyPermit", 1)[1].split("abstract class PartDownloader", 1)[0]
+        self.assertIn("partBodyCopyPermits.acquire()", helper)
+        self.assertIn("finally", helper)
+        self.assertIn("partBodyCopyPermits.release()", helper)
+        self.assertIn("sharedBodyCopyPermitNeverExceedsConfiguredParallelism", self.test)
+        self.assertIn("bodyCopyPermitIsReleasedAfterCopyFailure", self.test)
+
+    def test_body_copy_permit_wraps_io_dispatch_and_connection_lifetime(self):
+        download = self.part.split("private suspend fun download()", 1)[1].split("protected open fun onCanceled", 1)[0]
+        self.assertRegex(
+            download,
+            r"conn\.use\s*\{\s*connection\s*->\s*withPartBodyCopyPermit\s*\{\s*withContext\(Dispatchers\.IO\)",
+        )
+        self.assertIn("copyDataSync(connection.source, writer)", download)
+
     def test_runtime_regression_uses_source_that_ignores_thread_interrupts(self):
         self.assertIn("class PartDownloaderIoLifecycleTest", self.test)
         self.assertIn("while (!closed)", self.test)
