@@ -1282,3 +1282,26 @@ Production source SHA tested: `869af00b39ba1977321fadb7ffbc8b022bd78148`. The la
 **Still NOT TESTED / NOT COMPLETE:** full Chrome/Firefox browser-to-host E2E on this exact renderer SHA (the current workflow's expensive job was scope-skipped); cross-version upgrade/rollback and existing-data migration; HTTPS/external FTP and HLS restart; controlled memory/CPU A/B and IDM parity; final branding/icon and single deliverable `HyperGet.exe`; independent final Windows recheck. The detailed evidence and limitations are in [HG_LIQUID_PROGRESS_DRAW_CACHE_2026-10-26.md](checkpoints/HG_LIQUID_PROGRESS_DRAW_CACHE_2026-10-26.md).
 
 No main-branch write, merge, release, paid service/runner, or Torrent. Keep PR #3 draft until all acceptance gates and independent final Windows verification pass.
+
+## 2026-10-26 — Chrome + Firefox native-host browser E2E (verified)
+
+**Exact PR source SHA:** `0d803d2bcf449cd810f4bfbf4b8e67676159d1ed` on `automation/idm-ftp-cancel-and-category-flush`. PR #3 remains Draft; base `codex/repair-rf00-rf01`.
+
+**Purposeful Windows question:** does the exact installed build register the native host for Chrome and Firefox, accept real extension-origin messages, cold-wake the GUI from a stopped state, download a loopback fixture from each browser, and produce SHA-256-verified output? Source-only tests cannot prove browser APIs, registry launch, native messaging, WebDriver, GUI lifecycle or actual bytes.
+
+**Result: PASS —** [Windows browser E2E run 40313688358](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40313688358). Windows Server 2022 built and installed one internal NSIS test installer; it is not a release package.
+
+- **Installed host registration/protocol:** PASS. Chrome and Firefox HKCU manifests target the installed native host; two framed ping replies, request correlation, sanitized generic error and clean EOF passed.
+- **Chrome MV3:** PASS. Pinned browser integration source `0fb5a304cbde07a9758d2b42417e7a8a85cba0f2`; two ping replies plus safe unknown-action reply correlated; connected port 3/3 replies and reconnect 1/1; GUI cold-wake passed; real browser-origin 2 MiB download SHA-256 verified. Fixture SHA-256: `1e075c8d478ad21844e33e830a695ef03a4d2488b69ee275bd8947618bb1be1`; five GETs observed.
+- **Firefox WebExtension:** PASS. Firefox `158.0.1`, geckodriver `v0.37.1`; add-on installed, native ping/safe error correlated, GUI cold-wake passed, actual browser-origin 2 MiB download SHA-256 verified against the same fixture; five GETs observed.
+- **Artifact:** [hyperget-installed-native-host-evidence, ID 12645862959](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40313688358/artifacts/12645862959), ZIP SHA-256 `596e5ad99319380173730aea4d1bd6cdf1acd956b8136a10bc2a471d066f85ca`. Internal installer SHA-256: `ba29b47f587d773e65284dbf9c21f3530329bedd41b93cba875065619337d2ed`.
+- **Transient diagnostic:** Firefox report preserves one WebDriver status-probe `UNAVAILABLE` event, but final stage is `COMPLETE`, `failureCode=null`, and `verified=true`; actual download and SHA gates passed. Keep the diagnostic visible; do not infer a product failure from it alone.
+
+**Harness defect fixed:** prior run [40312425370](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40312425370) passed installed host smoke and Chrome E2E but failed before Firefox because unauthenticated `api.github.com/repos/mozilla/geckodriver/releases/latest` hit the shared-runner IP rate limit. The workflow now follows the official `https://github.com/mozilla/geckodriver/releases/latest` redirect and validates HTTPS, repository/tag path and the versioned win64 asset; the source contract rejects the old API lookup. Source-only safety checks PASS: [run 40313688214](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40313688214).
+
+**Same-head regression evidence:** FTP Windows Kotlin/JUnit **29/29 PASS** [run 40313688208](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40313688208); HLS guarded redirect/segment/assembly **29 tests PASS, zero failures/skips** [run 40313688228](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40313688228); queue/part-I/O lifecycle regression PASS [run 40313688341](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40313688341).
+
+**Not rerun on this workflow-focused head:** installed HTTP 1/4/16 matrix, JVM memory profile, installed Liquid Progress screenshot and installed FTP pause/restart were scope-skipped. Their earlier accepted evidence remains tied to its documented exact source SHA; no new pass is claimed for those paths.
+
+**Still open:** cross-version upgrade/rollback and user-data migration; HTTPS/external FTP and HLS restart; controlled CPU/RAM A/B; full IDM visual parity; final HyperGet icon/branding and single deliverable `HyperGet.exe`; independent final Windows recheck. Browser integration repository was read at its pinned PR SHA but not modified. No main write, merge, release, paid runner/API, or Torrent.
+
