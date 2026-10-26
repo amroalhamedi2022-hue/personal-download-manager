@@ -174,6 +174,16 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("scripts/source-tests/test_hyperget_liquid_progress_source.py", scope)
         self.assertIn("liquid-progress-active.png", SCRIPT)
 
+    def test_lifecycle_proof_records_exact_checked_out_pr_head(self):
+        lifecycle_step = UI_WORKFLOW.split(
+            "- name: Verify isolated NSIS same-version reinstall and silent uninstall", 1
+        )[1].split("- name: Upload active Liquid Progress screenshot", 1)[0]
+        self.assertIn("$sourceSha = (git rev-parse HEAD).Trim()", lifecycle_step)
+        self.assertIn("$expectedSourceSha = '${{ github.event.pull_request.head.sha || github.sha }}'", lifecycle_step)
+        self.assertIn("if ($sourceSha -ne $expectedSourceSha)", lifecycle_step)
+        self.assertIn("-SourceSha $sourceSha -ProofFile $proof", lifecycle_step)
+        self.assertNotIn("-SourceSha $env:GITHUB_SHA", lifecycle_step)
+
     def test_unknown_cli_output_diagnostics_are_bounded_and_nonverbatim(self):
         self.assertIn("Select-Object -First 32", SCRIPT)
         self.assertIn("codepoints=$codes", SCRIPT)
