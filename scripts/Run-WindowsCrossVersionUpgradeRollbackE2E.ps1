@@ -430,9 +430,16 @@ function Read-DownloadStatus([long] $Id) {
         $preview = @(
             $normalizedLines | Select-Object -First 8 | ForEach-Object {
                 $safeLine = [string]$_
+                foreach ($pathToRedact in @(
+                    $env:USERPROFILE, $env:APPDATA, $runnerTemp, $installDir, $downloadDir, $fixtureDir
+                )) {
+                    $value = [string]$pathToRedact
+                    if (-not [string]::IsNullOrEmpty($value)) {
+                        $safeLine = $safeLine.Replace($value, '[PATH]')
+                    }
+                }
                 foreach ($sensitive in @(
-                    $script:WinCredReference, $script:WinCredUsername, $script:WinCredPassword,
-                    $env:USERPROFILE, $runnerTemp, $installDir, $downloadDir, $fixtureDir, $downloadName
+                    $script:WinCredReference, $script:WinCredUsername, $script:WinCredPassword, $downloadName
                 )) {
                     $value = [string]$sensitive
                     if (-not [string]::IsNullOrEmpty($value)) {
@@ -440,7 +447,6 @@ function Read-DownloadStatus([long] $Id) {
                     }
                 }
                 $safeLine = [regex]::Replace($safeLine, '(?i)https?://\S+', '[URL]')
-                $safeLine = [regex]::Replace($safeLine, '(?i)\b[A-Z]:\\.*$', '[PATH]')
                 if ($safeLine.Length -gt 120) { $safeLine = $safeLine.Substring(0, 120) }
                 $safeLine
             }
