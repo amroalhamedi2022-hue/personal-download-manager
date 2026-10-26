@@ -1,6 +1,6 @@
 """Regression contract for bounded OkHttp request dispatch on desktop Windows.
 
-The active 1/4/16 benchmark is the runtime gate: this source contract permits
+The installed active 1/4/16 benchmark is the runtime gate: this source contract permits
 controlled tuning between 16 and 64 requests, but cannot prove transfer fairness,
 throughput, memory, or SHA-256 integrity.
 """
