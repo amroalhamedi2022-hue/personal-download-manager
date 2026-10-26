@@ -119,7 +119,7 @@ class LiquidProgressSourceContract(unittest.TestCase):
         )
         self.assertIn("windows-liquid-progress-visual", UI_WORKFLOW)
         scope = UI_WORKFLOW.split('case "$file" in', 1)[1].split("esac", 1)[0]
-        self.assertNotIn("scripts/source-tests/test_hyperget_liquid_progress_source.py", scope)
+        self.assertIn("scripts/source-tests/test_hyperget_liquid_progress_source.py", scope)
         self.assertIn("liquid-progress-active.png", SCRIPT)
 
     def test_fast_source_gate_checks_the_contract_without_building(self):
