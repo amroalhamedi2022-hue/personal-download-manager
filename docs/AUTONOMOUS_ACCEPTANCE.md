@@ -1213,3 +1213,9 @@ Source-only run [40274122171](https://github.com/amroalhamedi2022-hue/personal-d
 **Correction:** reconstructed `Run-WindowsLiquidProgressVisualE2E.ps1` from the exact known-good harness source at `d8e8f557693c7db398bc4b3e4cb57d4df8867c58`, then applied only the intended two-sided invisible-character normalization and safe plain-ASCII diagnostic. The expected script shape is again one server start, three CLI status probes, two active probes and one final-status probe. The latest source-only rerun must pass before accepting the next Windows visual result.
 
 The suffix-normalization hypothesis remains unverified until a fresh exact-SHA Windows run produces the screenshot/report or a more specific safe diagnostic.
+
+## 2026-10-26 — latest Liquid Progress harness integrity checkpoint
+
+At exact PR head `f85dd261d98c457bb3d82fdec1c1397a54ed4b44`, source-only safety CI **PASS** ([run 40275128435](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40275128435)). Directly re-fetched static invariants passed 11/11. Source inspection found and repaired a malformed/truncated status-preview function plus an orphaned duplicate script tail; the regression suite now guards against that patch-composition defect. This is test-harness repair only, not a production renderer change.
+
+The installed Windows visual run [40275128473](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40275128473) was pending with no job/artifact verdict at the last poll. **HG-UI-LIQUID-PROGRESS-01 remains NOT ACCEPTED** until the exact-head run proves screenshot-time `Downloading`, advancing fixture bytes, final `Finished`, matching 16 MiB SHA-256, and same-version reinstall/silent uninstall. See [the detailed checkpoint](checkpoints/HG_LIQUID_PROGRESS_VISUAL_E2E_2026-10-26.md). Do not treat source CI or prior transfer-only hashes as visual acceptance.
