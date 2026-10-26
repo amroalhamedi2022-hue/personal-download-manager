@@ -23,11 +23,9 @@ class HttpDispatcherBoundContract(unittest.TestCase):
         self.assertIsNotNone(host_match, "per-host OkHttp request cap is missing")
         global_limit = int(global_match.group(1))
         host_limit = int(host_match.group(1))
-        for label, limit in (("global", global_limit), ("per-host", host_limit)):
-            with self.subTest(scope=label):
-                self.assertGreaterEqual(limit, 16, "cap must allow one live request per 16-task workload")
-                self.assertLessEqual(limit, 64, "cap must remain bounded during segmented-download bursts")
-        self.assertEqual(global_limit, host_limit, "global and per-host policies must stay aligned")
+        self.assertEqual(global_limit, 32, "installed resource experiment uses a 32-call global cap")
+        self.assertEqual(host_limit, 32, "per-host cap must match the global cap")
+        self.assertGreaterEqual(global_limit, 16, "cap must allow one live request per 16-task workload")
         self.assertNotIn("Int.MAX_VALUE", block)
         self.assertIn("installed", __doc__.lower())
 
