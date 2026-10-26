@@ -659,8 +659,8 @@ val appModule = module {
                 // create an unbounded OkHttp callback-thread burst. Keep headroom
                 // above the required 16-task workload; the installed 1/4/16 matrix
                 // is the runtime gate for fairness and resource impact.
-                maxRequests = 32
-                maxRequestsPerHost = 32
+                maxRequests = 64
+                maxRequestsPerHost = 64
             })
             .sslSocketFactory(
                 appSSLFactoryProvider.createSSLSocketFactory(),

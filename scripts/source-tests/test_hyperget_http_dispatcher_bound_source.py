@@ -1,8 +1,6 @@
 """Regression contract for bounded OkHttp request dispatch on desktop Windows.
 
-The installed active 1/4/16 benchmark is the runtime gate: this source contract permits
-controlled tuning between 16 and 64 requests, but cannot prove transfer fairness,
-throughput, memory, or SHA-256 integrity.
+The installed active 1/4/16 benchmark is the runtime gate. A real 32-request trial passed integrity/concurrency but showed no resource win and higher peak memory, so the previously verified 64/64 cap is restored. This source contract only locks that configuration; it cannot prove transfer fairness, throughput, memory, or SHA-256 integrity.
 """
 from pathlib import Path
 import re
@@ -23,8 +21,8 @@ class HttpDispatcherBoundContract(unittest.TestCase):
         self.assertIsNotNone(host_match, "per-host OkHttp request cap is missing")
         global_limit = int(global_match.group(1))
         host_limit = int(host_match.group(1))
-        self.assertEqual(global_limit, 32, "installed resource experiment uses a 32-call global cap")
-        self.assertEqual(host_limit, 32, "per-host cap must match the global cap")
+        self.assertEqual(global_limit, 64, "restore the verified baseline after the 32-call trial showed no resource benefit")
+        self.assertEqual(host_limit, 64, "per-host cap must match the verified global baseline")
         self.assertGreaterEqual(global_limit, 16, "cap must allow one live request per 16-task workload")
         self.assertNotIn("Int.MAX_VALUE", block)
         self.assertIn("installed", __doc__.lower())

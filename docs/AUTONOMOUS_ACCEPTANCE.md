@@ -1305,3 +1305,8 @@ No main-branch write, merge, release, paid service/runner, or Torrent. Keep PR #
 
 **Still open:** cross-version upgrade/rollback and user-data migration; HTTPS/external FTP and HLS restart; controlled CPU/RAM A/B; full IDM visual parity; final HyperGet icon/branding and single deliverable `HyperGet.exe`; independent final Windows recheck. Browser integration repository was read at its pinned PR SHA but not modified. No main write, merge, release, paid runner/API, or Torrent.
 
+
+
+## 2026-10-26 — HG-HTTP-RESOURCE-TUNING-01 decision: restore 64/64 (exact-head rerun pending)
+
+The 32/32 trial on `d4dc2dcb121913b9734b5bfaf5279d24b483f49d` passed 63/63 SHA-256 checks, the 1/4/16 active-task gates and all 9 resource CSVs, but the three 16-task rounds took about 166.3/168.3/166.0 seconds versus about 155.7–157.0 seconds on the 64/64 baseline. The third-round peak rose from 441.617/503.734 MiB Working Set/Private Bytes at 64/64 to 480.629/547.379 MiB at 32/32. This is one-run evidence rather than a controlled A/B, but it shows no meaningful resource improvement and a slower workload. The production caps and source contract are therefore being restored to 64/64; do not claim the rollback is verified until exact-head Windows matrix and JVM-profile runs pass. Full evidence and pre-build acceptance criteria: [HG_HTTP_RESOURCE_TUNING_2026-10-26.md](checkpoints/HG_HTTP_RESOURCE_TUNING_2026-10-26.md).
