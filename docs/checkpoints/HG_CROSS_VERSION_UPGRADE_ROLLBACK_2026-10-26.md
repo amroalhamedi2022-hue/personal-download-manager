@@ -1,3 +1,26 @@
+## 2026-10-27 — follow-up: Windows table border hid the requested ID (OPEN)
+
+**Exact candidate SHA:** `e986936bb5ffd7f4fa6183e7cf50a53281b8afd2`.  
+**Windows run:** [40410263260](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40410263260).  
+**Proof artifact:** [12692738726](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40410263260/artifacts/12692738726), archive SHA-256 `163b3d3e98b44d92a45ac5d182c187044b6130e5aff70818f1dddf0f53240381`.
+
+### Evidence
+- **PASS:** source contracts passed before packaging.
+- **PASS:** both exact-snapshot Windows installers built. Baseline installer SHA-256: `c3b7a333e51980cbea96aab4febaaf4b5be778e63436c40ba382eebfc1f06d9a`; candidate installer SHA-256: `34442e65f317d7e90dcb2e416241ab387a766140ae6233d7ac3e4f3ee595506d`.
+- **PASS:** the baseline CLI created the loopback download. The file reached exactly 8,388,608 bytes and its SHA-256 matched the fixture; fixture counters were 9 requests and 8,388,864 bytes sent.
+- **FAIL (harness only, after transfer):** status remained `UNPARSED`. The actual row began `? 0 ? Finish? ...`: the leading table-border glyph had been decoded as `?`, so the numeric-ID row regex never matched. The prior parser change handled the clipped status token but not this leading border. Upgrade, rollback and WinCred lifecycle assertions did not run; test-owned data cleanup passed.
+
+### Next controlled fix — recorded before the next build
+Trim only leading/trailing table-border replacement characters from each captured line, then parse the requested numeric ID and its first status cell. Preserve the internal `Finish?` marker so it normalizes to `Finished`. Extend the regression to the complete observed row, including the leading border, and retain the no-neighbor-row invariant.
+
+**Pre-build question:** does normalizing the outer table border let the baseline row ID and truncated `Finished` status parse correctly, so the full cross-version lifecycle can execute?  
+**Expected:** source contracts pass; on Windows the real 8 MiB transfer is observed as `Finished`, then upgrade → candidate uninstall → rollback → normal uninstall completes with history/settings/shortcuts/registry and synthetic WinCred preserved and safely cleaned up.  
+**Why source tests are insufficient:** only the packaged baseline process reproduces the native Windows table formatting, actual file transfer and Windows installer/credential-store transitions.
+
+**Acceptance remains OPEN.** No production downloader source changed. Do not mark upgrade/rollback/WinCred PASS until a new exact-head artifact records `Result=PASS`. No merge, release or final EXE delivery.
+
+---
+
 ## 2026-10-27 — cross-version Windows gate: real transfer succeeded; status parser false-negative (OPEN)
 
 **Prior exact candidate SHA:** `69d6120442e7abbe092e1af95a146579f6a0a42a`.  

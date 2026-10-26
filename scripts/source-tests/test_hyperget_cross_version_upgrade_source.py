@@ -85,6 +85,7 @@ class HyperGetCrossVersionUpgradeContracts(unittest.TestCase):
         self.assertIn(r"$statusPattern = '^(?<status>Downloading|Finished|Finish(?:[?…�])?|Error|Paused|PreparingFile|Resuming|Retrying)(?=$|[\s?])'", self.harness)
         self.assertIn("$statusText = [regex]::Replace($plain, $rowStartPattern, '')", self.harness)
         self.assertIn("$statusText = $statusText.TrimStart([char[]]@(' ', '?'))", self.harness)
+        self.assertIn("$plain.Trim([char[]]@(' ', '?'))", self.harness)
         self.assertIn("if ($status -like 'Finish*') { $status = 'Finished' }", self.harness)
 
     def test_baseline_transfer_gate_reports_status_and_loopback_progress_on_failure(self):
@@ -211,6 +212,15 @@ class HyperGetCrossVersionUpgradeContracts(unittest.TestCase):
                 self.assertEqual(status, expected)
 
         self.assertIsNone(pattern.match("FinishAgain cross-version-upgrade.bin"))
+
+        # The Windows table's outer border was decoded as '?' before the numeric ID.
+        row = "? 0 ? Finish? cross-version-upgrade? "
+        normalized = row.strip(" ?")
+        self.assertRegex(normalized, r"^\\s*0(?:\\s|$)")
+        status_text = re.sub(r"^\\s*0(?:\\s|$)", "", normalized).lstrip(" ?")
+        match = pattern.match(status_text)
+        self.assertIsNotNone(match)
+        self.assertEqual("Finished" if match.group("status").startswith("Finish") else match.group("status"), "Finished")
         self.assertIn("fixed-width table can truncate Finished to Finish", self.harness)
 
 if __name__ == "__main__":

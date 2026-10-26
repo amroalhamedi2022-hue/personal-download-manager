@@ -384,7 +384,9 @@ function Read-DownloadStatus([long] $Id) {
                 $plain = [regex]::Replace([string]$line, '\x1B\[[0-?]*[ -/]*[@-~]', '')
                 $plain = $plain -replace '[│┃|]', ' '
                 if (-not [string]::IsNullOrWhiteSpace($plain)) {
-                    $plain.Trim()
+                    # Native Windows capture can turn Mordant's outer box glyphs into '?'.
+                    # Strip only line-edge table markers; preserve the '?' after a truncated status cell.
+                    $plain.Trim([char[]]@(' ', '?'))
                 }
             }
         }
