@@ -371,24 +371,54 @@ function Read-DownloadStatus([long] $Id) {
     # The exact baseline predates machine-readable status flags; inspect its standard table.
     $output = Invoke-AppCli -Arguments @('download','show',([string]$Id)) -Purpose ('read download ' + $Id)
     $script:LastStatusProbe = 'no matching row'
-    $idPattern = '(?<!\d)' + [regex]::Escape([string]$Id) + '(?!\d)'
-    $statusPattern = $idPattern + '.*?\b(?<status>Downloading|Finished|Error|Paused|PreparingFile|Resuming|Retrying)\b'
-    foreach ($entry in $output) {
-        # PowerShell may surface a native CLI table as one multiline object; split explicitly.
-        foreach ($line in ([string]$entry -split '\r?\n')) {
-            $plain = [regex]::Replace([string]$line, '\x1B\[[0-?]*[ -/]*[@-~]', '')
-            $plain = $plain -replace '[│┃|]', ' '
-            if ($plain -match 'No downloads found') {
-                $script:LastStatusProbe = 'CLI reported no downloads'
-                continue
+    $rowStartPattern = '^\s*' + [regex]::Escape([string]$Id) + '(?:\s|$)'
+    $anyRowStartPattern = '^\s*\d+(?:\s|$)'
+    $statusPattern = '\b(?<status>Downloading|Finished|Error|Paused|PreparingFile|Resuming|Retrying)\b'
+    $normalizedLines = @(
+        foreach ($entry in $output) {
+            # Native PowerShell capture may yield one multiline string or multiple line objects;
+            # handle CRLF, LF, and CR, then strip ANSI and Mordant table separators.
+            foreach ($line in ([string]$entry -split '\r\n|\n|\r')) {
+                $plain = [regex]::Replace([string]$line, '\x1B\[[0-?]*[ -/]*[@-~]', '')
+                $plain = $plain -replace '[│┃|]', ' '
+                if (-not [string]::IsNullOrWhiteSpace($plain)) {
+                    $plain.Trim()
+                }
             }
-            if ($plain -match $statusPattern) {
-                $script:LastStatusProbe = ('id={0};status={1}' -f $Id, $Matches.status)
-                return $Matches.status
+        }
+    )
+
+    # Some terminal widths wrap a table row so ID and Status land on separate physical lines.
+    # Once the requested ID row is seen, accept its status cell until another numeric-ID row
+    # starts; never borrow a neighboring task's state.
+    $insideTargetRow = $false
+    foreach ($plain in $normalizedLines) {
+        if ($plain -match 'No downloads found') {
+            $script:LastStatusProbe = 'CLI reported no downloads'
+            $insideTargetRow = $false
+            continue
+        }
+
+        $statusMatch = [regex]::Match($plain, $statusPattern)
+        if ($plain -match $rowStartPattern) {
+            if ($statusMatch.Success) {
+                $status = $statusMatch.Groups['status'].Value
+                $script:LastStatusProbe = ('id={0};status={1}' -f $Id, $status)
+                return $status
             }
-            if ($plain -match $idPattern) {
-                $script:LastStatusProbe = 'matching ID row without recognized status'
-            }
+            $insideTargetRow = $true
+            $script:LastStatusProbe = 'matching ID row without recognized status'
+            continue
+        }
+
+        if ($insideTargetRow -and $statusMatch.Success) {
+            $status = $statusMatch.Groups['status'].Value
+            $script:LastStatusProbe = ('id={0};wrapped-status={1}' -f $Id, $status)
+            return $status
+        }
+
+        if ($insideTargetRow -and $plain -match $anyRowStartPattern) {
+            $insideTargetRow = $false
         }
     }
     return $null
