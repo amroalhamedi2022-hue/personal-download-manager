@@ -1,6 +1,6 @@
-name: HyperGet Windows queue lifecycle regression
-# Question: do lifecycle actor transitions compile and preserve 16-task batch admission?
-# Expected: >=4 new + >=7 existing JUnit tests, no failures/skips. Source checks alone are insufficient.
+name: HyperGet Windows queue + part I/O lifecycle regression
+# Question: do queue lifecycle and blocking part-source cancellation compile and pass real JUnit tests?
+# Expected: queue suites plus the interrupt-ignoring source regression pass with no failures/skips.
 # Targeted Windows compile only; NO EXE or installer.
 on:
   pull_request:
@@ -11,6 +11,8 @@ on:
       - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/downloaditem/http/HttpDownloadJob.kt"
       - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/part/PartDownloader.kt"
       - "downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/part/PartResponseDeadlineTest.kt"
+      - "downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/part/PartDownloaderIoLifecycleTest.kt"
+      - "scripts/source-tests/test_hyperget_part_downloader_io_lifecycle_source.py"
       - "scripts/source-tests/test_hyperget_http_part_deadline_source.py"
       - "scripts/source-tests/test_hyperget_http_part_admission_source.py"
       - "downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/DownloadManagerLifecycleContextTest.kt"
@@ -40,6 +42,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m unittest discover -s scripts/source-tests -p test_hyperget_http_part_deadline_source.py -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m unittest discover -s scripts/source-tests -p test_hyperget_part_downloader_io_lifecycle_source.py -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: jetbrains
@@ -49,7 +53,7 @@ jobs:
       - name: Compile and run two targeted Kotlin suites
         shell: pwsh
         run: |
-          & ./gradlew.bat --no-daemon --stacktrace --dependency-verification strict :downloader:core:desktopTest --tests '*DownloadManagerLifecycleContextTest*' --tests '*ManualDownloadQueueBatchResumeTest*' --tests '*PartResponseDeadlineTest*'
+          & ./gradlew.bat --no-daemon --stacktrace --dependency-verification strict :downloader:core:desktopTest --tests '*DownloadManagerLifecycleContextTest*' --tests '*ManualDownloadQueueBatchResumeTest*' --tests '*PartResponseDeadlineTest*' --tests '*PartDownloaderIoLifecycleTest*'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify exact JUnit XML counts and zero failures
         shell: pwsh
@@ -58,7 +62,8 @@ jobs:
           $suites = @(
             @{Name='ir.amirab.downloader.DownloadManagerLifecycleContextTest';Min=4},
             @{Name='ir.amirab.downloader.queue.ManualDownloadQueueBatchResumeTest';Min=7},
-            @{Name='ir.amirab.downloader.part.PartResponseDeadlineTest';Min=4}
+            @{Name='ir.amirab.downloader.part.PartResponseDeadlineTest';Min=4},
+            @{Name='ir.amirab.downloader.part.PartDownloaderIoLifecycleTest';Min=1}
           )
           foreach ($suite in $suites) {
             $path = Join-Path $dir "TEST-$($suite.Name).xml"
@@ -76,10 +81,11 @@ jobs:
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: hyperget-queue-lifecycle-windows-junit
+          name: hyperget-queue-and-part-io-lifecycle-windows-junit
           path: |
             downloader/core/build/test-results/desktopTest/TEST-ir.amirab.downloader.DownloadManagerLifecycleContextTest.xml
             downloader/core/build/test-results/desktopTest/TEST-ir.amirab.downloader.queue.ManualDownloadQueueBatchResumeTest.xml
             downloader/core/build/test-results/desktopTest/TEST-ir.amirab.downloader.part.PartResponseDeadlineTest.xml
+            downloader/core/build/test-results/desktopTest/TEST-ir.amirab.downloader.part.PartDownloaderIoLifecycleTest.xml
           if-no-files-found: warn
           retention-days: 7
