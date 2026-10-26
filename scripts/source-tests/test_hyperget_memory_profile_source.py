@@ -43,7 +43,10 @@ class WindowsJvmMemoryProfileContract(unittest.TestCase):
 
     def test_expensive_profile_is_scoped_to_relevant_latest_commit(self):
         self.assertIn("change-scope:", WORKFLOW)
-        self.assertIn("git show --format= --name-only HEAD", WORKFLOW)
+        self.assertIn("git diff --name-only HEAD^ HEAD", WORKFLOW)
+        self.assertIn("fetch-depth: 2", WORKFLOW)
+        self.assertIn('case "$file" in', WORKFLOW)
+        self.assertIn("run=false", WORKFLOW)
         self.assertIn("needs: change-scope", WORKFLOW)
         self.assertIn("workflow_dispatch", WORKFLOW)
         self.assertIn("needs: change-scope", WORKFLOW)

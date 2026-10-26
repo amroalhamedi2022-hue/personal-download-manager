@@ -64,3 +64,7 @@ CPU decreased in final rounds at 1/4/16 workloads, but the full 16-way peak Priv
 
 ## Memory profile workflow scope-gate repair
 Run [40252512178](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40252512178) failed with no runnable jobs because the change-scope block in the workflow was malformed. Rebuilt the complete jobs block and switched from `git diff HEAD^ HEAD` (requires parent history) to `git show --format= --name-only HEAD`, which works with the default shallow checkout. Added source assertions for the complete conditional and `needs` dependency. Current fix changes workflow/tests/docs only; expensive profile should skip while source-only CI validates the gate.
+
+
+## Scope gate aligned with the working Windows benchmark
+The profile workflow validation run [40253378123](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40253378123) failed before creating jobs. Replaced the scope block with the same known-good structure used by `windows-installed-active-benchmark.yml`: checkout `fetch-depth: 2`, diff only `HEAD^..HEAD`, and a shell `case` allowlist. The scope test now asserts those pieces. This commit changes workflow/tests/docs only, so no expensive package should run.
