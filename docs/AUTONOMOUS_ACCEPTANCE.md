@@ -1142,3 +1142,11 @@ Before the next purposeful Windows build, the harness now rate-limits installed 
 - Inspected artifact [12625646344](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40262112549/artifacts/12625646344): real 16 MiB output equals fixture byte-for-byte; both SHA-256 values are `341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1`. No active screenshot or passing report was produced.
 - Root cause: two PowerShell status filters over-escaped the tab delimiter and failed to match actual `ID<TAB>Status` CLI rows. The download completed, but the harness never observed `Downloading`. Fixed to use a literal tab prefix and ordinal `StartsWith`; added source regression coverage.
 - **Current visual acceptance remains NOT TESTED/PENDING exact-head Windows rerun.** The previous successful transfer hash is partial evidence only, not visual acceptance. Installer SHA from this failed run is not being treated as a release artifact. No merge/release/Torrent.
+
+
+## 2026-10-26 — Liquid Progress CLI status observation remains unresolved after first parser repair
+
+- Exact-head run [40266707875](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40266707875) on `5e8266873bda688c0cabd20556f96bc6f0446a74`: Windows Compose compile/package/install and GUI launch **PASS**; six idle/minimized metric CSVs captured; active visual acceptance **FAIL**; installer lifecycle step **SKIPPED**.
+- Artifact [12626702200](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40266707875/artifacts/12626702200) proves the 16 MiB downloaded output is byte-identical to the loopback fixture (SHA-256 `341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1`), but no active screenshot/report was produced.
+- The over-escaped tab regex was removed, but the exact-head rerun still found no parseable status row. Root cause is therefore **not yet established**. Next patch moves the positional ID before `--status-lines` and records exit code plus sanitized status-output preview to distinguish command parsing, IPC/empty-result and timing.
+- Visual acceptance remains **NOT TESTED/PENDING**. No final HyperGet.exe or release artifact claimed.

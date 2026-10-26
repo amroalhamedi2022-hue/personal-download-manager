@@ -73,3 +73,14 @@ This follow-up makes two test-quality changes before the next purposeful Windows
 **Pre-build question:** does the corrected installed Windows test recognize the real CLI tab-delimited status row, capture the actual GUI while status is `Downloading` and fixture bytes are advancing, finish the 16 MiB file with matching SHA-256, then complete same-version reinstall and silent uninstall?
 
 **Expected PASS:** exact-SHA Windows run succeeds; `liquid-progress-active.png` and `liquid-progress-report.json` exist; report shows `Downloading`, active fixture task, `BytesAdvancedBeforeScreenshot=true`, final `Finished`, and identical expected/actual hashes; installer lifecycle proof exists. Source-only checks cannot establish installed IPC/status formatting, Windows screenshot timing, or actual file bytes. One targeted build is justified; no release is being produced.
+
+
+## 2026-10-26 — second exact-head result: transfer hash passes, status observation still fails
+
+**Run:** [40266707875](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40266707875), source SHA `5e8266873bda688c0cabd20556f96bc6f0446a74`. Windows Compose build, single-installer packaging, silent install, GUI launch, and six real idle/minimized measurement CSVs **PASS**. The active Liquid Progress gate still **FAIL**; installer lifecycle did not run because it is downstream of that gate.
+
+**Artifact:** [12626702200](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40266707875/artifacts/12626702200). The 16 MiB output and fixture are byte-identical; both SHA-256 values are `341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1`. No screenshot or passing report exists. Diagnostics still show task 0, 38 polls, and zero active requests when the status loop ends. The literal-tab prefix change alone did not fix observation; therefore the earlier regex diagnosis was incomplete.
+
+**Next diagnostic repair:** invoke the CLI with the positional ID before `--status-lines`, and record the status command exit code plus a short sanitized output preview in failure diagnostics. This distinguishes a parser/IPC/empty-result problem from timing without logging URLs or local paths. A new Windows build is justified because source tests cannot prove the installed CLI output and live status observation.
+
+**Pre-build question:** does the exact revised command return the real `ID<TAB>Status` row from the installed application, allow a screenshot while `Downloading` and bytes are advancing, then complete SHA verification and installer lifecycle checks? Expected PASS requires the screenshot/report and lifecycle proof, not just successful compilation or matching final bytes.

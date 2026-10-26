@@ -47,6 +47,28 @@ if ((Get-Item -LiteralPath $fixture).Length -ne $expectedBytes) {
 }
 $expectedSha = (Get-FileHash -LiteralPath $fixture -Algorithm SHA256).Hash.ToLowerInvariant()
 
+function Get-SanitizedStatusPreview {
+    param([object[]]$Lines)
+    $preview = @()
+    foreach ($entry in @($Lines)) {
+        $line = "$entry".Trim()
+        if (-not $line) { continue }
+        if ($line -match '^\d+\t[A-Za-z]+$') {
+            $preview += $line
+        } elseif ($line -match '(?i)no downloads found') {
+            $preview += 'No downloads found.'
+        } elseif ($line -match '(?i)(usage|missing|unknown|invalid|error|exception|argument|not found)') {
+            $safe = $line -replace 'https?://\S+', '[url]' -replace '[A-Za-z]:\\\S+', '[path]'
+            if ($safe.Length -gt 160) { $safe = $safe.Substring(0, 160) }
+            $preview += $safe
+        } else {
+            $preview += '[non-status output omitted]'
+        }
+        if ($preview.Count -ge 3) { break }
+    }
+    return ,$preview
+}
+
 $server = $null
 $started = $null
 $visible = @()
@@ -109,6 +131,8 @@ public static class HyperGetLiquidProgressNative {
     $taskId = [long]$ids[0]
     # CLI status rows are tab-delimited; use a literal tab prefix rather than a regex escape.
     $statusPrefix = ([string]$taskId) + [char]9
+    $lastStatusCommandExitCode = $null
+    $lastStatusOutputPreview = @()
 
     & $cliPath download resume $taskId
     if ($LASTEXITCODE -ne 0) { throw 'Installed CLI could not resume the visual test download.' }
@@ -131,8 +155,10 @@ public static class HyperGetLiquidProgressNative {
             if (($elapsedMilliseconds - $lastStatusPollMilliseconds) -ge 500) {
                 $lastStatusPollMilliseconds = $elapsedMilliseconds
                 $statusPollCount++
-                $statusOutput = @(& $cliPath download show --status-lines $taskId 2>&1)
-                if ($LASTEXITCODE -eq 0) {
+                $statusOutput = @(& $cliPath download show $taskId --status-lines 2>&1)
+                $lastStatusCommandExitCode = $LASTEXITCODE
+                $lastStatusOutputPreview = @(Get-SanitizedStatusPreview -Lines $statusOutput)
+                if ($lastStatusCommandExitCode -eq 0) {
                     $statusLine = @($statusOutput | ForEach-Object { "$_".Trim() } |
                         Where-Object { $_.StartsWith($statusPrefix, [StringComparison]::Ordinal) } |
                         Select-Object -First 1)
@@ -160,6 +186,8 @@ public static class HyperGetLiquidProgressNative {
             LastStatusLine = $lastStatusLine
             LastStatus = $statusAtCapture
             StatusPollCount = $statusPollCount
+            LastStatusCommandExitCode = $lastStatusCommandExitCode
+            LastStatusOutputPreview = $lastStatusOutputPreview
             LastFixtureStats = $captureStats
         }
         $diagnostics | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $root 'liquid-progress-diagnostics.json') -Encoding utf8
@@ -170,10 +198,12 @@ public static class HyperGetLiquidProgressNative {
     Start-Sleep -Milliseconds 900
     $preScreenshotStats = Invoke-RestMethod -Uri "http://127.0.0.1:$port/stats" -TimeoutSec 5
     $bytesAdvancedBeforeScreenshot = [long]$preScreenshotStats.bytes_sent -gt $bytesBeforeScreenshot
-    $statusOutput = @(& $cliPath download show --status-lines $taskId 2>&1)
+    $statusOutput = @(& $cliPath download show $taskId --status-lines 2>&1)
+    $lastStatusCommandExitCode = $LASTEXITCODE
+    $lastStatusOutputPreview = @(Get-SanitizedStatusPreview -Lines $statusOutput)
     $statusPollCount++
     $statusAtCapture = $null
-    if ($LASTEXITCODE -eq 0) {
+    if ($lastStatusCommandExitCode -eq 0) {
         $statusLine = @($statusOutput | ForEach-Object { "$_".Trim() } |
             Where-Object { $_.StartsWith($statusPrefix, [StringComparison]::Ordinal) } |
             Select-Object -First 1)
@@ -195,6 +225,8 @@ public static class HyperGetLiquidProgressNative {
             LastStatusLine = $lastStatusLine
             LastStatus = $statusAtCapture
             StatusPollCount = $statusPollCount
+            LastStatusCommandExitCode = $lastStatusCommandExitCode
+            LastStatusOutputPreview = $lastStatusOutputPreview
             BytesBeforeScreenshot = $bytesBeforeScreenshot
             BytesAtScreenshot = [long]$preScreenshotStats.bytes_sent
             BytesAdvancedBeforeScreenshot = $bytesAdvancedBeforeScreenshot
@@ -242,12 +274,25 @@ public static class HyperGetLiquidProgressNative {
         throw "Liquid Progress download did not complete with expected SHA-256; bytes=$actualLength."
     }
 
-    $finalStatusOutput = @(& $cliPath download show --status-lines $taskId 2>&1)
+    $finalStatusOutput = @(& $cliPath download show $taskId --status-lines 2>&1)
+    $finalStatusExitCode = $LASTEXITCODE
+    $finalStatusOutputPreview = @(Get-SanitizedStatusPreview -Lines $finalStatusOutput)
     $finalStatusLines = @($finalStatusOutput | ForEach-Object { "$_".Trim() } |
         Where-Object { $_.StartsWith($statusPrefix, [StringComparison]::Ordinal) } |
         Where-Object { $_.Substring($statusPrefix.Length) -ceq 'Finished' })
-    if ($LASTEXITCODE -ne 0 -or $finalStatusLines.Count -ne 1) {
-        throw 'Final installed CLI status was not Finished after SHA-256 verification.'
+    if ($finalStatusExitCode -ne 0 -or $finalStatusLines.Count -ne 1) {
+        [pscustomobject]@{
+            SourceSHA = $SourceSha
+            TaskId = $taskId
+            Reason = 'Final CLI status was not proven as Finished after the output hash matched.'
+            FinalStatusCommandExitCode = $finalStatusExitCode
+            FinalStatusOutputPreview = $finalStatusOutputPreview
+            ExpectedBytes = $expectedBytes
+            ActualBytes = (Get-Item -LiteralPath $outputPath).Length
+            ExpectedSHA256 = $expectedSha
+            ActualSHA256 = $actualSha
+        } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $root 'liquid-progress-diagnostics.json') -Encoding utf8
+        throw "Final installed CLI status was not Finished after SHA-256 verification (exit=$finalStatusExitCode; output=$($finalStatusOutputPreview -join ' | '))."
     }
 
     [pscustomobject]@{
