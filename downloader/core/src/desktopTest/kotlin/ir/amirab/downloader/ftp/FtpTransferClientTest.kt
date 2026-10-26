@@ -228,6 +228,47 @@ class FtpTransferClientTest {
     }
 
     @Test
+    fun cancellationAtFinalPayloadBoundaryDoesNotPublishAndCanResumeFromFullStage() = withFixture { fixture ->
+        val destination = fixture.downloadFolder.resolve("cancel-final-payload.bin")
+        val part = fixture.downloadFolder.resolve("cancel-final-payload.bin.ftp-part")
+        val metadata = fixture.downloadFolder.resolve("cancel-final-payload.bin.ftp-part.properties")
+        val client = FtpTransferClient()
+
+        // Cancel from the last payload progress callback, after the staged bytes
+        // reach the remote size but before FTP completion and final publication.
+        assertFailsWith<IOException> {
+            client.download(
+                fixture.url("fixture.bin"),
+                destination,
+                username = "test",
+                password = "secret",
+                onProgress = { downloaded, total ->
+                    if (total != null && downloaded >= total) client.cancel()
+                },
+            )
+        }
+
+        assertFalse(Files.exists(destination), "Cancellation before FTP completion must not publish a final file")
+        assertTrue(Files.isRegularFile(part), "The last payload chunk must remain resumable")
+        assertEquals(fixture.bytes.size.toLong(), Files.size(part))
+        assertTrue(Files.isRegularFile(metadata))
+
+        // A later explicit resume may validate the complete staged payload,
+        // receive a successful FTP completion response, and then publish it.
+        val resumed = FtpTransferClient().download(
+            fixture.url("fixture.bin"),
+            destination,
+            username = "test",
+            password = "secret",
+        )
+        assertEquals(fixture.bytes.size.toLong(), resumed.resumedFrom)
+        assertEquals(0L, resumed.transferredBytes)
+        assertContentEquals(fixture.bytes, Files.readAllBytes(destination))
+        assertFalse(Files.exists(part))
+        assertFalse(Files.exists(metadata))
+    }
+
+    @Test
     fun remoteFileChangingBetweenInterruptAndResumeCannotCorruptLocalOutput() = withFixture { fixture ->
         val destination = fixture.downloadFolder.resolve("changed.bin")
         assertFailsWith<IOException> {
