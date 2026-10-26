@@ -95,6 +95,8 @@ class HyperGetCrossVersionUpgradeContracts(unittest.TestCase):
         ):
             self.assertIn(expected, self.harness)
 
+        self.assertIn(r"-split '\r?\n'", self.harness)
+
     def test_synthetic_wincred_survives_upgrade_rollback_and_uninstall_without_logging_secrets(self):
         for expected in (
             'PersonalDownloadManager/FTP/',

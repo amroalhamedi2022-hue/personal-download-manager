@@ -373,19 +373,22 @@ function Read-DownloadStatus([long] $Id) {
     $script:LastStatusProbe = 'no matching row'
     $idPattern = '(?<!\d)' + [regex]::Escape([string]$Id) + '(?!\d)'
     $statusPattern = $idPattern + '.*?\b(?<status>Downloading|Finished|Error|Paused|PreparingFile|Resuming|Retrying)\b'
-    foreach ($line in $output) {
-        $plain = [regex]::Replace([string]$line, '\x1B\[[0-?]*[ -/]*[@-~]', '')
-        $plain = $plain -replace '[│┃|]', ' '
-        if ($plain -match 'No downloads found') {
-            $script:LastStatusProbe = 'CLI reported no downloads'
-            continue
-        }
-        if ($plain -match $statusPattern) {
-            $script:LastStatusProbe = ('id={0};status={1}' -f $Id, $Matches.status)
-            return $Matches.status
-        }
-        if ($plain -match $idPattern) {
-            $script:LastStatusProbe = 'matching ID row without recognized status'
+    foreach ($entry in $output) {
+        # PowerShell may surface a native CLI table as one multiline object; split explicitly.
+        foreach ($line in ([string]$entry -split '\r?\n')) {
+            $plain = [regex]::Replace([string]$line, '\x1B\[[0-?]*[ -/]*[@-~]', '')
+            $plain = $plain -replace '[│┃|]', ' '
+            if ($plain -match 'No downloads found') {
+                $script:LastStatusProbe = 'CLI reported no downloads'
+                continue
+            }
+            if ($plain -match $statusPattern) {
+                $script:LastStatusProbe = ('id={0};status={1}' -f $Id, $Matches.status)
+                return $Matches.status
+            }
+            if ($plain -match $idPattern) {
+                $script:LastStatusProbe = 'matching ID row without recognized status'
+            }
         }
     }
     return $null
@@ -408,7 +411,16 @@ function Wait-ForFinishedDownload([long] $Id, [string] $FilePath) {
             if ($null -eq $unrecognizedSince) { $unrecognizedSince = [DateTime]::UtcNow }
             if (([DateTime]::UtcNow - $unrecognizedSince).TotalSeconds -ge 30) {
                 $fixture = Get-FixtureStatsSummary
-                throw ("Baseline download status was not observable for 30 seconds; id={0}; lastProbe={1}; fixture={2}" -f $Id, $script:LastStatusProbe, $fixture)
+                $fileSummary = 'missing'
+                if (Test-Path -LiteralPath $FilePath -PathType Leaf) {
+                    $item = Get-Item -LiteralPath $FilePath
+                    $fileSummary = 'length=' + $item.Length
+                    if ($item.Length -eq $expectedDownloadSize) {
+                        $hash = (Get-FileHash -LiteralPath $FilePath -Algorithm SHA256).Hash.ToLowerInvariant()
+                        $fileSummary += ';sha256=' + $(if ($hash -eq $expectedDownloadSha) { 'match' } else { 'mismatch' })
+                    }
+                }
+                throw ("Baseline download status was not observable for 30 seconds; id={0}; lastProbe={1}; file={2}; fixture={3}" -f $Id, $script:LastStatusProbe, $fileSummary, $fixture)
             }
         } else {
             $unrecognizedSince = $null
