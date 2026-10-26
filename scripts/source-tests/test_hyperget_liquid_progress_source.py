@@ -71,6 +71,18 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("-RedirectStandardOutput $addStdout -RedirectStandardError $addStderr", SCRIPT)
         self.assertIn("Get-ReportedTaskIds -Path $addStdout", SCRIPT)
 
+    def test_added_task_status_is_polled_before_waiting_for_fixture_activity(self):
+        # An Added-only task is Paused until resume; status polling must not be
+        # nested under the fixture-active condition or the resume can never fire.
+        self.assertIn("$taskIdResolved = $false", SCRIPT)
+        self.assertIn("if ($addProcess.HasExited -and -not $taskIdResolved)", SCRIPT)
+        self.assertIn("if ($taskIdResolved -and (($elapsedMilliseconds - $lastStatusPollMilliseconds) -ge 500))", SCRIPT)
+        self.assertIn("if ($statusAtCapture -eq 'Paused' -and -not $addResumeSent)", SCRIPT)
+        self.assertIn('$resumeArguments = "download resume $taskId"', SCRIPT)
+        self.assertIn("TaskIdResolved = $taskIdResolved", SCRIPT)
+        self.assertIn("ResumeSent = $addResumeSent", SCRIPT)
+        self.assertIn("if ($statusAtCapture -eq 'Downloading' -and [int]$captureStats.active_distinct_tasks -ge 1 -and [long]$captureStats.bytes_sent -gt 0)", SCRIPT)
+
     def test_visual_fixture_is_paced_and_failure_diagnostics_are_preserved(self):
         self.assertIn("/stats?reset=1&gate_tasks=1", SCRIPT)
         self.assertIn("liquid-progress-diagnostics.json", SCRIPT)
@@ -82,9 +94,8 @@ class LiquidProgressSourceContract(unittest.TestCase):
         )
         # Avoid launching a new CLI process on every fast stats poll. First
         # prove payload movement, then query the installed CLI status.
-        active_gate = SCRIPT.index("if ([int]$captureStats.active_distinct_tasks -ge 1")
-        status_launch = SCRIPT.index("$statusOutput = @(& $cliPath download show")
-        self.assertLess(active_gate, status_launch)
+        self.assertNotIn("if ([int]$captureStats.active_distinct_tasks -ge 1 -and", SCRIPT)
+        self.assertIn("if ($statusAtCapture -eq 'Downloading' -and [int]$captureStats.active_distinct_tasks -ge 1", SCRIPT)
 
     def test_status_cli_polling_is_rate_limited_and_capture_revalidates_live_bytes(self):
         self.assertIn("$lastStatusPollMilliseconds = -500", SCRIPT)

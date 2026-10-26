@@ -203,6 +203,7 @@ public static class HyperGetLiquidProgressNative {
     # The isolated runner starts with no downloads, so its first ID is 0.
     # The add process's final stdout is checked after the actual transfer.
     $taskId = [long]0
+    $taskIdResolved = $false
     $addResumeSent = $false
     $resumeProcess = $null
     $lastStatusCommandExitCode = $null
@@ -217,46 +218,46 @@ public static class HyperGetLiquidProgressNative {
     $statusPollClock = [System.Diagnostics.Stopwatch]::StartNew()
     $lastStatusPollMilliseconds = -500
     $statusPollCount = 0
-    # Poll cheap loopback counters at 100 ms, but spawn the installed CLI at
-    # most twice per second. The fixture's shared per-task pacer keeps the
-    # transfer live long enough for a reliable status observation.
+    # Resolve the add ID first, then poll status independently of fixture traffic.
+    # An Added-only task is Paused until the CLI Resume command is sent; waiting
+    # for active fixture bytes before polling status would deadlock that transition.
     for ($attempt = 0; $attempt -lt 300; $attempt++) {
         $captureStats = Invoke-RestMethod -Uri "http://127.0.0.1:$port/stats" -TimeoutSec 5
-        if ([int]$captureStats.active_distinct_tasks -ge 1 -and
-            [long]$captureStats.bytes_sent -gt 0) {
-            $elapsedMilliseconds = $statusPollClock.ElapsedMilliseconds
-            if (($elapsedMilliseconds - $lastStatusPollMilliseconds) -ge 500) {
-                $lastStatusPollMilliseconds = $elapsedMilliseconds
-                $statusPollCount++
-                if ($addProcess.HasExited) {
-                    $reportedIds = @(Get-ReportedTaskIds -Path $addStdout)
-                    if ($reportedIds.Count -eq 1) { $taskId = [long]$reportedIds[0] }
-                }
-                $statusAtCapture = $null
-                $statusOutput = @(& $cliPath download show --status-lines $taskId 2>&1)
-                $lastStatusCommandExitCode = $LASTEXITCODE
-                $lastStatusOutputPreview = @(Get-SanitizedStatusPreview -Lines $statusOutput)
-                if ($lastStatusCommandExitCode -eq 0) {
-                    $statusAtCapture = Get-DownloadStatusFromOutput -Lines $statusOutput -ExpectedId $taskId
-                    if ($null -ne $statusAtCapture) {
-                        $lastStatusLine = ([string]$taskId) + [char]9 + $statusAtCapture
-                        $observedStatuses += $statusAtCapture
-                        if ($observedStatuses.Count -gt 8) {
-                            $observedStatuses = @($observedStatuses | Select-Object -Last 8)
-                        }
-                        if ($statusAtCapture -eq 'Paused' -and -not $addResumeSent) {
-                            $resumeArguments = "download resume $taskId"
-                            $resumeProcess = Start-Process -FilePath $cliPath -ArgumentList $resumeArguments -PassThru -NoNewWindow -RedirectStandardOutput $resumeStdout -RedirectStandardError $resumeStderr
-                            $addResumeSent = $true
-                        }
+        if ($addProcess.HasExited -and -not $taskIdResolved) {
+            $reportedIds = @(Get-ReportedTaskIds -Path $addStdout)
+            if ($reportedIds.Count -eq 1) {
+                $taskId = [long]$reportedIds[0]
+                $taskIdResolved = $true
+            }
+        }
+        $elapsedMilliseconds = $statusPollClock.ElapsedMilliseconds
+        if ($taskIdResolved -and (($elapsedMilliseconds - $lastStatusPollMilliseconds) -ge 500)) {
+            $lastStatusPollMilliseconds = $elapsedMilliseconds
+            $statusPollCount++
+            $statusAtCapture = $null
+            $statusOutput = @(& $cliPath download show --status-lines $taskId 2>&1)
+            $lastStatusCommandExitCode = $LASTEXITCODE
+            $lastStatusOutputPreview = @(Get-SanitizedStatusPreview -Lines $statusOutput)
+            if ($lastStatusCommandExitCode -eq 0) {
+                $statusAtCapture = Get-DownloadStatusFromOutput -Lines $statusOutput -ExpectedId $taskId
+                if ($null -ne $statusAtCapture) {
+                    $lastStatusLine = ([string]$taskId) + [char]9 + $statusAtCapture
+                    $observedStatuses += $statusAtCapture
+                    if ($observedStatuses.Count -gt 8) {
+                        $observedStatuses = @($observedStatuses | Select-Object -Last 8)
+                    }
+                    if ($statusAtCapture -eq 'Paused' -and -not $addResumeSent) {
+                        $resumeArguments = "download resume $taskId"
+                        $resumeProcess = Start-Process -FilePath $cliPath -ArgumentList $resumeArguments -PassThru -NoNewWindow -RedirectStandardOutput $resumeStdout -RedirectStandardError $resumeStderr
+                        $addResumeSent = $true
                     }
                 }
-                if ($statusAtCapture -eq 'Downloading') {
-                    $ready = $true
-                    break
-                }
-                if ($statusAtCapture -eq 'Finished') { break }
             }
+            if ($statusAtCapture -eq 'Downloading' -and [int]$captureStats.active_distinct_tasks -ge 1 -and [long]$captureStats.bytes_sent -gt 0) {
+                $ready = $true
+                break
+            }
+            if ($statusAtCapture -eq 'Finished') { break }
         }
         Start-Sleep -Milliseconds 100
     }
@@ -267,6 +268,8 @@ public static class HyperGetLiquidProgressNative {
         $diagnostics = [pscustomobject]@{
             SourceSHA = $SourceSha
             TaskId = $taskId
+            TaskIdResolved = $taskIdResolved
+            ResumeSent = $addResumeSent
             AddProcessExited = [bool]($addProcess -and $addProcess.HasExited)
             AddProcessExitCode = $addProcessExitCode
             AddOutputIdCount = $addOutputIds.Count
@@ -308,6 +311,8 @@ public static class HyperGetLiquidProgressNative {
         $diagnostics = [pscustomobject]@{
             SourceSHA = $SourceSha
             TaskId = $taskId
+            TaskIdResolved = $taskIdResolved
+            ResumeSent = $addResumeSent
             AddProcessExited = [bool]($addProcess -and $addProcess.HasExited)
             AddProcessExitCode = $addProcessExitCode
             AddOutputIdCount = $addOutputIds.Count
