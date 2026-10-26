@@ -1180,3 +1180,18 @@ No production renderer change is claimed in this harness-only repair. No main wr
 **Follow-up CI scope guard:** source-only contract changes remain in the workflow path trigger, but no longer independently trigger an expensive installer/UI build. The workflow-file change in this commit intentionally causes one exact-SHA Windows recheck; future test-only edits continue through fast source CI without rebuilding the app.
 
 **Fast source-gate correction:** the first source-only run on the normalization patch caught a stale contract assertion that still expected a hard-coded `FinalStatus = 'Finished'` after the report was correctly changed to use the parser-derived `$finalStatus`. No PowerShell/Compose compile failure was involved. Updated the contract to require the parsed value and the explicit Finished gate; this is a test-only correction and is excluded from the expensive installer scope.
+
+## 2026-10-26 — latest exact-head CI checkpoint (visual gate still running)
+
+Current branch head before this ledger update: `bdf68673ec28fe44adb6b9b43718ac90d78dd59a`.
+
+- **Source-only contracts:** PASS — [run 40273299476](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40273299476). This includes the corrected Liquid Progress source contract.
+- **Real Windows FTP Kotlin/JUnit:** PASS — [run 40273299464](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40273299464).
+- **HLS guarded redirect/segment SHA milestone:** PASS — [run 40273299535](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40273299535).
+- **Queue lifecycle regression:** PASS — [run 40273299422](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40273299422).
+- **Installed authenticated FTP pause/restart/REST/SHA:** IN PROGRESS — [run 40273299503](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40273299503).
+- **Installed Liquid Progress visual E2E:** IN PROGRESS on the harness-change SHA `d8e8f557693c7db398bc4b3e4cb57d4df8867c58` — [run 40273070311](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40273070311). The Windows installer build is the active step; no screenshot verdict is available yet.
+- **HTTP 1/4/16 matrix and Chrome/Firefox E2E on this docs/test-only head:** scope-skipped — [run 40273299650](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40273299650) and [run 40273299511](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40273299511). These are not new PASS results. Prior exact-head functional evidence remains recorded above.
+- **Installed JVM memory profile:** scope-skipped — [run 40273299427](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40273299427); no new memory improvement is claimed.
+
+The source/test/docs commits do not change the production downloader or Compose renderer. Do not close HG-UI-LIQUID-PROGRESS-01 until the active screenshot, `Downloading` status at capture, byte advancement, final SHA-256 equality, `Finished` status, and reinstall/uninstall proof are all present in an inspected exact-SHA artifact.
