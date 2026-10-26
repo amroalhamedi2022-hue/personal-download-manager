@@ -1510,3 +1510,31 @@ A follow-up review caught an important false-positive risk in the first row-scop
 **Why source tests are insufficient:** only the packaged baseline process reproduces the actual Windows console encoding and table wrapping, and only an installed Windows run can verify the NSIS, registry, shortcut, IPC, and Credential Manager transitions. This build is justified specifically to test those behaviors, not as a release build.
 
 **Current gate:** OPEN. Do not claim upgrade, rollback, or WinCred lifecycle PASS until a new exact-head proof artifact records `Result=PASS`. No merge, release, final EXE delivery, or Torrent.
+
+
+## 2026-10-27 — cross-version gate reached the branding assertion (PRE-BUILD)
+
+**Exact candidate SHA:** `cd7d70f03662a49b0c4bbf04002ee3eddb58186c`.  
+**Windows run:** [40413377160](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40413377160).  
+**Proof artifact:** [12695775479](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40413377160/artifacts/12695775479), ZIP SHA-256 `0f13b9ca4e4fa6783bdd512de65351640da551f9a453de3ce5b062d0314f37bd`.
+
+### Evidence
+- **PASS:** source-only safety suite and PowerShell parse.
+- **PASS:** both exact-snapshot Windows installers built. Baseline installer SHA-256: `c22802b3201071cadb659bb223279de5a7e0e461ad4b3af61511af2dfceb6e09`; candidate installer SHA-256: `6df50383dd4758b92dd3ba7e9f40183d9499b41d26a385f4675325acd7c601b7`.
+- **PASS:** the baseline CLI status parser now recognized task ID 0 as `Finished`; the loopback fixture served 8,388,864 bytes across 9 requests, and the output was exactly 8,388,608 bytes with matching SHA-256.
+- **PASS:** synthetic WinCred entry was created and verified before upgrade, then safely cleaned after the incomplete run. Test-owned data cleanup passed.
+- **FAIL (production branding):** after installing the candidate, registry `DisplayName` was still `Download Manager`, while the acceptance contract correctly expects `HyperGet`. The lifecycle stopped before upgrade-state assertions, candidate uninstall, rollback, and final uninstall.
+
+### Root cause
+`desktop/app/build.gradle.kts` passes `getPrettifiedAppName()` into packaging as `appDisplayName`; `buildSrc/.../VersionUtil.kt` still returns `"Download Manager"`. The shared runtime `APP_DISPLAY_NAME` is already HyperGet, but the installer metadata/shortcut group uses the legacy prettified name. This is not a download-engine failure.
+
+### Controlled fix before the next build
+Change only the user-visible `getPrettifiedAppName()` value to `"HyperGet"`, add a source regression that links this value to the packaging input and NSIS registry display name, and explicitly assert that the technical app name, data directory `.personal-download-manager`, and package ID `app.personaldownloadmanager` remain unchanged.
+
+**Pre-build question:** does the exact candidate installer now register `HyperGet` and create only HyperGet shortcuts while preserving the legacy technical identity and data, then complete upgrade → candidate uninstall → baseline rollback → normal uninstall with history/settings and synthetic WinCred intact?
+
+**Expected result:** fast source contracts pass; both exact snapshots build; baseline HTTP 8 MiB/SHA passes; candidate DisplayName and shortcuts switch to HyperGet; rollback restores Download Manager metadata/shortcuts; max-concurrency=4, task/history, sentinel and WinCred survive every transition; cleanup removes only harness-owned data and the synthetic credential.
+
+**Why source tests are insufficient:** the value flows through Gradle packaging into the compiled NSIS installer and Windows registry/shortcuts; only the installed Windows lifecycle can prove the branding transition and data/credential preservation. This is a targeted functional build, not a release build.
+
+**Acceptance remains OPEN.** No production identity migration, merge, release, final EXE delivery, or Torrent.
