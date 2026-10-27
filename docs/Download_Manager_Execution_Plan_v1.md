@@ -1137,3 +1137,14 @@ A bounded NSIS patch now performs shortcut and registry cleanup before `clearFil
 **Expected Windows evidence:** parser/source contract PASS before build; exact baseline/candidate installer hashes; clean install, launch, completed fixture download, normal uninstall, registry/shortcut absence checked before any harness cleanup; user data sentinel and download record remain; explicit remove-data option tested separately only if the workflow can safely isolate it. Then run the existing cross-version upgrade/rollback E2E to ensure cleanup ordering did not break upgrade compatibility.
 
 **Why source tests are insufficient:** registry view, Start Menu/Desktop shell links, self-removal of the running uninstaller and persisted user data are OS-level behaviors. The NSIS template change has queued the Windows cross-version upgrade/rollback and related PR checks. Keep uninstall acceptance **OPEN** until logs/artifacts prove the assertions; no merge/release/final EXE yet.
+
+
+## 2026-10-27 — Explicit per-user NSIS context added; await runtime proof
+
+The cap-60 controlled Windows performance comparison is accepted (see the E061 checkpoint). The next functional gate is actual uninstall correctness.
+
+Commit [`fbc5b69`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/fbc5b695253a9ecd3d9a8eef357ad28f17f0b179) explicitly pins `SetShellVarContext current` in installer `.onInit` and in the uninstaller, and orders shortcut/registry cleanup before self-removal. This follows the [NSIS reference](https://nsis.sourceforge.io/Reference/SetShellVarContext): shell context controls shell folders and `SHCTX`, and must be set in both installer and uninstaller code.
+
+The source-only regression suite passed on the corrected test commit [`0572c67`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/0572c679559d74a30feba73899d9da4a0cd57996) in run [40520016914](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40520016914).
+
+Windows cross-version upgrade/rollback [run 40519751066](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40519751066) passed source contracts and PowerShell parsing, then began building the exact baseline installer. It must still build the candidate and execute the real upgrade → rollback → uninstall sequence. **Acceptance is only PASS if the actual uninstaller removes the owned registry entries and shortcuts before harness cleanup, while normal uninstall preserves user data/history/WinCred.** If it fails, retain logs and fix the production NSIS behavior; do not paper over the residue in the harness.
