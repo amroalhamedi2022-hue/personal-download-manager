@@ -84,7 +84,7 @@ class HyperGetExecutableIdentityWorkflowContracts(unittest.TestCase):
                 for line_number, line in enumerate(text.splitlines(), start=1):
                     if not line or line[0].isspace():
                         continue
-                    match = re.match(r"^([A-Za-z_][A-Za-z0-9_-]*):(?:\\s|$)", line)
+                    match = re.match(r"^([A-Za-z_][A-Za-z0-9_-]*):(?:\s|$)", line)
                     if match:
                         root_keys.setdefault(match.group(1), []).append(line_number)
                 duplicates = {key: lines for key, lines in root_keys.items() if len(lines) > 1}
