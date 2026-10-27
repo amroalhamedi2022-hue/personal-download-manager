@@ -430,11 +430,23 @@ try {
                 if ($sample.SourceSha -ne $SourceSha -or
                     $sample.HarnessSha -ne $HarnessSha -or
                     $sample.Scenario -ne $scenario -or
-                    [int]$sample.Round -ne 1 -or
                     $sample.RunLabel -ne 'round-1') {
-                    throw "Resource evidence has invalid local round or source provenance: $oldMeasurementPath"
+                    throw "Resource evidence has invalid local run label or source provenance: $oldMeasurementPath"
                 }
-                $sample.Round = $Round
+
+                # Measure-WindowsDownloadManager.ps1 records RunLabel, not Round.
+                # Accept a Round column only if a future sampler explicitly adds it
+                # and proves it is the local round 1; otherwise add the enclosing
+                # paired round before exporting the normalized CSV.
+                $roundProperty = $sample.PSObject.Properties['Round']
+                if ($null -ne $roundProperty) {
+                    if ([int]$roundProperty.Value -ne 1) {
+                        throw "Resource evidence has unexpected existing Round value: $oldMeasurementPath"
+                    }
+                    $sample.Round = $Round
+                } else {
+                    $sample | Add-Member -MemberType NoteProperty -Name Round -Value $Round
+                }
                 $sample.RunLabel = "round-$Round"
             }
             if ($newMeasurementPath -ne $oldMeasurementPath) {

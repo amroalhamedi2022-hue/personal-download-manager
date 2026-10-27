@@ -236,3 +236,35 @@ Restore the invocation immediately after the one-round summarizer and before sto
 **Why source tests are insufficient:** the normalizer's file renames and re-hashes, real HTTP output, Windows resource sampling and NSIS lifecycle require the installed Windows run. The previous run did none of those because it failed before build.
 
 **Status: OPEN.** No performance or uninstall acceptance is claimed from run 40478984763. No merge, release, main write or Torrent.
+
+
+## 2026-10-27 — E061 normalizer now follows the actual sampler CSV schema (OPEN)
+
+**Exact harness head before correction:** `2261ebda7c624e888abd938fe3bf580eb1ef2141`.  
+**Windows run:** [40479200559](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40479200559).  
+**Artifact:** [hyperget-controlled-http-performance-comparison — 12723336329](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40479200559/artifacts/12723336329), SHA-256 `a72f763f0dc901737b5e4b3308f429bb1185c4bcbcdd07db4b0514c9fdc194b1`.
+
+### Confirmed failure and root cause
+
+Both exact-snapshot Windows installers built successfully:
+- Baseline installer SHA-256: `b1114d5da8a8e90a191162da7808c9fc2a5dd66e10325dc4413c14b74e150c3a`.
+- Candidate installer SHA-256: `9769f37844b1e66d1526a2b4affdd8d4145640ae3bb9abead4dbd61144d57b37`.
+
+The baseline completed 21/21 SHA-256-verified HTTP downloads and demonstrated live 1/4/16 overlap. It produced eight process-resource samples for each workload. The runner then failed in `Set-ControlledRoundMetadata` with **“The property 'Round' cannot be found on this object.”** No candidate round or paired comparison was accepted.
+
+The root cause is now grounded in the actual schemas: `Measure-WindowsDownloadManager.ps1` writes `RunLabel` but does **not** write a `Round` column. The normalizer incorrectly dereferenced and assigned `$sample.Round` under PowerShell StrictMode. This was a harness defect, not a measured application performance regression.
+
+### Correction
+
+- Validate the source sampler's `RunLabel == round-1` and exact source/harness/scenario provenance.
+- If a `Round` property is present, require it to equal local round 1 before replacing it with the enclosing paired round.
+- If the sampler has no `Round` property, add the property explicitly before exporting the normalized CSV.
+- Add a source regression that cross-checks the sampler schema and forbids the old unconditional `$sample.Round` read.
+
+**Pre-build question:** can the corrected normalizer consume the real sampler CSV, preserve its eight samples and provenance, stamp round 1/2/3 consistently, and allow the complete paired matrix to finish?
+
+**Expected:** source contracts and PowerShell parser PASS before packaging; both exact app snapshots build; 63 SHA-verified 32-MiB transfers and nine resource rounds per version; real 1/4/16 overlap; official comparison report with the unchanged <=15% throughput and peak Working Set/Private Bytes gates.
+
+**Why source-only tests are insufficient:** the previous run passed source checks and both installer builds, but only the installed Windows process produced the sampler CSV that exposed this schema mismatch. The corrected Windows run must verify the actual CSV normalization and full matrix.
+
+**Status: OPEN.** The 21 baseline transfers and installer builds are partial evidence only. No official performance result, uninstall acceptance, merge, release, main write, or Torrent is claimed.
