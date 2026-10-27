@@ -90,7 +90,7 @@ class HyperGetExecutableIdentityWorkflowContracts(unittest.TestCase):
                 duplicates = {key: lines for key, lines in root_keys.items() if len(lines) > 1}
                 self.assertFalse(duplicates, f"Duplicate top-level YAML keys in {relative_path}: {duplicates}")
                 parsed = subprocess.run(
-                    ["ruby", "-e", "require 'yaml'; YAML.parse_file(ARGV.fetch(0))", str(path)],
+                    ["ruby", "-e", "require 'yaml'; begin; YAML.parse_file(ARGV.fetch(0)); rescue Psych::SyntaxError => e; warn \"#{e.problem.inspect}|line=#{e.line}|column=#{e.column}|offset=#{e.offset}|context=#{e.context.inspect}\"; exit 1; end", str(path)],
                     capture_output=True,
                     text=True,
                     check=False,
