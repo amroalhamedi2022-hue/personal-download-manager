@@ -16,6 +16,7 @@ on:
       - "scripts/Run-WindowsInstalledFtpE2E.ps1"
       - "scripts/Run-WindowsInstalledResumeE2E.ps1"
       - "scripts/source-tests/test_hyperget_executable_identity_workflows.py"
+      - "scripts/source-tests/test_hyperget_pr_diff_scope.py"
       - "desktop/app/resources/installer/nsis-script-template.nsi"
       - "desktop/app/build.gradle.kts"
       - "desktop/app/icons/icon.ico"
@@ -153,6 +154,8 @@ jobs:
         run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_active_benchmark_source.py -v
       - name: Verify all Windows installed acceptance harnesses follow HyperGet executable identity
         run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_executable_identity_workflows.py -v
+      - name: Verify installed Windows acceptance uses the full PR diff
+        run: python3 -m unittest scripts/source-tests/test_hyperget_pr_diff_scope.py -v
       - name: Verify bounded OkHttp dispatcher source contract
         run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_http_dispatcher_bound_source.py -v
       - name: Verify installed JVM memory profile harness
