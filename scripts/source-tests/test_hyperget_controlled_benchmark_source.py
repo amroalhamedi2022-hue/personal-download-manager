@@ -67,6 +67,7 @@ class ControlledBenchmarkSourceTests(unittest.TestCase):
             self.assertIn(token, source)
         self.assertIn("-ge (0.0 - $MaxRegressionPercent)", source)
         self.assertIn("-le $MaxRegressionPercent", source)
+        self.assertIn("Baseline and candidate did not use the same deterministic fixture bytes", source)
 
     def test_workflow_builds_exact_pair_on_same_windows_runner_and_uploads_failure_evidence(self):
         workflow = read(".github/workflows/windows-installed-active-benchmark.yml")
@@ -78,6 +79,7 @@ class ControlledBenchmarkSourceTests(unittest.TestCase):
         self.assertIn("HG_E061_CONTROLLED_PERFORMANCE_COMPARISON.md", workflow)
         self.assertIn("comparison=$comparison", workflow)
         self.assertIn("outputs.comparison != 'true'", workflow)
+        self.assertIn("[System.Management.Automation.Language.Parser]::ParseFile", workflow)
 
     def test_checkpoint_is_written_before_build_and_does_not_claim_results(self):
         checkpoint = read("docs/checkpoints/HG_E061_CONTROLLED_PERFORMANCE_COMPARISON.md")

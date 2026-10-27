@@ -37,6 +37,7 @@ function Read-VariantEvidence {
     param([string] $Directory,[string] $SourceSha,[string] $Variant)
     $rounds = [System.Collections.Generic.List[object]]::new()
     $seenNames = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    $fixtureHash = $null
     $totalTransfers = 0
     for ($round = 1; $round -le 3; $round++) {
         $roundDir = Join-Path $Directory "round-$round"
@@ -54,9 +55,127 @@ function Read-VariantEvidence {
             if ([long]$record.Bytes -ne $expectedBytes -or [long]$record.ExpectedBytes -ne $expectedBytes) {
                 throw "$Variant output byte count differs from expected fixture size."
             }
-            if ($record.SHA256 -notmatch '^[0-9a-fA-F]{64}$' -or $record.SHA256 -ne $record.ExpectedSHA256) {
+            if ($record.SHA256 -notmatch '^[0-9a-fA-F]{64} { throw "$Variant has duplicate output names." }
+            $jobs = [int]($record.Scenario -replace '^active-','')
+            if ($jobs -notin @(1,4,16) -or [int]$record.PeakDistinctTasks -lt $jobs) {
+                throw "$Variant lacks live overlap evidence for $($record.Scenario)."
+            }
+        }
+        $summary = @(Import-Csv -LiteralPath $summaryPath)
+        if ($summary.Count -ne 3) { throw "$Variant round $round expected 3 resource summaries." }
+        foreach ($row in $summary) {
+            if ($row.SourceSha -ne $SourceSha -or $row.HarnessSha -ne $HarnessSha) {
+                throw "$Variant resource summary has mismatched source provenance."
+            }
+            if ([int]$row.Samples -lt 5 -or [int]$row.VerifiedFiles -ne [int]$row.ConcurrentTasks) {
+                throw "$Variant resource summary has incomplete samples/files."
+            }
+        }
+        foreach ($jobs in @(1,4,16)) {
+            $scenario = "active-$jobs"
+            $files = @($manifest | Where-Object { $_.Scenario -eq $scenario -and [int]$_.Round -eq 1 })
+            if ($files.Count -ne $jobs) { throw "$Variant $scenario has $($files.Count) files, expected $jobs." }
+            $elapsed = @($files | ForEach-Object { [double]$_.ElapsedSeconds } | Sort-Object -Unique)
+            $throughput = @($files | ForEach-Object { [double]$_.AggregateMiBPerSecond } | Sort-Object -Unique)
+            if ($elapsed.Count -ne 1 -or $throughput.Count -ne 1 -or $elapsed[0] -le 0 -or $throughput[0] -le 0) {
+                throw "$Variant $scenario duration/throughput values are missing or inconsistent."
+            }
+            $calculated = [math]::Round(($FileSizeMiB * $jobs) / $elapsed[0], 3)
+            if ([math]::Abs($calculated - $throughput[0]) -gt 0.02) {
+                throw "$Variant $scenario throughput does not match payload bytes / elapsed seconds."
+            }
+            $resource = @($summary | Where-Object { $_.Scenario -eq $scenario -and [int]$_.Round -eq 1 })
+            if ($resource.Count -ne 1) { throw "$Variant $scenario resource summary missing or duplicated." }
+            $rounds.Add([pscustomobject]@{
+                Variant=$Variant; SourceSha=$SourceSha; HarnessSha=$HarnessSha; Round=$round; Workload=$jobs
+                ElapsedSeconds=[double]$elapsed[0]; AggregateMiBPerSecond=[double]$throughput[0]
+                AverageCpuMachinePercent=[double]$resource[0].AverageCpuMachinePercent
+                PeakWorkingSetMiB=[double]$resource[0].PeakWorkingSetMiB
+                PeakPrivateBytesMiB=[double]$resource[0].PeakPrivateBytesMiB
+                OS=[string](@($summary | Select-Object -First 1)[0].OS)
+                LogicalCpuCount=[int](@($summary | Select-Object -First 1)[0].LogicalCpuCount)
+            }) | Out-Null
+        }
+        $metricFiles = @(Get-ChildItem -LiteralPath (Join-Path $roundDir 'measurements') -File -Filter '*.csv')
+        if ($metricFiles.Count -ne 3) { throw "$Variant round $round expected 3 resource CSVs; found $($metricFiles.Count)." }
+        $totalTransfers += $manifest.Count
+    }
+    if ($totalTransfers -ne 63) { throw "$Variant total expected 63 verified downloads; found $totalTransfers." }
+    return @($rounds)
+}
+$baseline = @(Read-VariantEvidence -Directory $BaselineDirectory -SourceSha $BaselineSourceSha -Variant 'baseline')
+$candidate = @(Read-VariantEvidence -Directory $CandidateDirectory -SourceSha $CandidateSourceSha -Variant 'candidate')
+$baselineFixture = @(Import-Csv -LiteralPath (Join-Path $BaselineDirectory 'round-1/verified-transfers.csv'))[0]
+$candidateFixture = @(Import-Csv -LiteralPath (Join-Path $CandidateDirectory 'round-1/verified-transfers.csv'))[0]
+if ($baselineFixture.ExpectedSHA256 -ne $candidateFixture.ExpectedSHA256) {
+    throw 'Baseline and candidate did not use the same deterministic fixture bytes.'
+}
+$environment = @($baseline + $candidate | Select-Object -First 1)[0]
+foreach ($row in @($baseline + $candidate)) {
+    if ($row.OS -ne $environment.OS -or $row.LogicalCpuCount -ne $environment.LogicalCpuCount) {
+        throw 'Baseline/candidate measurements came from different OS or logical CPU count.'
+    }
+}
+$comparisons = [System.Collections.Generic.List[object]]::new()
+$failed = $false
+foreach ($jobs in @(1,4,16)) {
+    $b = @($baseline | Where-Object { $_.Workload -eq $jobs })
+    $c = @($candidate | Where-Object { $_.Workload -eq $jobs })
+    if ($b.Count -ne 3 -or $c.Count -ne 3) { throw "Expected three paired rounds for workload $jobs." }
+    $bThroughput = Get-Median -Values @($b | ForEach-Object { [double]$_.AggregateMiBPerSecond })
+    $cThroughput = Get-Median -Values @($c | ForEach-Object { [double]$_.AggregateMiBPerSecond })
+    $bElapsed = Get-Median -Values @($b | ForEach-Object { [double]$_.ElapsedSeconds })
+    $cElapsed = Get-Median -Values @($c | ForEach-Object { [double]$_.ElapsedSeconds })
+    $bWs = Get-Median -Values @($b | ForEach-Object { [double]$_.PeakWorkingSetMiB })
+    $cWs = Get-Median -Values @($c | ForEach-Object { [double]$_.PeakWorkingSetMiB })
+    $bPrivate = Get-Median -Values @($b | ForEach-Object { [double]$_.PeakPrivateBytesMiB })
+    $cPrivate = Get-Median -Values @($c | ForEach-Object { [double]$_.PeakPrivateBytesMiB })
+    $bCpu = Get-Median -Values @($b | ForEach-Object { [double]$_.AverageCpuMachinePercent })
+    $cCpu = Get-Median -Values @($c | ForEach-Object { [double]$_.AverageCpuMachinePercent })
+    $throughputDelta = [math]::Round((($cThroughput / $bThroughput) - 1.0) * 100.0, 2)
+    $wsDelta = [math]::Round((($cWs / $bWs) - 1.0) * 100.0, 2)
+    $privateDelta = [math]::Round((($cPrivate / $bPrivate) - 1.0) * 100.0, 2)
+    $pass = $throughputDelta -ge (0.0 - $MaxRegressionPercent) -and $wsDelta -le $MaxRegressionPercent -and $privateDelta -le $MaxRegressionPercent
+    if (-not $pass) { $failed = $true }
+    $comparisons.Add([pscustomobject]@{
+        Workload=$jobs; BaselineMedianSeconds=[math]::Round($bElapsed,3); CandidateMedianSeconds=[math]::Round($cElapsed,3)
+        BaselineMedianMiBPerSecond=[math]::Round($bThroughput,3); CandidateMedianMiBPerSecond=[math]::Round($cThroughput,3)
+        ThroughputDeltaPercent=$throughputDelta
+        BaselineMedianPeakWorkingSetMiB=[math]::Round($bWs,3); CandidateMedianPeakWorkingSetMiB=[math]::Round($cWs,3); PeakWorkingSetDeltaPercent=$wsDelta
+        BaselineMedianPeakPrivateMiB=[math]::Round($bPrivate,3); CandidateMedianPeakPrivateMiB=[math]::Round($cPrivate,3); PeakPrivateDeltaPercent=$privateDelta
+        BaselineMedianCpuPercent=[math]::Round($bCpu,3); CandidateMedianCpuPercent=[math]::Round($cCpu,3)
+        Gate=if ($pass) { 'PASS' } else { 'FAIL' }
+    }) | Out-Null
+}
+$report = [System.Collections.Generic.List[string]]::new()
+$report.Add('# HyperGet controlled Windows performance comparison')
+$report.Add('')
+$report.Add("- Baseline app SHA: $BaselineSourceSha")
+$report.Add("- Candidate app SHA: $CandidateSourceSha")
+$report.Add("- Shared measurement harness SHA: $HarnessSha")
+$report.Add("- Environment: $($environment.OS); logical CPUs: $($environment.LogicalCpuCount)")
+$report.Add("- Workload: 32 MiB deterministic loopback HTTP fixture; 1/4/16 distinct active tasks; three rounds per workload and version.")
+$report.Add("- Transfers: 63 SHA-256-verified outputs per version; each round is run on the same Windows runner with alternating baseline/candidate order.")
+$report.Add("- Predeclared regression gate: candidate median aggregate throughput must not fall by more than $MaxRegressionPercent%; median peak Working Set and Private Bytes must not rise by more than $MaxRegressionPercent% in any workload.")
+$report.Add('- This is a version-to-version regression comparison, not a comparison against Internet Download Manager (IDM).')
+$report.Add('')
+$report.Add('| Tasks | Baseline median s | Candidate median s | Baseline MiB/s | Candidate MiB/s | Throughput Δ | Baseline peak WS | Candidate peak WS | WS Δ | Baseline peak Private | Candidate peak Private | Private Δ | Gate |')
+$report.Add('| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |')
+foreach ($row in $comparisons) {
+    $report.Add("| $($row.Workload) | $($row.BaselineMedianSeconds) | $($row.CandidateMedianSeconds) | $($row.BaselineMedianMiBPerSecond) | $($row.CandidateMedianMiBPerSecond) | $($row.ThroughputDeltaPercent)% | $($row.BaselineMedianPeakWorkingSetMiB) | $($row.CandidateMedianPeakWorkingSetMiB) | $($row.PeakWorkingSetDeltaPercent)% | $($row.BaselineMedianPeakPrivateMiB) | $($row.CandidateMedianPeakPrivateMiB) | $($row.PeakPrivateDeltaPercent)% | $($row.Gate) |")
+}
+$overall = if ($failed) { 'FAIL' } else { 'PASS' }
+$report.Add('')
+$report.Add("**Result=$overall**")
+$report | Set-Content -LiteralPath $OutputPath -Encoding utf8
+$comparisons | Export-Csv -LiteralPath ([IO.Path]::ChangeExtension($OutputPath,'.csv')) -NoTypeInformation -Encoding utf8
+Get-Content -LiteralPath $OutputPath
+if ($failed) { throw 'Controlled baseline/candidate performance regression gate failed; inspect comparison report and raw evidence.' }
+ -or $record.SHA256 -ne $record.ExpectedSHA256) {
                 throw "$Variant output SHA-256 differs from expected fixture."
             }
+            if ($null -eq $fixtureHash) { $fixtureHash = [string]$record.ExpectedSHA256 }
+            elseif ($record.ExpectedSHA256 -ne $fixtureHash) { throw "$Variant rounds did not use the same deterministic fixture hash." }
             if (-not $seenNames.Add("$round/$($record.OutputName)")) { throw "$Variant has duplicate output names." }
             $jobs = [int]($record.Scenario -replace '^active-','')
             if ($jobs -notin @(1,4,16) -or [int]$record.PeakDistinctTasks -lt $jobs) {

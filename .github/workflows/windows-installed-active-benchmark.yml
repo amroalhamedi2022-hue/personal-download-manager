@@ -228,6 +228,23 @@ jobs:
           if ($baseline -ne $env:HYPERGET_BASELINE_SHA) { throw "Unexpected baseline checkout: $baseline" }
           if ($candidate -ne $env:HYPERGET_CANDIDATE_SHA) { throw "Unexpected candidate checkout: $candidate" }
           if ($harness -ne $env:HYPERGET_HARNESS_SHA) { throw "Unexpected harness checkout: $harness" }
+          $psFiles = @(
+            'harness/scripts/Run-WindowsActiveBenchmarkMatrix.ps1',
+            'harness/scripts/Measure-WindowsDownloadManager.ps1',
+            'harness/scripts/Summarize-WindowsActiveBenchmark.ps1',
+            'harness/scripts/Run-WindowsControlledBenchmarkComparison.ps1',
+            'harness/scripts/Compare-WindowsActiveBenchmarks.ps1'
+          )
+          foreach ($psFile in $psFiles) {
+            $tokens = $null
+            $parseErrors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $psFile).Path, [ref]$tokens, [ref]$parseErrors) | Out-Null
+            if ($parseErrors.Count -gt 0) {
+              $parseErrors | ForEach-Object { Write-Host "$psFile:$($_.Extent.StartLineNumber):$($_.Message)" }
+              throw "PowerShell parser rejected $psFile."
+            }
+          }
+          Write-Host 'PASS: all benchmark PowerShell scripts parse before any build.'
           python harness/scripts/source-tests/test_hyperget_controlled_benchmark_source.py -v
           if ($LASTEXITCODE -ne 0) { throw 'Controlled benchmark source contracts failed before build.' }
           $out = 'harness/build/ci-release/controlled-comparison'
