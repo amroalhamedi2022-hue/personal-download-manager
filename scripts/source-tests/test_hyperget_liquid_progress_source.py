@@ -1,5 +1,6 @@
 """Source contracts for HyperGet's shared Liquid Progress and real Windows visual gate."""
 from pathlib import Path
+import re
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -251,6 +252,43 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("drawCircle(", draw_body)
         self.assertIn("drawWithCache", progress)
         self.assertNotIn("rememberInfiniteTransition", progress)
+
+    def test_contrast_values_meet_visual_minimums_without_new_animation_loops(self):
+        # Numeric bounds complement the rendering E2E: string-presence checks
+        # alone would pass even if the liquid treatment were dialed back.
+        progress = TABLE.split("private fun ProgressStatus(", 1)[1]
+        cache_builder = progress.split(".drawWithCache {", 1)[1].split("onDrawBehind {", 1)[0]
+        draw_body = progress.split("onDrawBehind {", 1)[1]
+        gloss_block = draw_body.split("val glossInset", 1)[1].split("withTransform({", 1)[0]
+        bubble_block = draw_body.split("if (fillWidth > 14.dp.toPx())", 1)[1].split(
+            "// Restore the rounded ends", 1
+        )[0]
+
+        shimmer_match = re.search(r"Color\\.White\\.copy\\(alpha = ([0-9.]+)f\\)", cache_builder)
+        gloss_match = re.search(r"Color\\.White\\.copy\\(alpha = ([0-9.]+)f\\)", gloss_block)
+        bubble_alphas = [
+            float(value)
+            for value in re.findall(r"color = Color\\.White\\.copy\\(alpha = ([0-9.]+)f\\)", bubble_block)
+        ]
+        bubble_radii = [
+            float(value)
+            for value in re.findall(r"radius = ([0-9.]+)\\.dp\\.toPx\\(\\)", bubble_block)
+        ]
+
+        self.assertIsNotNone(shimmer_match)
+        self.assertIsNotNone(gloss_match)
+        self.assertGreaterEqual(float(shimmer_match.group(1)), 0.40)
+        self.assertGreaterEqual(float(gloss_match.group(1)), 0.15)
+        self.assertEqual(len(bubble_alphas), 2)
+        self.assertGreaterEqual(bubble_alphas[0], 0.40)
+        self.assertGreaterEqual(bubble_alphas[1], 0.28)
+        self.assertEqual(len(bubble_radii), 2)
+        self.assertGreaterEqual(bubble_radii[0], 2.0)
+        self.assertGreaterEqual(bubble_radii[1], 1.3)
+        self.assertIn(".height(7.dp)", progress)
+        self.assertIn("drawWithCache", progress)
+        self.assertNotIn("rememberInfiniteTransition", progress)
+
 
 if __name__ == "__main__":
     unittest.main()
