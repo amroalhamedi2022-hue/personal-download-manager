@@ -1807,3 +1807,30 @@ Initialize the shortcut-parent ownership map before checking the known shortcut 
 - **Expected:** full exact SHA-256 and live-overlap gates at 1/4/16, nine resource rounds per app snapshot, matching app/harness SHAs, and unchanged 15% throughput / peak Working Set / Private Bytes gates. Any recorded residue remains a separate uninstall issue.
 - **Why source tests are insufficient:** the issue depends on Windows process lifetime, file locks, installed binaries, NSIS behavior, real HTTP bytes and OS resource samples.
 - **Current status: OPEN; exact-head CI for the fix is pending.** Do not infer benchmark success from the previous source checks or from a successful installer build. No merge, release, main write, paid runner/API, or Torrent.
+
+
+
+## 2026-10-27 — E061 inventory TOCTOU race after baseline round 1 (OPEN)
+
+- **Exact harness SHA:** 97de7973a2be4bac84db83d02a3f2cb944fe2d96.
+- **Windows run:** [40466299367](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40466299367).
+- **Evidence artifact:** [12716968288](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40466299367/artifacts/12716968288), archive SHA-256 6dae9a2764f1ee85f281d85af207c0fe14471bb8c63cb2099620a5fc62e6468c (downloaded and independently re-hashed; digest matched).
+
+### Results
+
+- **PASS:** exact baseline/candidate source snapshots, source-contract tests, PowerShell parser, and both installer builds.
+- **Installer SHA-256:** baseline 44bf25f26b3424117078913c6470d739770a4a84fc946dc959fd939ddbe58a4c; candidate 9d713d2649b29eda66eeed1454d0d3896a04fc5b670c00565240ba6ec52d6704.
+- **PASS for baseline round 1 only:** 21/21 32-MiB HTTP outputs matched expected size and SHA-256; live distinct-task overlap reached 1/1, 4/4 and 16/16; three resource CSVs were recorded.
+- Baseline round-1 peak Working Set: **281.434 / 383.492 / 467.449 MiB** at 1/4/16; peak Private Bytes: **293.395 / 455.875 / 465.727 MiB**. Aggregate transfer rates were **0.893 / 3.588 / 3.785 MiB/s**. These are one baseline round, not paired medians or an optimization claim.
+- **FAIL — harness race:** after uninstall, the harness recorded and safely cleared two test-owned registry keys and two test-owned shortcuts. The install-directory preflight check had passed, but the path disappeared during the process-quiescence/inventory window; Get-ChildItem then raised a path-not-found error for the controlled install directory. The workflow stopped before baseline rounds 2–3 and all candidate rounds.
+- **Uninstall remains OPEN:** registry and shortcut residue were observed. Harness cleanup is not product uninstall acceptance. No paired performance result or 15% gate result exists.
+
+### Pre-build question for the next run
+
+Can the harness safely handle the controlled install directory disappearing after process quiescence—or between the final path check and file enumeration—without masking access/ownership errors or deleting any path that is not the exact test-owned runner-temp directory?
+
+**Expected:** if the path is absent after stopping processes, record a clear diagnostic and continue; if it disappears during enumeration, tolerate only a confirmed Test-Path = false; if the directory still exists, rethrow the original enumeration error. All six alternating rounds must complete with 63 SHA-verified 32-MiB downloads per snapshot, nine resource rounds per snapshot, strict live 1/4/16 overlap, exact app/harness provenance and unchanged 15% throughput/peak Working Set/Private Bytes gates.
+
+**Why source tests are insufficient:** only the packaged Windows installer/uninstaller can reproduce the timing of NSIS self-removal, process exit, file locks, real transfer bytes and OS resource samples. The new source regression checks ordering and the disappearance-only exception, but Windows execution is still required to prove the race is resolved.
+
+**Status: OPEN.** No production downloader source changed in this correction. Do not claim performance acceptance or uninstall acceptance from the baseline round. No merge, release, main write or Torrent.
