@@ -1959,3 +1959,26 @@ E061 cap-60 performance gate is **PASS**; uninstall acceptance and independent f
 - Independent final release recheck and final deliverable SHA/Artifact are **NOT TESTED**. The installer hashes above are test installers, not a release.
 
 **Decision:** the uninstall user-content safety milestone is closed PASS on exact source `068e2ff9...`. Next milestone is safe executable/identity + icon migration with compatibility tests, followed by independent Windows release acceptance. No merge, main write, release, paid runner/API or Torrent.
+
+
+## 2026-10-27 — HG-03 packaging blocker: NSIS StrCmp syntax
+
+Windows GUI smoke run [40545095153](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40545095153) checked out exact PR head `01c1342ac5a12bc58e7b3b0ec797a5a5fbc0e41a`. Kotlin compilation and `createReleaseDistributable` succeeded, but NSIS packaging failed at `:desktop:app:createInstallerNsis`:
+
+`StrCmp expects 3-4 parameters, got 5.`
+
+The offending line used `StrCmp /I ...`. NSIS `StrCmp` has no `/I` option and is already case-insensitive (official reference: https://nsis.sourceforge.io/Reference/StrCmp). This is a packaging syntax failure; it is not evidence of a download-engine failure, nor a successful current-head installer test.
+
+- Remove the unsupported `/I` token while preserving the case-insensitive directory comparison that prevents the installer from terminating itself when setup and target share a directory.
+- Add a source regression that rejects `StrCmp /I` inside `closeProcess` and requires the valid four-operand command.
+- Keep the executable/package/data/CLI/native-messaging identities unchanged. Do not change `settings.gradle.kts` root project identity.
+
+## Pre-build acceptance question
+
+Does the corrected NSIS template compile on Windows and allow the candidate installer to install, expose exactly one `HyperGet.exe` (no `DownloadManager.exe` in the candidate install), preserve the legacy CLI/native host names, launch the GUI, and complete the existing real HTTP/Liquid Progress and upgrade/rollback gates?
+
+**Expected:** source contracts and PowerShell parser pass; `createReleaseFolderForCi` emits one installer; installed-tree assertions and GUI launch pass; installer lifecycle and cross-version tests retain their data/shortcut/WinCred protections.
+
+**Why source tests are insufficient:** only `makensis.exe` and the actual Windows installer can prove NSIS syntax, launcher layout, icon embedding, shortcut targets and self-removal behavior.
+
+**Status:** source fix committed; wait for exact-head Windows packaging/runtime proof. The run above failed before producing an installer and must not be counted as a pass. The current final EXE/release gate remains OPEN.

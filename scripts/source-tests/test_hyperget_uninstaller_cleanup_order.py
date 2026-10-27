@@ -70,5 +70,17 @@ class HyperGetUninstallerCleanupOrderTests(unittest.TestCase):
         self.assertNotIn('!insertmacro RemoveUserData', self.uninstall_section)
 
 
+    def test_close_process_uses_valid_case_insensitive_strcmp_syntax(self):
+        start = self.source.index('!macro closeProcess')
+        end = self.source.index('!macroend', start)
+        macro = self.source[start:end]
+        self.assertIn(
+            'StrCmp "$EXEDIR" "$INSTDIR" closeProcess_${macroId}_skip closeProcess_${macroId}_kill',
+            macro,
+            'NSIS StrCmp is already case-insensitive; the unsupported /I switch breaks makensis.',
+        )
+        self.assertNotIn('StrCmp /I', macro)
+
+
 if __name__ == "__main__":
     unittest.main()

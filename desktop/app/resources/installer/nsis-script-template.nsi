@@ -126,7 +126,7 @@ FunctionEnd
 
     ${If} "$EXEFILE" == "${executableName}"
         ; Setup and GUI can share a basename. Compare directories before skipping termination.
-        StrCmp /I "$EXEDIR" "$INSTDIR" closeProcess_${macroId}_skip closeProcess_${macroId}_kill
+        StrCmp "$EXEDIR" "$INSTDIR" closeProcess_${macroId}_skip closeProcess_${macroId}_kill
     ${Else}
         Goto closeProcess_${macroId}_kill
     ${EndIf}

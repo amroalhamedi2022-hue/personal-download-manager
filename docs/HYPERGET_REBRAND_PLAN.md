@@ -49,3 +49,10 @@ Priority: design/plan accepted now; execute during future bounded development ro
 - **HG-05 verification:** uninstall user-content safety and same-version reinstall/silent-uninstall are PASS on exact source `068e2ff9b66d47764d4d76bae59361a1cf983c9d`; E061 performance remains PASS on its exact tested source. Browser E2E and throughput matrix were scope-skipped on the installer-only commit, and independent final release recheck is NOT TESTED.
 
 Next: implement the executable-name/icon migration as one compatibility-tested milestone, then perform the independent Windows release recheck. Do not deliver the test installers as `HyperGet.exe` and do not mark HG-01–HG-05 fully complete from partial evidence.
+
+
+## 2026-10-27 — HG-03 packaging repair checkpoint
+
+The prior checkpoint line saying the launcher still remains `DownloadManager.exe` is stale for the tested candidate: cross-version Windows harness [40528393289](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40528393289) at source `068e2ff9b66d47764d4d76bae59361a1cf983c9d` explicitly requires baseline `DownloadManager.exe` and candidate `HyperGet.exe`, and recorded PASS. This is a test-install proof, not the final deliverable.
+
+The latest exact-head GUI packaging attempt [40545095153](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40545095153) compiled the app but failed in NSIS because `StrCmp /I` is invalid; NSIS `StrCmp` is case-insensitive by default. The PR now removes `/I` and adds a source regression. Current-head rebuild, installed icon/launcher inspection and independent final release recheck remain OPEN until the new Windows jobs finish. Existing `hyperget-icon.svg` and six-size alpha `icon.ico` pass the source contract; do not infer runtime icon acceptance from source alone.
