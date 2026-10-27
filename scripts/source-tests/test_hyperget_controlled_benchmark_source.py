@@ -114,6 +114,27 @@ class ControlledBenchmarkSourceTests(unittest.TestCase):
         self.assertIn("$children.Count -eq 0", source)
 
 
+    def test_install_file_residue_is_hashed_and_cleared_only_from_owned_runner_temp(self):
+        source = read("scripts/Run-WindowsControlledBenchmarkComparison.ps1")
+        self.assertIn("$script:InstallDirExistedAtPreflight = Test-Path -LiteralPath $installDir -PathType Container", source)
+        self.assertIn("function Get-ProcessesUnderInstall", source)
+        self.assertIn("Processes remain under controlled install after stop request", source)
+        self.assertIn("function Clear-OwnedInstallDirectoryResidue", source)
+        self.assertIn("install-file-residue.csv", source)
+        self.assertIn("Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256", source)
+        self.assertIn("Refusing to clear an install directory outside the exact controlled runner-temp path.", source)
+        self.assertIn("Refusing to clear install residue without the active test-owned data marker.", source)
+        self.assertIn("Clear-OwnedInstallDirectoryResidue -Variant $Variant -Round $Round", source)
+        self.assertLess(
+            source.index("Clear-OwnedInstallDirectoryResidue -Variant $Variant -Round $Round"),
+            source.index("foreach ($name in @('DownloadManager.exe','DownloadManagerCli.exe','uninstall.exe'))"),
+        )
+        self.assertIn("Install-file residue records: $installFileCount.", source)
+        self.assertIn("not evidence that application uninstall acceptance passed.", source)
+        self.assertIn("Preserving test install directory because process still active", source)
+        self.assertNotIn("Remove-Item -LiteralPath $script:ActiveInstallDir -Recurse -Force -ErrorAction SilentlyContinue", source)
+
+
     def test_checkpoint_is_written_before_build_and_does_not_claim_results(self):
         checkpoint = read("docs/checkpoints/HG_E061_CONTROLLED_PERFORMANCE_COMPARISON.md")
         self.assertIn("Pre-build question", checkpoint)
