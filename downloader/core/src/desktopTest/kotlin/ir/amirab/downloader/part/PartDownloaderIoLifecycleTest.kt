@@ -11,6 +11,8 @@ import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.MutableStateFlow
 import okio.Buffer
 import okio.FileSystem
@@ -159,6 +161,28 @@ class PartDownloaderIoLifecycleTest {
         assertTrue(
             withTimeout(1_000L) { withPartBodyCopyPermit { true } },
             "a failed copy must not leak its shared permit",
+        )
+    }
+
+    @Test
+    fun bodyCopyPermitIsReleasedAfterCancellation() = runBlocking {
+        val entered = CompletableDeferred<Unit>()
+        val holder = launch {
+            withPartBodyCopyPermit {
+                entered.complete(Unit)
+                awaitCancellation()
+            }
+        }
+
+        try {
+            withTimeout(1_000L) { entered.await() }
+        } finally {
+            holder.cancelAndJoin()
+        }
+
+        assertTrue(
+            withTimeout(1_000L) { withPartBodyCopyPermit { true } },
+            "a cancelled body copy must release its shared permit",
         )
     }
 
