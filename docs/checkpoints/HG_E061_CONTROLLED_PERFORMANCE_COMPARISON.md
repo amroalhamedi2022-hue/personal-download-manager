@@ -353,3 +353,25 @@ Regression coverage:
 - Source-only CI [40520016914](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40520016914) **PASS** on the updated PR head after correcting a syntax error in the first version of the new test.
 
 **Windows acceptance remains pending:** cross-version run [40519751066](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40519751066) passed PowerShell parsing and source contracts and is building the exact baseline installer before the candidate. Its actual uninstall assertions must prove registry keys and shortcuts are absent immediately after uninstaller exit, before any harness cleanup, while the completed download/history, settings, sentinel and synthetic WinCred remain intact. Do not infer uninstall PASS from source tests or the prior benchmark's cleanup.
+
+
+## 2026-10-27 — NSIS uninstall acceptance PASS on exact production source
+
+**Windows run:** [40519751066](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40519751066) — all source/parser, baseline build, candidate build, and real upgrade/rollback/uninstall steps **PASS**.  
+**Proof artifact:** [12741747280 — hyperget-cross-version-upgrade-rollback-proof](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40519751066/artifacts/12741747280).  
+**Artifact SHA-256:** `9e3d4660ce9099fe5077f923dc78ec2644d07ee0b74281189c57a5ab3b56a1ba`; independently recomputed after downloading the ZIP.  
+**Exact tested candidate production source:** `fbc5b695253a9ecd3d9a8eef357ad28f17f0b179`.  
+**Installer SHA-256:** baseline `20d6590dd982f24197a812740d30b0cc8ac3cb82c57eba4fe354b6768150ae31`; candidate `168ee1e15ef0879a08931c91e77a089a144fe122fee47aa42276e06c43f54639`.
+
+### Runtime proof — PASS
+
+- Baseline installed as **Download Manager**; candidate installed as **HyperGet**.
+- Completed a real 8 MiB loopback HTTP download; expected and actual SHA-256 both `7d212b9c884f5c77896de960ae17cc341cda43b14d6a971f34ca29ebd4badf7f`.
+- Preserved max-concurrent setting 4, completed task/history, output file and user-data sentinel through upgrade and rollback.
+- Preserved the synthetic Windows Credential Manager entry through upgrade, candidate uninstall, rollback and normal uninstall; test credential was then removed and absence verified.
+- Candidate uninstall before rollback and normal baseline uninstall both passed the harness's immediate checks for registry-key and shortcut absence; the script does not clean those entries before asserting.
+- Normal uninstall preserved user data; user-data deletion remains a separate explicit opt-in section.
+
+This confirms the NSIS context/order correction fixed the observed uninstall residue in the tested per-user path. The proof is from a GitHub-hosted Windows runner and the exact production source above; final release still needs the independent final build/recheck and user-facing executable packaging gates.
+
+**Milestone status:** E061 cap-60 performance comparison **PASS**; clean uninstall + upgrade/rollback compatibility **PASS** on tested source; final `HyperGet.exe` deliverable and full independent release acceptance remain **OPEN**.
