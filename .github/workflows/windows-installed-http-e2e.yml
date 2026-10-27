@@ -7,6 +7,10 @@ on:
     paths:
       - ".github/workflows/windows-installed-http-e2e.yml"
       - "scripts/Run-WindowsInstalledResumeE2E.ps1"
+      - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/connection/Connection.kt"
+      - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/connection/OkHttpHttpDownloaderClient.kt"
+      - "downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/part/PartDownloaderIoLifecycleTest.kt"
+      - "scripts/source-tests/test_hyperget_http_dispatcher_bound_source.py"
       - "scripts/LocalHttpRangeFixture.py"
       - "desktop/app/resources/installer/nsis-script-template.nsi"
       - "desktop/app/build.gradle.kts"
@@ -19,6 +23,10 @@ on:
     paths:
       - ".github/workflows/windows-installed-http-e2e.yml"
       - "scripts/Run-WindowsInstalledResumeE2E.ps1"
+      - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/connection/Connection.kt"
+      - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/connection/OkHttpHttpDownloaderClient.kt"
+      - "downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/part/PartDownloaderIoLifecycleTest.kt"
+      - "scripts/source-tests/test_hyperget_http_dispatcher_bound_source.py"
       - "scripts/LocalHttpRangeFixture.py"
       - "desktop/app/resources/installer/nsis-script-template.nsi"
       - "desktop/app/build.gradle.kts"

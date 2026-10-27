@@ -16,7 +16,6 @@ on:
       - "scripts/Run-WindowsFirefoxNativeE2E.mjs"
       - "scripts/source-tests/test_hyperget_firefox_capture_source.py"
       - "scripts/source-tests/test_hyperget_executable_identity_workflows.py"
-      - "scripts/source-tests/test_hyperget_pr_diff_scope.py"
       - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/nativemessaging/**"
       - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/AppInfo.kt"
   workflow_dispatch:
@@ -39,35 +38,20 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
-          fetch-depth: 0
+          fetch-depth: 2
       - id: scope
-        env:
-          HYPERGET_EVENT_BEFORE: ${{ github.event.before || '' }}
         shell: bash
         run: |
           if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
             echo "run=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
-            git fetch --no-tags origin "+refs/heads/${GITHUB_BASE_REF}:refs/remotes/origin/${GITHUB_BASE_REF}"
-            changed="$(git diff --name-only "origin/$GITHUB_BASE_REF...HEAD")"
-            printf 'Full PR diff against origin/%s:\n%s\n' "$GITHUB_BASE_REF" "$changed"
-          elif [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
-            before="$HYPERGET_EVENT_BEFORE"
-            if [[ -n "$before" && "$before" != "0000000000000000000000000000000000000000" ]]; then
-              changed="$(git diff --name-only "$before" "$GITHUB_SHA")"
-            else
-              changed="$(git show --pretty='' --name-only HEAD)"
-            fi
-            printf 'Push change range:\n%s\n' "$changed"
-          else
-            changed="$(git show --pretty='' --name-only HEAD)"
-          fi
+          changed="$(git diff --name-only HEAD^ HEAD)"
+          printf 'Latest commit changed files:\n%s\n' "$changed"
           run=false
           while IFS= read -r file; do
             case "$file" in
-              .github/workflows/windows-installed-native-host-e2e.yml|scripts/Run-WindowsInstalledNativeHostE2E.ps1|scripts/Run-WindowsChromeNativeE2E.mjs|scripts/Run-WindowsFirefoxNativeE2E.mjs|scripts/source-tests/test_hyperget_executable_identity_workflows.py|scripts/source-tests/test_hyperget_pr_diff_scope.py|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/nativemessaging/*|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/cli/download/show/ShowDownload.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/AppInfo.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/MainExecutableResolver.kt|desktop/app/build.gradle.kts|desktop/app/icons/icon.ico|desktop/app/icons/hyperget-icon.svg|desktop/app/resources/installer/nsis-script-template.nsi|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/singleInstance/service/*|shared/app/build.gradle.kts|build.gradle.kts)
+              .github/workflows/windows-installed-native-host-e2e.yml|scripts/Run-WindowsInstalledNativeHostE2E.ps1|scripts/Run-WindowsChromeNativeE2E.mjs|scripts/Run-WindowsFirefoxNativeE2E.mjs|scripts/source-tests/test_hyperget_executable_identity_workflows.py|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/nativemessaging/*|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/cli/download/show/ShowDownload.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/AppInfo.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/MainExecutableResolver.kt|desktop/app/build.gradle.kts|desktop/app/icons/icon.ico|desktop/app/icons/hyperget-icon.svg|desktop/app/resources/installer/nsis-script-template.nsi|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/singleInstance/service/*|shared/app/build.gradle.kts|build.gradle.kts)
                 run=true
                 ;;
             esac

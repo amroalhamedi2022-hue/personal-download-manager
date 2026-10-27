@@ -2033,3 +2033,14 @@ Does each installed Windows harness now discover the branded `HyperGet.exe`, sam
 **Why source tests are insufficient:** only the Windows installer and actual process tree can establish the launcher name, window process identity, installed shortcuts, real transfers and resource samples.
 
 **Status:** identity-harness patch committed on the existing PR branch; exact-head reruns pending. Final independent release recheck and final `HyperGet.exe` artifact/SHA remain OPEN.
+
+
+---
+
+## 2026-10-27 — HG-03 Pause/Resume follow-up (exact parent SHA `4979ee80145d0f77ce646a6088c0f08cededc53f`)
+
+- Installed HTTP E2E [40563418358](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40563418358): installer build and initial 16 MiB SHA-256 transfer **PASS**; live HTTP Pause/socket closure/Resume **FAIL** because the fixture still reported active response bodies. The artifact's initial expected/actual SHA matched; it is not a successful Pause/Resume proof.
+- Installed FTP E2E [40563418659](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40563418659): installer built, partial stage reached 3,735,552 bytes, but the loopback fixture crashed while atomically replacing its stats JSON with `PermissionError [WinError 5]`. FTP socket closure is **INCONCLUSIVE**, not counted as a production failure or pass.
+- New repair: explicitly attach `Call.cancel()` to the shared HTTP `Connection.close()` path, add a Kotlin lifecycle regression and source contract, and make FTP fixture stats publication retry only transient Windows `PermissionError` failures with bounded attempts.
+- The next build is justified because source-only checks cannot establish that a real installed OkHttp exchange closes its live response bodies or that the FTP server observes its data socket closing. Expected evidence: HTTP Pause → active_requests=0 → bytes stable → Resume exact 32 MiB SHA; FTP active_retrievals=0 → GUI restart → positive REST offset equal to paused bytes → exact final SHA and credential cleanup.
+- **Acceptance remains OPEN** until fresh exact-head Windows runs prove both paths. No merge/release is inferred from parent-source CI; final independent recheck and final `HyperGet.exe` artifact/SHA remain NOT COMPLETE.

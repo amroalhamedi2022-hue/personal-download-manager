@@ -1204,3 +1204,17 @@ Does each installed Windows harness now discover the branded `HyperGet.exe`, sam
 Current exact PR head e36266add4eb4e009eb6c64a4e71ceae5d5090b7 exposed two harness defects: four installed-workflow CLI selectors were malformed, and the Liquid Progress E2E still searched for the retired DownloadManager GUI process. Source-only run [40549485454](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40549485454) failed those selector contracts; Windows run [40549485330](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40549485330) built/installed/launched the GUI but stopped before the active Liquid Progress transfer because the process filter was stale. Cross-version [40549485561](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40549485561) and browser [40549485303](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40549485303) only passed their scope gates; their functional jobs were skipped.
 
 The next bounded HG-03 repair fixes exact stable CLI discovery, process identity derived from HyperGet.exe, and scope triggers so the cross-version and real Chrome/Firefox installed tests run for this acceptance change. Pre-build question: can the installed HyperGet UI complete the active Liquid Progress scenario and reach cross-version/browser assertions? Source tests cannot prove native process/window detection, NSIS layout, actual transfer bytes or Windows registry/shortcut transitions. Acceptance stays OPEN until exact-head Windows evidence is complete; no release or merge.
+
+
+## 2026-10-27 — Resume the previous HG-03 runtime gate, not a new planning cycle
+
+The exact-head identity build at `4979ee80145d0f77ce646a6088c0f08cededc53f` passed installer creation, installed-tree identity, and the initial 16 MiB HTTP SHA-256 transfer, but the installed HTTP Pause/Resume stage failed because active response bodies remained visible after Pause. The separate FTP E2E reached a partial stage, but its fixture failed to atomically publish the final active-retrieval counter on Windows; that result is inconclusive.
+
+A single cohesive repair now:
+1. propagates an explicit OkHttp `Call.cancel()` action through the existing shared `Connection.close()` lifecycle, with a Kotlin regression and source contract;
+2. makes the FTP loopback fixture retry transient Windows stats-file sharing violations, with a deterministic injected-failure test; and
+3. records HTTP fixture counters if Pause still fails.
+
+Pre-build question: can installed HyperGet stop all live HTTP response bodies, hold bytes steady, and resume to exact SHA-256, while the FTP fixture reliably records server-side closure and then validates real REST resume? Source tests alone cannot prove socket closure or installed CLI/GUI behavior. The Windows E2E rebuild is therefore a purposeful integration test, not a per-line build.
+
+**Gate status:** previous HTTP Pause/Resume = FAIL; previous FTP socket result = INCONCLUSIVE due fixture failure; new exact-head Windows HTTP/FTP runs = pending after this repair; final independent release recheck and final user-facing `HyperGet.exe` artifact remain OPEN.

@@ -187,6 +187,23 @@ class PartDownloaderIoLifecycleTest {
     }
 
     @Test
+    fun connectionCloseCancelsTransportAndClosesSource() {
+        val source = CloseUnblocksSource()
+        var cancelRequested = false
+        val connection = Connection(
+            source = source,
+            contentLength = 1024L,
+            responseInfo = TestResponseInfo,
+            cancelTransport = { cancelRequested = true },
+        )
+
+        connection.close()
+
+        assertTrue(cancelRequested, "closing a response must cancel its underlying transport call")
+        assertTrue(source.closed, "closing a response must also close its Okio source")
+    }
+
+    @Test
     fun stopClosesBlockingSourceAndJoinsWorker() = runBlocking {
         val file = Files.createTempFile("hyperget-part-io-", ".bin").toFile()
         val fileHandle = FileSystem.SYSTEM.openReadWrite(file.toOkioPath())

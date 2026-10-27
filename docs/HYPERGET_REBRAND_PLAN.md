@@ -88,3 +88,10 @@ Does each installed Windows harness now discover the branded `HyperGet.exe`, sam
 ## 2026-10-27 — latest HG-03 verification checkpoint (OPEN)
 
 The prior exact-head build proved the installer can build and launch HyperGet.exe, but its Liquid Progress harness still searched for DownloadManager; the source identity suite also exposed malformed CLI selectors in four Windows acceptance workflows. The next patch repairs these harnesses and ensures cross-version and installed Chrome/Firefox checks are triggered by the identity regression. This is test/acceptance infrastructure, not evidence of a new production-engine change. Current-head Windows runtime, final independent recheck and final HyperGet.exe SHA/artifact remain NOT COMPLETE until the new exact-head runs pass.
+
+
+## 2026-10-27 — HG-03 exact-head pause/resume blocker and next acceptance
+
+The candidate installer at parent SHA `4979ee80145d0f77ce646a6088c0f08cededc53f` installed the branded `HyperGet.exe` and completed a real 16 MiB HTTP transfer with matching SHA-256, but the subsequent installed HTTP Pause/Resume check failed to observe all response bodies closing. The separate FTP test reached a partial transfer, but a Windows sharing violation in the FTP fixture's stats-file replacement left its active counter stale; FTP cancellation is therefore inconclusive on that run.
+
+The current repair carries `Call.cancel()` through the shared HTTP connection close path and hardens the FTP fixture's atomic stats publication with bounded retries. Do not mark HG-03 complete from source tests or the initial download alone. Require new exact-head installed HTTP Pause → stable stopped bytes → Resume SHA, FTP Pause → server-side data socket closure → GUI restart → REST resume/SHA, and then the independent release recheck. Final user-facing `HyperGet.exe` artifact and SHA remain OPEN.

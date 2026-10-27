@@ -74,7 +74,12 @@ try {
         }
         Start-Sleep -Milliseconds 250
     }
-    if (-not $stopped) { throw 'Pause did not close all active HTTP response bodies.' }
+    if (-not $stopped) {
+        $diagnostic = $stats | ConvertTo-Json -Compress -Depth 8
+        Write-Host "HTTP pause socket diagnostics: $diagnostic"
+        $diagnostic | Set-Content -LiteralPath (Join-Path $folder 'pause-failure-stats.json') -Encoding utf8
+        throw "Pause did not close all active HTTP response bodies. Stats=$diagnostic"
+    }
     $atPause = [long]$stats.bytes_sent
     Start-Sleep -Seconds 2
     $idleStats = Invoke-RestMethod -Uri $statsUrl -TimeoutSec 10

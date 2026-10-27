@@ -72,6 +72,7 @@ on:
       - "scripts/source-tests/test_hyperget_hls_manifest_redirect_source.py"
       - "scripts/source-tests/test_hyperget_hls_guarded_redirect_source.py"
       - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/connection/OkHttpHttpDownloaderClient.kt"
+      - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/connection/Connection.kt"
       - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/downloaditem/http/HttpDownloadCredentials.kt"
       - "downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/downloaditem/hls/**"
       - "scripts/source-tests/HyperGetHlsReconciliationSmoke.kt"
@@ -156,7 +157,7 @@ jobs:
         run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_executable_identity_workflows.py -v
       - name: Verify installed Windows acceptance uses the full PR diff
         run: python3 -m unittest scripts/source-tests/test_hyperget_pr_diff_scope.py -v
-      - name: Verify bounded OkHttp dispatcher source contract
+      - name: Verify bounded OkHttp dispatcher and explicit transport cancellation source contract
         run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_http_dispatcher_bound_source.py -v
       - name: Verify installed JVM memory profile harness
         run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_memory_profile_source.py -v

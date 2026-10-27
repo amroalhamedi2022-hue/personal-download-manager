@@ -219,25 +219,28 @@ class OkHttpHttpDownloaderClient(
         start: Long?,
         end: Long?,
     ): Connection<HttpResponseInfo> {
-        val response = newCall(
+        val call = newCall(
             downloadCredentials = credentials,
             start = start,
             end = end,
             extraBuilder = {
                 get()
             }
-        ).await()
+        )
+        val response = call.await()
         val body = runCatching {
             requireNotNull(response.body) {
                 "body is null"
             }
         }.onFailure {
+            call.cancel()
             response.close()
         }.getOrThrow()
         return Connection(
             source = body.source(),
             contentLength = body.contentLength(),
-            responseInfo = createFileInfo(response)
+            responseInfo = createFileInfo(response),
+            cancelTransport = { call.cancel() }
         )
     }
 }
