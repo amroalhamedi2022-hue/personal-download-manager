@@ -37,3 +37,8 @@ These are source observations, not visual acceptance. The previous screenshot pr
 **Expected:** source contracts and PowerShell parsing pass; Windows installer builds and launches; the screenshot demonstrates the shimmer/gloss/two bubbles at native scale; final file is 16,777,216 bytes and expected/actual SHA-256 both equal `341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1`.
 **Why source tests are insufficient:** pixel contrast and Compose rendering cannot be established from source assertions, and the installed CLI/IPC plus real transfer must remain live during capture.
 **Gate:** OPEN until the exact-head Windows artifact is inspected. No release/merge/final EXE claim.
+
+
+## 2026-10-27 — source-gate regression caught a test-parser typo (FIXED BEFORE UI ACCEPTANCE)
+
+The first run after adding numeric contrast bounds failed only in the new Python source test: its raw-regex literal was over-escaped, so the shimmer token was not matched. The production Compose source was not implicated; all other 18 Liquid Progress source-contract tests passed. The fast source job stopped before the installed UI job could be accepted, so this is a **test implementation FAIL**, not a visual or transfer FAIL. Correct the regex literal and rerun the exact-head source and Windows UI gates; do not accept the contrast milestone until both the numeric test and the screenshot/transfer artifact pass.
