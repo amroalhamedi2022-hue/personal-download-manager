@@ -266,7 +266,23 @@ try {
         }
 
         Stop-ProcessesUnderInstall -Path $actualInstallDir
-        $files = @(Get-ChildItem -LiteralPath $actualInstallDir -File -Recurse -Force)
+
+        # NSIS can finish deleting its install directory asynchronously after the
+        # uninstaller process exits. Re-check after process quiescence and tolerate
+        # disappearance during enumeration only when the path is now truly absent.
+        if (-not (Test-Path -LiteralPath $actualInstallDir -PathType Container)) {
+            Write-Host "$Variant round $Round controlled install directory disappeared during process quiescence; no install-file residue remains."
+            return
+        }
+        try {
+            $files = @(Get-ChildItem -LiteralPath $actualInstallDir -File -Recurse -Force -ErrorAction Stop)
+        } catch {
+            if (-not (Test-Path -LiteralPath $actualInstallDir -PathType Container)) {
+                Write-Host "$Variant round $Round controlled install directory disappeared during residue inventory; no install-file residue remains."
+                return
+            }
+            throw
+        }
         $records = [System.Collections.Generic.List[object]]::new()
         if ($files.Count -eq 0) {
             $records.Add([pscustomobject]@{
