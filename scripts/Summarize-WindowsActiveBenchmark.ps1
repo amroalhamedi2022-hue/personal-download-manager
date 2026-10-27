@@ -96,6 +96,7 @@ foreach ($jobs in @(1, 4, 16)) {
         $privateStat = $private | Measure-Object -Average -Maximum
         $roundSummaries.Add([pscustomobject]@{
             SourceSha = $SourceSha; HarnessSha = $HarnessSha
+            OS = $machineOs; LogicalCpuCount = $logicalCpu
             Scenario = $scenario; Round = $round; ConcurrentTasks = $jobs
             VerifiedFiles = $workloadFiles.Count; Samples = $rows.Count
             AverageCpuMachinePercent = [math]::Round($cpuStat.Average, 3)

@@ -31,6 +31,7 @@ class ControlledBenchmarkSourceTests(unittest.TestCase):
         self.assertIn("record.HarnessSha -ne $HarnessSha", summary)
         self.assertIn("record.SHA256 -ne $record.ExpectedSHA256", summary)
         self.assertIn("Harness source SHA", summary)
+        self.assertIn("OS = $machineOs; LogicalCpuCount = $logicalCpu", summary)
 
     def test_controlled_runner_alternates_variants_and_owns_cleanup(self):
         source = read("scripts/Run-WindowsControlledBenchmarkComparison.ps1")
