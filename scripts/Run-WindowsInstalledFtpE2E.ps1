@@ -26,6 +26,9 @@ foreach ($required in @($guiPath, $cliPath, $fixtureScript)) {
         throw "Required program or fixture missing: $required"
     }
 }
+if ([IO.Path]::GetFileName($guiPath) -cne 'HyperGet.exe') {
+    throw 'Installed FTP E2E GUI must be the branded HyperGet.exe; CLI/native-host names remain legacy-compatible.'
+}
 if (Test-Path -LiteralPath $root) {
     if (@(Get-ChildItem -LiteralPath $root -Force).Count -gt 0) {
         throw "FTP evidence directory must be empty: $root"
@@ -56,7 +59,7 @@ function Start-InstalledGui {
     for ($attempt = 0; $attempt -lt 60; $attempt++) {
         Start-Sleep -Milliseconds 500
         if ($process.HasExited) { throw "Installed GUI exited with code $($process.ExitCode)." }
-        if (@(Get-Process -Name 'DownloadManager' -ErrorAction SilentlyContinue).Count -gt 0) {
+        if (@(Get-Process -Name 'DownloadManager','HyperGet' -ErrorAction SilentlyContinue).Count -gt 0) {
             return $process
         }
     }

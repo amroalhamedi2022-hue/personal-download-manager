@@ -20,7 +20,10 @@ class InstalledFtpWorkflowScopeContract(unittest.TestCase):
         case_block = FTP_WORKFLOW.split('case "$file" in', 1)[1].split("esac", 1)[0]
         self.assertIn("scripts/Run-WindowsInstalledFtpE2E.ps1", case_block)
         self.assertIn("downloader/core/src/**/ftp/**", case_block)
-        self.assertNotIn(".github/workflows/windows-installed-ftp-e2e.yml", case_block)
+        self.assertIn(".github/workflows/windows-installed-ftp-e2e.yml", case_block)
+        self.assertIn("desktop/app/resources/installer/nsis-script-template.nsi", case_block)
+        self.assertIn("desktop/app/build.gradle.kts", case_block)
+        self.assertIn("scripts/source-tests/test_hyperget_executable_identity_workflows.py", case_block)
         self.assertNotIn("docs/", case_block)
 
     def test_fast_source_gate_runs_this_workflow_contract(self):

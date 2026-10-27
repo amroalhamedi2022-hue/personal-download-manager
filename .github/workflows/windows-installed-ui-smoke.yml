@@ -17,6 +17,7 @@ on:
       - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/DownloadList.kt"
       - "scripts/Run-WindowsLiquidProgressVisualE2E.ps1"
       - "scripts/source-tests/test_hyperget_liquid_progress_source.py"
+      - "scripts/source-tests/test_hyperget_executable_identity_workflows.py"
   pull_request:
     branches: [codex/repair-rf00-rf01]
     paths:
@@ -32,6 +33,7 @@ on:
       - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/DownloadList.kt"
       - "scripts/Run-WindowsLiquidProgressVisualE2E.ps1"
       - "scripts/source-tests/test_hyperget_liquid_progress_source.py"
+      - "scripts/source-tests/test_hyperget_executable_identity_workflows.py"
 
 permissions:
   contents: read
@@ -243,7 +245,7 @@ jobs:
             throw "Idle metrics source SHA mismatch: checked out $sourceSha, expected $expectedSourceSha"
           }
           Write-Host "Idle metrics source SHA: $sourceSha"
-          & ./scripts/Run-WindowsIdleBenchmarkMatrix.ps1 -RootProcessName DownloadManager -SourceSha $sourceSha -OutputDirectory $metricsDir -Rounds 3 -DurationSeconds 20
+          & ./scripts/Run-WindowsIdleBenchmarkMatrix.ps1 -RootProcessName HyperGet -SourceSha $sourceSha -OutputDirectory $metricsDir -Rounds 3 -DurationSeconds 20
               if ((@(Get-ChildItem -LiteralPath $metricsDir -Filter '*.csv' -File)).Count -ne 6) {
                 throw 'Idle/minimized benchmark matrix did not produce all six CSVs.'
               }

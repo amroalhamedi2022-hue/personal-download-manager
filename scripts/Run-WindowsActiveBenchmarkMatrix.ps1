@@ -27,6 +27,10 @@ $ErrorActionPreference = 'Stop'
 $destination = [IO.Path]::GetFullPath($OutputDirectory)
 $guiPath = [IO.Path]::GetFullPath($GuiExecutable)
 $cliPath = [IO.Path]::GetFullPath($CliExecutable)
+$rootProcessName = [IO.Path]::GetFileNameWithoutExtension($guiPath)
+if ($rootProcessName -notin @('DownloadManager', 'HyperGet')) {
+    throw "Unsupported GUI process identity '$rootProcessName' from $guiPath. Expected legacy baseline or branded HyperGet."
+}
 $sampler = Join-Path $PSScriptRoot 'Measure-WindowsDownloadManager.ps1'
 $fixtureScript = Join-Path $PSScriptRoot 'LocalHttpRangeFixture.py'
 foreach ($required in @($guiPath, $cliPath, $sampler, $fixtureScript)) {
@@ -117,7 +121,7 @@ try {
     $foundApp = $false
     for ($wait = 0; $wait -lt 40; $wait++) {
         Start-Sleep -Milliseconds 500
-        $roots = @(Get-Process -Name 'DownloadManager' -ErrorAction SilentlyContinue)
+        $roots = @(Get-Process -Name $rootProcessName -ErrorAction SilentlyContinue)
         if ($roots.Count -gt 0 -and -not $gui.HasExited) {
             $foundApp = $true
             break
@@ -230,7 +234,7 @@ try {
             # Slow loopback source ensures the test samples real in-flight transfers,
             # even with the downloader's parallel HTTP Range segments.
             $csvPath = Join-Path $metricFolder "$scenario-round-$round.csv"
-            & $sampler -RootProcessName 'DownloadManager' -Scenario $scenario -SourceSha $SourceSha -HarnessSha $HarnessSha -OutputCsv $csvPath -DurationSeconds $SampleSeconds -WarmupSeconds 1 -SampleIntervalMs 1000 -RunLabel "round-$round"
+            & $sampler -RootProcessName $rootProcessName -Scenario $scenario -SourceSha $SourceSha -HarnessSha $HarnessSha -OutputCsv $csvPath -DurationSeconds $SampleSeconds -WarmupSeconds 1 -SampleIntervalMs 1000 -RunLabel "round-$round"
             if (-not (Test-Path -LiteralPath $csvPath)) {
                 throw "Missing Windows process-tree CSV for $scenario round $round"
             }

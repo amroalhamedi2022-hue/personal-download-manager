@@ -8,6 +8,12 @@ on:
     branches: [codex/repair-rf00-rf01]
     paths:
       - ".github/workflows/windows-installed-ftp-e2e.yml"
+      - "desktop/app/build.gradle.kts"
+      - "desktop/app/resources/installer/nsis-script-template.nsi"
+      - "desktop/app/icons/icon.ico"
+      - "desktop/app/icons/hyperget-icon.svg"
+      - "buildSrc/src/main/kotlin/buildlogic/versioning/VersionUtil.kt"
+      - "scripts/source-tests/test_hyperget_executable_identity_workflows.py"
       - "scripts/LocalFtpFixture.py"
       - "scripts/test_local_ftp_fixture.py"
       - "scripts/Run-WindowsInstalledFtpE2E.ps1"
@@ -21,6 +27,12 @@ on:
     branches: [codex/repair-rf00-rf01]
     paths:
       - ".github/workflows/windows-installed-ftp-e2e.yml"
+      - "desktop/app/build.gradle.kts"
+      - "desktop/app/resources/installer/nsis-script-template.nsi"
+      - "desktop/app/icons/icon.ico"
+      - "desktop/app/icons/hyperget-icon.svg"
+      - "buildSrc/src/main/kotlin/buildlogic/versioning/VersionUtil.kt"
+      - "scripts/source-tests/test_hyperget_executable_identity_workflows.py"
       - "scripts/LocalFtpFixture.py"
       - "scripts/test_local_ftp_fixture.py"
       - "scripts/Run-WindowsInstalledFtpE2E.ps1"
@@ -78,7 +90,7 @@ jobs:
           run=false
           while IFS= read -r file; do
             case "$file" in
-              scripts/LocalFtpFixture.py|scripts/test_local_ftp_fixture.py|scripts/Run-WindowsInstalledFtpE2E.ps1|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/AppComponent.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/cli/download/add/**|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/enterurl/**|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/singleInstance/service/**|downloader/core/src/**/ftp/**)
+              scripts/LocalFtpFixture.py|scripts/test_local_ftp_fixture.py|.github/workflows/windows-installed-ftp-e2e.yml|scripts/Run-WindowsInstalledFtpE2E.ps1|desktop/app/build.gradle.kts|desktop/app/resources/installer/nsis-script-template.nsi|desktop/app/icons/icon.ico|desktop/app/icons/hyperget-icon.svg|buildSrc/src/main/kotlin/buildlogic/versioning/VersionUtil.kt|scripts/source-tests/test_hyperget_executable_identity_workflows.py|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/AppComponent.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/cli/download/add/**|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/enterurl/**|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/singleInstance/service/**|downloader/core/src/**/ftp/**)
                 run=true ;;
             esac
           done <<< "$changed"
@@ -157,10 +169,38 @@ jobs:
           if ($installer.ExitCode -ne 0) { throw "Installer exit code $($installer.ExitCode)." }
           Start-Sleep -Seconds 2
           $exe = @(Get-ChildItem -LiteralPath $installDir -File -Recurse -Filter '*.exe')
-          $gui = @($exe | Where-Object { $_.BaseName -eq 'DownloadManager' })
-          $cli = @($exe | Where-Object { $_.BaseName -match 'DownloadManagerCli$' })
-          if ($gui.Count -ne 1 -or $cli.Count -ne 1) {
-            throw "Expected one installed GUI and CLI: GUI=$($gui.Count), CLI=$($cli.Count)"
+          $gui = @($exe | Where-Object { $_.BaseName -eq 'HyperGet' })
+          $legacyGui = @($exe | Where-Object { $_.BaseName -eq 'DownloadManager' })
+          $cli = @($exe | Where-Object { $_.BaseName -match 'DownloadManagerCli
+          "IDM_FTP_GUI=$($gui[0].FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "IDM_FTP_CLI=$($cli[0].FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Run installed authenticated FTP acceptance
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & ./scripts/Run-WindowsInstalledFtpE2E.ps1 `
+            -GuiExecutable $env:IDM_FTP_GUI `
+            -CliExecutable $env:IDM_FTP_CLI `
+            -SourceSha $env:HYPERGET_TESTED_SHA `
+            -OutputDirectory 'build/ci-release/ftp-e2e'
+
+      - name: Upload FTP protocol and SHA evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-installed-ftp-e2e-evidence
+          path: |
+            build/ci-release/ftp-installer-sha256.txt
+            build/ci-release/ftp-e2e/ftp-e2e-report.json
+            build/ci-release/ftp-e2e/ftp-stats.json
+            build/ci-release/ftp-e2e/ftp-server-stdout.txt
+            build/ci-release/ftp-e2e/ftp-server-stderr.txt
+          if-no-files-found: warn
+          retention-days: 14
+ })
+          if ($gui.Count -ne 1 -or $legacyGui.Count -ne 0 -or $cli.Count -ne 1) {
+            throw "Expected one HyperGet GUI, no legacy GUI, and one legacy-compatible CLI: HyperGet=$($gui.Count), legacy=$($legacyGui.Count), CLI=$($cli.Count)"
           }
           "IDM_FTP_GUI=$($gui[0].FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "IDM_FTP_CLI=$($cli[0].FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8

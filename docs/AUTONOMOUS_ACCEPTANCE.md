@@ -1982,3 +1982,30 @@ Does the corrected NSIS template compile on Windows and allow the candidate inst
 **Why source tests are insufficient:** only `makensis.exe` and the actual Windows installer can prove NSIS syntax, launcher layout, icon embedding, shortcut targets and self-removal behavior.
 
 **Status:** source fix committed; wait for exact-head Windows packaging/runtime proof. The run above failed before producing an installer and must not be counted as a pass. The current final EXE/release gate remains OPEN.
+
+
+## 2026-10-27 — HG-03 identity harness follow-up (exact source `b63114d0c2fee6e667175302c9bc16a5da414c61`)
+
+### Actual Windows result
+
+The corrected NSIS script compiled and the installer installed successfully in [Windows GUI smoke run 40546589588](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40546589588). The installed tree contained exactly `HyperGet.exe`, no `DownloadManager.exe`, and the stable `DownloadManagerCli.exe`; the installer SHA-256 was `bf9f01d881c03fd067944f8682ca203238fcb95d3b1b538d947f152694132b39`. The GUI became visible and produced screenshot artifact [12753841163](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40546589588/artifacts/12753841163), whose uploaded SHA-256 digest was `eb2cd4e4ea412bafda80bd8e4da6a99ed7585de9dba5b3018ba32e14fabfef26`.
+
+The GUI smoke then **failed** at the idle CPU/RAM sample because its harness still searched for process `DownloadManager`; the actual renamed GUI process is `HyperGet`. The screenshot and install evidence show the app did launch; this is a stale acceptance-harness identity, not a compile/NSIS or download-engine failure. Liquid Progress and the same-version lifecycle steps were skipped after this failure and are not counted as new passes.
+
+The separate real browser run [40546589599](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40546589599) **PASS** on the same exact source: real Chrome/Firefox extension packaging and native-messaging protocol, with Firefox capturing a real 2 MiB transfer through the installed HyperGet host and verifying SHA-256. Evidence artifact [12754145299](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40546589599/artifacts/12754145299), SHA-256 digest `28fe2b0a3ccbcde654dd0101e4061c9eee789a0d5804e09cfc646749e8ab7714`. The source-only contract run [40546589656](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40546589656) also passed; FTP and HLS JUnit gates [40546589446](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40546589446) and [40546589605](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40546589605) passed, as did queue lifecycle [40546589576](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40546589576). Those results are exact-head evidence for `b63114d0c2fee6e667175302c9bc16a5da414c61`, not a final release.
+
+### Fix in this checkpoint
+
+- Change idle sampling to target `HyperGet`.
+- Make the 1/4/16 process sampler derive the root process name from its supplied GUI executable, while explicitly allowing only the legacy baseline `DownloadManager` and branded candidate `HyperGet`.
+- Update installed active benchmark, JVM profile, HTTP E2E and authenticated FTP E2E to require exactly one `HyperGet.exe`, reject a leftover `DownloadManager.exe`, and retain `DownloadManagerCli.exe` / `DownloadManagerNativeMessagingHost.exe` names.
+- Add PR path triggers and exact-PR-head checkout to installed HTTP E2E; make FTP scope gating rerun on installer/identity/workflow changes.
+- Add a source contract for all these identity assumptions. The next Windows run must prove actual process sampling and transfers, not merely that the scripts mention the new name.
+
+### Acceptance question before the next build
+
+Does each installed Windows harness now discover the branded `HyperGet.exe`, sample the correct visible GUI process, preserve legacy CLI/native-host names, and complete real HTTP pause/resume, authenticated FTP REST resume, Liquid Progress, 1/4/16 throughput/memory sampling, and cross-version data/shortcut/WinCred checks?
+
+**Why source tests are insufficient:** only the Windows installer and actual process tree can establish the launcher name, window process identity, installed shortcuts, real transfers and resource samples.
+
+**Status:** identity-harness patch committed on the existing PR branch; exact-head reruns pending. Final independent release recheck and final `HyperGet.exe` artifact/SHA remain OPEN.

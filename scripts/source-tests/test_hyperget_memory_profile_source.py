@@ -82,6 +82,8 @@ class WindowsJvmMemoryProfileContract(unittest.TestCase):
         self.assertIn("if ($sourceSha -ne $expectedSourceSha)", idle_step)
         self.assertIn("-SourceSha $sourceSha", idle_step)
         self.assertNotIn("-SourceSha $env:GITHUB_SHA", idle_step)
+        self.assertIn("-RootProcessName HyperGet", idle_step)
+        self.assertNotIn("-RootProcessName DownloadManager", idle_step)
 
 
 if __name__ == "__main__":
