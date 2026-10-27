@@ -1538,3 +1538,23 @@ Change only the user-visible `getPrettifiedAppName()` value to `"HyperGet"`, add
 **Why source tests are insufficient:** the value flows through Gradle packaging into the compiled NSIS installer and Windows registry/shortcuts; only the installed Windows lifecycle can prove the branding transition and data/credential preservation. This is a targeted functional build, not a release build.
 
 **Acceptance remains OPEN.** No production identity migration, merge, release, final EXE delivery, or Torrent.
+
+## 2026-10-27 — preserve branch-specific Windows DisplayVersion for upgrade acceptance
+
+**Exact-head Windows run:** [40415228329](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40415228329), candidate `74f5f137ea356e2f39644f75182a8efc4202ef00`, baseline `6c386abeae95e8e0460308d17c033558cbd60f15`.
+
+- **PASS:** PowerShell parse and cross-version source contracts.
+- **PASS:** both exact-snapshot NSIS installers built. Baseline installer SHA-256: `837e43ce3daf84446d1b94ab2f0a727a15ffb480dff0a657d4655f50dd044c06`; candidate installer SHA-256: `3352e2a3d5688985451d9828729bc01bd74175d7b9855fb4734d466148bd2aab`.
+- **PASS:** baseline legacy shortcuts were correct; real loopback HTTP task ID 0 reached `Finished`, with fixture `requests=10`, `bytesSent=8913152`, `peakRequests=8`, `peakDistinctTasks=1`. The synthetic WinCred fixture was created and verified before upgrade, then safely cleaned after this incomplete run.
+- **FAIL (acceptance metadata gate, not transfer):** the lifecycle stopped because baseline and candidate Add/Remove Programs `DisplayVersion` values were identical. No upgrade, candidate uninstall, rollback, post-transition history/settings, or WinCred persistence result is claimed. Proof artifact [12695313597](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40415228329/artifacts/12695313597), ZIP SHA-256 `f593c68b6a46f0287446ec39b7a7b363c80aeda95851ec4e8f0863216839b91c`.
+
+**Root cause:** `desktop/app/build.gradle.kts` passes both `appVersion = getAppVersionStringForPackaging(TargetFormat.Exe)` and `appDisplayVersion = getAppVersionString()`. The former intentionally strips SemVer prerelease text to numeric `major.minor.patch`; the NSIS template incorrectly wrote that numeric value to the uninstall registry `DisplayVersion`, collapsing the baseline and candidate branch snapshots to `1.0.0`. The full branch-specific SemVer value was already available as `APP_DISPLAY_VERSION` but unused for that registry field.
+
+**Fix on this PR branch:** write `APP_DISPLAY_VERSION` only to Add/Remove Programs `DisplayVersion`. Keep `APP_VERSION` for the internal product registry `Version` and numeric PE `VIProductVersion`/file version. Add a source regression asserting this split and that branch builds retain the suffix. No storage path, package ID, IPC/credential target, downloader logic, or baseline snapshot is changed.
+
+**Pre-build question:** do the two installed snapshots now expose distinct branch-specific `DisplayVersion` values while retaining numeric executable version resources, and can the complete baseline → HyperGet upgrade → candidate uninstall with user-data preservation → baseline rollback → normal uninstall lifecycle pass?
+
+**Expected:** exact source/PowerShell checks pass; both installers build; baseline HTTP 8 MiB and SHA gate passes; candidate shows HyperGet and a distinct DisplayVersion; history, max-concurrent=4, user-data sentinel, legacy internal identity and synthetic WinCred survive each transition; rollback restores baseline DisplayVersion/shortcuts; cleanup verifies only harness-owned data and the synthetic credential are removed.
+
+**Why source checks are insufficient:** only a compiled NSIS installer on Windows can prove the registry DisplayVersion values, actual in-place replacement, shortcut transitions, IPC, persisted state, and Windows Credential Manager behavior. The next exact-head Windows run is required. **Gate remains OPEN; no final release EXE or upgrade/rollback PASS claimed.**
+

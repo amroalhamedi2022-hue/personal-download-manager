@@ -22,6 +22,7 @@ class HyperGetCrossVersionUpgradeContracts(unittest.TestCase):
         cls.desktop_build = DESKTOP_BUILD.read_text(encoding="utf-8")
         cls.harness = HARNESS.read_text(encoding="utf-8")
         cls.workflow = WORKFLOW.read_text(encoding="utf-8")
+        cls.root_build = (ROOT / "build.gradle.kts").read_text(encoding="utf-8")
 
     def test_internal_storage_and_package_identity_remain_stable(self):
         self.assertIn('return ".personal-download-manager"', self.version_util)
@@ -274,6 +275,21 @@ class HyperGetCrossVersionUpgradeContracts(unittest.TestCase):
             parser.index("if ($insideTargetRow -and $plain -match $anyRowStartPattern)"),
             parser.index("if ($insideTargetRow) {"),
         )
+
+
+    def test_uninstall_display_version_uses_full_semver_but_internal_version_stays_numeric(self):
+        # The Windows installer receives both values: appVersion is numeric for PE/installer
+        # constraints, while appDisplayVersion retains the branch-specific prerelease suffix.
+        self.assertIn("appVersion = getAppVersionStringForPackaging(TargetFormat.Exe)", self.desktop_build)
+        self.assertIn("appDisplayVersion = getAppVersionString()", self.desktop_build)
+        self.assertIn('branch(".+") {', self.root_build)
+        self.assertIn('"$defaultSemVersion-${it.refInfo.shortenName}-snapshot"', self.root_build)
+        self.assertIn('!define APP_DISPLAY_VERSION "{{ app_display_version }}"', self.nsis)
+        self.assertIn('WriteRegStr SHCTX "${REG_UNINSTALL_KEY}" "DisplayVersion" "${APP_DISPLAY_VERSION}"', self.nsis)
+        self.assertNotIn('WriteRegStr SHCTX "${REG_UNINSTALL_KEY}" "DisplayVersion" "${APP_VERSION}"', self.nsis)
+        self.assertIn('WriteRegStr SHCTX "${REG_APP_KEY}" "Version" "${APP_VERSION}"', self.nsis)
+        self.assertIn('VIProductVersion "${APP_VERSION_WITH_BUILD}"', self.nsis)
+        self.assertIn("return simple()", self.version_util)
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

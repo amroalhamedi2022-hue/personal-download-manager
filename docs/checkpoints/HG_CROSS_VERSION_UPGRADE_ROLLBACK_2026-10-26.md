@@ -224,3 +224,16 @@ The lifecycle then failed at the next real assertion: candidate Add/Remove Progr
 **Expected:** both snapshots build, transfer SHA passes, candidate branding switches to HyperGet, rollback restores baseline branding, task/history/settings/sentinel/WinCred survive all transitions, and test-only data/credential cleanup passes.
 
 **Why source tests are insufficient:** source strings cannot prove the Gradle template expansion, compiled installer, actual registry values, shortcut replacement, or credential persistence. A new exact-head Windows lifecycle run is required. **Status OPEN; no upgrade/rollback PASS claimed.**
+
+## 2026-10-27 — distinct Windows DisplayVersion regression
+
+**Previous exact-head run:** [40415228329](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40415228329), candidate `74f5f137ea356e2f39644f75182a8efc4202ef00`. The exact baseline and candidate installers built (SHA-256: baseline `837e43ce3daf84446d1b94ab2f0a727a15ffb480dff0a657d4655f50dd044c06`; candidate `3352e2a3d5688985451d9828729bc01bd74175d7b9855fb4734d466148bd2aab`). The baseline HTTP task reached `Finished` and the loopback fixture recorded actual transfer bytes. The run then failed safely before upgrade because both uninstall `DisplayVersion` values were identical. No upgrade/rollback acceptance was reached.
+
+**Production root cause:** the installer had a full branch-specific SemVer value in `APP_DISPLAY_VERSION`, but the NSIS Add/Remove Programs `DisplayVersion` field used the numeric `APP_VERSION` value. Both branch snapshots therefore appeared as `1.0.0`, making a versioned-upgrade proof impossible.
+
+**Change in this checkpoint:** NSIS now writes `APP_DISPLAY_VERSION` to the uninstall `DisplayVersion` field only. Internal registry `Version` and fixed-format PE version resources remain on numeric `APP_VERSION`/ `APP_VERSION_WITH_BUILD`. Added source contracts that lock the Gradle value wiring and guard the distinction. No downloader code or persistent identity changed.
+
+**Next Windows gate:** rebuild exact baseline and candidate snapshots; record installer SHA-256; assert different registry DisplayVersion values; repeat real 8 MiB HTTP/SHA; run full upgrade → candidate uninstall preserving data → baseline rollback → normal uninstall, including history/settings/sentinel, shortcut/registry restoration, synthetic WinCred preservation and cleanup.
+
+**Status:** source regression added; exact-head CI result pending. **OPEN** until the Windows artifact reports `Result=PASS`. Do not merge or deliver the internal test installers as a release.
+
