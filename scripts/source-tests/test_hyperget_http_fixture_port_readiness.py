@@ -61,7 +61,7 @@ class HttpFixturePortReadinessContract(unittest.TestCase):
 
     def test_source_only_workflow_runs_this_contract_without_building_the_app(self):
         source = (ROOT / ".github/workflows/hyperget-source-only.yml").read_text(encoding="utf-8")
-                trigger_config = source.split("\npermissions:", 1)[0]
+        trigger_config = source.split("\npermissions:", 1)[0]
         self.assertIn(HELPER_PATH, trigger_config)
         self.assertIn("scripts/source-tests/test_hyperget_http_fixture_port_readiness.py", trigger_config)
         self.assertIn(
