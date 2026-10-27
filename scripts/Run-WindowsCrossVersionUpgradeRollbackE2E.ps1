@@ -19,6 +19,7 @@ param(
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'Wait-WindowsLoopbackHttpPort.ps1')
 
 $runnerTemp = [IO.Path]::GetFullPath($env:RUNNER_TEMP).TrimEnd([char[]]@('\','/'))
 if ([string]::IsNullOrWhiteSpace($runnerTemp)) { throw 'RUNNER_TEMP is unavailable.' }
@@ -682,15 +683,7 @@ try {
         '--port-file', ('"' + $portFile + '"'), '--chunk-delay-ms', '5'
     )
     $server = Start-Process -FilePath 'python' -ArgumentList $serverArgs -WorkingDirectory (Split-Path $PSScriptRoot -Parent) -PassThru -RedirectStandardOutput $serverOut -RedirectStandardError $serverErr
-    for ($attempt = 0; $attempt -lt 80 -and -not (Test-Path -LiteralPath $portFile); $attempt++) {
-        if ($server.HasExited) {
-            $serverError = Get-Content -LiteralPath $serverErr -Raw -ErrorAction SilentlyContinue
-            throw ('Local HTTP fixture server exited. ' + $serverError)
-        }
-        Start-Sleep -Milliseconds 250
-    }
-    if (-not (Test-Path -LiteralPath $portFile)) { throw 'Local HTTP fixture server did not open a port.' }
-    $port = [int](Get-Content -LiteralPath $portFile -Raw)
+    $port = Wait-HyperGetLoopbackHttpPort -PortFile $portFile -Server $server -FixtureName 'Cross-version HTTP fixture' -Attempts 80 -ServerErrorPath $serverErr
     $url = "http://127.0.0.1:$port/fixture.bin"
     # Validate and log only the synthetic loopback endpoint shape before passing it to the app.
     # Do not log arbitrary download URLs, query strings, headers, or credentials.

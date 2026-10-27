@@ -24,6 +24,7 @@ param(
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'Wait-WindowsLoopbackHttpPort.ps1')
 $destination = [IO.Path]::GetFullPath($OutputDirectory)
 $guiPath = [IO.Path]::GetFullPath($GuiExecutable)
 $cliPath = [IO.Path]::GetFullPath($CliExecutable)
@@ -90,13 +91,7 @@ try {
         '--task-chunk-delay-ms', "180"
     )
     $server = Start-Process -FilePath 'python' -ArgumentList $serverArgs -PassThru -RedirectStandardOutput (Join-Path $destination 'server-stdout.txt') -RedirectStandardError (Join-Path $destination 'server-stderr.txt')
-    for ($wait = 0; $wait -lt 80 -and -not (Test-Path -LiteralPath $portPath); $wait++) {
-        if ($server.HasExited) { throw "Fixture server exited: $($server.ExitCode)" }
-        Start-Sleep -Milliseconds 250
-    }
-    if (-not (Test-Path -LiteralPath $portPath)) { throw 'Fixture server did not start.' }
-    $port = [int](Get-Content -LiteralPath $portPath -Raw)
-    if ($port -lt 1 -or $port -gt 65535) { throw 'Invalid fixture server port.' }
+    $port = Wait-HyperGetLoopbackHttpPort -PortFile $portPath -Server $server -FixtureName 'Active benchmark HTTP fixture' -Attempts 80 -ServerErrorPath (Join-Path $destination 'server-stderr.txt')
     $url = "http://127.0.0.1:$port/fixture.bin"
     $originalJavaToolOptions = $env:JAVA_TOOL_OPTIONS
     if ($EnableNativeMemoryTracking) {

@@ -16,6 +16,7 @@ param(
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'Wait-WindowsLoopbackHttpPort.ps1')
 
 $guiPath = [IO.Path]::GetFullPath($GuiExecutable)
 $guiProcessName = [IO.Path]::GetFileNameWithoutExtension($guiPath)
@@ -138,13 +139,7 @@ try {
         '--chunk-delay-ms', '80',
         '--task-chunk-delay-ms', '180'
     ) -PassThru -RedirectStandardOutput $serverOut -RedirectStandardError $serverErr
-    for ($attempt = 0; $attempt -lt 80 -and -not (Test-Path -LiteralPath $portPath); $attempt++) {
-        if ($server.HasExited) { throw "Loopback HTTP fixture exited: $($server.ExitCode)" }
-        Start-Sleep -Milliseconds 250
-    }
-    if (-not (Test-Path -LiteralPath $portPath)) { throw 'Loopback HTTP fixture did not publish a port.' }
-    $port = [int](Get-Content -LiteralPath $portPath -Raw)
-    if ($port -lt 1 -or $port -gt 65535) { throw 'Loopback HTTP fixture returned an invalid port.' }
+    $port = Wait-HyperGetLoopbackHttpPort -PortFile $portPath -Server $server -FixtureName 'Liquid Progress HTTP fixture' -Attempts 80 -ServerErrorPath $serverErr
 
     # Reset counters and enable the fixture's shared per-task pacing mode.
     # Without gate_tasks=1, task-chunk-delay-ms is intentionally inactive and

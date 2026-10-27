@@ -16,6 +16,7 @@ on:
       - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/TableDownloadItem.kt"
       - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/DownloadList.kt"
       - "scripts/Run-WindowsLiquidProgressVisualE2E.ps1"
+      - "scripts/Wait-WindowsLoopbackHttpPort.ps1"
       - "scripts/source-tests/test_hyperget_liquid_progress_source.py"
       - "scripts/source-tests/test_hyperget_executable_identity_workflows.py"
       - "scripts/source-tests/test_hyperget_pr_diff_scope.py"
@@ -33,6 +34,7 @@ on:
       - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/TableDownloadItem.kt"
       - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/DownloadList.kt"
       - "scripts/Run-WindowsLiquidProgressVisualE2E.ps1"
+      - "scripts/Wait-WindowsLoopbackHttpPort.ps1"
       - "scripts/source-tests/test_hyperget_liquid_progress_source.py"
       - "scripts/source-tests/test_hyperget_executable_identity_workflows.py"
       - "scripts/source-tests/test_hyperget_pr_diff_scope.py"
@@ -86,7 +88,7 @@ jobs:
           run=false
           while IFS= read -r file; do
             case "$file" in
-              .github/workflows/windows-installed-ui-smoke.yml|desktop/app/resources/installer/nsis-script-template.nsi|desktop/app/build.gradle.kts|desktop/app/icons/icon.ico|desktop/app/icons/hyperget-icon.svg|scripts/Run-WindowsInstallerLifecycleE2E.ps1|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/TableDownloadItem.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/DownloadList.kt|scripts/Run-WindowsLiquidProgressVisualE2E.ps1|scripts/source-tests/test_hyperget_liquid_progress_source.py|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/di/Di.kt|scripts/source-tests/test_hyperget_http_dispatcher_bound_source.py)
+              .github/workflows/windows-installed-ui-smoke.yml|desktop/app/resources/installer/nsis-script-template.nsi|desktop/app/build.gradle.kts|desktop/app/icons/icon.ico|desktop/app/icons/hyperget-icon.svg|scripts/Run-WindowsInstallerLifecycleE2E.ps1|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/TableDownloadItem.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/DownloadList.kt|scripts/Run-WindowsLiquidProgressVisualE2E.ps1|scripts/Wait-WindowsLoopbackHttpPort.ps1|scripts/source-tests/test_hyperget_liquid_progress_source.py|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/di/Di.kt|scripts/source-tests/test_hyperget_http_dispatcher_bound_source.py)
                 run=true ;;
             esac
           done <<< "$changed"
@@ -111,6 +113,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $scripts = @(
+            'scripts/Wait-WindowsLoopbackHttpPort.ps1',
             'scripts/Run-WindowsLiquidProgressVisualE2E.ps1',
             'scripts/Run-WindowsInstallerLifecycleE2E.ps1'
           )

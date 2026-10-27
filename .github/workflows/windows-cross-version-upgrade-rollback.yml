@@ -6,6 +6,7 @@ on:
     paths:
       - ".github/workflows/windows-cross-version-upgrade-rollback.yml"
       - "scripts/Run-WindowsCrossVersionUpgradeRollbackE2E.ps1"
+      - "scripts/Wait-WindowsLoopbackHttpPort.ps1"
       - "scripts/source-tests/test_hyperget_cross_version_upgrade_source.py"
       - "desktop/app/resources/installer/nsis-script-template.nsi"
       - "desktop/app/build.gradle.kts"
@@ -74,7 +75,7 @@ jobs:
           run=false
           while IFS= read -r file; do
             case "$file" in
-              .github/workflows/windows-cross-version-upgrade-rollback.yml|scripts/Run-WindowsCrossVersionUpgradeRollbackE2E.ps1|scripts/source-tests/test_hyperget_cross_version_upgrade_source.py|desktop/app/resources/installer/nsis-script-template.nsi|desktop/app/build.gradle.kts|desktop/app/icons/icon.ico|desktop/app/icons/hyperget-icon.svg|scripts/source-tests/test_hyperget_icon_contract.py|scripts/source-tests/test_hyperget_executable_identity_workflows.py|shared/app/build.gradle.kts|buildSrc/src/main/kotlin/buildlogic/versioning/VersionUtil.kt|scripts/LocalHttpRangeFixture.py)
+              .github/workflows/windows-cross-version-upgrade-rollback.yml|scripts/Run-WindowsCrossVersionUpgradeRollbackE2E.ps1|scripts/Wait-WindowsLoopbackHttpPort.ps1|scripts/source-tests/test_hyperget_cross_version_upgrade_source.py|desktop/app/resources/installer/nsis-script-template.nsi|desktop/app/build.gradle.kts|desktop/app/icons/icon.ico|desktop/app/icons/hyperget-icon.svg|scripts/source-tests/test_hyperget_icon_contract.py|scripts/source-tests/test_hyperget_executable_identity_workflows.py|shared/app/build.gradle.kts|buildSrc/src/main/kotlin/buildlogic/versioning/VersionUtil.kt|scripts/LocalHttpRangeFixture.py)
                 run=true ;;
             esac
           done <<< "$changed"

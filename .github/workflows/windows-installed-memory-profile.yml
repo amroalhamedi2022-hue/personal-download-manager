@@ -16,6 +16,7 @@ on:
       - "scripts/source-tests/test_hyperget_http_dispatcher_bound_source.py"
       - "scripts/Collect-WindowsJvmMemoryProfile.ps1"
       - "scripts/Run-WindowsActiveBenchmarkMatrix.ps1"
+      - "scripts/Wait-WindowsLoopbackHttpPort.ps1"
       - "scripts/Summarize-WindowsActiveBenchmark.ps1"
       - "scripts/Measure-WindowsDownloadManager.ps1"
       - "scripts/LocalHttpRangeFixture.py"
@@ -70,7 +71,7 @@ jobs:
           run=false
           while IFS= read -r file; do
             case "$file" in
-              .github/workflows/windows-installed-memory-profile.yml|downloader/core/src/commonMain/kotlin/ir/amirab/downloader/part/PartDownloader.kt|scripts/Collect-WindowsJvmMemoryProfile.ps1|scripts/Run-WindowsActiveBenchmarkMatrix.ps1|scripts/Summarize-WindowsActiveBenchmark.ps1|scripts/Measure-WindowsDownloadManager.ps1|scripts/LocalHttpRangeFixture.py|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/di/Di.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/TableDownloadItem.kt|shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/util/TimeUtil.kt|scripts/source-tests/test_hyperget_http_dispatcher_bound_source.py|desktop/app/build.gradle.kts|desktop/app/resources/installer/nsis-script-template.nsi|desktop/app/icons/icon.ico|desktop/app/icons/hyperget-icon.svg|buildSrc/src/main/kotlin/buildlogic/versioning/VersionUtil.kt|scripts/source-tests/test_hyperget_executable_identity_workflows.py)
+              .github/workflows/windows-installed-memory-profile.yml|downloader/core/src/commonMain/kotlin/ir/amirab/downloader/part/PartDownloader.kt|scripts/Collect-WindowsJvmMemoryProfile.ps1|scripts/Run-WindowsActiveBenchmarkMatrix.ps1|scripts/Wait-WindowsLoopbackHttpPort.ps1|scripts/Summarize-WindowsActiveBenchmark.ps1|scripts/Measure-WindowsDownloadManager.ps1|scripts/LocalHttpRangeFixture.py|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/di/Di.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/TableDownloadItem.kt|shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/util/TimeUtil.kt|scripts/source-tests/test_hyperget_http_dispatcher_bound_source.py|desktop/app/build.gradle.kts|desktop/app/resources/installer/nsis-script-template.nsi|desktop/app/icons/icon.ico|desktop/app/icons/hyperget-icon.svg|buildSrc/src/main/kotlin/buildlogic/versioning/VersionUtil.kt|scripts/source-tests/test_hyperget_executable_identity_workflows.py)
                 run=true
                 ;;
             esac

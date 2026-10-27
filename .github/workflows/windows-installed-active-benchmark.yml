@@ -19,6 +19,7 @@ on:
       - "scripts/Summarize-WindowsActiveBenchmark.ps1"
       - "scripts/source-tests/test_hyperget_http_dispatcher_bound_source.py"
       - "scripts/Run-WindowsActiveBenchmarkMatrix.ps1"
+      - "scripts/Wait-WindowsLoopbackHttpPort.ps1"
       - "scripts/LocalHttpRangeFixture.py"
       - "scripts/test_local_http_range_fixture.py"
       - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/part/PartDownloader.kt"
@@ -37,6 +38,7 @@ on:
       - "scripts/source-tests/test_hyperget_executable_identity_workflows.py"
       - "scripts/source-tests/test_hyperget_http_dispatcher_bound_source.py"
       - "scripts/Run-WindowsActiveBenchmarkMatrix.ps1"
+      - "scripts/Wait-WindowsLoopbackHttpPort.ps1"
       - "scripts/Summarize-WindowsActiveBenchmark.ps1"
       - "scripts/Measure-WindowsDownloadManager.ps1"
       - "scripts/LocalHttpRangeFixture.py"
@@ -96,12 +98,12 @@ jobs:
           comparison=false
           while IFS= read -r file; do
             case "$file" in
-              .github/workflows/windows-installed-active-benchmark.yml|docs/checkpoints/HG_E060_ACTIVE_PERFORMANCE_RECHECK.md|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/di/Di.kt|shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/util/TimeUtil.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/TableDownloadItem.kt|scripts/Run-WindowsActiveBenchmarkMatrix.ps1|scripts/LocalHttpRangeFixture.py|scripts/test_local_http_range_fixture.py|scripts/source-tests/test_hyperget_http_dispatcher_bound_source.py|downloader/core/src/commonMain/kotlin/ir/amirab/downloader/part/PartDownloader.kt|downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/part/PartResponseDeadlineTest.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/cli/settings/*|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/singleInstance/service/*|scripts/Run-WindowsControlledBenchmarkComparison.ps1|scripts/Compare-WindowsActiveBenchmarks.ps1|scripts/Measure-WindowsDownloadManager.ps1|scripts/Summarize-WindowsActiveBenchmark.ps1|desktop/app/build.gradle.kts|desktop/app/resources/installer/nsis-script-template.nsi|desktop/app/icons/icon.ico|desktop/app/icons/hyperget-icon.svg|buildSrc/src/main/kotlin/buildlogic/versioning/VersionUtil.kt|scripts/source-tests/test_hyperget_executable_identity_workflows.py)
+              .github/workflows/windows-installed-active-benchmark.yml|docs/checkpoints/HG_E060_ACTIVE_PERFORMANCE_RECHECK.md|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/di/Di.kt|shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/util/TimeUtil.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/TableDownloadItem.kt|scripts/Run-WindowsActiveBenchmarkMatrix.ps1|scripts/Wait-WindowsLoopbackHttpPort.ps1|scripts/LocalHttpRangeFixture.py|scripts/test_local_http_range_fixture.py|scripts/source-tests/test_hyperget_http_dispatcher_bound_source.py|downloader/core/src/commonMain/kotlin/ir/amirab/downloader/part/PartDownloader.kt|downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/part/PartResponseDeadlineTest.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/cli/settings/*|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/singleInstance/service/*|scripts/Run-WindowsControlledBenchmarkComparison.ps1|scripts/Wait-WindowsLoopbackHttpPort.ps1|scripts/Compare-WindowsActiveBenchmarks.ps1|scripts/Measure-WindowsDownloadManager.ps1|scripts/Summarize-WindowsActiveBenchmark.ps1|desktop/app/build.gradle.kts|desktop/app/resources/installer/nsis-script-template.nsi|desktop/app/icons/icon.ico|desktop/app/icons/hyperget-icon.svg|buildSrc/src/main/kotlin/buildlogic/versioning/VersionUtil.kt|scripts/source-tests/test_hyperget_executable_identity_workflows.py)
                 run=true
                 ;;
             esac
             case "$file" in
-              .github/workflows/windows-installed-active-benchmark.yml|scripts/Run-WindowsControlledBenchmarkComparison.ps1|scripts/Compare-WindowsActiveBenchmarks.ps1|scripts/Measure-WindowsDownloadManager.ps1|scripts/Summarize-WindowsActiveBenchmark.ps1)
+              .github/workflows/windows-installed-active-benchmark.yml|scripts/Run-WindowsControlledBenchmarkComparison.ps1|scripts/Wait-WindowsLoopbackHttpPort.ps1|scripts/Compare-WindowsActiveBenchmarks.ps1|scripts/Measure-WindowsDownloadManager.ps1|scripts/Summarize-WindowsActiveBenchmark.ps1)
                 comparison=true
                 run=true
                 ;;

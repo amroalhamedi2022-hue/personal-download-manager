@@ -1218,3 +1218,14 @@ A single cohesive repair now:
 Pre-build question: can installed HyperGet stop all live HTTP response bodies, hold bytes steady, and resume to exact SHA-256, while the FTP fixture reliably records server-side closure and then validates real REST resume? Source tests alone cannot prove socket closure or installed CLI/GUI behavior. The Windows E2E rebuild is therefore a purposeful integration test, not a per-line build.
 
 **Gate status:** previous HTTP Pause/Resume = FAIL; previous FTP socket result = INCONCLUSIVE due fixture failure; new exact-head Windows HTTP/FTP runs = pending after this repair; final independent release recheck and final user-facing `HyperGet.exe` artifact remain OPEN.
+
+
+## 2026-10-27 checkpoint — deterministic HTTP fixture readiness (OPEN)
+
+On exact PR head 8e74203ded3ca0177238d0a8fe24a702f885d0fc, installed HTTP run [40571810012](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40571810012) built/installed but failed before transfer with url is not valid; the Pause/Resume assertions were skipped, so no HTTP pause result is claimed. The same-head installed FTP REST-resume/SHA/WinCred [40571810155](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40571810155), Chrome/Firefox capture [40571810035](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40571810035), GUI launch [40571810241](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40571810241), and cross-version upgrade/rollback [40571810080](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40571810080) passed.
+
+The HTTP harnesses waited only for port-file existence, then parsed the content. A visible-but-empty/truncated port file could produce port 0 and an invalid URL. The failing log did not record the actual port, so this is a harness-race hypothesis until the guarded rerun confirms it—not a production HTTP engine defect.
+
+The cohesive patch introduces scripts/Wait-WindowsLoopbackHttpPort.ps1 and wires it into installed HTTP/Pause-Resume, Liquid Progress, cross-version upgrade/rollback, and the 1/4/16 benchmark/memory-profile path. The waiter requires a live server and a complete decimal port in 1..65535; the inline HTTP workflow additionally validates a loopback URI. A Python source-contract test locks shared usage and workflow trigger/scope behavior.
+
+**Pre-build question:** can the exact-head installed HTTP flow obtain a valid endpoint, verify the 16 MiB initial SHA, close all requests on Pause, keep bytes stable, and Resume to exact 32 MiB SHA? Source tests cannot establish file-publication timing, installed IPC or real sockets, so the exact-head Windows build/E2E is required. No performance thresholds are relaxed; current-head performance, independent release recheck, and final HyperGet.exe SHA/artifact remain OPEN.
