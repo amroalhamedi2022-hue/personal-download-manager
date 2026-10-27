@@ -1743,3 +1743,26 @@ The Liquid Progress visual gate passed on exact source SHA `90e8d6eac09d4d84ef33
 - Pre-build question: can both exact snapshots complete 3 alternating rounds each, 63 SHA-verified downloads per version, nine resource rounds per version, and the unchanged 15% throughput/peak-memory thresholds?
 - Why source tests are insufficient: compiled installed Windows GUI/CLI, real sockets, file bytes, OS process measurements and registry state must be exercised.
 - **Status: OPEN / performance NOT TESTED as a paired comparison.** No source production change, merge, release, main write, paid runner/API or Torrent.
+
+
+## 2026-10-27 — E061 controlled comparison rerun: installer left an owned Start Menu shortcut (OPEN)
+
+**Observed exact harness SHA:** `1c931ad618810f4439ce59938f44119237464158`.  
+**Windows run:** [40447652721](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40447652721).  
+**Failure-evidence artifact:** [12709134157](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40447652721/artifacts/12709134157), uploaded archive SHA-256 `d95df76a9763240885f682ef2ad936701645d70124a070017017964d94249c9f`.
+
+### Evidence
+- **PASS:** source contracts, PowerShell parsing and both exact-snapshot Windows installer builds.
+- **Installer SHA-256:** baseline `0956f331fefa524a32d2a3f153f3c3aff34c89b424c4e18f4adcdf928c683ec1`; candidate `ab04cc26442ede75de24416690080d515494649ed64775d3c5731b04fa1f18ab`.
+- **PASS for baseline round 1 only:** 1/1, 4/4 and 16/16 HTTP transfers completed with verified SHA-256; 8 process samples per workload were recorded; peak distinct active tasks met the requested 1/4/16 levels. This is 21 verified files, not the full paired matrix.
+- **FAIL / blocker:** after baseline uninstall, the harness safely recorded and cleared two test-owned registry keys, then stopped because the installer left `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Download Manager\Download Manager.lnk`. The log did not yet prove the link's target, so the previous harness correctly refused to delete it blindly. Candidate rounds and the paired 15% comparison did not run; performance remains **NOT TESTED**.
+- The failure artifact retains the transcript, installer hashes, round-1 measurements and cleanup diagnostics. This is not a product uninstall acceptance PASS.
+
+### Controlled correction before the next Windows build
+Add a separate `shortcut-residue.csv` audit. Record whether each known shortcut's parent existed at preflight. After uninstall, use Windows Shell link metadata and permit removal only when the link was absent at preflight and its **absolute target exactly equals the GUI or CLI executable discovered inside this controlled install**. Record link path, target and working directory before removal. Remove a parent directory only if it did not exist at preflight and is empty; never recursively delete Start Menu/Desktop directories. Unknown target or unreadable link remains fatal. Keep shortcut residue separate from registry residue and performance acceptance.
+
+**Pre-build question:** does ownership-checked shortcut cleanup let the same Windows runner finish all six alternating baseline/candidate rounds without touching pre-existing user shortcuts?  
+**Expected:** 63 SHA-verified HTTP downloads per snapshot, nine CPU/RAM rounds per snapshot, real active 1/4/16 overlap on every round, matching source/harness provenance and unchanged throughput/peak Working Set/Private Bytes regression limits of 15%. Any uninstall residue remains explicitly recorded and does not become an uninstall PASS.  
+**Why source tests are insufficient:** only the packaged Windows installer creates the actual `.lnk`; the runner must inspect its Shell target, perform real HTTP transfers, measure processes and observe post-uninstall filesystem/registry state.
+
+**Status: OPEN.** No production downloader source changed in this harness fix. Do not close E061 until a new exact-head artifact contains all 126 verified transfers, 18 resource-round records and `Result=PASS` from the paired comparison. No merge, release or final EXE delivery.

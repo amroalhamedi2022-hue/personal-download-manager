@@ -98,6 +98,22 @@ class ControlledBenchmarkSourceTests(unittest.TestCase):
         self.assertIn('Refusing to touch pre-existing registry key: $key', source)
         self.assertIn("RegistryKey = $key", source)
 
+    def test_shortcut_residue_is_audited_and_removed_only_for_exact_installed_targets(self):
+        source = read("scripts/Run-WindowsControlledBenchmarkComparison.ps1")
+        self.assertIn("function Clear-OwnedShortcutResidue", source)
+        self.assertIn("WScript.Shell", source)
+        self.assertIn("CreateShortcut($shortcut)", source)
+        self.assertIn("$script:ExpectedGuiPath", source)
+        self.assertIn("$script:ExpectedCliPath", source)
+        self.assertIn("shortcut-residue.csv", source)
+        self.assertIn("Refusing to remove shortcut not proven to target the controlled install", source)
+        self.assertIn("Action = 'Removed test-owned shortcut after recording'", source)
+        self.assertIn("Remove-Item -LiteralPath $shortcut -Force", source)
+        self.assertIn("Clear-OwnedShortcutResidue -Variant $Variant -Round $Round", source)
+        self.assertIn("Shortcut cleanup was limited to preflight-absent known links whose absolute target exactly matched the installed GUI or CLI executable", source)
+        self.assertIn("$children.Count -eq 0", source)
+
+
     def test_checkpoint_is_written_before_build_and_does_not_claim_results(self):
         checkpoint = read("docs/checkpoints/HG_E061_CONTROLLED_PERFORMANCE_COMPARISON.md")
         self.assertIn("Pre-build question", checkpoint)

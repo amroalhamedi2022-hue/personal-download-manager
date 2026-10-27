@@ -57,7 +57,11 @@ if ($BaselineSourceSha -eq $CandidateSourceSha) { throw 'Baseline and candidate 
 if (Test-Path -LiteralPath $installDir) { throw 'Refusing to overwrite a pre-existing controlled install directory.' }
 if (Test-Path -LiteralPath $dataDir) { throw 'Refusing to touch pre-existing user data.' }
 foreach ($key in $uninstallKeys) { if (Test-Path -LiteralPath $key) { throw "Refusing to touch pre-existing registry key: $key" } }
-foreach ($shortcut in $shortcuts) { if (Test-Path -LiteralPath $shortcut) { throw "Refusing to touch pre-existing shortcut: $shortcut" } }
+foreach ($shortcut in $shortcuts) {
+    if (Test-Path -LiteralPath $shortcut) { throw "Refusing to touch pre-existing shortcut: $shortcut" }
+    $parent = Split-Path -Parent $shortcut
+    $script:ShortcutParentExistedAtPreflight[$parent] = Test-Path -LiteralPath $parent -PathType Container
+}
 $baselineInstallerSha = (Get-FileHash -LiteralPath $BaselineInstaller -Algorithm SHA256).Hash.ToLowerInvariant()
 $candidateInstallerSha = (Get-FileHash -LiteralPath $CandidateInstaller -Algorithm SHA256).Hash.ToLowerInvariant()
 @(
@@ -68,6 +72,10 @@ $script:ActiveInstallDir = $null
 $script:ActiveMarkerToken = $null
 $script:ActiveDataDir = $dataDir
 $script:RegistryResiduePath = Join-Path $root 'registry-residue.csv'
+$script:ShortcutResiduePath = Join-Path $root 'shortcut-residue.csv'
+$script:ExpectedGuiPath = $null
+$script:ExpectedCliPath = $null
+$script:ShortcutParentExistedAtPreflight = @{}
 $transcriptStarted = $false
 try {
     Start-Transcript -Path (Join-Path $root 'controlled-comparison-transcript.txt') -Force | Out-Null
@@ -165,9 +173,69 @@ try {
             Write-Warning "$Variant round $Round uninstaller left a test-owned registry key; recorded and removed it to isolate performance rounds: $key"
         }
     }
+    function Clear-OwnedShortcutResidue {
+        param([ValidateSet('baseline','candidate')][string] $Variant, [int] $Round)
+        if ([string]::IsNullOrWhiteSpace([string]$script:ExpectedGuiPath) -or
+            [string]::IsNullOrWhiteSpace([string]$script:ExpectedCliPath)) {
+            throw 'Expected installed executable paths are unavailable; refusing shortcut cleanup.'
+        }
+        $expectedGui = Normalize-RegistryValuePath $script:ExpectedGuiPath
+        $expectedCli = Normalize-RegistryValuePath $script:ExpectedCliPath
+        $shell = $null
+        try {
+            $shell = New-Object -ComObject WScript.Shell
+            foreach ($shortcut in $shortcuts) {
+                if (-not (Test-Path -LiteralPath $shortcut -PathType Leaf)) { continue }
+                $link = $null
+                try {
+                    $link = $shell.CreateShortcut($shortcut)
+                    $targetRaw = ([string]$link.TargetPath).Trim().Trim([char]'"')
+                    $workingRaw = ([string]$link.WorkingDirectory).Trim().Trim([char]'"')
+                    $target = Normalize-RegistryValuePath $targetRaw
+                    $working = Normalize-RegistryValuePath $workingRaw
+                    $owned = [IO.Path]::IsPathRooted($targetRaw) -and
+                        ($target -eq $expectedGui -or $target -eq $expectedCli)
+                    if (-not $owned) {
+                        throw "Refusing to remove shortcut not proven to target the controlled install: $shortcut (TargetPath=$target; WorkingDirectory=$working)"
+                    }
+                    $record = [pscustomobject]@{
+                        Variant = $Variant
+                        Round = $Round
+                        ShortcutPath = $shortcut
+                        TargetPath = $target
+                        WorkingDirectory = $working
+                        Action = 'Removed test-owned shortcut after recording'
+                    }
+                    if (Test-Path -LiteralPath $script:ShortcutResiduePath -PathType Leaf) {
+                        $record | Export-Csv -LiteralPath $script:ShortcutResiduePath -NoTypeInformation -Append -Encoding utf8
+                    } else {
+                        $record | Export-Csv -LiteralPath $script:ShortcutResiduePath -NoTypeInformation -Encoding utf8
+                    }
+                    Remove-Item -LiteralPath $shortcut -Force
+                    if (Test-Path -LiteralPath $shortcut) { throw "Failed to clear recorded test-owned shortcut: $shortcut" }
+                    $parent = Split-Path -Parent $shortcut
+                    $parentWasPresent = $script:ShortcutParentExistedAtPreflight.ContainsKey($parent) -and
+                        [bool]$script:ShortcutParentExistedAtPreflight[$parent]
+                    if (-not $parentWasPresent -and (Test-Path -LiteralPath $parent -PathType Container)) {
+                        $children = @(Get-ChildItem -LiteralPath $parent -Force)
+                        if ($children.Count -eq 0) {
+                            Remove-Item -LiteralPath $parent -Force
+                            if (Test-Path -LiteralPath $parent) { throw "Failed to remove empty test-created shortcut folder: $parent" }
+                        }
+                    }
+                    Write-Warning "$Variant round $Round uninstaller left a test-owned shortcut; recorded and removed it to isolate performance rounds: $shortcut"
+                } finally {
+                    if ($link) { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($link) }
+                }
+            }
+        } finally {
+            if ($shell) { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($shell) }
+        }
+    }
     function Assert-NoProductResidue {
         param([ValidateSet('baseline','candidate')][string] $Variant, [int] $Round)
         Clear-OwnedRegistryResidue -Variant $Variant -Round $Round
+        Clear-OwnedShortcutResidue -Variant $Variant -Round $Round
         foreach ($key in $uninstallKeys) {
             if (Test-Path -LiteralPath $key) { throw "Registry residue cleanup did not complete: $key" }
         }
@@ -197,6 +265,8 @@ try {
         $gui = @(Get-ChildItem -LiteralPath $installDir -File -Recurse -Filter 'DownloadManager.exe')
         $cli = @(Get-ChildItem -LiteralPath $installDir -File -Recurse -Filter 'DownloadManagerCli.exe')
         if ($gui.Count -ne 1 -or $cli.Count -ne 1) { throw "$Variant installed executable set is invalid: GUI=$($gui.Count), CLI=$($cli.Count)." }
+        $script:ExpectedGuiPath = $gui[0].FullName
+        $script:ExpectedCliPath = $cli[0].FullName
         New-Item -ItemType Directory -Path (Split-Path -Parent $markerPath) -Force | Out-Null
         $token = [guid]::NewGuid().ToString('D')
         Set-Content -LiteralPath $markerPath -Value $token -NoNewline -Encoding utf8
@@ -218,6 +288,8 @@ try {
         Assert-NoProductResidue -Variant $Variant -Round $Round
         Remove-OwnedData -ExpectedToken $token
         $script:ActiveInstallDir = $null
+        $script:ExpectedGuiPath = $null
+        $script:ExpectedCliPath = $null
         Write-Host "PASS: $Variant round $Round completed; install, registry, shortcuts and owned profile data cleaned."
     }
     for ($round = 1; $round -le $Rounds; $round++) {
@@ -227,19 +299,27 @@ try {
     try {
         & $compareScript -BaselineDirectory (Join-Path $root 'baseline') -CandidateDirectory (Join-Path $root 'candidate') -BaselineSourceSha $BaselineSourceSha -CandidateSourceSha $CandidateSourceSha -HarnessSha $HarnessSha -OutputPath (Join-Path $root 'comparison-report.md') -FileSizeMiB 32 -MaxRegressionPercent 15
     } finally {
-        if (Test-Path -LiteralPath $script:RegistryResiduePath -PathType Leaf) {
-            $residueCount = @(Import-Csv -LiteralPath $script:RegistryResiduePath).Count
+        if ((Test-Path -LiteralPath $script:RegistryResiduePath -PathType Leaf) -or
+            (Test-Path -LiteralPath $script:ShortcutResiduePath -PathType Leaf)) {
+            $registryCount = if (Test-Path -LiteralPath $script:RegistryResiduePath -PathType Leaf) {
+                @(Import-Csv -LiteralPath $script:RegistryResiduePath).Count
+            } else { 0 }
+            $shortcutCount = if (Test-Path -LiteralPath $script:ShortcutResiduePath -PathType Leaf) {
+                @(Import-Csv -LiteralPath $script:ShortcutResiduePath).Count
+            } else { 0 }
             $diagnostic = @(
                 ''
                 '## Separate installer-uninstall diagnostic'
                 ''
-                "- Registry key residue records: $residueCount."
-                '- The harness removed only known product keys that were absent at preflight and whose values proved ownership by the controlled install (or were empty known product keys).'
+                "- Registry key residue records: $registryCount."
+                "- Shortcut residue records: $shortcutCount."
+                '- Registry cleanup was limited to known keys absent at preflight whose values proved ownership by the controlled install (or empty known product keys).'
+                '- Shortcut cleanup was limited to preflight-absent known links whose absolute target exactly matched the installed GUI or CLI executable; only empty test-created parent folders were removed.'
                 '- This cleanup diagnostic is separate from performance comparison and is not evidence that application uninstall acceptance passed.'
             )
             $reportPath = Join-Path $root 'comparison-report.md'
             Add-Content -LiteralPath $reportPath -Value $diagnostic -Encoding utf8
-            Write-Warning "Installer-uninstall diagnostic: $residueCount owned registry key(s) remained after uninstall; details are in registry-residue.csv. This is not an uninstall acceptance PASS."
+            Write-Warning "Installer-uninstall diagnostic: $registryCount owned registry key(s) and $shortcutCount owned shortcut(s) remained after uninstall; details are in registry-residue.csv and shortcut-residue.csv. This is not an uninstall acceptance PASS."
         }
     }
     Write-Host 'Controlled baseline/candidate comparison finished.'
