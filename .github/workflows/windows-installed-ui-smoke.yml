@@ -180,7 +180,7 @@ jobs:
             for ($attempt = 0; $attempt -lt 20; $attempt++) {
               Start-Sleep -Seconds 1
               $visible = @(Get-Process -ErrorAction SilentlyContinue | Where-Object {
-                $_.ProcessName -match '^(HyperGet|DownloadManager)
+                $_.ProcessName -match '^(HyperGet|DownloadManager)$' -and $_.MainWindowHandle -ne [IntPtr]::Zero
               })
               if ($visible.Count -gt 0) { break }
             }
