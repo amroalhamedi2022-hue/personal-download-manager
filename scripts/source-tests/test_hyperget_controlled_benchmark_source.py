@@ -154,5 +154,26 @@ class ControlledBenchmarkSourceTests(unittest.TestCase):
         self.assertIn("$script:ShortcutParentExistedAtPreflight.ContainsKey($parent)", source)
 
 
+    def test_install_directory_disappearance_during_residue_inventory_is_race_safe(self):
+        source = read("scripts/Run-WindowsControlledBenchmarkComparison.ps1")
+        stop = source.index("Stop-ProcessesUnderInstall -Path $actualInstallDir")
+        recheck = source.index(
+            "if (-not (Test-Path -LiteralPath $actualInstallDir -PathType Container))",
+            stop,
+        )
+        inventory = source.index(
+            "$files = @(Get-ChildItem -LiteralPath $actualInstallDir -File -Recurse -Force -ErrorAction Stop)",
+            stop,
+        )
+        self.assertLess(stop, recheck)
+        self.assertLess(recheck, inventory)
+        inventory_block = source[inventory:inventory + 900]
+        self.assertIn("catch {", inventory_block)
+        self.assertIn("if (-not (Test-Path -LiteralPath $actualInstallDir -PathType Container))", inventory_block)
+        self.assertIn("controlled install directory disappeared during process quiescence; no install-file residue remains.", source)
+        self.assertIn("controlled install directory disappeared during residue inventory; no install-file residue remains.", source)
+        self.assertIn("throw", inventory_block)
+
+
 if __name__ == "__main__":
     unittest.main()
