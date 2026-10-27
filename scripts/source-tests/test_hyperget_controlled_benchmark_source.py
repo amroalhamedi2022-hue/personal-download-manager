@@ -40,6 +40,8 @@ class ControlledBenchmarkSourceTests(unittest.TestCase):
         self.assertIn("BaselineSourceSha", source)
         self.assertIn("CandidateSourceSha", source)
         self.assertIn("HarnessSha", source)
+        self.assertIn("Start-Transcript -Path", source)
+        self.assertNotIn("Start-Transcript -LiteralPath", source)
         self.assertIn("@('candidate','baseline')", source)
         self.assertIn("@('baseline','candidate')", source)
         self.assertIn("Refusing to touch pre-existing user data", source)

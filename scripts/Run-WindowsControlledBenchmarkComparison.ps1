@@ -69,7 +69,7 @@ $script:ActiveMarkerToken = $null
 $script:ActiveDataDir = $dataDir
 $transcriptStarted = $false
 try {
-    Start-Transcript -LiteralPath (Join-Path $root 'controlled-comparison-transcript.txt') -Force | Out-Null
+    Start-Transcript -Path (Join-Path $root 'controlled-comparison-transcript.txt') -Force | Out-Null
     $transcriptStarted = $true
     Write-Host "Baseline source SHA: $BaselineSourceSha"
     Write-Host "Candidate source SHA: $CandidateSourceSha"
