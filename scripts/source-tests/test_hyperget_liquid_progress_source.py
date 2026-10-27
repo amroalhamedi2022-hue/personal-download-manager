@@ -264,21 +264,22 @@ class LiquidProgressSourceContract(unittest.TestCase):
             "// Restore the rounded ends", 1
         )[0]
 
-        shimmer_match = re.search(r"Color\\.White\\.copy\\(alpha = ([0-9.]+)f\\)", cache_builder)
-        gloss_match = re.search(r"Color\\.White\\.copy\\(alpha = ([0-9.]+)f\\)", gloss_block)
-        bubble_alphas = [
-            float(value)
-            for value in re.findall(r"color = Color\\.White\\.copy\\(alpha = ([0-9.]+)f\\)", bubble_block)
-        ]
+        def read_alphas(block):
+            marker = "Color.White.copy(alpha = "
+            return [float(part.split("f)", 1)[0]) for part in block.split(marker)[1:]]
+
+        shimmer_alphas = read_alphas(cache_builder)
+        gloss_alphas = read_alphas(gloss_block)
+        bubble_alphas = read_alphas(bubble_block)
         bubble_radii = [
-            float(value)
-            for value in re.findall(r"radius = ([0-9.]+)\\.dp\\.toPx\\(\\)", bubble_block)
+            float(part.split(".dp.toPx()", 1)[0])
+            for part in bubble_block.split("radius = ")[1:]
         ]
 
-        self.assertIsNotNone(shimmer_match)
-        self.assertIsNotNone(gloss_match)
-        self.assertGreaterEqual(float(shimmer_match.group(1)), 0.40)
-        self.assertGreaterEqual(float(gloss_match.group(1)), 0.15)
+        self.assertEqual(len(shimmer_alphas), 1)
+        self.assertGreaterEqual(shimmer_alphas[0], 0.40)
+        self.assertEqual(len(gloss_alphas), 1)
+        self.assertGreaterEqual(gloss_alphas[0], 0.15)
         self.assertEqual(len(bubble_alphas), 2)
         self.assertGreaterEqual(bubble_alphas[0], 0.40)
         self.assertGreaterEqual(bubble_alphas[1], 0.28)
