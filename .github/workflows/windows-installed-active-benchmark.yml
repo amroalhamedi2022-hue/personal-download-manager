@@ -7,10 +7,8 @@ on:
     paths:
       - ".github/workflows/windows-installed-active-benchmark.yml"
       - "docs/checkpoints/HG_E060_ACTIVE_PERFORMANCE_RECHECK.md"
-      - "docs/checkpoints/HG_E061_CONTROLLED_PERFORMANCE_COMPARISON.md"
       - "scripts/Run-WindowsControlledBenchmarkComparison.ps1"
       - "scripts/Compare-WindowsActiveBenchmarks.ps1"
-      - "scripts/source-tests/test_hyperget_controlled_benchmark_source.py"
       - "scripts/Measure-WindowsDownloadManager.ps1"
       - "scripts/Summarize-WindowsActiveBenchmark.ps1"
       - "scripts/source-tests/test_hyperget_http_dispatcher_bound_source.py"
@@ -72,12 +70,12 @@ jobs:
           comparison=false
           while IFS= read -r file; do
             case "$file" in
-              .github/workflows/windows-installed-active-benchmark.yml|docs/checkpoints/HG_E060_ACTIVE_PERFORMANCE_RECHECK.md|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/di/Di.kt|shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/util/TimeUtil.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/TableDownloadItem.kt|scripts/Run-WindowsActiveBenchmarkMatrix.ps1|scripts/LocalHttpRangeFixture.py|scripts/test_local_http_range_fixture.py|scripts/source-tests/test_hyperget_http_dispatcher_bound_source.py|downloader/core/src/commonMain/kotlin/ir/amirab/downloader/part/PartDownloader.kt|downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/part/PartResponseDeadlineTest.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/cli/settings/*|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/singleInstance/service/*|docs/checkpoints/HG_E061_CONTROLLED_PERFORMANCE_COMPARISON.md|scripts/Run-WindowsControlledBenchmarkComparison.ps1|scripts/Compare-WindowsActiveBenchmarks.ps1|scripts/source-tests/test_hyperget_controlled_benchmark_source.py|scripts/Measure-WindowsDownloadManager.ps1|scripts/Summarize-WindowsActiveBenchmark.ps1)
+              .github/workflows/windows-installed-active-benchmark.yml|docs/checkpoints/HG_E060_ACTIVE_PERFORMANCE_RECHECK.md|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/di/Di.kt|shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/util/TimeUtil.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/TableDownloadItem.kt|scripts/Run-WindowsActiveBenchmarkMatrix.ps1|scripts/LocalHttpRangeFixture.py|scripts/test_local_http_range_fixture.py|scripts/source-tests/test_hyperget_http_dispatcher_bound_source.py|downloader/core/src/commonMain/kotlin/ir/amirab/downloader/part/PartDownloader.kt|downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/part/PartResponseDeadlineTest.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/cli/settings/*|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/singleInstance/service/*|scripts/Run-WindowsControlledBenchmarkComparison.ps1|scripts/Compare-WindowsActiveBenchmarks.ps1|scripts/Measure-WindowsDownloadManager.ps1|scripts/Summarize-WindowsActiveBenchmark.ps1)
                 run=true
                 ;;
             esac
             case "$file" in
-              .github/workflows/windows-installed-active-benchmark.yml|docs/checkpoints/HG_E061_CONTROLLED_PERFORMANCE_COMPARISON.md|scripts/Run-WindowsControlledBenchmarkComparison.ps1|scripts/Compare-WindowsActiveBenchmarks.ps1|scripts/source-tests/test_hyperget_controlled_benchmark_source.py|scripts/Run-WindowsActiveBenchmarkMatrix.ps1|scripts/Measure-WindowsDownloadManager.ps1|scripts/Summarize-WindowsActiveBenchmark.ps1)
+              .github/workflows/windows-installed-active-benchmark.yml|scripts/Run-WindowsControlledBenchmarkComparison.ps1|scripts/Compare-WindowsActiveBenchmarks.ps1|scripts/Run-WindowsActiveBenchmarkMatrix.ps1|scripts/Measure-WindowsDownloadManager.ps1|scripts/Summarize-WindowsActiveBenchmark.ps1)
                 comparison=true
                 run=true
                 ;;
@@ -197,7 +195,7 @@ jobs:
     env:
       SKIP_ANDROID_BUILD: "true"
       HYPERGET_BASELINE_SHA: d6ea54a885277cb5b8fd545eb3f3fb0e185b6aa5
-      HYPERGET_CANDIDATE_SHA: dd27731decbcd8cf1cb67feae42963be42d3bb7a
+      HYPERGET_CANDIDATE_SHA: c99b6f627de5f1ef1cba9e79f4f8e1baba20ffe1
       HYPERGET_HARNESS_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - name: Check out current harness at the exact PR head

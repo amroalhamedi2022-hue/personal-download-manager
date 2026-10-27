@@ -1102,3 +1102,14 @@ Run [40478758287](https://github.com/amroalhamedi2022-hue/personal-download-mana
 ## 2026-10-27 — E061 normalizer invocation restored
 
 Run [40478984763](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40478984763) passed the PowerShell parser but failed the benchmark source contract because the round-normalizer invocation was missing between the one-round summary and uninstall. It has been restored in that exact order. No installer build or performance data was produced; E061 remains OPEN until exact-head source+parser gates pass and the installed matrix emits the official paired report.
+
+
+## 2026-10-27 — E061 result and next bounded body-copy trial (OPEN)
+
+The controlled Windows comparison [run 40485436333](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40485436333) completed the full exact-snapshot matrix: both installers built; 63 SHA-verified 32-MiB downloads per version; nine resource rounds per version; live 1/4/16 overlap. The official result is **FAIL** because the `Semaphore(48)` candidate loses 22.45% median aggregate throughput at 16-way, exceeding the fixed 15% limit. The same workload shows peak Working Set -5.57% and Private Bytes -5.36%; keep these as measured trade-offs, not acceptance.
+
+Artifact [12727621253](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40485436333/artifacts/12727621253), ZIP SHA-256 `339eb61ee276cedae563cc4524c5702a3cc04d5943b727814433dc1c0065a267`. Installer SHA-256 values and per-workload metrics are recorded in `docs/checkpoints/HG_E061_CONTROLLED_PERFORMANCE_COMPARISON.md`.
+
+**Next production trial:** source `c99b6f627de5f1ef1cba9e79f4f8e1baba20ffe1` raises the shared body-copy bound to 60 (reserving four workers under the default 64-worker IO ceiling). The JUnit and source-contract saturation expectations now use 60/61. The next purposeful paired Windows build must answer whether the higher cap retains the modest resource reduction without exceeding 15% throughput loss. Do not change the gate. Expected evidence: 126 SHA-verified transfers, nine resource rounds per version, exact source/harness provenance, active 1/4/16 overlap, official report and artifact digest. Source tests alone are insufficient because they cannot measure real installed Windows sockets, bytes, throughput or process-tree resources.
+
+**Policy clarification (2026-10-24):** a build/installer is authorized when it answers a named functional question and source checks cannot establish the result; it is not reserved only for the final release. Historical no-build wording must not block this milestone. No paid runner/service, main write, auto-merge, release or Torrent.

@@ -1894,3 +1894,14 @@ Restore the invocation immediately after the one-round summarizer and before sto
 **Why source tests are insufficient:** the normalizer's file renames and re-hashes, real HTTP output, Windows resource sampling and NSIS lifecycle require the installed Windows run. The previous run did none of those because it failed before build.
 
 **Status: OPEN.** No performance or uninstall acceptance is claimed from run 40478984763. No merge, release, main write or Torrent.
+
+
+## 2026-10-27 — E061 controlled A/B result: reject 48-copy body cap; test 60 (OPEN)
+
+- Windows run [40485436333](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40485436333) built both exact installers and completed 126 SHA-256-verified 32-MiB transfers, nine resource rounds per version, and real 1/4/16 overlap.
+- Artifact [12727621253](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40485436333/artifacts/12727621253), ZIP SHA-256 `339eb61ee276cedae563cc4524c5702a3cc04d5943b727814433dc1c0065a267`.
+- Baseline installer SHA-256 `1d42856193165247582f31ddac5d4e464e903813444d54e3a05b992983ca075d`; `Semaphore(48)` candidate installer SHA-256 `e6b53a1cd5a664795d2cebc07c0e83df7de3a029d17bf0eaf953f6e638daba0d`.
+- Results: 1-way throughput `-0.44%` (PASS); 4-way `+1.11%` (PASS); 16-way `-22.45%` (FAIL vs the unchanged 15% limit). Peak Working Set and Private Bytes fell 5.57% and 5.36% at 16-way, but that does not compensate for failed throughput acceptance.
+- Corrective trial: production commit `c99b6f627de5f1ef1cba9e79f4f8e1baba20ffe1` raises the global body-copy permit count to 60. JUnit/source contracts were updated to test the 61st waiter and release-on-failure. This is **NOT YET TESTED** by installed Windows A/B.
+- **Pre-build question:** does cap 60 pass the same 126-transfer matrix and all unchanged 15% throughput/peak-memory gates? Source tests cannot prove real Windows transfer scheduling, throughput or process-tree metrics.
+- E061 remains **OPEN**. Do not merge, release or deliver final `HyperGet.exe` until a new exact-head controlled Windows report passes and independent release gates are rechecked. Uninstall residue cleanup is diagnostic, not uninstall PASS.

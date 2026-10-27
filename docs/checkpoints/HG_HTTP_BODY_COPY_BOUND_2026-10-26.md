@@ -66,3 +66,10 @@ The strengthened lifecycle regression is accepted. Keep memory tuning OPEN: the 
 ### Decision
 
 The production body-copy bound has passed installed HTTP integrity/concurrency and the JVM profiling workload on its production SHA, and the initial lifecycle test passed. Keep the \`Semaphore(48)\` experiment pending the strengthened exact-head JUnit result. Memory optimization remains open; no IDM parity claim, final branded \`HyperGet.exe\`, cross-version upgrade/rollback, external HTTPS/FTP, HLS restart, or independent final Windows recheck is claimed. No main write, merge, release, paid service/runner, or Torrent.
+
+
+## Controlled A/B decision — 2026-10-27
+
+The later paired run [40485436333](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40485436333) is stronger than the earlier standalone PASS: it completed 126 SHA-verified downloads and 18 resource rounds, then rejected `Semaphore(48)` because 16-way throughput fell `22.45%` (3.728 → 2.891 MiB/s), beyond the predeclared 15% limit. Peak Working Set and Private Bytes fell 5.57% and 5.36%, respectively, but the throughput gate takes precedence. Artifact [12727621253](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40485436333/artifacts/12727621253), SHA-256 `339eb61ee276cedae563cc4524c5702a3cc04d5943b727814433dc1c0065a267`.
+
+Decision: do not accept the 48-copy cap. The next bounded trial uses `PART_BODY_COPY_PARALLELISM=60` in production commit `c99b6f627de5f1ef1cba9e79f4f8e1baba20ffe1`, with saturation tests adjusted for the 61st waiter. Exact-head Windows A/B and the same 15% gates remain **NOT TESTED** for this trial. If cap 60 still fails throughput, revert the cap rather than relaxing acceptance.

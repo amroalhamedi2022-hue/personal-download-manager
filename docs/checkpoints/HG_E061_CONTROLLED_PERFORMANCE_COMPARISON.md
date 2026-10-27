@@ -268,3 +268,34 @@ The root cause is now grounded in the actual schemas: `Measure-WindowsDownloadMa
 **Why source-only tests are insufficient:** the previous run passed source checks and both installer builds, but only the installed Windows process produced the sampler CSV that exposed this schema mismatch. The corrected Windows run must verify the actual CSV normalization and full matrix.
 
 **Status: OPEN.** The 21 baseline transfers and installer builds are partial evidence only. No official performance result, uninstall acceptance, merge, release, main write, or Torrent is claimed.
+
+
+## 2026-10-27 — E061 controlled comparison rejects the 48-copy cap; 60-copy trial queued (OPEN)
+
+**Harness SHA:** `bd77087ad8e3cd2e94237b9bd8e3c18631bb7c05`.  
+**Windows run:** [40485436333](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40485436333).  
+**Evidence artifact:** [12727621253](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40485436333/artifacts/12727621253), SHA-256 `339eb61ee276cedae563cc4524c5702a3cc04d5943b727814433dc1c0065a267`.
+
+### Exact-head result — functional matrix PASS, performance gate FAIL
+
+Both exact-snapshot installers built and the full paired matrix completed on Windows Server 2022 (4 logical CPUs): 63 SHA-256-verified 32-MiB transfers per version, nine resource rounds per version, and live 1/4/16 overlap. The comparator emitted an official report; the result is **FAIL**, not a harness failure.
+
+- Baseline source: `d6ea54a885277cb5b8fd545eb3f3fb0e185b6aa5`; installer SHA-256 `1d42856193165247582f31ddac5d4e464e903813444d54e3a05b992983ca075d`.
+- Candidate source: `dd27731decbcd8cf1cb67feae42963be42d3bb7a` (`Semaphore(48)`); installer SHA-256 `e6b53a1cd5a664795d2cebc07c0e83df7de3a029d17bf0eaf953f6e638daba0d`.
+- Workload 1: throughput `-0.44%`, peak Working Set `+0.58%`, peak Private Bytes `+0.48%` — PASS.
+- Workload 4: throughput `+1.11%`, peak Working Set `-0.98%`, peak Private Bytes `-0.63%` — PASS.
+- Workload 16: throughput `-22.45%` (baseline `3.728 MiB/s`, candidate `2.891 MiB/s`), peak Working Set `-5.57%`, peak Private Bytes `-5.36%` — **FAIL**, because the throughput loss exceeds the predeclared 15% limit.
+
+The 48-permit cap modestly lowered peak memory but restricted the 16-way body-copy workload enough to fail the performance contract. Do not weaken the threshold or accept this candidate. The run separately recorded and removed test-owned uninstall residue (12 registry and 12 shortcut records across rounds); that cleanup is diagnostic only and is **not** uninstall acceptance.
+
+### Corrective trial — before the next controlled build
+
+Production commit `c99b6f627de5f1ef1cba9e79f4f8e1baba20ffe1` raises `PART_BODY_COPY_PARALLELISM` from 48 to 60, retaining a bounded global gate while reserving four workers under the default 64-worker `Dispatchers.IO` ceiling. The JUnit saturation test now proves the 61st contender waits and permit release after failure; source-contract checks match the 60-permit contract. This is a hypothesis, not accepted performance evidence.
+
+**Pre-build question:** does the 60-copy bound preserve 1/4/16 concurrency and all 126 SHA-verified transfers while keeping the 16-way median throughput regression at or below 15% and peak Working Set/Private Bytes increases at or below 15%?
+
+**Expected:** parser and all source contracts PASS before packaging; baseline and candidate installers are built from exact recorded SHAs; 63 verified downloads and nine resource rounds per version; the official paired report passes all three workload gates or rejects the trial with raw evidence preserved.
+
+**Why source tests are insufficient:** only the installed Windows comparison measures real body-copy scheduling, overlapping sockets, transfer throughput, process-tree CPU/RAM and byte integrity. The previous run proved that source/compile checks can pass while the installed 16-way throughput gate fails.
+
+**Status: OPEN.** No final performance acceptance, uninstall acceptance, merge, release or final `HyperGet.exe` delivery is claimed.
