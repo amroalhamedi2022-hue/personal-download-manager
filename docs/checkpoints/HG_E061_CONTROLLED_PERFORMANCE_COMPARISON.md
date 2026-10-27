@@ -108,3 +108,19 @@ Initialize the shortcut-parent ownership map before checking the known shortcut 
 **Why source tests are insufficient:** only a real Windows install creates the shortcuts and parent folders; the benchmark must exercise Shell link inspection, installer/uninstaller behavior, HTTP transfers and OS process measurements.
 
 **Status: OPEN.** This fix changes only the benchmark harness, regression test and evidence logs—not production downloader behavior. Do not mark E061 PASS until a new exact-head Windows artifact contains the full transfer/resource evidence and `Result=PASS`. No merge, release or final EXE delivery.
+
+
+## 2026-10-27 — E061 reached baseline round 1; install executable residue exposed (OPEN)
+
+**Exact harness SHA:** `6ab806912382f614491a0ba03825315a990bdca4`.  
+**Windows run:** [40459096700](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40459096700).  
+**Failure-evidence artifact:** [12714490990](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40459096700/artifacts/12714490990), GitHub archive digest `sha256:c0d056987c2c265a2dcc5f5a3abd79eb2e93018dd0ab58931c72051c8fd6c28e`.
+
+- **PASS:** exact baseline/candidate checkouts, source contracts, PowerShell parser, and both exact-snapshot installer builds.
+- **Installer SHA-256:** baseline `ed30e704cfed26c1c65ad2ace19df7645156b70cc3567c587ad81e88525f3721`; candidate `c170af172f1578fec70e94d0783c7aac03b083fc71cb4a8aa2ab018930ebaaba`.
+- **PASS for baseline round 1 only:** 21/21 HTTP outputs matched expected size/SHA; real active overlap reached 1/1, 4/4, and 16/16; three resource CSVs were emitted. Peak Working Set was 281.336 / 336.035 / 421.797 MiB and peak Private Bytes 293.504 / 346.551 / 427.172 MiB for the 1/4/16 workloads. These are one baseline round only, not a paired performance conclusion.
+- **FAIL / blocker:** after silent uninstall, ownership-checked registry and shortcut cleanup succeeded, but `DownloadManager.exe` remained in the unique controlled install directory. The runner stopped at `Assert-NoProductResidue`; baseline rounds 2–3, all candidate rounds, and the paired 15% comparison did not run. The log does not yet distinguish a still-running/locked process from uninstaller deletion behavior. Uninstall acceptance remains **OPEN/FAIL evidence**, not PASS.
+- **Pre-build question for the next exact-head run:** can the harness SHA-256-inventory any leftover install files, prove the directory was absent at preflight and the active marker still matches, verify no process remains under that path, then clear only that exact runner-temp install directory so the performance matrix can continue without masking the uninstall defect?
+- **Expected:** 63 SHA-verified 32-MiB transfers per app snapshot; nine resource rounds per snapshot; strict live 1/4/16 overlap; matching app/harness provenance; unchanged 15% throughput and peak-memory regression gates. Any leftover file must be recorded in `install-file-residue.csv`; cleaning this isolated test directory must **not** be reported as uninstall acceptance PASS.
+- **Why source tests are insufficient:** only the installed Windows binaries can reveal real process lifetime, locked files, NSIS uninstall behavior, transferred bytes, active socket overlap, and OS Working Set/Private Bytes.
+- **Status: OPEN.** No paired performance conclusion, merge, release, or final EXE delivery. The harness correction is isolated to test cleanup/evidence; production downloader snapshots remain unchanged.
