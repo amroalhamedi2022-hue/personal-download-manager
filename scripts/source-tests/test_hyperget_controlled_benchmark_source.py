@@ -19,7 +19,7 @@ class ControlledBenchmarkSourceTests(unittest.TestCase):
         self.assertIn("ExpectedSHA256 = $expectedSha", source)
         self.assertIn("HarnessSha = $HarnessSha", source)
         self.assertIn("-HarnessSha $HarnessSha", source)
-        self.assertIn("active-16", source)
+        self.assertIn("foreach ($jobs in @(1, 4, 16))", source)
         self.assertIn("PeakDistinctTasks", source)
 
     def test_sampler_and_summary_keep_app_and_harness_shas_separate(self):
@@ -30,7 +30,7 @@ class ControlledBenchmarkSourceTests(unittest.TestCase):
         self.assertIn("sample.HarnessSha -ne $HarnessSha", summary)
         self.assertIn("record.HarnessSha -ne $HarnessSha", summary)
         self.assertIn("record.SHA256 -ne $record.ExpectedSHA256", summary)
-        self.assertIn("Harness SHA", summary)
+        self.assertIn("Harness source SHA", summary)
 
     def test_controlled_runner_alternates_variants_and_owns_cleanup(self):
         source = read("scripts/Run-WindowsControlledBenchmarkComparison.ps1")
