@@ -1113,3 +1113,27 @@ Artifact [12727621253](https://github.com/amroalhamedi2022-hue/personal-download
 **Next production trial:** source `c99b6f627de5f1ef1cba9e79f4f8e1baba20ffe1` raises the shared body-copy bound to 60 (reserving four workers under the default 64-worker IO ceiling). The JUnit and source-contract saturation expectations now use 60/61. The next purposeful paired Windows build must answer whether the higher cap retains the modest resource reduction without exceeding 15% throughput loss. Do not change the gate. Expected evidence: 126 SHA-verified transfers, nine resource rounds per version, exact source/harness provenance, active 1/4/16 overlap, official report and artifact digest. Source tests alone are insufficient because they cannot measure real installed Windows sockets, bytes, throughput or process-tree resources.
 
 **Policy clarification (2026-10-24):** a build/installer is authorized when it answers a named functional question and source checks cannot establish the result; it is not reserved only for the final release. Historical no-build wording must not block this milestone. No paid runner/service, main write, auto-merge, release or Torrent.
+
+
+## 2026-10-27 — E061 cap-60 comparison accepted; uninstall becomes next gate
+
+The exact Windows comparison [run 40494020066](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40494020066) completed with **Result=PASS** for candidate source `c99b6f627de5f1ef1cba9e79f4f8e1baba20ffe1` versus baseline `d6ea54a885277cb5b8fd545eb3f3fb0e185b6aa5`. The shared harness was `1d9536fe69a9f886fffc4b389a5f7dfcd7fb73c5`.
+
+Artifact [12733115213](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40494020066/artifacts/12733115213), independently verified ZIP SHA-256 `546166059a6ca224ece94399c84b63981f81e958d0296c148f6f43ad9e8919a0`. Both installers built; 126 × 32-MiB output files independently matched their round fixture SHA-256; three rounds per version and active 1/4/16 workloads completed. All throughput and peak-memory deltas passed the unchanged ≤15% gates (1-way: 0.00% throughput, -0.93% peak WS, -0.96% peak Private; 4-way: -0.03%, -0.38%, -0.59%; 16-way: +3.00%, -1.39%, -3.54%).
+
+This closes the E061 performance sub-milestone for the cap-60 source. It does not claim superiority over IDM or prove performance on consumer hardware.
+
+### Next functional milestone: clean uninstall without deleting user data
+
+The artifact still contains 12 registry and 12 shortcut residue records across six controlled install/uninstall cycles, with zero install-file residue. The comparison harness safely removed only verified test-owned entries, but that diagnostic cleanup is **not** uninstall acceptance.
+
+A bounded NSIS patch now performs shortcut and registry cleanup before `clearFiles` deletes the running uninstaller/install directory:
+- `62467e92d0790d4cd05db76a7a53663b5bc7989b` — installer command order.
+- `8332de37ae00805c6415c061627588e093a56c79` — source regression.
+- `baaa2e452a30a850f40e880f1716f6adc0939259` — source-only workflow trigger/step.
+
+**Pre-build question:** does the actual built NSIS uninstaller remove only this product's registry keys and shortcuts without the benchmark harness intervening, and does the normal uninstall preserve the user's download database/settings/credentials unless explicit data removal is selected?
+
+**Expected Windows evidence:** parser/source contract PASS before build; exact baseline/candidate installer hashes; clean install, launch, completed fixture download, normal uninstall, registry/shortcut absence checked before any harness cleanup; user data sentinel and download record remain; explicit remove-data option tested separately only if the workflow can safely isolate it. Then run the existing cross-version upgrade/rollback E2E to ensure cleanup ordering did not break upgrade compatibility.
+
+**Why source tests are insufficient:** registry view, Start Menu/Desktop shell links, self-removal of the running uninstaller and persisted user data are OS-level behaviors. The NSIS template change has queued the Windows cross-version upgrade/rollback and related PR checks. Keep uninstall acceptance **OPEN** until logs/artifacts prove the assertions; no merge/release/final EXE yet.
