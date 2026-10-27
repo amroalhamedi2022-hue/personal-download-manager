@@ -1,5 +1,4 @@
 from pathlib import Path
-import re
 import unittest
 
 
@@ -11,13 +10,13 @@ class HyperGetUninstallerCleanupOrderTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.source = NSIS_PATH.read_text(encoding="utf-8")
-        match = re.search(
-            r'(?ms)^Section\s+"Uninstall"\s*$([\s\S]*?)^SectionEnd\s*$',
-            cls.source,
-        )
-        if match is None:
+        start = cls.source.find('Section "Uninstall"')
+        if start < 0:
             raise AssertionError('The NSIS template must contain the dedicated "Uninstall" section.')
-        cls.uninstall_section = match.group(1)
+        end = cls.source.find("SectionEnd", start)
+        if end < 0:
+            raise AssertionError('The NSIS uninstall section must terminate with SectionEnd.')
+        cls.uninstall_section = cls.source[start:end]
 
     def test_registry_and_shortcut_cleanup_precedes_self_removal(self):
         commands = [
@@ -42,19 +41,12 @@ class HyperGetUninstallerCleanupOrderTests(unittest.TestCase):
         )
 
     def test_installer_and_uninstaller_pin_current_user_context(self):
-        init_match = re.search(
-            r'(?ms)^Function \.onInit\s*$([\s\S]*?)^FunctionEnd\s*
-        self.assertIn('Section /o "un.Remove User Data"', self.source)
-        self.assertNotIn('!insertmacro RemoveUserData', self.uninstall_section)
-
-
-if __name__ == "__main__":
-    unittest.main()
-,
-            self.source,
-        )
-        self.assertIsNotNone(init_match, 'Installer .onInit must be present.')
-        self.assertIn('SetShellVarContext current', init_match.group(1))
+        init_start = self.source.find("Function .onInit")
+        self.assertGreaterEqual(init_start, 0, 'Installer .onInit must be present.')
+        init_end = self.source.find("FunctionEnd", init_start)
+        self.assertGreater(init_end, init_start, 'Installer .onInit must terminate.')
+        init_section = self.source[init_start:init_end]
+        self.assertIn('SetShellVarContext current', init_section)
         self.assertIn('SetShellVarContext current', self.uninstall_section)
         self.assertLess(
             self.uninstall_section.index('SetShellVarContext current'),
