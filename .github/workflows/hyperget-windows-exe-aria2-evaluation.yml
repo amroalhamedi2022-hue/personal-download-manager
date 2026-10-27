@@ -3,8 +3,9 @@ name: HyperGet Windows EXE + aria2 evaluation
 on:
   pull_request:
     branches: [codex/repair-rf00-rf01]
-    paths:
-      - ".github/workflows/hyperget-windows-exe-aria2-evaluation.yml"
+    # Evaluate each PR-head change, not only edits to this workflow. Otherwise
+    # source changes never refresh the evidence used for the aria2 decision.
+    paths: ["**"]
   workflow_dispatch:
 
 permissions:
@@ -121,7 +122,7 @@ jobs:
           Write-Host "HYPERGET_SOURCE_SHA=$actual"
           "HYPERGET_SOURCE_SHA=$actual" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
       - name: Set up JetBrains Runtime 25
-        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v7.0.1
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: jetbrains
           java-package: jdk
