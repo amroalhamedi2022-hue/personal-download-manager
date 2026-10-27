@@ -1701,3 +1701,19 @@ The Liquid Progress visual gate passed on exact source SHA `90e8d6eac09d4d84ef33
 - HTTP 1/4/16, JVM profile, installed GUI, browser capture and cross-version workflow jobs were **skipped by scope on the test-only current-head commit**; do not count those run summaries as new execution evidence. Prior HTTP/GUI and cross-version results remain tied to their own recorded SHAs. Cross-version upgrade/rollback + WinCred passed on candidate `f023a0e07d4680cd998fda434c4ca6a21275551f` in run [40423929210](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40423929210); no installer/identity files changed between that candidate and the current head, but a final independent current-head Windows recheck is still required before release.
 
 **Gate decision:** idle-metric source provenance repair = **PASS**; installed Liquid Progress/live transfer = **PASS** on `923f715`; current-head regression guard = **PASS**. **Overall release acceptance remains OPEN**: controlled comparable performance runs (including active 1/4/16 CPU/RAM), external/restart scenarios, final independent Windows recheck, and a verified single final `HyperGet.exe` artifact are still outstanding. No merge, release, Torrent or main-branch write.
+
+## E060 — exact-head installed Windows active-performance recheck (OPEN before run; 2026-10-27)
+
+**Candidate SHA:** `0b4bd363997353cd530a9824625d5baf87f74dca`.
+
+**Pre-build question:** can the exact candidate snapshot, installed once on Windows, complete the existing 63-download HTTP acceptance matrix across concurrency 1/4/16 (three rounds each), with every output matching its expected SHA-256, real concurrent socket overlap meeting the existing gates, and all nine CPU/RAM rounds tagged with the exact source SHA?
+
+**Expected:** the existing workflow's unchanged acceptance gates pass; the generated report and every measurement row identify the actual checked-out candidate SHA; all 63 file hashes match; 1/4/16 active counts meet the workflow's current requirements; CPU, Working Set, Private Bytes, threads and handles are recorded for all nine runs. Any failed threshold remains a failure; no gate will be weakened to obtain green CI.
+
+**Why source tests are insufficient:** this requires compiling and installing the real Windows GUI/CLI, live loopback range requests and socket-overlap counters, complete file bytes/SHA-256, and OS process measurements. Source contracts cannot establish any of those runtime facts. This is a targeted performance-acceptance build, not release packaging.
+
+**Comparison rule:** this run establishes a valid exact-head measurement set only. It does not prove improvement by itself. A performance claim requires a baseline and candidate measured under the same runner/environment, fixture size/delay, rounds, sampling interval and workload, with both reports and source SHAs retained.
+
+**Current status before run:** the prior workflow run [40432508000](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40432508000) skipped the Windows benchmark because the latest commit was documentation-only. Its skipped job is not a PASS. This checkpoint requests a deliberate exact-head run without changing downloader production code.
+
+**Gate:** OPEN until the Windows report and artifact are inspected. No release/merge/Torrent.
