@@ -31,3 +31,11 @@ The harness now checks a full 64-hex SHA-256 against the expected fixture, keeps
 **Pre-build question:** does the bounded HTTP body-copy candidate preserve byte-exact HTTP output and real 1/4/16 overlap without exceeding the predeclared 15% throughput or peak-memory regression limits against the exact baseline on the same Windows runner?
 
 **Why source tests are insufficient:** only compiled exact-snapshot installers and a real Windows loopback workload can prove byte hashes, socket overlap, and OS process measurements. The paired Windows run is still **OPEN**; no performance conclusion is claimed until its logs and artifacts are inspected.
+
+## 2026-10-27 — First rerun stopped before packaging; source-test syntax repaired
+
+The repaired PowerShell comparison script passed the Windows parser gate. The run then stopped before JDK setup or either installer build because the newly added Python regression assertion had been inserted with an unterminated string literal. No baseline/candidate binary was built and no performance result was produced.
+
+The source-contract test file has now been reconstructed as a complete valid Python module and includes explicit checks for the full SHA-256 guard, duplicate output-name guard, and current-round selection. The next exact-head run must pass these contracts and the PowerShell parser before any packaging begins.
+
+**Status remains OPEN.** The paired 63+63 download matrix, SHA verification, real overlap, resource samples and 15% gates remain untested until the next run finishes.

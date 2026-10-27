@@ -1,5 +1,4 @@
 import pathlib
-import re
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -68,33 +67,7 @@ class ControlledBenchmarkSourceTests(unittest.TestCase):
         self.assertIn("-ge (0.0 - $MaxRegressionPercent)", source)
         self.assertIn("-le $MaxRegressionPercent", source)
         self.assertIn("Baseline and candidate did not use the same deterministic fixture bytes", source)
-        self.assertIn("if ($record.SHA256 -notmatch '^[0-9a-fA-F]{64}
-    def test_workflow_builds_exact_pair_on_same_windows_runner_and_uploads_failure_evidence(self):
-        workflow = read(".github/workflows/windows-installed-active-benchmark.yml")
-        self.assertIn("controlled-baseline-candidate-comparison", workflow)
-        self.assertIn("d6ea54a885277cb5b8fd545eb3f3fb0e185b6aa5", workflow)
-        self.assertIn("dd27731decbcd8cf1cb67feae42963be42d3bb7a", workflow)
-        self.assertIn("runs-on: windows-2022", workflow)
-        self.assertIn("if: always()", workflow)
-        self.assertIn("HG_E061_CONTROLLED_PERFORMANCE_COMPARISON.md", workflow)
-        self.assertIn("comparison=$comparison", workflow)
-        self.assertIn("outputs.comparison != 'true'", workflow)
-        self.assertIn("[System.Management.Automation.Language.Parser]::ParseFile", workflow)
-        self.assertIn('Write-Host "$($psFile):$($_.Extent.StartLineNumber):$($_.Message)"', workflow)
-
-    def test_checkpoint_is_written_before_build_and_does_not_claim_results(self):
-        checkpoint = read("docs/checkpoints/HG_E061_CONTROLLED_PERFORMANCE_COMPARISON.md")
-        self.assertIn("Pre-build question", checkpoint)
-        self.assertIn("Why source tests are insufficient", checkpoint)
-        self.assertIn("d6ea54a885277cb5b8fd545eb3f3fb0e185b6aa5", checkpoint)
-        self.assertIn("dd27731decbcd8cf1cb67feae42963be42d3bb7a", checkpoint)
-        self.assertIn("15%", checkpoint)
-        self.assertRegex(checkpoint, r"Status: OPEN")
-
-
-if __name__ == "__main__":
-    unittest.main()
- -or $record.SHA256 -ne $record.ExpectedSHA256)", source)
+        self.assertIn("if ($record.SHA256 -notmatch '^[0-9a-fA-F]{64}$' -or $record.SHA256 -ne $record.ExpectedSHA256)", source)
         self.assertIn('if (-not $seenNames.Add("$round/$($record.OutputName)"))', source)
         self.assertIn('Where-Object { $_.Scenario -eq $scenario -and [int]$_.Round -eq $round }', source)
         self.assertNotIn('Where-Object { $_.Scenario -eq $scenario -and [int]$_.Round -eq 1 }', source)

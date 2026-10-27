@@ -1725,3 +1725,9 @@ The Liquid Progress visual gate passed on exact source SHA `90e8d6eac09d4d84ef33
 - **Regression coverage:** `test_hyperget_controlled_benchmark_source.py` now asserts the exact SHA guard, duplicate-name guard, and per-round selectors.
 - **Status:** source repair only; Windows PowerShell parsing, exact baseline/candidate installer builds, 63+63 real SHA-verified downloads, live 1/4/16 overlap, paired CPU/RAM, and 15% regression thresholds remain **NOT TESTED** until the new exact-head run finishes and its artifact/logs are inspected.
 - **Safety:** no downloader production code changed in this checkpoint; no paid runner/API, no main write, no merge/release, no Torrent.
+
+## 2026-10-27 — E061 rerun blocker and correction
+
+- **Observed run:** [40442154203](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40442154203) failed before packaging. The PowerShell parser passed after the harness repair, but Python reported an unterminated string literal in the newly added source-contract test. No installer was built and no performance evidence exists from this run.
+- **Correction:** reconstructed `test_hyperget_controlled_benchmark_source.py` as a complete module and retained regression assertions for SHA-256 equality, duplicate output names, and use of the actual current round.
+- **Next gate:** rerun source contracts + PowerShell parsing, then exact baseline/candidate builds and paired Windows measurements. Do not treat the failed pre-build run as a performance FAIL or PASS; the performance question remains **NOT TESTED**.
