@@ -372,184 +372,111 @@ try {
                 $record.Verified -ne 'True' -or [int]$record.Round -ne 1) {
                 throw "Controlled round $Round has invalid source, harness, verification, or local-round metadata."
             }
-            $match = [regex]::Match([string]$record.OutputName, '^(active-(?:1|4|16))-round-1-task-(\d+)\.bin        param([ValidateSet('baseline','candidate')][string] $Variant, [int] $Round)
-        if (Test-Path -LiteralPath $installDir) { throw 'Install directory exists before a fresh variant install.' }
-        if (Test-Path -LiteralPath $dataDir) { throw 'User-data directory exists before a fresh variant run.' }
-        foreach ($key in $uninstallKeys) { if (Test-Path -LiteralPath $key) { throw "Registry residue before install: $key" } }
-        foreach ($shortcut in $shortcuts) { if (Test-Path -LiteralPath $shortcut) { throw "Shortcut residue before install: $shortcut" } }
-        $sourceSha = if ($Variant -eq 'baseline') { $BaselineSourceSha } else { $CandidateSourceSha }
-        $installer = if ($Variant -eq 'baseline') { $BaselineInstaller } else { $CandidateInstaller }
-        $install = Start-Process -FilePath $installer -ArgumentList @('/S', "/D=$installDir") -PassThru
-        if (-not $install.WaitForExit(180000)) {
-            Stop-Process -Id $install.Id -Force -ErrorAction SilentlyContinue
-            throw "$Variant installer timed out."
-        }
-        if ($install.ExitCode -ne 0) { throw "$Variant installer exit code $($install.ExitCode)." }
-        $script:ActiveInstallDir = $installDir
-        $gui = @(Get-ChildItem -LiteralPath $installDir -File -Recurse -Filter 'DownloadManager.exe')
-        $cli = @(Get-ChildItem -LiteralPath $installDir -File -Recurse -Filter 'DownloadManagerCli.exe')
-        if ($gui.Count -ne 1 -or $cli.Count -ne 1) { throw "$Variant installed executable set is invalid: GUI=$($gui.Count), CLI=$($cli.Count)." }
-        $script:ExpectedGuiPath = $gui[0].FullName
-        $script:ExpectedCliPath = $cli[0].FullName
-        New-Item -ItemType Directory -Path (Split-Path -Parent $markerPath) -Force | Out-Null
-        $token = [guid]::NewGuid().ToString('D')
-        Set-Content -LiteralPath $markerPath -Value $token -NoNewline -Encoding utf8
-        $script:ActiveMarkerToken = $token
-        $roundDir = Join-Path (Join-Path $root $Variant) "round-$Round"
-        if (Test-Path -LiteralPath $roundDir) { throw "Round evidence directory already exists: $roundDir" }
-        Write-Host "Starting $Variant round $Round with app SHA $sourceSha."
-        & $matrixScript -GuiExecutable $gui[0].FullName -CliExecutable $cli[0].FullName -SourceSha $sourceSha -HarnessSha $HarnessSha -OutputDirectory $roundDir -Rounds 1 -SampleSeconds 8 -ServerChunkDelayMs 500 -FileSizeMiB 32 -CompletionTimeoutSeconds 300
-        & $summarizeScript -Directory $roundDir -SourceSha $sourceSha -HarnessSha $HarnessSha -Rounds 1
-        Set-ControlledRoundMetadata -Directory $roundDir -Round $Round -SourceSha $sourceSha -HarnessSha $HarnessSha
-        Stop-ProcessesUnderInstall -Path $installDir
-        $uninstaller = Join-Path $installDir 'uninstall.exe'
-        if (-not (Test-Path -LiteralPath $uninstaller -PathType Leaf)) { throw "$Variant uninstaller missing after benchmark." }
-        $remove = Start-Process -FilePath $uninstaller -ArgumentList @('/S') -PassThru
-        if (-not $remove.WaitForExit(180000)) {
-            Stop-Process -Id $remove.Id -Force -ErrorAction SilentlyContinue
-            throw "$Variant silent uninstall timed out."
-        }
-        if ($remove.ExitCode -ne 0) { throw "$Variant silent uninstall exit code $($remove.ExitCode)." }
-        Assert-NoProductResidue -Variant $Variant -Round $Round
-        Remove-OwnedData -ExpectedToken $token
-        $script:ActiveInstallDir = $null
-        $script:ExpectedGuiPath = $null
-        $script:ExpectedCliPath = $null
-        Write-Host "PASS: $Variant round $Round completed; install, registry, shortcuts and owned profile data cleaned."
-    }
-    for ($round = 1; $round -le $Rounds; $round++) {
-        $order = if ($round -eq 2) { @('candidate','baseline') } else { @('baseline','candidate') }
-        foreach ($variant in $order) { Invoke-VariantRound -Variant $variant -Round $round }
-    }
-    try {
-        & $compareScript -BaselineDirectory (Join-Path $root 'baseline') -CandidateDirectory (Join-Path $root 'candidate') -BaselineSourceSha $BaselineSourceSha -CandidateSourceSha $CandidateSourceSha -HarnessSha $HarnessSha -OutputPath (Join-Path $root 'comparison-report.md') -FileSizeMiB 32 -MaxRegressionPercent 15
-    } finally {
-        if ((Test-Path -LiteralPath $script:RegistryResiduePath -PathType Leaf) -or
-            (Test-Path -LiteralPath $script:ShortcutResiduePath -PathType Leaf) -or
-            (Test-Path -LiteralPath $script:InstallFileResiduePath -PathType Leaf)) {
-            $registryCount = if (Test-Path -LiteralPath $script:RegistryResiduePath -PathType Leaf) {
-                @(Import-Csv -LiteralPath $script:RegistryResiduePath).Count
-            } else { 0 }
-            $shortcutCount = if (Test-Path -LiteralPath $script:ShortcutResiduePath -PathType Leaf) {
-                @(Import-Csv -LiteralPath $script:ShortcutResiduePath).Count
-            } else { 0 }
-            $installFileCount = if (Test-Path -LiteralPath $script:InstallFileResiduePath -PathType Leaf) {
-                @(Import-Csv -LiteralPath $script:InstallFileResiduePath).Count
-            } else { 0 }
-            $diagnostic = @(
-                ''
-                '## Separate installer-uninstall diagnostic'
-                ''
-                "- Registry key residue records: $registryCount."
-                "- Shortcut residue records: $shortcutCount."
-                "- Install-file residue records: $installFileCount."
-                '- Registry cleanup was limited to known keys absent at preflight whose values proved ownership by the controlled install (or empty known product keys).'
-                '- Shortcut cleanup was limited to preflight-absent known links whose absolute target exactly matched the installed GUI or CLI executable; only empty test-created parent folders were removed.'
-                '- Install-directory cleanup was limited to the exact runner-temp path, absent at preflight, with the active marker verified and no running process under the install path; all residual files were SHA-256 inventoried before cleanup.'
-                '- Any registry, shortcut, or install-file residue is a separate uninstall defect diagnostic; cleanup is not evidence that application uninstall acceptance passed.'
-            )
-            $reportPath = Join-Path $root 'comparison-report.md'
-            Add-Content -LiteralPath $reportPath -Value $diagnostic -Encoding utf8
-            Write-Warning "Installer-uninstall diagnostic: $registryCount registry, $shortcutCount shortcut, and $installFileCount install-file residue record(s). Details are in the corresponding CSVs; this is not an uninstall acceptance PASS."
-        }
-    }
-    Write-Host 'Controlled baseline/candidate comparison finished.'
-} finally {
-    if ($script:ActiveInstallDir) {
-        try {
-            Stop-ProcessesUnderInstall -Path $script:ActiveInstallDir
-            $uninstaller = Join-Path $script:ActiveInstallDir 'uninstall.exe'
-            if (Test-Path -LiteralPath $uninstaller -PathType Leaf) {
-                $cleanup = Start-Process -FilePath $uninstaller -ArgumentList @('/S') -PassThru
-                if ($cleanup.WaitForExit(180000)) { Write-Host "Cleanup uninstaller exit code: $($cleanup.ExitCode)." }
+            $match = [regex]::Match([string]$record.OutputName, '^(active-(?:1|4|16))-round-1-task-(\d+)\.bin$')
+            if (-not $match.Success) {
+                throw "Unexpected transfer output name in controlled round: $($record.OutputName)"
             }
-        } catch { Write-Warning "Best-effort owned install cleanup failed: $($_.Exception.Message)" }
-        if (Test-Path -LiteralPath $script:ActiveInstallDir) {
-            $normalizedInstall = [IO.Path]::GetFullPath($script:ActiveInstallDir).TrimEnd([char[]]@('\','/'))
-            $expectedControlledInstall = [IO.Path]::GetFullPath((Join-Path $runnerTemp 'hyperget-controlled-benchmark-install')).TrimEnd([char[]]@('\','/'))
-            if (-not [string]::Equals($normalizedInstall, $expectedControlledInstall, [StringComparison]::OrdinalIgnoreCase)) {
-                throw 'Refusing best-effort recursive cleanup outside the exact controlled install path.'
-            }
-            $remainingProcesses = @(Get-ProcessesUnderInstall -Path $normalizedInstall)
-            if ($remainingProcesses.Count -eq 0) {
-                Remove-Item -LiteralPath $normalizedInstall -Recurse -Force -ErrorAction SilentlyContinue
-            } else {
-                $details = ($remainingProcesses | ForEach-Object { "$($_.Name)#$($_.ProcessId)" }) -join ', '
-                Write-Warning "Preserving test install directory because process still active: $details"
-            }
-        }
-    }
-    if ($script:ActiveMarkerToken -and (Test-Path -LiteralPath $markerPath -PathType Leaf)) {
-        try { Remove-OwnedData -ExpectedToken $script:ActiveMarkerToken }
-        catch { Write-Warning "Owned profile cleanup refused: $($_.Exception.Message)" }
-    }
-    if ($transcriptStarted) { Stop-Transcript | Out-Null }
-}
-)
-            if (-not $match.Success) { throw "Unexpected local-round output name: $($record.OutputName)" }
+            $oldName = [string]$record.OutputName
             $newName = "$($match.Groups[1].Value)-round-$Round-task-$($match.Groups[2].Value).bin"
-            $oldPath = Join-Path $downloads ([string]$record.OutputName)
+            $oldPath = Join-Path $downloads $oldName
             $newPath = Join-Path $downloads $newName
             if (-not (Test-Path -LiteralPath $oldPath -PathType Leaf)) {
-                throw "Verified transfer output is missing before round normalization: $($record.OutputName)"
+                throw "Verified transfer output is missing before round normalization: $oldName"
             }
-            if ($newPath -ne $oldPath) {
-                if (Test-Path -LiteralPath $newPath) { throw "Round-normalized output already exists: $newName" }
+            if ($newName -ne $oldName -and (Test-Path -LiteralPath $newPath)) {
+                throw "Refusing to overwrite an existing normalized transfer output: $newName"
+            }
+            $expectedSha = ([string]$record.ExpectedSHA256).ToLowerInvariant()
+            $recordSha = ([string]$record.SHA256).ToLowerInvariant()
+            $oldFile = Get-Item -LiteralPath $oldPath
+            if ($expectedSha -notmatch '^[0-9a-f]{64}$' -or
+                $recordSha -ne $expectedSha -or
+                [long]$record.Bytes -ne [long]$record.ExpectedBytes -or
+                [long]$oldFile.Length -ne [long]$record.ExpectedBytes) {
+                throw "Transfer evidence is not byte/size verified before renaming: $oldName"
+            }
+            $beforeRenameSha = (Get-FileHash -LiteralPath $oldPath -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($beforeRenameSha -ne $expectedSha) {
+                throw "Transfer SHA-256 changed before round normalization: $oldName"
+            }
+            if ($newName -ne $oldName) {
                 Move-Item -LiteralPath $oldPath -Destination $newPath
             }
-            $file = Get-Item -LiteralPath $newPath -ErrorAction Stop
-            $actualSha = (Get-FileHash -LiteralPath $newPath -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant()
-            if ([long]$file.Length -ne [long]$record.ExpectedBytes -or $actualSha -ne $record.ExpectedSHA256) {
-                throw "Transfer changed while normalizing round metadata: $newName"
+            $afterRenameSha = (Get-FileHash -LiteralPath $newPath -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($afterRenameSha -ne $expectedSha) {
+                throw "Transfer SHA-256 changed after round normalization: $newName"
             }
             $record.Round = [string]$Round
             $record.OutputName = $newName
         }
         $manifest | Export-Csv -LiteralPath $manifestPath -NoTypeInformation -Encoding utf8
 
-        $measurementDir = Join-Path $Directory 'measurements'
-        foreach ($jobs in @(1,4,16)) {
+        $measurementDirectory = Join-Path $Directory 'measurements'
+        foreach ($jobs in @(1, 4, 16)) {
             $scenario = "active-$jobs"
-            $oldPath = Join-Path $measurementDir "$scenario-round-1.csv"
-            $newPath = Join-Path $measurementDir "$scenario-round-$Round.csv"
-            if (-not (Test-Path -LiteralPath $oldPath -PathType Leaf)) {
-                throw "Missing local-round resource CSV for $scenario."
+            $oldMeasurementPath = Join-Path $measurementDirectory "$scenario-round-1.csv"
+            $newMeasurementPath = Join-Path $measurementDirectory "$scenario-round-$Round.csv"
+            if (-not (Test-Path -LiteralPath $oldMeasurementPath -PathType Leaf)) {
+                throw "Resource measurement CSV is missing before round normalization: $oldMeasurementPath"
             }
-            if ($newPath -ne $oldPath) {
-                if (Test-Path -LiteralPath $newPath) { throw "Round-normalized resource CSV already exists for $scenario." }
-                Move-Item -LiteralPath $oldPath -Destination $newPath
+            $samples = @(Import-Csv -LiteralPath $oldMeasurementPath)
+            if ($samples.Count -lt 5) {
+                throw "Too few resource samples before round normalization: $oldMeasurementPath"
             }
-            $samples = @(Import-Csv -LiteralPath $newPath)
-            if ($samples.Count -lt 5) { throw "Too few resource samples for $scenario round $Round." }
             foreach ($sample in $samples) {
-                if ($sample.SourceSha -ne $SourceSha -or $sample.HarnessSha -ne $HarnessSha -or
-                    $sample.Scenario -ne $scenario -or $sample.RunLabel -ne 'round-1') {
-                    throw "Resource provenance/local-round metadata mismatch for $scenario."
+                if ($sample.SourceSha -ne $SourceSha -or
+                    $sample.HarnessSha -ne $HarnessSha -or
+                    $sample.Scenario -ne $scenario -or
+                    [int]$sample.Round -ne 1 -or
+                    $sample.RunLabel -ne 'round-1') {
+                    throw "Resource evidence has invalid local round or source provenance: $oldMeasurementPath"
                 }
+                $sample.Round = $Round
                 $sample.RunLabel = "round-$Round"
             }
-            $samples | Export-Csv -LiteralPath $newPath -NoTypeInformation -Encoding utf8
+            if ($newMeasurementPath -ne $oldMeasurementPath) {
+                if (Test-Path -LiteralPath $newMeasurementPath) {
+                    throw "Refusing to overwrite an existing normalized measurement CSV: $newMeasurementPath"
+                }
+                Move-Item -LiteralPath $oldMeasurementPath -Destination $newMeasurementPath
+            }
+            $samples | Export-Csv -LiteralPath $newMeasurementPath -NoTypeInformation -Encoding utf8
         }
 
         $summaryPath = Join-Path $Directory 'round-summary.csv'
         $summary = @(Import-Csv -LiteralPath $summaryPath)
-        if ($summary.Count -ne 3) { throw "Controlled round $Round expected three resource summaries." }
+        if ($summary.Count -ne 3) {
+            throw "Controlled round $Round expected 3 resource summary rows; found $($summary.Count)."
+        }
         foreach ($row in $summary) {
-            if ($row.SourceSha -ne $SourceSha -or $row.HarnessSha -ne $HarnessSha -or [int]$row.Round -ne 1) {
-                throw "Controlled round $Round has invalid resource-summary provenance/local-round metadata."
+            if ($row.SourceSha -ne $SourceSha -or
+                $row.HarnessSha -ne $HarnessSha -or
+                [int]$row.Round -ne 1 -or
+                $row.Scenario -notin @('active-1', 'active-4', 'active-16')) {
+                throw "Resource summary has invalid local round or source provenance in controlled round $Round."
             }
             $row.Round = $Round
         }
         $summary | Export-Csv -LiteralPath $summaryPath -NoTypeInformation -Encoding utf8
 
-        $reportPath = Join-Path $Directory 'benchmark-report.md'
-        if (Test-Path -LiteralPath $reportPath -PathType Leaf) {
-            $reportText = Get-Content -LiteralPath $reportPath -Raw
-            foreach ($jobs in @(1,4,16)) {
-                $reportText = $reportText.Replace("| active-$jobs | 1 |", "| active-$jobs | $Round |")
-            }
-            Set-Content -LiteralPath $reportPath -Value $reportText -Encoding utf8
+        $benchmarkReportPath = Join-Path $Directory 'benchmark-report.md'
+        if (-not (Test-Path -LiteralPath $benchmarkReportPath -PathType Leaf)) {
+            throw "Per-round benchmark report is missing: $benchmarkReportPath"
         }
+        $benchmarkReport = Get-Content -LiteralPath $benchmarkReportPath -Raw
+        $benchmarkReport = $benchmarkReport.Replace(
+            '- Workloads: 1/4/16 **distinct simultaneously transferring tasks**, 1 rounds each',
+            "- Workloads: 1/4/16 **distinct simultaneously transferring tasks**, one controlled round (paired round $Round)"
+        )
+        foreach ($jobs in @(1, 4, 16)) {
+            $scenario = "active-$jobs"
+            $benchmarkReport = [regex]::Replace(
+                $benchmarkReport,
+                "(?m)^\| $scenario \| 1 \|",
+                "| $scenario | $Round |"
+            )
+        }
+        Set-Content -LiteralPath $benchmarkReportPath -Value $benchmarkReport -Encoding utf8
     }
 
     function Invoke-VariantRound {

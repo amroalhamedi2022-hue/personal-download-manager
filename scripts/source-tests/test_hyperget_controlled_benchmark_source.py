@@ -201,5 +201,16 @@ class ControlledBenchmarkSourceTests(unittest.TestCase):
         shortcut = source[source.index("function Clear-OwnedShortcutResidue"):source.index("function Clear-OwnedInstallDirectoryResidue")]
         self.assertIn("Shortcut target is empty; refusing to remove shortcut", shortcut)
 
+
+    def test_round_metadata_regex_is_complete_and_not_spliced_with_function_body(self):
+        source = read("scripts/Run-WindowsControlledBenchmarkComparison.ps1")
+        self.assertIn(r"$match = [regex]::Match([string]$record.OutputName, '^(active-(?:1|4|16))-round-1-task-(\d+)\.bin
+)", source)
+        self.assertNotIn(".bin        param([ValidateSet('baseline','candidate')", source)
+        self.assertEqual(source.count("function Set-ControlledRoundMetadata {"), 1)
+        self.assertEqual(source.count("function Invoke-VariantRound {"), 1)
+        self.assertIn("one controlled round (paired round $Round)", source)
+
+
 if __name__ == "__main__":
     unittest.main()
