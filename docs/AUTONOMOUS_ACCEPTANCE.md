@@ -1905,3 +1905,19 @@ Restore the invocation immediately after the one-round summarizer and before sto
 - Corrective trial: production commit `c99b6f627de5f1ef1cba9e79f4f8e1baba20ffe1` raises the global body-copy permit count to 60. JUnit/source contracts were updated to test the 61st waiter and release-on-failure. This is **NOT YET TESTED** by installed Windows A/B.
 - **Pre-build question:** does cap 60 pass the same 126-transfer matrix and all unchanged 15% throughput/peak-memory gates? Source tests cannot prove real Windows transfer scheduling, throughput or process-tree metrics.
 - E061 remains **OPEN**. Do not merge, release or deliver final `HyperGet.exe` until a new exact-head controlled Windows report passes and independent release gates are rechecked. Uninstall residue cleanup is diagnostic, not uninstall PASS.
+
+
+## 2026-10-27 — E061 cap-60 Windows comparison PASS; uninstall gate OPEN
+
+- Windows run [40494020066](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40494020066) built both exact-snapshot installers and completed the 1/4/16 active HTTP comparison.
+- Artifact [12733115213](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40494020066/artifacts/12733115213), ZIP SHA-256 `546166059a6ca224ece94399c84b63981f81e958d0296c148f6f43ad9e8919a0`; digest was independently recomputed after download.
+- Baseline installer SHA-256: `31e27e95174ecf845eea1a58c05a8873824da0c33808044527b096270f505728`.
+- Candidate cap-60 installer SHA-256: `16fba3c8e8d3c1cb7e6df4910ee3c1fb53c10ba624b661cd7dcf79e6f461b485`.
+- Source snapshots: baseline `d6ea54a885277cb5b8fd545eb3f3fb0e185b6aa5`; candidate `c99b6f627de5f1ef1cba9e79f4f8e1baba20ffe1`; harness `1d9536fe69a9f886fffc4b389a5f7dfcd7fb73c5`.
+- Artifact inspection independently recomputed SHA-256 for every output against its round's included fixture: **126/126 PASS**, 33,554,432 bytes each. Nine resource summaries per variant were present and actual 1/4/16 overlap was recorded.
+- Official paired regression result: workload 1 throughput 0.00%, peak WS -0.93%, peak Private -0.96% (**PASS**); workload 4 throughput -0.03%, peak WS -0.38%, peak Private -0.59% (**PASS**); workload 16 throughput +3.00%, peak WS -1.39%, peak Private -3.54% (**PASS**). All predeclared ≤15% gates passed. This is a HyperGet version-to-version comparison, not a claim versus IDM.
+- Separate uninstall diagnostic: 12 test-owned registry residue records, 12 test-owned shortcut residue records, zero install-file residue records. Harness cleanup is not uninstall acceptance.
+- Corrective installer change: commit [`62467e9`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/62467e92d0790d4cd05db76a7a53663b5bc7989b) moves shortcut and registry cleanup before `clearFiles`, leaving self-removal last. Regression source test [`8332de3`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/8332de37ae00805c6415c061627588e093a56c79) guards ordering; source workflow wiring [`baaa2e4`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/baaa2e452a30a850f40e880f1716f6adc0939259).
+- **Next acceptance question:** does the built NSIS uninstaller remove those owned registry/shortcut entries without harness cleanup, while leaving user data intact by default? Source tests cannot prove real installer behavior; Windows cross-version upgrade/rollback and other relevant PR workflows have been queued by the installer-template change.
+
+**Status:** E061 performance comparison **PASS**. Uninstall acceptance and independent release recheck remain **OPEN**. Do not deliver final `HyperGet.exe`, merge, release, or disable the scheduled developer yet.
