@@ -236,8 +236,10 @@ Section "Uninstall"
     SectionInstType RO
 
     !insertmacro closeApp
-    !insertmacro clearFiles
 
+    ; Remove discoverability and registration before deleting the running
+    ; uninstaller and its containing directory. Keep file deletion last so
+    ; registry/shortcut cleanup cannot be skipped by self-removal behavior.
     !insertmacro RemoveStartMenu
     !insertmacro RemoveDesktopShortCut
     !insertmacro RemoveKnownBrandShortcuts
@@ -247,4 +249,6 @@ Section "Uninstall"
 
     ; remove auto start on boot registry
     DeleteRegValue SHCTX "${REG_RUN_KEY}" "${APP_NAME}"
+
+    !insertmacro clearFiles
 SectionEnd
