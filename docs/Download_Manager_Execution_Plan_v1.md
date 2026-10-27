@@ -1079,3 +1079,11 @@ The harness now has a separate install-file residue inventory with SHA-256, exac
 - Exact-head CI for this correction is pending; do not infer PASS from prior harness runs.
 - Exit criteria remain 63 SHA-verified 32-MiB transfers per app snapshot, nine resource rounds per snapshot, strict 1/4/16 overlap, exact source/harness provenance, and no more than 15% regression in median aggregate throughput or peak Working Set/Private Bytes for any workload.
 
+
+
+### E061 — 2026-10-27 controlled comparison: complete matrix, invalid nested round metadata (OPEN)
+
+Windows run [40468354887](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40468354887) built both exact snapshots and produced all 126 SHA-verified 32-MiB transfers, 18 resource summaries and live 1/4/16 overlap. The comparator rejected the artifact because each per-install inner matrix was run with `-Rounds 1`, leaving `Round=1` inside outer round-2 and round-3 folders. Preliminary artifact-only throughput and peak-memory deltas are within 15%, but E061 remains OPEN until the corrected exact-head Windows run emits the official report.
+
+The same artifact showed blank shortcut-target fields. The cleanup path normalizer was swallowing exceptions into empty strings, so ownership checks were not sufficiently fail-closed. The next patch uses explicit Windows separator characters, rejects blank targets, stamps/renames each nested round's evidence to the enclosing round, and makes the comparator reject mismatched round metadata. See [HG_E061_CONTROLLED_PERFORMANCE_COMPARISON.md](checkpoints/HG_E061_CONTROLLED_PERFORMANCE_COMPARISON.md) for exact installer/artifact hashes and acceptance criteria.
+

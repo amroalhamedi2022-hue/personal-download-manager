@@ -70,6 +70,8 @@ class ControlledBenchmarkSourceTests(unittest.TestCase):
         self.assertIn("if ($record.SHA256 -notmatch '^[0-9a-fA-F]{64}$' -or $record.SHA256 -ne $record.ExpectedSHA256)", source)
         self.assertIn('if (-not $seenNames.Add("$round/$($record.OutputName)"))', source)
         self.assertIn('Where-Object { $_.Scenario -eq $scenario -and [int]$_.Round -eq $round }', source)
+        self.assertIn("if ([int]$record.Round -ne $round)", source)
+        self.assertIn("if ([int]$row.Round -ne $round)", source)
         self.assertNotIn('Where-Object { $_.Scenario -eq $scenario -and [int]$_.Round -eq 1 }', source)
 
     def test_workflow_builds_exact_pair_on_same_windows_runner_and_uploads_failure_evidence(self):
@@ -174,6 +176,30 @@ class ControlledBenchmarkSourceTests(unittest.TestCase):
         self.assertIn("controlled install directory disappeared during residue inventory; no install-file residue remains.", source)
         self.assertIn("throw", inventory_block)
 
+
+    def test_controlled_round_metadata_is_normalized_before_uninstall(self):
+        runner = read("scripts/Run-WindowsControlledBenchmarkComparison.ps1")
+        block = runner[runner.index("function Set-ControlledRoundMetadata"):runner.index("function Invoke-VariantRound")]
+        self.assertIn("if ([int]$record.Round -ne 1)", block)
+        self.assertIn("$record.Round = [string]$Round", block)
+        self.assertIn("$record.OutputName = $newName", block)
+        self.assertIn("$sample.RunLabel = \"round-$Round\"", block)
+        self.assertIn("$row.Round = $Round", block)
+        self.assertIn("Get-FileHash -LiteralPath $newPath -Algorithm SHA256", block)
+        summary = runner.index("& $summarizeScript -Directory $roundDir")
+        stamp = runner.index("Set-ControlledRoundMetadata -Directory $roundDir")
+        uninstall = runner.index("$uninstaller = Join-Path $installDir")
+        self.assertLess(summary, stamp)
+        self.assertLess(stamp, uninstall)
+
+    def test_path_ownership_normalization_fails_closed(self):
+        source = read("scripts/Run-WindowsControlledBenchmarkComparison.ps1")
+        block = source[source.index("function Normalize-RegistryValuePath"):source.index("function Clear-OwnedRegistryResidue")]
+        self.assertIn("$separatorChars = [char[]]@([char]92, [char]47)", block)
+        self.assertIn("throw 'Cannot normalize a non-empty path for ownership verification; refusing cleanup.'", block)
+        self.assertNotIn("catch { return '' }", block)
+        shortcut = source[source.index("function Clear-OwnedShortcutResidue"):source.index("function Clear-OwnedInstallDirectoryResidue")]
+        self.assertIn("Shortcut target is empty; refusing to remove shortcut", shortcut)
 
 if __name__ == "__main__":
     unittest.main()

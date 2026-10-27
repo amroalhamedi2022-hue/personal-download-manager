@@ -149,3 +149,30 @@ Can the harness safely handle the controlled install directory disappearing afte
 **Why source tests are insufficient:** only the packaged Windows installer/uninstaller can reproduce the timing of NSIS self-removal, process exit, file locks, real transfer bytes and OS resource samples. The new source regression checks ordering and the disappearance-only exception, but Windows execution is still required to prove the race is resolved.
 
 **Status: OPEN.** No production downloader source changed in this correction. Do not claim performance acceptance or uninstall acceptance from the baseline round. No merge, release, main write or Torrent.
+
+
+## 2026-10-27 — E061 full matrix completed; validator rejected nested round labels (OPEN)
+
+**Exact harness SHA:** `62d4987ce89fdb0b220b2307b0adf1d789e5f451`.  
+**Windows run:** [40468354887](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40468354887).  
+**Evidence artifact:** [12718594292](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40468354887/artifacts/12718594292), archive SHA-256 `21b3e94d1ccfbea74d9d9a83cfdd092351c4f54f5bf7243b3945f2e3308bd0d4` (downloaded and independently re-hashed; digest matched).
+
+### Exact-head results
+
+- **PASS:** source contracts and PowerShell parsing; both exact app snapshots built.
+- **Installer SHA-256:** baseline `cfd688d9cfc2b000a4349a67fa10df3bd24e77aa1d56929812686135d57a7cb7`; candidate `16fefdb465d06d4ab064dea34de4d4807a2f03caf28ad5f0a2e494732d9705b8`.
+- **PASS — transfer matrix produced:** 63 distinct 32-MiB HTTP downloads per snapshot (126 total), all expected sizes/SHA-256 verified; each variant has 9 resource summaries and 9 measurement CSVs; real active-task overlap reached 1/4/16 in every round.
+- **FAIL — comparator metadata contract:** after all six rounds finished, validation stopped with `baseline active-1 has 0 files, expected 1`. The controlled runner invoked the inner matrix with `-Rounds 1` for each outer install round, so the manifest and summary in outer round-2/round-3 directories still labelled their local round as `1`. The comparator correctly selected the enclosing round and rejected the mismatch. This is a harness evidence-schema defect, not a product transfer failure.
+- **Preliminary artifact-only calculation (not yet official gate acceptance):** throughput deltas candidate vs baseline were 0.00% / +0.20% / +0.68% for 1/4/16; median peak Working Set deltas were -1.44% / +2.03% / -1.27%; median peak Private Bytes deltas were -1.03% / +1.99% / -1.44%. All are within the predeclared 15% limits, but the automated comparison must pass its exact provenance/round checks before E061 can close.
+- **Separate uninstall diagnostic remains OPEN:** 12 registry-residue and 12 shortcut-residue records were produced, with no remaining install-file records. The shortcut CSV had blank target fields. Code review found `Normalize-RegistryValuePath` swallowed normalization exceptions into empty strings, permitting an unsafe empty-vs-empty ownership comparison. The next correction must fail closed on non-empty path normalization errors and reject blank shortcut targets; cleanup must never be reported as uninstall acceptance.
+
+### Next controlled correction
+
+Normalize each nested one-round output to its enclosing paired-comparison round after the inner summarizer has validated it: stamp `Round` in the transfer manifest and resource summary, rename round-labelled output/measurement files, update resource `RunLabel`, and re-hash files after rename. The comparator will explicitly reject mismatched round metadata. Fix path normalization with explicit separator characters and throw on invalid non-empty paths; refuse to remove a shortcut with an empty target.
+
+**Pre-build question:** can the exact Windows pair complete again with truthful round 1/2/3 provenance and fail-closed cleanup ownership, producing an official comparison report without weakening any acceptance gate?  
+**Expected:** both exact installers build; 63 SHA-verified 32-MiB transfers per version; nine resource rounds per version; strict active 1/4/16 overlap; source/harness SHAs and round labels match; all paired throughput/peak-memory deltas remain within 15%, or the gate reports a genuine regression. Unknown/empty ownership targets must fail safely and remain recorded rather than being deleted.
+
+**Why source tests are insufficient:** the result depends on installed Windows binaries, NSIS cleanup, Windows Shell shortcut metadata, actual HTTP bytes, process-tree resource sampling and exact artifact provenance. Source assertions cannot replace the installed run.
+
+**Status: OPEN.** No production downloader code changed in this correction. This artifact is evidence for the harness fix only, not a release artifact or uninstall PASS. No merge, release, main write or Torrent.

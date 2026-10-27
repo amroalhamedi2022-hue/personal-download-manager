@@ -49,6 +49,9 @@ function Read-VariantEvidence {
         $manifest = @(Import-Csv -LiteralPath $manifestPath)
         if ($manifest.Count -ne 21) { throw "$Variant round $round expected 21 verified downloads; found $($manifest.Count)." }
         foreach ($record in $manifest) {
+            if ([int]$record.Round -ne $round) {
+                throw "$Variant round $round manifest has incorrect round metadata."
+            }
             if ($record.SourceSha -ne $SourceSha -or $record.HarnessSha -ne $HarnessSha -or $record.Verified -ne 'True') {
                 throw "$Variant manifest mixes source/harness SHAs or contains unverified transfer."
             }
@@ -69,6 +72,9 @@ function Read-VariantEvidence {
         $summary = @(Import-Csv -LiteralPath $summaryPath)
         if ($summary.Count -ne 3) { throw "$Variant round $round expected 3 resource summaries." }
         foreach ($row in $summary) {
+            if ([int]$row.Round -ne $round) {
+                throw "$Variant round $round resource summary has incorrect round metadata."
+            }
             if ($row.SourceSha -ne $SourceSha -or $row.HarnessSha -ne $HarnessSha) {
                 throw "$Variant resource summary has mismatched source provenance."
             }
