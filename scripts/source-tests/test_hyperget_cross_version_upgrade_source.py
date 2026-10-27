@@ -192,6 +192,30 @@ class HyperGetCrossVersionUpgradeContracts(unittest.TestCase):
                 self.assertNotIn('$script:WinCredReference', line)
                 self.assertNotIn('$target', line.lower())
 
+    def test_unrelated_start_menu_content_survives_upgrade_uninstall_and_rollback(self):
+        for expected in (
+            "$brandedStartMenuFolder = Join-Path $startMenuRoot 'HyperGet'",
+            "$startMenuSentinel = Join-Path $brandedStartMenuFolder 'unrelated-user-content.sentinel'",
+            "if (Test-Path -LiteralPath $brandedStartMenuFolder)",
+            "function Assert-StartMenuSentinel([string] $Label)",
+            "Assert-StartMenuSentinel -Label 'upgrade to HyperGet'",
+            "Assert-StartMenuSentinel -Label 'candidate uninstall before rollback'",
+            "Assert-StartMenuSentinel -Label 'rollback to baseline'",
+            "Assert-StartMenuSentinel -Label 'normal uninstall'",
+            "'StartMenuUserContentSentinelPreserved=PASS'",
+            "$script:StartMenuFolderCreated = $false",
+            "Removed only the test-owned Start Menu sentinel after exact content and SHA-256 verification.",
+        ):
+            self.assertIn(expected, self.harness)
+        self.assertNotIn("Remove-Item -LiteralPath $brandedStartMenuFolder -Recurse", self.harness)
+
+        macro_start = self.nsis.index("!macro RemoveStartMenu")
+        macro_end = self.nsis.index("!macroend", macro_start)
+        macro = self.nsis[macro_start:macro_end]
+        self.assertIn('Delete "$SMPROGRAMS\\${APP_DISPLAY_NAME}\\${APP_DISPLAY_NAME}.lnk"', macro)
+        self.assertIn('RMDir "$SMPROGRAMS\\${APP_DISPLAY_NAME}"', macro)
+        self.assertNotIn("RMDir /r", macro)
+
     def test_workflow_builds_both_exact_snapshots_without_publishing_exes(self):
         for expected in (
             "runs-on: windows-2022",

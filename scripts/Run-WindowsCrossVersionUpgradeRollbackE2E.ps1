@@ -38,6 +38,8 @@ $appKey = 'HKCU:\Software\DownloadManager'
 $startMenuRoot = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'
 $legacyStartMenuShortcut = Join-Path $startMenuRoot 'Download Manager\Download Manager.lnk'
 $brandedStartMenuShortcut = Join-Path $startMenuRoot 'HyperGet\HyperGet.lnk'
+$brandedStartMenuFolder = Join-Path $startMenuRoot 'HyperGet'
+$startMenuSentinel = Join-Path $brandedStartMenuFolder 'unrelated-user-content.sentinel'
 $legacyDesktopShortcut = Join-Path $env:USERPROFILE 'Desktop\Download Manager.lnk'
 $brandedDesktopShortcut = Join-Path $env:USERPROFILE 'Desktop\HyperGet.lnk'
 $downloadName = 'cross-version-upgrade-rollback.bin'
@@ -56,6 +58,10 @@ $script:TestTouchedInstaller = $false
 $stage = 'preflight'
 $script:CurrentCliPath = Join-Path $installDir 'DownloadManagerCli.exe'
 $script:SentinelSha = $null
+$script:StartMenuSentinelSha = $null
+$script:StartMenuSentinelContent = $null
+$script:StartMenuSentinelCreated = $false
+$script:StartMenuFolderCreated = $false
 $script:FixtureStatsUrl = $null
 $script:LastStatusProbe = 'not queried'
 $script:WinCredReference = [guid]::NewGuid().ToString('D')
@@ -317,6 +323,13 @@ function Assert-ShortcutBrand([string] $Brand) {
         throw ("Unexpected shortcut brand '" + $Brand + "'.")
     }
     Write-Host ("PASS: only '" + $Brand + "' Start Menu and Desktop shortcuts exist.")
+}
+function Assert-StartMenuSentinel([string] $Label) {
+    if (-not $script:StartMenuSentinelCreated) { throw ($Label + " Start Menu sentinel was not created by this test.") }
+    if (-not (Test-Path -LiteralPath $startMenuSentinel -PathType Leaf)) { throw ($Label + " deleted unrelated Start Menu content.") }
+    $actualSha = (Get-FileHash -LiteralPath $startMenuSentinel -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($actualSha -ne $script:StartMenuSentinelSha) { throw ($Label + " changed unrelated Start Menu content.") }
+    Write-Host ("PASS: " + $Label + " preserved unrelated Start Menu content and SHA-256.")
 }
 function Start-AppAndWait {
     $guiPath = Join-Path $installDir 'DownloadManager.exe'
@@ -580,6 +593,9 @@ try {
     foreach ($path in @($legacyStartMenuShortcut,$brandedStartMenuShortcut,$legacyDesktopShortcut,$brandedDesktopShortcut)) {
         if (Test-Path -LiteralPath $path) { throw ('Refusing to modify pre-existing product shortcut: ' + $path) }
     }
+    if (Test-Path -LiteralPath $brandedStartMenuFolder) {
+        throw ('Refusing to modify pre-existing HyperGet Start Menu folder: ' + $brandedStartMenuFolder)
+    }
 
     New-Item -ItemType Directory -Path $root,$fixtureDir,$downloadDir -Force | Out-Null
     $testCreatedRoot = $true
@@ -602,6 +618,15 @@ try {
     $testOwnedData = $true
     Set-Content -LiteralPath $sentinelFile -Value ('upgrade-rollback-proof:' + $markerToken) -NoNewline -Encoding utf8
     $script:SentinelSha = (Get-FileHash -LiteralPath $sentinelFile -Algorithm SHA256).Hash.ToLowerInvariant()
+
+    $stage = 'create unrelated Start Menu content sentinel'
+    New-Item -ItemType Directory -Path $brandedStartMenuFolder | Out-Null
+    $script:StartMenuFolderCreated = $true
+    $script:StartMenuSentinelContent = 'unrelated-start-menu-content:' + $markerToken
+    Set-Content -LiteralPath $startMenuSentinel -Value $script:StartMenuSentinelContent -NoNewline -Encoding utf8
+    $script:StartMenuSentinelSha = (Get-FileHash -LiteralPath $startMenuSentinel -Algorithm SHA256).Hash.ToLowerInvariant()
+    $script:StartMenuSentinelCreated = $true
+    Assert-StartMenuSentinel -Label 'pre-upgrade fixture'
 
     $stage = 'create real persisted state on baseline'
     Start-AppAndWait
@@ -680,6 +705,7 @@ try {
         throw 'Baseline and candidate DisplayVersion are identical; the run cannot prove a versioned upgrade.'
     }
     Assert-ShortcutBrand -Brand 'HyperGet'
+    Assert-StartMenuSentinel -Label 'upgrade to HyperGet'
     if (-not (Test-Path -LiteralPath $sentinelFile -PathType Leaf)) { throw 'Upgrade deleted user data.' }
     Start-AppAndWait
     Assert-UserState -Label 'Upgrade to HyperGet'
@@ -704,6 +730,7 @@ try {
     foreach ($path in @($legacyStartMenuShortcut,$brandedStartMenuShortcut,$legacyDesktopShortcut,$brandedDesktopShortcut)) {
         if (Test-Path -LiteralPath $path) { throw ('Candidate uninstall left product shortcut ' + $path + '.') }
     }
+    Assert-StartMenuSentinel -Label 'candidate uninstall before rollback'
     if (-not (Test-Path -LiteralPath $sentinelFile -PathType Leaf)) { throw 'Candidate uninstall removed user data before rollback.' }
     if ((Get-FileHash -LiteralPath $sentinelFile -Algorithm SHA256).Hash.ToLowerInvariant() -ne $script:SentinelSha) {
         throw 'Candidate uninstall changed the user-data sentinel before rollback.'
@@ -717,6 +744,7 @@ try {
         throw ('Rollback did not restore baseline metadata: name=' + $rollbackMetadata.DisplayName + ' version=' + $rollbackMetadata.DisplayVersion)
     }
     Assert-ShortcutBrand -Brand 'Download Manager'
+    Assert-StartMenuSentinel -Label 'rollback to baseline'
     Assert-SyntheticWinCred -Stage 'rollback to baseline'
     Start-AppAndWait
     Assert-UserState -Label 'Rollback to baseline'
@@ -745,6 +773,7 @@ try {
     foreach ($path in @($legacyStartMenuShortcut,$brandedStartMenuShortcut,$legacyDesktopShortcut,$brandedDesktopShortcut)) {
         if (Test-Path -LiteralPath $path) { throw ('Uninstall left product shortcut ' + $path + '.') }
     }
+    Assert-StartMenuSentinel -Label 'normal uninstall'
     Assert-SyntheticWinCred -Stage 'normal uninstall'
     Remove-SyntheticWinCred
 
@@ -771,6 +800,8 @@ try {
         'RollbackDataAndHistory=PASS'
         'CandidateUninstallBeforeRollback=PASS'
         'ShortcutTransitions=PASS'
+        'StartMenuUserContentSentinelPreserved=PASS'
+        "StartMenuUserContentSentinelSHA256=$script:StartMenuSentinelSha"
         'NormalUninstallPreservesUserData=PASS'
         'SyntheticWinCredPreservedAcrossUpgradeRollbackAndUninstall=PASS'
         'SyntheticWinCredCleanup=PASS'
@@ -834,6 +865,27 @@ try {
     if ($script:TestTouchedInstaller) {
         foreach ($path in @($legacyStartMenuShortcut,$brandedStartMenuShortcut,$legacyDesktopShortcut,$brandedDesktopShortcut)) {
             Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
+        }
+    }
+    if ($script:StartMenuSentinelCreated -and (Test-Path -LiteralPath $startMenuSentinel -PathType Leaf)) {
+        try {
+            $actualContent = Get-Content -LiteralPath $startMenuSentinel -Raw
+            $actualSha = (Get-FileHash -LiteralPath $startMenuSentinel -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actualContent -ne $script:StartMenuSentinelContent -or $actualSha -ne $script:StartMenuSentinelSha) {
+                throw 'Start Menu sentinel changed; preserving it instead of deleting it.'
+            }
+            Remove-Item -LiteralPath $startMenuSentinel -Force -ErrorAction Stop
+            Write-Host 'Removed only the test-owned Start Menu sentinel after exact content and SHA-256 verification.'
+        } catch {
+            Write-Warning ("Start Menu sentinel cleanup refused or failed: " + $_.Exception.Message)
+        }
+    }
+    if ($script:StartMenuFolderCreated -and (Test-Path -LiteralPath $brandedStartMenuFolder -PathType Container)) {
+        try {
+            Remove-Item -LiteralPath $brandedStartMenuFolder -Force -ErrorAction Stop
+            Write-Host 'Removed only the empty test-created HyperGet Start Menu folder.'
+        } catch {
+            Write-Warning 'Preserved the HyperGet Start Menu folder because it is no longer empty or could not be safely removed.'
         }
     }
     if ($transcriptStarted) { Stop-Transcript | Out-Null }

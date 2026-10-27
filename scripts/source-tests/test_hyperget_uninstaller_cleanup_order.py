@@ -40,6 +40,14 @@ class HyperGetUninstallerCleanupOrderTests(unittest.TestCase):
             'The uninstall section must perform file cleanup exactly once, at the end.',
         )
 
+    def test_start_menu_cleanup_never_recursively_deletes_unrelated_files(self):
+        start = self.source.index('!macro RemoveStartMenu')
+        end = self.source.index('!macroend', start)
+        macro = self.source[start:end]
+        self.assertIn('Delete "$SMPROGRAMS\\${APP_DISPLAY_NAME}\\${APP_DISPLAY_NAME}.lnk"', macro)
+        self.assertIn('RMDir "$SMPROGRAMS\\${APP_DISPLAY_NAME}"', macro)
+        self.assertNotIn('RMDir /r', macro)
+
     def test_installer_and_uninstaller_pin_current_user_context(self):
         init_start = self.source.find("Function .onInit")
         self.assertGreaterEqual(init_start, 0, 'Installer .onInit must be present.')

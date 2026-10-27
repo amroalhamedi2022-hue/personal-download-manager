@@ -157,7 +157,9 @@ FunctionEnd
 !macroend
 
 !macro RemoveStartMenu
-	RmDir /r "$SMPROGRAMS\${APP_DISPLAY_NAME}"
+    ; Remove only the product shortcut; leave unrelated user files untouched.
+    Delete "$SMPROGRAMS\${APP_DISPLAY_NAME}\${APP_DISPLAY_NAME}.lnk"
+    RMDir "$SMPROGRAMS\${APP_DISPLAY_NAME}"
 !macroend
 
 !macro RemoveUserData
