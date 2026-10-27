@@ -1,0 +1,191 @@
+name: HyperGet Windows EXE + aria2 evaluation
+
+on:
+  pull_request:
+    branches: [codex/repair-rf00-rf01]
+    paths:
+      - ".github/workflows/hyperget-windows-exe-aria2-evaluation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hyperget-exe-aria2-${{ github.event.pull_request.head.sha || github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  aria2-standalone-spike:
+    name: Verify upstream aria2 and real loopback HTTP downloads
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - name: Check out exact PR head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Download and verify pinned upstream aria2 archive
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $url = 'https://github.com/aria2/aria2/releases/download/release-1.37.0/aria2-1.37.0-win-64bit-build1.zip'
+          $expected = '67d015301eef0b612191212d564c5bb0a14b5b9c4796b76454276a4d28d9b288'
+          $zip = Join-Path $env:RUNNER_TEMP 'aria2-win64.zip'
+          $root = Join-Path $env:RUNNER_TEMP 'aria2-unpacked'
+          Invoke-WebRequest -Uri $url -OutFile $zip
+          $actual = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $expected) { throw "aria2 archive SHA-256 mismatch: $actual" }
+          Expand-Archive -LiteralPath $zip -DestinationPath $root -Force
+          $bins = @(Get-ChildItem -LiteralPath $root -Filter 'aria2c.exe' -Recurse -File)
+          if ($bins.Count -ne 1) { throw "Expected one aria2c.exe, found $($bins.Count)" }
+          $version = (& $bins[0].FullName --version 2>&1 | Out-String)
+          if ($LASTEXITCODE -ne 0 -or $version -notmatch 'aria2 version 1\.37\.0') { throw "Unexpected aria2 version: $version" }
+          "ARIA2_EXE=$($bins[0].FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "PASS: official aria2 1.37.0 archive SHA-256 $actual"
+          Write-Host $version
+      - name: Test aria2 single-connection and segmented HTTP with SHA-256
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $work = Join-Path $env:RUNNER_TEMP 'aria2-http-spike'
+          New-Item -ItemType Directory -Path $work | Out-Null
+          $source = Join-Path $work 'fixture.bin'
+          $portFile = Join-Path $work 'port.txt'
+          $expectedBytes = 16MB
+          $payload = New-Object byte[] $expectedBytes
+          for ($i = 0; $i -lt $payload.Length; $i++) { $payload[$i] = [byte]($i % 251) }
+          [IO.File]::WriteAllBytes($source, $payload)
+          $expectedHash = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash.ToLowerInvariant()
+          $fixture = Join-Path $PWD 'scripts/LocalHttpRangeFixture.py'
+          $server = Start-Process -FilePath 'python' -ArgumentList @(
+            $fixture, '--file', $source, '--port-file', $portFile,
+            '--chunk-delay-ms', '2', '--task-chunk-delay-ms', '0'
+          ) -PassThru -RedirectStandardOutput (Join-Path $work 'server-out.log') -RedirectStandardError (Join-Path $work 'server-err.log')
+          try {
+            for ($i = 0; $i -lt 100 -and -not (Test-Path -LiteralPath $portFile); $i++) {
+              if ($server.HasExited) { throw "HTTP fixture exited: $($server.ExitCode)" }
+              Start-Sleep -Milliseconds 100
+            }
+            if (-not (Test-Path -LiteralPath $portFile)) { throw 'HTTP fixture failed to publish its port' }
+            $portText = (Get-Content -LiteralPath $portFile -Raw).Trim()
+            if ($portText -notmatch '^\d+$') { throw "Invalid fixture port: $portText" }
+            $url = "http://127.0.0.1:$portText/fixture.bin"
+            foreach ($mode in @(@{Name='single'; Split=1}, @{Name='segmented'; Split=4})) {
+              $dir = Join-Path $work $mode.Name
+              New-Item -ItemType Directory -Path $dir | Out-Null
+              $ariaArgs = @(
+                '--console-log-level=notice', '--summary-interval=0',
+                '--allow-overwrite=true', '--auto-file-renaming=false',
+                "--split=$($mode.Split)", "--max-connection-per-server=$($mode.Split)",
+                '--min-split-size=1M', '--file-allocation=none',
+                '--dir', $dir, '--out=download.bin', $url
+              )
+              $log = & $env:ARIA2_EXE @ariaArgs 2>&1
+              if ($LASTEXITCODE -ne 0) { throw "aria2 $($mode.Name) failed: $($log | Out-String)" }
+              $output = Join-Path $dir 'download.bin'
+              if (-not (Test-Path -LiteralPath $output -PathType Leaf)) { throw "aria2 $($mode.Name) output missing" }
+              if ((Get-Item -LiteralPath $output).Length -ne $expectedBytes) { throw "aria2 $($mode.Name) output length mismatch" }
+              $actualHash = (Get-FileHash -LiteralPath $output -Algorithm SHA256).Hash.ToLowerInvariant()
+              if ($actualHash -ne $expectedHash) { throw "aria2 $($mode.Name) SHA-256 mismatch: $actualHash" }
+              Write-Host "PASS: aria2 $($mode.Name), bytes=$expectedBytes, SHA256=$actualHash"
+            }
+          } finally {
+            if ($null -ne $server -and -not $server.HasExited) { Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue }
+          }
+      - name: Upload aria2 spike logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: hyperget-aria2-standalone-spike
+          path: ${{ runner.temp }}/aria2-http-spike
+          if-no-files-found: ignore
+          retention-days: 7
+
+  build-test-hyperget-windows:
+    name: Test current HyperGet and build Windows installer EXE
+    runs-on: windows-2022
+    timeout-minutes: 100
+    env:
+      SKIP_ANDROID_BUILD: "true"
+    steps:
+      - name: Check out exact PR head (not synthetic merge)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Record source provenance
+        shell: pwsh
+        run: |
+          $actual = (git rev-parse HEAD).Trim()
+          $expected = '${{ github.event.pull_request.head.sha || github.sha }}'
+          if ($actual -ne $expected) { throw "Wrong source SHA: $actual expected $expected" }
+          Write-Host "HYPERGET_SOURCE_SHA=$actual"
+          "HYPERGET_SOURCE_SHA=$actual" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Set up JetBrains Runtime 25
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v7.0.1
+        with:
+          distribution: jetbrains
+          java-package: jdk
+          java-version: "25"
+          check-latest: true
+          cache: gradle
+      - name: Run current desktop and downloader regression suites
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & ./gradlew.bat --no-daemon --stacktrace --dependency-verification strict :downloader:core:desktopTest :downloader:monitor:desktopTest :shared:app:desktopTest :desktop:app:compileKotlin
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Require JUnit XML and zero failures/errors/skips
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $files = @(Get-ChildItem -Path . -Recurse -File -Filter 'TEST-*.xml' | Where-Object { $_.FullName -match '\\build\\test-results\\' })
+          if ($files.Count -lt 3) { throw "Expected >=3 JUnit XML files, found $($files.Count)" }
+          $tests = 0
+          foreach ($file in $files) {
+            [xml]$doc = Get-Content -LiteralPath $file.FullName -Raw
+            foreach ($suite in @($doc.SelectNodes('//testsuite'))) {
+              foreach ($field in @('failures','errors','skipped')) {
+                if ([int]$suite.GetAttribute($field) -ne 0) { throw "JUnit $field in $($file.FullName)" }
+              }
+              $tests += [int]$suite.GetAttribute('tests')
+            }
+          }
+          if ($tests -lt 1) { throw 'No JUnit test cases were reported.' }
+          Write-Host "PASS: $tests JUnit tests; zero failures, errors, or skipped cases."
+      - name: Build Windows installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & ./gradlew.bat --no-daemon --stacktrace --dependency-verification strict createReleaseFolderForCi
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Stage one EXE and compute SHA-256
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $source = Join-Path $PWD 'build/ci-release/binaries'
+          $installers = @(Get-ChildItem -LiteralPath $source -Filter '*.exe' -Recurse -File)
+          if ($installers.Count -ne 1) { throw "Expected exactly one installer EXE, found $($installers.Count)" }
+          $delivery = Join-Path $PWD 'build/ci-release/hyperget-exe-delivery'
+          New-Item -ItemType Directory -Force -Path $delivery | Out-Null
+          Copy-Item -LiteralPath $installers[0].FullName -Destination $delivery
+          $hash = (Get-FileHash -LiteralPath (Join-Path $delivery $installers[0].Name) -Algorithm SHA256).Hash.ToLowerInvariant()
+          Write-Host "HYPERGET_INSTALLER=$($installers[0].Name)"
+          Write-Host "HYPERGET_INSTALLER_SHA256=$hash"
+          "HYPERGET_INSTALLER_SHA256=$hash" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Upload Windows installer EXE
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: hyperget-windows-x64-installer
+          path: build/ci-release/hyperget-exe-delivery/*.exe
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload JUnit and build reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: hyperget-windows-build-test-reports
+          path: |
+            **/build/test-results/**
+            **/build/reports/**
+          if-no-files-found: ignore
+          retention-days: 7
