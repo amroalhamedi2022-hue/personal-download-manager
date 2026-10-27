@@ -229,7 +229,13 @@ jobs:
               # installed app is open and idle. This measures hardware behavior,
               # not the predicted effect of source-level animation changes.
               $metricsDir = Join-Path $PWD 'build/ci-release/idle-baseline-matrix'
-              & ./scripts/Run-WindowsIdleBenchmarkMatrix.ps1 -RootProcessName DownloadManager -SourceSha $env:GITHUB_SHA -OutputDirectory $metricsDir -Rounds 3 -DurationSeconds 20
+              $sourceSha = (git rev-parse HEAD).Trim()
+          $expectedSourceSha = '${{ github.event.pull_request.head.sha || github.sha }}'
+          if ($sourceSha -ne $expectedSourceSha) {
+            throw "Idle metrics source SHA mismatch: checked out $sourceSha, expected $expectedSourceSha"
+          }
+          Write-Host "Idle metrics source SHA: $sourceSha"
+          & ./scripts/Run-WindowsIdleBenchmarkMatrix.ps1 -RootProcessName DownloadManager -SourceSha $sourceSha -OutputDirectory $metricsDir -Rounds 3 -DurationSeconds 20
               if ((@(Get-ChildItem -LiteralPath $metricsDir -Filter '*.csv' -File)).Count -ne 6) {
                 throw 'Idle/minimized benchmark matrix did not produce all six CSVs.'
               }
