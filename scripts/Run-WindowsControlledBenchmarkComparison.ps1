@@ -57,6 +57,7 @@ if ($BaselineSourceSha -eq $CandidateSourceSha) { throw 'Baseline and candidate 
 if (Test-Path -LiteralPath $installDir) { throw 'Refusing to overwrite a pre-existing controlled install directory.' }
 if (Test-Path -LiteralPath $dataDir) { throw 'Refusing to touch pre-existing user data.' }
 foreach ($key in $uninstallKeys) { if (Test-Path -LiteralPath $key) { throw "Refusing to touch pre-existing registry key: $key" } }
+$script:ShortcutParentExistedAtPreflight = @{}
 foreach ($shortcut in $shortcuts) {
     if (Test-Path -LiteralPath $shortcut) { throw "Refusing to touch pre-existing shortcut: $shortcut" }
     $parent = Split-Path -Parent $shortcut
@@ -75,7 +76,6 @@ $script:RegistryResiduePath = Join-Path $root 'registry-residue.csv'
 $script:ShortcutResiduePath = Join-Path $root 'shortcut-residue.csv'
 $script:ExpectedGuiPath = $null
 $script:ExpectedCliPath = $null
-$script:ShortcutParentExistedAtPreflight = @{}
 $transcriptStarted = $false
 try {
     Start-Transcript -Path (Join-Path $root 'controlled-comparison-transcript.txt') -Force | Out-Null

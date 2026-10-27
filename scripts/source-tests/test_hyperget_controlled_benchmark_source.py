@@ -124,5 +124,14 @@ class ControlledBenchmarkSourceTests(unittest.TestCase):
         self.assertRegex(checkpoint, r"Status: OPEN")
 
 
+    def test_shortcut_parent_preflight_map_is_initialized_before_recording_and_not_reset(self):
+        source = read("scripts/Run-WindowsControlledBenchmarkComparison.ps1")
+        declaration = "$script:ShortcutParentExistedAtPreflight = @{}"
+        self.assertEqual(source.count(declaration), 1)
+        self.assertLess(source.index(declaration), source.index("foreach ($shortcut in $shortcuts) {"))
+        self.assertIn("$script:ShortcutParentExistedAtPreflight[$parent] = Test-Path -LiteralPath $parent -PathType Container", source)
+        self.assertIn("$script:ShortcutParentExistedAtPreflight.ContainsKey($parent)", source)
+
+
 if __name__ == "__main__":
     unittest.main()

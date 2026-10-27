@@ -84,3 +84,27 @@ Add a separate `shortcut-residue.csv` audit. Record whether each known shortcut'
 **Why source tests are insufficient:** only the packaged Windows installer creates the actual `.lnk`; the runner must inspect its Shell target, perform real HTTP transfers, measure processes and observe post-uninstall filesystem/registry state.
 
 **Status: OPEN.** No production downloader source changed in this harness fix. Do not close E061 until a new exact-head artifact contains all 126 verified transfers, 18 resource-round records and `Result=PASS` from the paired comparison. No merge, release or final EXE delivery.
+
+
+## 2026-10-27 — controlled benchmark stopped before measurements: preflight map initialization (OPEN)
+
+**Harness candidate SHA:** `aa4db9ef0569d6a658f80e765603ca99d51fdfc5`.  
+**Windows run:** [40453504060](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40453504060).  
+**Run result:** both exact-snapshot installers built, but the comparison script failed before installing either variant. No HTTP measurements or performance conclusion were produced; the workflow had no evidence artifact to upload.
+
+- **PASS:** source contracts and PowerShell parser gate.
+- **PASS:** baseline installer built; SHA-256 `9f94fcb21512b7801bf648e23d7f27e276ded288a4bae06845225ffd64a0402c`.
+- **PASS:** candidate installer built; SHA-256 `0f54ba71982020eedf5936821bf5d1482afb2baf60bf4ba8acf64dae03d655cf`.
+- **FAIL (harness preflight):** StrictMode reported that `$script:ShortcutParentExistedAtPreflight` had not been set. The preflight loop wrote to the map before its later initialization. This is a test-harness ordering bug, not evidence of an app performance regression.
+
+### Controlled correction before the next Windows build
+
+Initialize the shortcut-parent ownership map before checking the known shortcut paths, record each parent's pre-existing state, and do not reset that map after preflight. Add a source regression requiring the single initialization to precede the first preflight loop.
+
+**Pre-build question:** does the ownership map remain available from preflight through uninstall cleanup, allowing the real installed benchmark to finish without touching any pre-existing shortcut or parent folder?
+
+**Expected:** both exact installers build; each variant completes three rounds across concurrency 1/4/16, with 63 verified 32-MiB downloads per snapshot, nine resource-round summaries per snapshot, matching source/harness provenance, and unchanged 15% throughput/peak-memory gates.
+
+**Why source tests are insufficient:** only a real Windows install creates the shortcuts and parent folders; the benchmark must exercise Shell link inspection, installer/uninstaller behavior, HTTP transfers and OS process measurements.
+
+**Status: OPEN.** This fix changes only the benchmark harness, regression test and evidence logs—not production downloader behavior. Do not mark E061 PASS until a new exact-head Windows artifact contains the full transfer/resource evidence and `Result=PASS`. No merge, release or final EXE delivery.
