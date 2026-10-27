@@ -120,3 +120,17 @@ Run the complete existing regression suite against the adapter and run dedicated
 ## Explicit non-goals
 
 No main-branch writes, merge, public release, Torrent implementation, removal of the current engine before acceptance, or claims of successful tests without exact-SHA artifacts. Keep this plan and the acceptance ledger updated with the actual run IDs, source SHA, test outcome, artifact URL and artifact/file SHA-256.
+
+## Automation contract — updated 2026-10-27
+
+The evaluation workflow is triggered by every PR-head change targeting the existing PR base, plus manual dispatch. It checks out the exact head SHA, pins and hashes the upstream aria2 archive, and keeps the current-engine tests/build separate from the standalone aria2 smoke test.
+
+**The automation must advance through gates, not treat a successful aria2 download as proof it is better:**
+
+1. **Current candidate gate:** the exact-head HyperGet regression tests and Windows installer must pass. If they fail, retain the logs/reports and do not produce a delivery artifact or change engine wiring.
+2. **aria2 viability gate:** standalone correctness, restart/resume, protocol/error handling, RPC isolation, and resource limits must pass.
+3. **Comparative gate:** run at least three paired rounds against the same deterministic workload for current HyperGet and aria2 at 1/4/16 independent tasks and segmentation 1/4/8 where applicable. Record per-task/aggregate duration and throughput, CPU, peak Working Set/Private Bytes, and exact output hashes. The comparison must be apples-to-apples and include resume/restart.
+4. **Conditional migration:** if and only if the comparison produces a **GO** under Stage 2/Stage 5 thresholds, automatically advance to a separate, feature-flagged `Aria2Engine` adapter prototype while preserving the current engine as fallback. The prototype must then pass Stage 3 and Stage 4 parity/security tests before any production-default switch is considered. If evidence is mixed, use aria2 only for proven workloads; if any mandatory gate fails, keep the existing engine.
+5. **No unsafe self-deployment:** CI may prepare/test the adapter on the working branch, but must not merge, write to `main`, publish a release, silently switch the production default, or bundle aria2 before GPL/compliance review. A human-reviewed, exact-SHA acceptance record is required before the production engine default changes.
+
+**Current automation limitation:** the workflow presently covers the exact-head current app tests/build and a small aria2 HTTP smoke test only. It is not yet the full paired performance matrix and does not yet create the adapter. Therefore it must report the migration decision as **PENDING**, not GO, until the comparative and parity stages are implemented and evidenced. This explicit limitation prevents a false automatic migration based on the current smoke test.
