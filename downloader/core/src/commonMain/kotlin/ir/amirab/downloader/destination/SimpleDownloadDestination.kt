@@ -154,7 +154,22 @@ class SimpleDownloadDestination(
         }
     }
 
+    private fun closeWritersForFileMutation() {
+        // Part cancellation status is a StateFlow and may be conflated with IDLE.
+        // Never rely on the asynchronous status collector alone to release the OS handle.
+        synchronized(this) {
+            fileParts.clear()
+        }
+        removeFileHandle()
+    }
+
+    override fun deleteOutputFile() {
+        closeWritersForFileMutation()
+        super.deleteOutputFile()
+    }
+
     override fun moveOutput(to: File) {
+        closeWritersForFileMutation()
         if (appendExtensionToIncompleteDownloads) {
             val incompleteFile = incompleteFile
             if (incompleteFile.exists()) {

@@ -46,6 +46,23 @@ internal fun validateRemoteFileIdentity(
     }
 }
 
+internal fun sameHttpResourceLocation(firstUrl: String, secondUrl: String): Boolean {
+    fun resourceLocation(url: String): String {
+        val withoutFragment = url.substringBefore('#')
+        val withoutQuery = withoutFragment.substringBefore('?')
+        val schemeSeparator = withoutQuery.indexOf("://")
+        if (schemeSeparator < 0) return withoutQuery
+
+        val scheme = withoutQuery.substring(0, schemeSeparator).lowercase()
+        val authorityAndPath = withoutQuery.substring(schemeSeparator + 3)
+        val pathStart = authorityAndPath.indexOf('/')
+        val authority = if (pathStart < 0) authorityAndPath else authorityAndPath.substring(0, pathStart)
+        val path = if (pathStart < 0) "" else authorityAndPath.substring(pathStart)
+        return "$scheme://${authority.lowercase()}$path"
+    }
+    return resourceLocation(firstUrl) == resourceLocation(secondUrl)
+}
+
 internal suspend fun persistProgressAfterFlush(
     flushDestination: () -> Unit,
     persistSnapshot: suspend () -> Unit,
@@ -140,8 +157,15 @@ class HttpDownloadJob(
     }
 
     override suspend fun reset() {
+        val preserveCompletedOutput = downloadItem.status == DownloadStatus.Completed
         pause()
         clearPartDownloaderList()
+        if (!preserveCompletedOutput) {
+            // Reset must not leave old partial bytes available to a later fresh transfer.
+            // Close the shared file handle before deleting the visible or staged file.
+            destination.deleteOutputFile()
+            destination.cleanUpJunkFiles()
+        }
         setParts(emptyList())
         downloadItem.contentLength = IDownloadItem.LENGTH_UNKNOWN
         downloadItem.serverETag = null
@@ -298,23 +322,45 @@ class HttpDownloadJob(
         val previousDestination = downloadManager.calculateOutputFile(previousItem)
         val newDestination = downloadManager.calculateOutputFile(newItem)
         val shouldUpdateDestination = previousDestination != newDestination
+        val linkChanged = previousItem.link != newItem.link
+        val resourceLocationChanged = linkChanged &&
+            !sameHttpResourceLocation(previousItem.link, newItem.link)
+        val wasActive = isDownloadActive.value ||
+            activeDownloadScope?.isActive == true ||
+            getPartDownloaderList().any { it.active }
+
         if (shouldUpdateDestination) {
-            if (isDownloadActive.value) {
+            // The persisted active flag can lag a restored retry/part worker. Stop and join
+            // every worker before moving a file on Windows, where an open handle blocks rename.
+            if (wasActive) {
                 pause()
+            } else {
+                cancelDownloadScope()
+                stopAllParts()
             }
             destination.moveOutput(newDestination)
         }
+
         // if there is no error update the actual download item
         downloadItem.applyFrom(newItem)
         if (shouldUpdateDestination) {
             // destination should be closed for now!
             initializeDestination()
         }
+
+        if (linkChanged) {
+            if (resourceLocationChanged) {
+                // A different origin/path is a different resource, not a signed-URL refresh.
+                // Drop stale range progress before the replacement URL can write into this file.
+                reset()
+                if (wasActive && !shouldUpdateDestination) resume()
+            } else {
+                // Query/fragment-only refresh keeps the partial state; resume validates length/ETag.
+                onLinkChanged()
+            }
+        }
         if (previousItem.preferredConnectionCount != downloadItem.preferredConnectionCount) {
             onPreferredConnectionCountChanged()
-        }
-        if (previousItem.link != downloadItem.link) {
-            onLinkChanged()
         }
         applySpeedLimit()
         extraConfig?.let {

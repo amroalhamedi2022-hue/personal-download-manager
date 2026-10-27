@@ -19,6 +19,7 @@ import ir.amirab.downloader.downloaditem.hls.HLSDownloadItem
 import ir.amirab.downloader.downloaditem.hls.HLSDownloader
 import ir.amirab.downloader.downloaditem.http.HttpDownloadItem
 import ir.amirab.downloader.downloaditem.http.HttpDownloader
+import ir.amirab.downloader.downloaditem.http.sameHttpResourceLocation
 import ir.amirab.downloader.queue.ManualDownloadQueue
 import ir.amirab.downloader.queue.DownloadQueue
 import ir.amirab.downloader.queue.ScheduleTimes
@@ -67,6 +68,28 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class ActualRestoredRetryJobTest {
+
+    @Test
+    fun httpResourceIdentityIgnoresRefreshQueryButNotPathOrOrigin() {
+        assertTrue(
+            sameHttpResourceLocation(
+                "https://EXAMPLE.test/download/file.bin?token=old#part",
+                "https://example.test/download/file.bin?token=new",
+            ),
+        )
+        assertFalse(
+            sameHttpResourceLocation(
+                "https://example.test/download/old.bin?token=old",
+                "https://example.test/download/new.bin?token=new",
+            ),
+        )
+        assertFalse(
+            sameHttpResourceLocation(
+                "https://one.example.test/download/file.bin?token=old",
+                "https://two.example.test/download/file.bin?token=new",
+            ),
+        )
+    }
 
     @Test
     fun httpPartFailuresExhaustExactlyTwoRetriesWithoutProgress() = withRetryServer { fixture ->

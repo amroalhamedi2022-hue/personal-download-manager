@@ -1,3 +1,27 @@
+## 2026-10-27 — restored HTTP lifecycle and Windows destination mutation (FIX SUBMITTED; exact-head verification pending)
+
+**Prior exact PR head:** `fdc971c117f166a007d5ea5beeed1be2a6a23239`. The Windows desktop test workflow [40577539587](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40577539587) compiled the test sources and ran 202 downloader-core tests; **200 passed, 2 failed**:
+
+- `concurrentResumeResetAndLinkUpdateKeepOneActualHttpLifecycle`: the replacement download was 4 KiB larger than the fixture (528,384 vs 524,288 bytes). The existing link-change path retained range state even when origin/path changed, allowing stale progress to be reused for a different resource.
+- `restoredHttpRetryStopsBeforeMovingDestinationAndCanResumeSafely`: Windows rejected the destination rename because the shared Okio file handle was still open after worker cancellation. The asynchronous part-status collector is not a reliable sole owner of handle release because StateFlow may conflate cancellation with IDLE.
+
+### Controlled production + regression repair
+
+- Add an explicit resource-location comparison: query/fragment-only signed URL refresh preserves partial state and still validates remote length/ETag; a different origin or path resets transfer metadata and removes incomplete output before restarting.
+- Reset now removes incomplete/staged output after workers are stopped, while preserving a previously completed user file.
+- Destination changes stop/join part workers even if the persisted active flag is stale. `SimpleDownloadDestination` closes its shared file handle and clears writer references before moving or deleting output.
+- Add regression coverage for URL identity normalization. Existing two failing end-to-end downloader tests remain the primary acceptance checks; no assertion was weakened.
+
+### Pre-build acceptance question
+
+Will the focused Windows Gradle regression suite pass both previously failing cases, produce exactly 512 KiB of the replacement resource with matching bytes, and move the restored retry output without a sharing violation?
+
+**Expected:** source checks pass; the two tests pass with exact file-byte equality and no open transfer/file handle after the move. Source tests alone cannot establish Windows file-sharing semantics or real worker/Okio teardown, so the targeted Windows Gradle test run is required before the fix is accepted.
+
+**Status until the new run completes:** NOT TESTED on the new SHA. The 1/4/16 paired benchmark [40577539492](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40577539492) is still running on the prior exact head and must be kept separate. No threshold change, no main write, no merge, no final EXE or release claim.
+
+---
+
 ## 2026-10-27 — HG-03 exact-head executable-identity gates (OPEN)
 
 **Exact PR head inspected:** e36266add4eb4e009eb6c64a4e71ceae5d5090b7 on automation/idm-ftp-cancel-and-category-flush; PR #3 remains open/Draft. This checkpoint is recorded before the next targeted Windows build.
