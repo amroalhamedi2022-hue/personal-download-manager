@@ -100,7 +100,7 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn('$resumeArguments = "download resume $taskId"', SCRIPT)
         self.assertIn("TaskIdResolved = $taskIdResolved", SCRIPT)
         self.assertIn("ResumeSent = $addResumeSent", SCRIPT)
-        self.assertIn("if ($statusAtCapture -eq 'Downloading' -and [int]$captureStats.active_distinct_tasks -ge 1 -and [long]$captureStats.bytes_sent -gt 0)", SCRIPT)
+        self.assertIn("if ($statusAtCapture -eq 'Downloading' -and [int]$captureStats.active_distinct_tasks -ge 1 -and [long]$captureStats.bytes_sent -ge $minimumVisualProgressBytes)", SCRIPT)
 
     def test_visual_fixture_is_paced_and_failure_diagnostics_are_preserved(self):
         self.assertIn("/stats?reset=1&gate_tasks=1", SCRIPT)
@@ -225,6 +225,17 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("Plain-text CLI message: $line", SCRIPT)
         self.assertTrue(SCRIPT.rstrip().endswith("}"))
 
+
+
+    def test_screenshot_requires_enough_fill_to_show_liquid_bubbles(self):
+        # A live screenshot at 6% proved transfer but the fill was too short to
+        # render the two-bubble treatment. Require at least 25% before capture.
+        self.assertIn("$minimumVisualProgressBytes = [long][Math]::Ceiling($expectedBytes * 0.25)", SCRIPT)
+        self.assertIn("[long]$preScreenshotStats.bytes_sent -lt $minimumVisualProgressBytes", SCRIPT)
+        self.assertIn("MinimumVisualProgressBytes = $minimumVisualProgressBytes", SCRIPT)
+        self.assertIn("ProgressFractionAtCapture = [Math]::Round", SCRIPT)
+        self.assertIn("BytesSentAtCapture = [long]$preScreenshotStats.bytes_sent", SCRIPT)
+        self.assertIn("visible Liquid Progress fill reached", SCRIPT)
 
 if __name__ == "__main__":
     unittest.main()

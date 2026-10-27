@@ -55,6 +55,8 @@ if ((Get-Item -LiteralPath $fixture).Length -ne $expectedBytes) {
     throw 'Liquid Progress fixture size is not exactly 16 MiB.'
 }
 $expectedSha = (Get-FileHash -LiteralPath $fixture -Algorithm SHA256).Hash.ToLowerInvariant()
+# Capture far enough into the fill to make the active shimmer and bubbles visibly testable.
+$minimumVisualProgressBytes = [long][Math]::Ceiling($expectedBytes * 0.25)
 
 function Get-NormalizedCliLines {
     param([object[]]$Lines)
@@ -221,7 +223,7 @@ public static class HyperGetLiquidProgressNative {
     # Resolve the add ID first, then poll status independently of fixture traffic.
     # An Added-only task is Paused until the CLI Resume command is sent; waiting
     # for active fixture bytes before polling status would deadlock that transition.
-    for ($attempt = 0; $attempt -lt 300; $attempt++) {
+    for ($attempt = 0; $attempt -lt 600; $attempt++) {
         $captureStats = Invoke-RestMethod -Uri "http://127.0.0.1:$port/stats" -TimeoutSec 5
         if ($addProcess.HasExited -and -not $taskIdResolved) {
             $reportedIds = @(Get-ReportedTaskIds -Path $addStdout)
@@ -253,7 +255,7 @@ public static class HyperGetLiquidProgressNative {
                     }
                 }
             }
-            if ($statusAtCapture -eq 'Downloading' -and [int]$captureStats.active_distinct_tasks -ge 1 -and [long]$captureStats.bytes_sent -gt 0) {
+            if ($statusAtCapture -eq 'Downloading' -and [int]$captureStats.active_distinct_tasks -ge 1 -and [long]$captureStats.bytes_sent -ge $minimumVisualProgressBytes) {
                 $ready = $true
                 break
             }
@@ -274,17 +276,19 @@ public static class HyperGetLiquidProgressNative {
             AddProcessExitCode = $addProcessExitCode
             AddOutputIdCount = $addOutputIds.Count
             ObservedStatuses = @($observedStatuses | Select-Object -Last 8)
-            Reason = 'Could not prove live Downloading state before screenshot.'
+            Reason = 'Could not prove live Downloading state at >=25% progress before screenshot.'
             LastStatusLine = $lastStatusLine
             LastStatus = $statusAtCapture
             StatusPollCount = $statusPollCount
             LastStatusCommandExitCode = $lastStatusCommandExitCode
             LastStatusOutputPreview = $lastStatusOutputPreview
             LastStatusOutputLineCount = @($statusOutput).Count
+            MinimumVisualProgressBytes = $minimumVisualProgressBytes
+            BytesSentAtLastPoll = [long]$captureStats.bytes_sent
             LastFixtureStats = $captureStats
         }
         $diagnostics | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $root 'liquid-progress-diagnostics.json') -Encoding utf8
-        throw 'Could not prove a live data transfer with Downloading status before screenshot; sanitized diagnostics were saved.'
+        throw 'Could not prove a live transfer at >=25% progress with Downloading status before screenshot; sanitized diagnostics were saved.'
     }
 
     $bytesBeforeScreenshot = [long]$captureStats.bytes_sent
@@ -304,6 +308,7 @@ public static class HyperGetLiquidProgressNative {
     }
     if ([int]$preScreenshotStats.active_distinct_tasks -lt 1 -or
         -not $bytesAdvancedBeforeScreenshot -or
+        [long]$preScreenshotStats.bytes_sent -lt $minimumVisualProgressBytes -or
         $statusAtCapture -ne 'Downloading') {
         $addProcessExitCode = $null
         if ($addProcess -and $addProcess.HasExited) { $addProcessExitCode = $addProcess.ExitCode }
@@ -317,7 +322,7 @@ public static class HyperGetLiquidProgressNative {
             AddProcessExitCode = $addProcessExitCode
             AddOutputIdCount = $addOutputIds.Count
             ObservedStatuses = @($observedStatuses | Select-Object -Last 8)
-            Reason = 'The transfer was not proven active at screenshot time.'
+            Reason = 'The transfer was not proven active with >=25% visible fill at screenshot time.'
             LastStatusLine = $lastStatusLine
             LastStatus = $statusAtCapture
             StatusPollCount = $statusPollCount
@@ -458,8 +463,10 @@ public static class HyperGetLiquidProgressNative {
         SourceSHA = $SourceSha
         TaskId = $taskId
         StatusAtCapture = $statusAtCapture
-        ActiveDistinctTasksAtCapture = [int]$captureStats.active_distinct_tasks
-        BytesSentAtCapture = [long]$captureStats.bytes_sent
+        ActiveDistinctTasksAtCapture = [int]$preScreenshotStats.active_distinct_tasks
+        BytesSentAtCapture = [long]$preScreenshotStats.bytes_sent
+        MinimumVisualProgressBytes = $minimumVisualProgressBytes
+        ProgressFractionAtCapture = [Math]::Round(([long]$preScreenshotStats.bytes_sent / [double]$expectedBytes), 3)
         BytesAdvancedBeforeScreenshot = $bytesAdvancedBeforeScreenshot
         StatusPollCountAtCapture = $statusPollCount
         ExpectedBytes = $expectedBytes
@@ -470,6 +477,7 @@ public static class HyperGetLiquidProgressNative {
         FinalStatus = $finalStatus
         Verified = $true
     } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $root 'liquid-progress-report.json') -Encoding utf8
+    Write-Host ("PASS: visible Liquid Progress fill reached {0:P0} before screenshot ({1}/{2} bytes)." -f ([long]$preScreenshotStats.bytes_sent / [double]$expectedBytes), [long]$preScreenshotStats.bytes_sent, $expectedBytes)
     Write-Host 'PASS: active Liquid Progress screenshot captured from installed Windows GUI; 16 MiB HTTP download SHA-256 verified.'
 } finally {
     if ($resumeProcess -and -not $resumeProcess.HasExited) {

@@ -1583,3 +1583,16 @@ Change only the user-visible `getPrettifiedAppName()` value to `"HyperGet"`, add
 **CROSS-VERSION UPGRADE/ROLLBACK GATE: PASS** for this exact candidate SHA. This closes the specific installer metadata, user-state, shortcut, rollback, and synthetic WinCred lifecycle acceptance gate. The two installer hashes above are test artifacts, **not** the final deliverable.
 
 This does **not** close overall HyperGet release acceptance: final independent Windows recheck, controlled performance/CPU/RAM comparison, full visual parity, external protocol/restart cases, and final single `HyperGet.exe` delivery remain separate gates. No merge, release, or Torrent.
+
+
+## 2026-10-27 — Liquid Progress visible-fill proof (PRE-BUILD)
+
+**Prior exact-head visual run:** [40423929424](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40423929424), source SHA `f023a0e07d4680cd998fda434c4ca6a21275551f`. Its installed GUI and real 16 MiB HTTP transfer passed; artifact [windows-liquid-progress-visual](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40423929424/artifacts/12699058510) recorded identical expected/actual SHA-256 `341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1`. I independently inspected the screenshot: capture occurred at 1,048,832 of 16,777,216 fixture bytes (~6.25%). The production renderer intentionally draws the bubbles only when the filled width exceeds 14 dp, so this image proved a live transfer but did **not** visibly exercise the bubble portion of Liquid Progress.
+
+**Next exact-head test question:** does the installed Windows UI still render during a real transfer and finish the same 16 MiB file byte-for-byte when screenshot capture is gated until at least 25% of the fixture bytes have moved?
+
+**Expected:** source regression verifies the 25% threshold and records the measured fraction; Windows builds/installs the exact PR source; screenshot is taken only while CLI status is `Downloading`, an active fixture task exists, bytes have advanced during the 900 ms observation window, and at least 25% has transferred; final output reaches 16,777,216 bytes and expected/actual SHA-256 match.
+
+**Why source tests are insufficient:** only the installed Windows renderer can show whether the glossy band and two bubbles are actually visible at a sufficient fill width while IPC and real network transfer remain active. This is one purposeful UI acceptance build, not a release build.
+
+**Status before build:** visible-bubble screenshot acceptance is **NOT TESTED**. No production renderer change is assumed until the improved capture is inspected.
