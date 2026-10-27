@@ -1558,3 +1558,28 @@ Change only the user-visible `getPrettifiedAppName()` value to `"HyperGet"`, add
 
 **Why source checks are insufficient:** only a compiled NSIS installer on Windows can prove the registry DisplayVersion values, actual in-place replacement, shortcut transitions, IPC, persisted state, and Windows Credential Manager behavior. The next exact-head Windows run is required. **Gate remains OPEN; no final release EXE or upgrade/rollback PASS claimed.**
 
+
+
+## 2026-10-27 — cross-version upgrade, rollback, and WinCred lifecycle PASS
+
+**Exact candidate SHA:** `f023a0e07d4680cd998fda434c4ca6a21275551f`  
+**Exact baseline SHA:** `6c386abeae95e8e0460308d17c033558cbd60f15`  
+**Windows run:** [40423929210](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40423929210) — terminal **SUCCESS**.  
+**Proof artifact:** [hyperget-cross-version-upgrade-rollback-proof](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40423929210/artifacts/12698389087), ZIP SHA-256 `c812b3b2cf121b0b70e7bf3353b3f5e71ebd4864506bd5dfbb0b071b36c303b1`.
+
+### Exact-head evidence
+
+- **PASS:** both exact-source NSIS installers built. Baseline installer SHA-256: `9247eb10d736af6489dee2ee69902ddccbc3d0c64f745f9ec8b9bc29d962f1d8`; candidate installer SHA-256: `f252c86f7558c46138583194b115679acb168c89fb9fccd33295f941ef851a90`.
+- **PASS:** baseline registry identity is `Download Manager / 1.0.0`; candidate is `HyperGet / 1.0.0-sha.gf023a0e`. The branch-specific display version is now distinguishable while the GUI binary SHA remains the same across snapshots (`58b7f88931871d6bc1f986fa33cd3df34100fc2424d22713973e7f68d581b7ea`).
+- **PASS:** baseline HTTP download completed: 8,388,608 bytes, expected and actual SHA-256 both `7d212b9c884f5c77896de960ae17cc341cda43b14d6a971f34ca29ebd4badf7f`. Fixture recorded 9 requests and 8,388,864 bytes sent.
+- **PASS:** upgrading to HyperGet preserved max-concurrency `4`, task `0` in `Finished`, history/output SHA, and the user-data sentinel (`c3948001b19d4632f560d3aa804db33686560a998af8d25444bd933e407bfc36`).
+- **PASS:** only HyperGet shortcuts existed after upgrade; candidate uninstall preserved user data; rollback restored Download Manager registry metadata and shortcuts; normal uninstall preserved the user-data sentinel.
+- **PASS:** synthetic Windows Credential Manager entry survived baseline, upgrade, candidate uninstall, rollback, and normal uninstall, then was explicitly deleted and absence verified. Secrets and target names were redacted from logs.
+- **PASS:** test-owned `.personal-download-manager` data was removed only after ownership-marker and exact-path checks.
+- Independently downloaded the proof ZIP and recomputed its SHA-256; it matched GitHub's artifact digest exactly. The transcript records the complete successful lifecycle.
+
+### Gate decision
+
+**CROSS-VERSION UPGRADE/ROLLBACK GATE: PASS** for this exact candidate SHA. This closes the specific installer metadata, user-state, shortcut, rollback, and synthetic WinCred lifecycle acceptance gate. The two installer hashes above are test artifacts, **not** the final deliverable.
+
+This does **not** close overall HyperGet release acceptance: final independent Windows recheck, controlled performance/CPU/RAM comparison, full visual parity, external protocol/restart cases, and final single `HyperGet.exe` delivery remain separate gates. No merge, release, or Torrent.

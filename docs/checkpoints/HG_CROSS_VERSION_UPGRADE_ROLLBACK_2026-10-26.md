@@ -237,3 +237,15 @@ The lifecycle then failed at the next real assertion: candidate Add/Remove Progr
 
 **Status:** source regression added; exact-head CI result pending. **OPEN** until the Windows artifact reports `Result=PASS`. Do not merge or deliver the internal test installers as a release.
 
+
+
+## 2026-10-27 — exact-head Windows upgrade/rollback gate PASS
+
+- Candidate: `f023a0e07d4680cd998fda434c4ca6a21275551f`; baseline: `6c386abeae95e8e0460308d17c033558cbd60f15`.
+- Windows run [40423929210](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40423929210) terminal SUCCESS.
+- Proof ZIP artifact [12698389087](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40423929210/artifacts/12698389087), SHA-256 `c812b3b2cf121b0b70e7bf3353b3f5e71ebd4864506bd5dfbb0b071b36c303b1` (independently recomputed and matched).
+- Baseline installer SHA-256 `9247eb10d736af6489dee2ee69902ddccbc3d0c64f745f9ec8b9bc29d962f1d8`; candidate installer SHA-256 `f252c86f7558c46138583194b115679acb168c89fb9fccd33295f941ef851a90`. These are test installers, not a release.
+- **PASS:** baseline real HTTP download 8,388,608 bytes and expected/actual SHA-256 match `7d212b9c884f5c77896de960ae17cc341cda43b14d6a971f34ca29ebd4badf7f`; fixture saw 9 requests / 8,388,864 bytes sent.
+- **PASS:** upgrade to HyperGet preserved max-concurrency=4, task/history and output hash, sentinel, HyperGet-only shortcuts, and synthetic WinCred. Candidate uninstall preserved data; rollback restored Download Manager metadata/shortcuts; normal uninstall retained user data; synthetic WinCred was then explicitly deleted and absence verified.
+- Baseline DisplayVersion `1.0.0`; candidate DisplayVersion `1.0.0-sha.gf023a0e`. Candidate branding now resolves to HyperGet without changing the technical app identity/data path.
+- **Gate status: PASS** for cross-version upgrade/rollback on this SHA. Full product acceptance and final EXE remain OPEN; no merge/release/Torrent.
