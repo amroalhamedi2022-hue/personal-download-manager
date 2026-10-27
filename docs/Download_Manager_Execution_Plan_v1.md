@@ -1065,3 +1065,17 @@ Windows GUI run [40425830147](https://github.com/amroalhamedi2022-hue/personal-d
 - **بوابات مساعدة على الرأس الحالي:** اختبارات FTP/JUnit الحقيقية على Windows [40430518248](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40430518248)، واختبارات HLS [40430518237](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40430518237)، واختبارات دورة حياة الطابور ونسخ الأجزاء [40430518216](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40430518216) نجحت. بوابات HTTP 1/4/16 وJVM profile وcross-version على commit التوثيق/الاختبار الأخير تم تخطيها حسب النطاق؛ لا تُحسب كاختبارات جديدة على هذا الرأس.
 - **قرار المرحلة:** سلامة مصدر القياس **PASS**؛ اختبار Liquid Progress الوظيفي والمظهر الحالي **PASS** على SHA UI المحدد؛ مقارنة الأداء **OPEN**. إثبات الترقية/التراجع وWinCred سابقًا على `f023a0e` باقٍ ضمن نطاقه لأن تغييرات ما بعده لم تمس NSIS أو هوية/نسخة التثبيت، لكن إعادة الفحص المستقلة على الرأس النهائي لازمة.
 - **التالي:** مقارنة موارد مضبوطة ومتكررة على Windows لخط أساس ومرشح تحت نفس الظروف، مع قياس idle و1/4/16 وتنزيلات ذات SHA متحقق؛ ثم إعادة فحص مستقلة لكل بوابات الإصدار وإنتاج ملف واحد نهائي `HyperGet.exe`. لا merge/release/Torrent.
+
+
+## 2026-10-27 — HyperGet E061 controlled performance comparison: install-file residue
+
+**Current decision:** keep the paired HTTP performance comparison open. The exact-head Windows run [40459096700](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40459096700) built both exact app snapshots and completed only baseline round 1: 21/21 verified HTTP files and live 1/4/16 overlap. It stopped after uninstall left `DownloadManager.exe` in the controlled install directory; no paired performance conclusion is valid.
+
+The harness now has a separate install-file residue inventory with SHA-256, exact runner-temp path and preflight-absence checks, active marker verification, and process termination verification before test-owned cleanup. This is solely to keep the throughput/memory experiment isolated from uninstall cleanup; it **does not** turn uninstall into a PASS. The unresolved product uninstall issue remains a separate acceptance gate.
+
+- Harness fix: [`c92a3de`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/c92a3de40a6d800c34f255f32a2dc456a858e08f).
+- Source regression contracts: [`324fec0`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/324fec0c2484116b76636e1cf9da939cb33bcd33).
+- Checkpoint: [HG_E061_CONTROLLED_PERFORMANCE_COMPARISON.md](checkpoints/HG_E061_CONTROLLED_PERFORMANCE_COMPARISON.md), commit [`b89207a`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/b89207ab1f86f68dffc3d4649f771f22110bbdb5).
+- Exact-head CI for this correction is pending; do not infer PASS from prior harness runs.
+- Exit criteria remain 63 SHA-verified 32-MiB transfers per app snapshot, nine resource rounds per snapshot, strict 1/4/16 overlap, exact source/harness provenance, and no more than 15% regression in median aggregate throughput or peak Working Set/Private Bytes for any workload.
+
