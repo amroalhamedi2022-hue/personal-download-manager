@@ -29,8 +29,6 @@ on:
 
 permissions:
   contents: read
-permissions:
-  contents: read
 
 jobs:
   install-download-verify:
@@ -88,98 +86,6 @@ jobs:
           $cli = @($exe | Where-Object { $_.BaseName -eq 'DownloadManagerCli' })
           if ($gui.Count -ne 1 -or $legacyGui.Count -ne 0 -or $cli.Count -ne 1) {
             throw "Expected one HyperGet GUI, no legacy GUI, and one stable CLI: HyperGet=$($gui.Count), legacy=$($legacyGui.Count), CLI=$($cli.Count)"
-          }
-          $fixture = Join-Path $fixtureDir 'fixture.bin'
-          & python -c 'import pathlib,sys; pathlib.Path(sys.argv[1]).write_bytes(bytes(range(256))*65536)' $fixture
-          if ($LASTEXITCODE -ne 0) { throw 'Unable to create deterministic 16 MiB HTTP fixture.' }
-          $expectedSha = (Get-FileHash -LiteralPath $fixture -Algorithm SHA256).Hash
-          $portPath = Join-Path $fixtureDir 'port.txt'
-          $server = Start-Process -FilePath python -ArgumentList @('scripts/LocalHttpRangeFixture.py','--file',$fixture,'--port-file',$portPath,'--chunk-delay-ms','15') -PassThru
-          $guiProcess = $null
-          try {
-            for ($i=0; $i -lt 40 -and -not (Test-Path -LiteralPath $portPath); $i++) {
-              Start-Sleep -Milliseconds 250
-            }
-            if (-not (Test-Path -LiteralPath $portPath)) { throw 'Local HTTP server never opened its port.' }
-            $port = [int](Get-Content -LiteralPath $portPath -Raw)
-            $url = "http://127.0.0.1:$port/fixture.bin"
-            $guiProcess = Start-Process -FilePath $gui.FullName -PassThru
-            Start-Sleep -Seconds 5
-            $output = & $cli.FullName download add http --link $url --folder $downloadDir --name 'installed-e2e.bin' --start 2>&1
-            $status = $LASTEXITCODE
-            $output | ForEach-Object { Write-Host $_ }
-            if ($status -ne 0) { throw "Desktop CLI returned exit=$status" }
-            $download = Join-Path $downloadDir 'installed-e2e.bin'
-            $success = $false
-            for ($i=0; $i -lt 120; $i++) {
-              Start-Sleep -Milliseconds 500
-              if ((Test-Path -LiteralPath $download) -and (Get-Item -LiteralPath $download).Length -eq 16777216) {
-                # Full size is NOT proof the downloader closed the destination.
-                # Wait out transient Windows sharing violations, then compare
-                # all bytes; do not accept a missing/partial/wrong hash.
-                try {
-                  $actualHash = (Get-FileHash -LiteralPath $download -Algorithm SHA256 -ErrorAction Stop).Hash
-                  if ($actualHash -eq $expectedSha) {
-                    $success = $true
-                    break
-                  }
-                } catch {
-                  Write-Host 'Completed-size file is not yet readable; retrying SHA256 after the download closes it.'
-                }
-              }
-            }
-            if (-not $success) { throw 'Installed HTTP task failed byte-for-byte SHA256 verification.' }
-            # Verify the finished output remains byte-identical after the
-            # desktop task reports completion; this catches late writes.
-            Start-Sleep -Seconds 2
-            if ((Get-Item -LiteralPath $download).Length -ne 16777216) {
-              throw 'Installed HTTP output length changed after completion.'
-            }
-            if ((Get-FileHash -LiteralPath $download -Algorithm SHA256).Hash -ne $expectedSha) {
-              throw 'Installed HTTP output SHA256 changed after completion.'
-            }
-            New-Item -ItemType Directory -Path 'build/ci-release' -Force | Out-Null
-            "SourceSha=$env:HYPERGET_TESTED_SHA" | Set-Content 'build/ci-release/installed-http-e2e.txt'
-            "ExpectedSHA256=$expectedSha" | Add-Content 'build/ci-release/installed-http-e2e.txt'
-            "ActualSHA256=$((Get-FileHash -LiteralPath $download -Algorithm SHA256).Hash)" | Add-Content 'build/ci-release/installed-http-e2e.txt'
-            Write-Host 'Real installed Windows HTTP transfer passed: 16 MiB exact SHA256.'
-          } finally {
-            if ($guiProcess -and -not $guiProcess.HasExited) {
-              Stop-Process -Id $guiProcess.Id -Force -ErrorAction SilentlyContinue
-            }
-            if ($server -and -not $server.HasExited) {
-              Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue
-            }
-          }
-      - name: Verify real installed HTTP Pause, socket shutdown, Resume and SHA256
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $installed = Join-Path $env:RUNNER_TEMP 'installed-http-e2e/application'
-          $gui = Join-Path $installed 'HyperGet.exe'
-          $cli = Join-Path $installed 'DownloadManagerCli.exe'
-          if (-not (Test-Path -LiteralPath $gui -PathType Leaf) -or -not (Test-Path -LiteralPath $cli -PathType Leaf)) {
-            throw 'Installed GUI or CLI is missing before Pause/Resume check.'
-          }
-          & ./scripts/Run-WindowsInstalledResumeE2E.ps1 -GuiExecutable $gui -CliExecutable $cli -SourceSha $env:HYPERGET_TESTED_SHA -OutputDirectory (Join-Path $env:RUNNER_TEMP 'installed-resume-e2e')
-          $proof = Join-Path $env:RUNNER_TEMP 'installed-resume-e2e/resume-evidence.txt'
-          if (-not (Test-Path -LiteralPath $proof -PathType Leaf)) { throw 'Resume proof missing.' }
-          Copy-Item -LiteralPath $proof -Destination 'build/ci-release/installed-resume-e2e.txt'
-
-      - name: Upload installed HTTP E2E evidence
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: installed-http-e2e
-          path: |
-            build/ci-release/installed-http-e2e.txt
-            build/ci-release/installed-resume-e2e.txt
-          if-no-files-found: ignore
-          retention-days: 7
- } | Select-Object -First 1
-          if (-not $gui -or $legacyGui.Count -ne 0 -or -not $cli) {
-            Write-Host "Installed executable names: $($exe.Name -join ', ')"
-            throw 'Expected HyperGet.exe, no legacy GUI, and the legacy-compatible CLI launcher.'
           }
           $fixture = Join-Path $fixtureDir 'fixture.bin'
           & python -c 'import pathlib,sys; pathlib.Path(sys.argv[1]).write_bytes(bytes(range(256))*65536)' $fixture
