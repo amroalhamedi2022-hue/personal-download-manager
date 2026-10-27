@@ -10,6 +10,8 @@ on:
       - codex/repair-rf00-rf01
     paths:
       - ".github/workflows/hyperget-source-only.yml"
+      - "desktop/app/resources/installer/nsis-script-template.nsi"
+      - "scripts/source-tests/test_hyperget_uninstaller_cleanup_order.py"
       - "scripts/Run-WindowsActiveBenchmarkMatrix.ps1"
       - "scripts/LocalHttpRangeFixture.py"
       - "scripts/test_local_http_range_fixture.py"
@@ -89,6 +91,8 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Verify PR commit version is SemVer-safe
         run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_semver_source.py -v
+      - name: Verify HyperGet uninstaller cleanup ordering (source only)
+        run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_uninstaller_cleanup_order.py -v
       - name: Verify FTP stage source contract
         run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_ftp_stage_source.py -v
       - name: Verify installed FTP workflow skips unrelated commits
