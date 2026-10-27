@@ -240,7 +240,7 @@ jobs:
             $parseErrors = $null
             [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $psFile).Path, [ref]$tokens, [ref]$parseErrors) | Out-Null
             if ($parseErrors.Count -gt 0) {
-              $parseErrors | ForEach-Object { Write-Host "$psFile:$($_.Extent.StartLineNumber):$($_.Message)" }
+              $parseErrors | ForEach-Object { Write-Host "$($psFile):$($_.Extent.StartLineNumber):$($_.Message)" }
               throw "PowerShell parser rejected $psFile."
             }
           }

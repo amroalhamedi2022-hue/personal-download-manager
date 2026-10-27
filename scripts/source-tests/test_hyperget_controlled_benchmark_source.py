@@ -80,6 +80,7 @@ class ControlledBenchmarkSourceTests(unittest.TestCase):
         self.assertIn("comparison=$comparison", workflow)
         self.assertIn("outputs.comparison != 'true'", workflow)
         self.assertIn("[System.Management.Automation.Language.Parser]::ParseFile", workflow)
+        self.assertIn('Write-Host "$($psFile):$($_.Extent.StartLineNumber):$($_.Message)"', workflow)
 
     def test_checkpoint_is_written_before_build_and_does_not_claim_results(self):
         checkpoint = read("docs/checkpoints/HG_E061_CONTROLLED_PERFORMANCE_COMPARISON.md")
