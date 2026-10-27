@@ -1856,3 +1856,22 @@ Can the harness safely handle the controlled install directory disappearing afte
 **Why source tests are insufficient:** only the installed Windows binaries can establish real byte transfer, socket overlap, process-tree resource measurements, NSIS behavior, shortcut targets and uninstall residue. This correction must pass source/PowerShell gates before packaging; only then is a new Windows run justified.
 
 **Status: OPEN.** The prior matrix's preliminary deltas are not official acceptance because the comparator rejected round metadata. No build or performance result is claimed from run 40475434465. No merge, release, main write or Torrent.
+
+
+## 2026-10-27 — E061 source-contract gate blocked before build (OPEN)
+
+**Exact harness SHA:** `72c283b93884509e1a6b48d4882d420698d1daea`.  
+**Windows comparison run:** [40478758287](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40478758287).  
+**Source-only CI:** [40478758144](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40478758144) completed; the benchmark-specific Python suite failed one structural assertion. The PowerShell parser passed, but no JDK setup, installer build, HTTP transfer, resource sampling or comparison occurred.
+
+### Failure and correction
+
+The normalizer combined source/harness/verification validation and the local `Round=1` check into one condition. The regression suite deliberately requires the local-round contract to be explicit, so it could assert that untrusted outer labels are rejected before rewriting. Split the guard into separate source-provenance validation and `if ([int]$record.Round -ne 1)` validation; behavior remains fail-closed and no evidence is relabeled unless the inner run is confirmed as round 1.
+
+**Pre-build question:** do the PowerShell parser and all benchmark source contracts pass on the same exact head, so the workflow can proceed to the purpose-built Windows installer/transfer test?
+
+**Expected:** parser + source tests PASS before any build; then both exact app snapshots build and the full 126-transfer/18-resource-round matrix executes, with strict 1/4/16 overlap, verified SHA-256 and unchanged 15% regression gates.
+
+**Why source tests are insufficient:** only the installed Windows binaries can prove actual transfer bytes, socket overlap, OS process measurements and installer/uninstaller behavior. This source assertion must pass first; the previous run did not build anything.
+
+**Status: OPEN.** No performance or uninstall acceptance is claimed from run 40478758287. No merge, release, main write or Torrent.

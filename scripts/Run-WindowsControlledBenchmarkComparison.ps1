@@ -369,8 +369,11 @@ try {
         $downloads = Join-Path $Directory 'downloads'
         foreach ($record in $manifest) {
             if ($record.SourceSha -ne $SourceSha -or $record.HarnessSha -ne $HarnessSha -or
-                $record.Verified -ne 'True' -or [int]$record.Round -ne 1) {
-                throw "Controlled round $Round has invalid source, harness, verification, or local-round metadata."
+                $record.Verified -ne 'True') {
+                throw "Controlled round $Round has invalid source, harness, or verification metadata."
+            }
+            if ([int]$record.Round -ne 1) {
+                throw "Controlled round $Round expected local transfer round 1; found $($record.Round)."
             }
             $match = [regex]::Match([string]$record.OutputName, '^(active-(?:1|4|16))-round-1-task-(\d+)\.bin$')
             if (-not $match.Success) {

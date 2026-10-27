@@ -1092,3 +1092,8 @@ The same artifact showed blank shortcut-target fields. The cleanup path normaliz
 ## 2026-10-27 — HyperGet E061 current gate
 
 The controlled Windows performance milestone remains **OPEN**. Run [40475434465](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40475434465) failed its PowerShell parser gate before any build because the round-normalization function was accidentally spliced into the output-name regex. A correction is queued to reconstruct the bounded metadata normalizer, re-hash renamed transfer outputs, normalize all resource CSV round labels, and add a source regression. The next build is permitted only after source contracts and PowerShell parsing pass. Required runtime evidence remains 126 SHA-verified 32-MiB transfers, 18 resource-round records, real 1/4/16 overlap, exact source provenance and unchanged 15% paired throughput/peak-memory gates. Installer residue remains a separate uninstall defect diagnostic. See [HG-E061 checkpoint](checkpoints/HG_E061_CONTROLLED_PERFORMANCE_COMPARISON.md).
+
+
+## 2026-10-27 — E061 source gate follow-up
+
+Run [40478758287](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40478758287) passed PowerShell parsing but failed one benchmark source assertion before build because the local transfer-round check was combined with other provenance guards. The code now separates source/harness/verification checks from explicit `Round=1` validation. No installer or performance data was produced by that run; E061 remains OPEN until exact-head source+parser gates pass and the installed Windows matrix produces the official comparison report.
