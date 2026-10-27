@@ -54,7 +54,8 @@ foreach ($sha in @($BaselineSourceSha, $CandidateSourceSha, $HarnessSha)) {
     if ($sha -notmatch '^[0-9a-fA-F]{40}$') { throw 'All source and harness SHAs must be full 40-character commits.' }
 }
 if ($BaselineSourceSha -eq $CandidateSourceSha) { throw 'Baseline and candidate must be different exact source snapshots.' }
-if (Test-Path -LiteralPath $installDir) { throw 'Refusing to overwrite a pre-existing controlled install directory.' }
+$script:InstallDirExistedAtPreflight = Test-Path -LiteralPath $installDir -PathType Container
+if ($script:InstallDirExistedAtPreflight) { throw 'Refusing to overwrite a pre-existing controlled install directory.' }
 if (Test-Path -LiteralPath $dataDir) { throw 'Refusing to touch pre-existing user data.' }
 foreach ($key in $uninstallKeys) { if (Test-Path -LiteralPath $key) { throw "Refusing to touch pre-existing registry key: $key" } }
 $script:ShortcutParentExistedAtPreflight = @{}
@@ -74,6 +75,7 @@ $script:ActiveMarkerToken = $null
 $script:ActiveDataDir = $dataDir
 $script:RegistryResiduePath = Join-Path $root 'registry-residue.csv'
 $script:ShortcutResiduePath = Join-Path $root 'shortcut-residue.csv'
+$script:InstallFileResiduePath = Join-Path $root 'install-file-residue.csv'
 $script:ExpectedGuiPath = $null
 $script:ExpectedCliPath = $null
 $transcriptStarted = $false
@@ -86,17 +88,27 @@ try {
     Write-Host "Baseline installer SHA256: $baselineInstallerSha"
     Write-Host "Candidate installer SHA256: $candidateInstallerSha"
     Write-Host 'Predeclared gates: median throughput regression <= 15%; median peak Working Set and Private Bytes regression <= 15% per workload.'
-    function Stop-ProcessesUnderInstall {
+    function Get-ProcessesUnderInstall {
         param([string] $Path)
         $prefix = [IO.Path]::GetFullPath($Path).TrimEnd([char[]]@('\','/')) + '\'
-        $processes = @(Get-CimInstance -ClassName Win32_Process | Where-Object {
+        return @(Get-CimInstance -ClassName Win32_Process | Where-Object {
             -not [string]::IsNullOrWhiteSpace([string]$_.ExecutablePath) -and
             ([string]$_.ExecutablePath).StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)
         })
+    }
+    function Stop-ProcessesUnderInstall {
+        param([string] $Path)
+        $processes = @(Get-ProcessesUnderInstall -Path $Path)
         foreach ($process in $processes) {
+            Write-Host "Stopping controlled-install process $($process.Name)#$($process.ProcessId)."
             Stop-Process -Id ([int]$process.ProcessId) -Force -ErrorAction SilentlyContinue
         }
         Start-Sleep -Milliseconds 750
+        $remaining = @(Get-ProcessesUnderInstall -Path $Path)
+        if ($remaining.Count -gt 0) {
+            $details = ($remaining | ForEach-Object { "$($_.Name)#$($_.ProcessId)" }) -join ', '
+            throw "Processes remain under controlled install after stop request: $details"
+        }
     }
     function Remove-OwnedData {
         param([string] $ExpectedToken)
@@ -232,10 +244,77 @@ try {
             if ($shell) { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($shell) }
         }
     }
+    function Clear-OwnedInstallDirectoryResidue {
+        param([ValidateSet('baseline','candidate')][string] $Variant, [int] $Round)
+        if (-not (Test-Path -LiteralPath $installDir -PathType Container)) { return }
+
+        $actualInstallDir = [IO.Path]::GetFullPath($installDir).TrimEnd([char[]]@('\','/'))
+        $expectedInstallDir = [IO.Path]::GetFullPath((Join-Path $runnerTemp 'hyperget-controlled-benchmark-install')).TrimEnd([char[]]@('\','/'))
+        if (-not [string]::Equals($actualInstallDir, $expectedInstallDir, [StringComparison]::OrdinalIgnoreCase) -or
+            -not $actualInstallDir.StartsWith($runnerTemp + '\', [StringComparison]::OrdinalIgnoreCase)) {
+            throw 'Refusing to clear an install directory outside the exact controlled runner-temp path.'
+        }
+        if ($script:InstallDirExistedAtPreflight) {
+            throw 'Refusing to clear an install directory that existed at preflight.'
+        }
+        if ([string]::IsNullOrWhiteSpace([string]$script:ActiveMarkerToken) -or
+            -not (Test-Path -LiteralPath $markerPath -PathType Leaf)) {
+            throw 'Refusing to clear install residue without the active test-owned data marker.'
+        }
+        if ((Get-Content -LiteralPath $markerPath -Raw).Trim() -ne $script:ActiveMarkerToken) {
+            throw 'Active test-owned data marker does not match; refusing install cleanup.'
+        }
+
+        Stop-ProcessesUnderInstall -Path $actualInstallDir
+        $files = @(Get-ChildItem -LiteralPath $actualInstallDir -File -Recurse -Force)
+        $records = [System.Collections.Generic.List[object]]::new()
+        if ($files.Count -eq 0) {
+            $records.Add([pscustomobject]@{
+                Variant = $Variant
+                Round = $Round
+                InstallDirectory = $actualInstallDir
+                RelativePath = '.'
+                FullPath = $actualInstallDir
+                SizeBytes = 0
+                SHA256 = ''
+                Action = 'Removed test-owned install directory after recording'
+            })
+        } else {
+            foreach ($file in $files) {
+                $relative = [IO.Path]::GetRelativePath($actualInstallDir, $file.FullName)
+                $digest = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+                $records.Add([pscustomobject]@{
+                    Variant = $Variant
+                    Round = $Round
+                    InstallDirectory = $actualInstallDir
+                    RelativePath = $relative
+                    FullPath = $file.FullName
+                    SizeBytes = [long]$file.Length
+                    SHA256 = $digest
+                    Action = 'Removed test-owned install directory after recording'
+                })
+            }
+        }
+        foreach ($record in $records) {
+            if (Test-Path -LiteralPath $script:InstallFileResiduePath -PathType Leaf) {
+                $record | Export-Csv -LiteralPath $script:InstallFileResiduePath -NoTypeInformation -Append -Encoding utf8
+            } else {
+                $record | Export-Csv -LiteralPath $script:InstallFileResiduePath -NoTypeInformation -Encoding utf8
+            }
+        }
+
+        Remove-Item -LiteralPath $actualInstallDir -Recurse -Force
+        if (Test-Path -LiteralPath $actualInstallDir) {
+            throw 'Failed to clear the exact marker-owned controlled install directory after recording residue.'
+        }
+        $fileCount = $files.Count
+        Write-Warning "$Variant round $Round uninstaller left $fileCount install file(s) (or an empty install directory); inventory recorded before test-owned cleanup. This is not uninstall acceptance PASS."
+    }
     function Assert-NoProductResidue {
         param([ValidateSet('baseline','candidate')][string] $Variant, [int] $Round)
         Clear-OwnedRegistryResidue -Variant $Variant -Round $Round
         Clear-OwnedShortcutResidue -Variant $Variant -Round $Round
+        Clear-OwnedInstallDirectoryResidue -Variant $Variant -Round $Round
         foreach ($key in $uninstallKeys) {
             if (Test-Path -LiteralPath $key) { throw "Registry residue cleanup did not complete: $key" }
         }
@@ -300,12 +379,16 @@ try {
         & $compareScript -BaselineDirectory (Join-Path $root 'baseline') -CandidateDirectory (Join-Path $root 'candidate') -BaselineSourceSha $BaselineSourceSha -CandidateSourceSha $CandidateSourceSha -HarnessSha $HarnessSha -OutputPath (Join-Path $root 'comparison-report.md') -FileSizeMiB 32 -MaxRegressionPercent 15
     } finally {
         if ((Test-Path -LiteralPath $script:RegistryResiduePath -PathType Leaf) -or
-            (Test-Path -LiteralPath $script:ShortcutResiduePath -PathType Leaf)) {
+            (Test-Path -LiteralPath $script:ShortcutResiduePath -PathType Leaf) -or
+            (Test-Path -LiteralPath $script:InstallFileResiduePath -PathType Leaf)) {
             $registryCount = if (Test-Path -LiteralPath $script:RegistryResiduePath -PathType Leaf) {
                 @(Import-Csv -LiteralPath $script:RegistryResiduePath).Count
             } else { 0 }
             $shortcutCount = if (Test-Path -LiteralPath $script:ShortcutResiduePath -PathType Leaf) {
                 @(Import-Csv -LiteralPath $script:ShortcutResiduePath).Count
+            } else { 0 }
+            $installFileCount = if (Test-Path -LiteralPath $script:InstallFileResiduePath -PathType Leaf) {
+                @(Import-Csv -LiteralPath $script:InstallFileResiduePath).Count
             } else { 0 }
             $diagnostic = @(
                 ''
@@ -313,13 +396,15 @@ try {
                 ''
                 "- Registry key residue records: $registryCount."
                 "- Shortcut residue records: $shortcutCount."
+                "- Install-file residue records: $installFileCount."
                 '- Registry cleanup was limited to known keys absent at preflight whose values proved ownership by the controlled install (or empty known product keys).'
                 '- Shortcut cleanup was limited to preflight-absent known links whose absolute target exactly matched the installed GUI or CLI executable; only empty test-created parent folders were removed.'
-                '- This cleanup diagnostic is separate from performance comparison and is not evidence that application uninstall acceptance passed.'
+                '- Install-directory cleanup was limited to the exact runner-temp path, absent at preflight, with the active marker verified and no running process under the install path; all residual files were SHA-256 inventoried before cleanup.'
+                '- Any registry, shortcut, or install-file residue is a separate uninstall defect diagnostic; cleanup is not evidence that application uninstall acceptance passed.'
             )
             $reportPath = Join-Path $root 'comparison-report.md'
             Add-Content -LiteralPath $reportPath -Value $diagnostic -Encoding utf8
-            Write-Warning "Installer-uninstall diagnostic: $registryCount owned registry key(s) and $shortcutCount owned shortcut(s) remained after uninstall; details are in registry-residue.csv and shortcut-residue.csv. This is not an uninstall acceptance PASS."
+            Write-Warning "Installer-uninstall diagnostic: $registryCount registry, $shortcutCount shortcut, and $installFileCount install-file residue record(s). Details are in the corresponding CSVs; this is not an uninstall acceptance PASS."
         }
     }
     Write-Host 'Controlled baseline/candidate comparison finished.'
@@ -335,8 +420,16 @@ try {
         } catch { Write-Warning "Best-effort owned install cleanup failed: $($_.Exception.Message)" }
         if (Test-Path -LiteralPath $script:ActiveInstallDir) {
             $normalizedInstall = [IO.Path]::GetFullPath($script:ActiveInstallDir).TrimEnd([char[]]@('\','/'))
-            if ($normalizedInstall.StartsWith($runnerTemp + '\', [StringComparison]::OrdinalIgnoreCase)) {
-                Remove-Item -LiteralPath $script:ActiveInstallDir -Recurse -Force -ErrorAction SilentlyContinue
+            $expectedControlledInstall = [IO.Path]::GetFullPath((Join-Path $runnerTemp 'hyperget-controlled-benchmark-install')).TrimEnd([char[]]@('\','/'))
+            if (-not [string]::Equals($normalizedInstall, $expectedControlledInstall, [StringComparison]::OrdinalIgnoreCase)) {
+                throw 'Refusing best-effort recursive cleanup outside the exact controlled install path.'
+            }
+            $remainingProcesses = @(Get-ProcessesUnderInstall -Path $normalizedInstall)
+            if ($remainingProcesses.Count -eq 0) {
+                Remove-Item -LiteralPath $normalizedInstall -Recurse -Force -ErrorAction SilentlyContinue
+            } else {
+                $details = ($remainingProcesses | ForEach-Object { "$($_.Name)#$($_.ProcessId)" }) -join ', '
+                Write-Warning "Preserving test install directory because process still active: $details"
             }
         }
     }
