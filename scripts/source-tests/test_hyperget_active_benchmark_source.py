@@ -113,6 +113,10 @@ class ActiveBenchmarkContract(unittest.TestCase):
         scope = WORKFLOW.split('case "$file" in', 1)[1].split(")", 1)[0]
         self.assertIn(".github/workflows/windows-installed-active-benchmark.yml", scope)
         self.assertIn("scripts/Run-WindowsActiveBenchmarkMatrix.ps1", scope)
+        scope_job = WORKFLOW.split("  change-scope:", 1)[1].split("  real-windows-active-transfers:", 1)[0]
+        self.assertIn("fetch-depth: 0", scope_job)
+        self.assertIn('changed="$(git diff --name-only "origin/$GITHUB_BASE_REF...HEAD")"', scope_job)
+        self.assertNotIn("git diff --name-only HEAD^ HEAD", scope_job)
         self.assertIn("if: needs.change-scope.outputs.run == 'true'", WORKFLOW)
 
 

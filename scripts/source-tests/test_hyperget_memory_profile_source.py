@@ -49,10 +49,12 @@ class WindowsJvmMemoryProfileContract(unittest.TestCase):
         self.assertIn("$javaPid", PROFILE)
         self.assertNotIn("& $jcmd $gui.Id", PROFILE)
 
-    def test_expensive_profile_is_scoped_to_relevant_latest_commit(self):
+    def test_expensive_profile_is_scoped_to_the_full_relevant_pr_diff(self):
         self.assertIn("change-scope:", WORKFLOW)
-        self.assertIn("git diff --name-only HEAD^ HEAD", WORKFLOW)
-        self.assertIn("fetch-depth: 2", WORKFLOW)
+        self.assertIn('changed="$(git diff --name-only "origin/$GITHUB_BASE_REF...HEAD")"', WORKFLOW)
+        self.assertIn("fetch-depth: 0", WORKFLOW)
+        self.assertNotIn("git diff --name-only HEAD^ HEAD", WORKFLOW)
+        self.assertIn("HYPERGET_EVENT_BEFORE: ${{ github.event.before || '' }}", WORKFLOW)
         self.assertIn('case "$file" in', WORKFLOW)
         self.assertIn(".github/workflows/windows-installed-memory-profile.yml", WORKFLOW)
         self.assertIn("run=false", WORKFLOW)
