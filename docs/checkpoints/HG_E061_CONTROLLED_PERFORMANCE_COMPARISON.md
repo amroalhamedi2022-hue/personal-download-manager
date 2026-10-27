@@ -299,3 +299,43 @@ Production commit `c99b6f627de5f1ef1cba9e79f4f8e1baba20ffe1` raises `PART_BODY_C
 **Why source tests are insufficient:** only the installed Windows comparison measures real body-copy scheduling, overlapping sockets, transfer throughput, process-tree CPU/RAM and byte integrity. The previous run proved that source/compile checks can pass while the installed 16-way throughput gate fails.
 
 **Status: OPEN.** No final performance acceptance, uninstall acceptance, merge, release or final `HyperGet.exe` delivery is claimed.
+
+
+## 2026-10-27 — E061 cap-60 controlled Windows comparison PASS
+
+**Exact Windows run:** [40494020066](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40494020066).  
+**Artifact:** [hyperget-controlled-http-performance-comparison / 12733115213](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40494020066/artifacts/12733115213).  
+**Artifact SHA-256:** `546166059a6ca224ece94399c84b63981f81e958d0296c148f6f43ad9e8919a0` — independently re-hashed after downloading the artifact ZIP.  
+**Installer SHA-256:** baseline `31e27e95174ecf845eea1a58c05a8873824da0c33808044527b096270f505728`; candidate `16fba3c8e8d3c1cb7e6df4910ee3c1fb53c10ba624b661cd7dcf79e6f461b485`.  
+**Exact app snapshots:** baseline `d6ea54a885277cb5b8fd545eb3f3fb0e185b6aa5`; cap-60 candidate `c99b6f627de5f1ef1cba9e79f4f8e1baba20ffe1`. Shared harness: `1d9536fe69a9f886fffc4b389a5f7dfcd7fb73c5`.
+
+### Result — performance gate PASS
+
+- Both exact-snapshot Windows installers built and were installed for the controlled run.
+- 126 downloaded outputs were present in the artifact: 21 per round × 3 rounds × 2 variants; each was 33,554,432 bytes.
+- Independently recomputed SHA-256 for all 126 downloaded outputs against each round's included source fixture: **126/126 matched**.
+- All three real active-transfer workloads (1/4/16) completed for all three rounds on Windows Server 2022, four logical CPUs; nine resource summaries per version were included.
+- The unchanged regression gates all passed:
+
+| Active downloads | Throughput delta | Peak Working Set delta | Peak Private Bytes delta | Gate |
+|---:|---:|---:|---:|---|
+| 1 | 0.00% | -0.93% | -0.96% | PASS |
+| 4 | -0.03% | -0.38% | -0.59% | PASS |
+| 16 | +3.00% | -1.39% | -3.54% | PASS |
+
+This accepts the cap-60 candidate against the declared version-to-version regression thresholds. It is **not** a speed/superiority comparison against Internet Download Manager (IDM), and hosted-runner numbers are not an end-user-device guarantee.
+
+### Separate uninstall defect — still OPEN
+
+The same artifact records 12 test-owned registry residue entries and 12 test-owned shortcut residue entries across the six install/uninstall cycles; install-file residue was zero. The harness removed only entries it could prove belonged to the controlled install, to isolate subsequent performance rounds. That cleanup is diagnostic and **does not pass uninstall acceptance**.
+
+Source inspection found the NSIS uninstall section was deleting the running uninstaller/install directory before its shortcut and registry cleanup commands. A bounded production correction now moves owned shortcut/registry cleanup ahead of `clearFiles`, with self-removal last:
+- Installer template reorder: commit [`62467e9`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/62467e92d0790d4cd05db76a7a53663b5bc7989b).
+- Source regression: commit [`8332de3`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/8332de37ae00805c6415c061627588e093a56c79).
+- Source-only workflow wiring: commit [`baaa2e4`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/baaa2e452a30a850f40e880f1716f6adc0939259).
+
+**Pre-build question for the next Windows acceptance run:** after this ordering change, does the actual NSIS uninstaller remove the controlled registry keys and Start Menu/Desktop shortcuts without harness cleanup, while preserving user data unless the explicit optional remove-data choice is selected?
+
+**Why source checks are insufficient:** only the built installer/uninstaller can demonstrate the actual NSIS execution order, registry view, shortcut removal, process shutdown and preservation of download data. The Windows cross-version upgrade/rollback workflow is now in the PR path-triggered queue.
+
+**Status:** E061 throughput/memory comparison **PASS**; installer uninstall **OPEN**; overall release acceptance remains **OPEN**. No merge, release, main write or final `HyperGet.exe` delivery is claimed.
