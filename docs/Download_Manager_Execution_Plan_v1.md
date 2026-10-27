@@ -1087,3 +1087,8 @@ Windows run [40468354887](https://github.com/amroalhamedi2022-hue/personal-downl
 
 The same artifact showed blank shortcut-target fields. The cleanup path normalizer was swallowing exceptions into empty strings, so ownership checks were not sufficiently fail-closed. The next patch uses explicit Windows separator characters, rejects blank targets, stamps/renames each nested round's evidence to the enclosing round, and makes the comparator reject mismatched round metadata. See [HG_E061_CONTROLLED_PERFORMANCE_COMPARISON.md](checkpoints/HG_E061_CONTROLLED_PERFORMANCE_COMPARISON.md) for exact installer/artifact hashes and acceptance criteria.
 
+
+
+## 2026-10-27 — HyperGet E061 current gate
+
+The controlled Windows performance milestone remains **OPEN**. Run [40475434465](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40475434465) failed its PowerShell parser gate before any build because the round-normalization function was accidentally spliced into the output-name regex. A correction is queued to reconstruct the bounded metadata normalizer, re-hash renamed transfer outputs, normalize all resource CSV round labels, and add a source regression. The next build is permitted only after source contracts and PowerShell parsing pass. Required runtime evidence remains 126 SHA-verified 32-MiB transfers, 18 resource-round records, real 1/4/16 overlap, exact source provenance and unchanged 15% paired throughput/peak-memory gates. Installer residue remains a separate uninstall defect diagnostic. See [HG-E061 checkpoint](checkpoints/HG_E061_CONTROLLED_PERFORMANCE_COMPARISON.md).

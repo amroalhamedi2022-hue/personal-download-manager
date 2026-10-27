@@ -176,3 +176,25 @@ Normalize each nested one-round output to its enclosing paired-comparison round 
 **Why source tests are insufficient:** the result depends on installed Windows binaries, NSIS cleanup, Windows Shell shortcut metadata, actual HTTP bytes, process-tree resource sampling and exact artifact provenance. Source assertions cannot replace the installed run.
 
 **Status: OPEN.** No production downloader code changed in this correction. This artifact is evidence for the harness fix only, not a release artifact or uninstall PASS. No merge, release, main write or Torrent.
+
+
+## 2026-10-27 — E061 parser gate blocked before packaging; correction queued (OPEN)
+
+**Exact PR head:** `c2e237fb287301d2cda17b4f324fb5fa967cc5ab`.  
+**Windows run:** [40475434465](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40475434465).  
+**Observed result:** source-contract gate failed before JDK setup or installer builds. The PowerShell parser identified a malformed line in `scripts/Run-WindowsControlledBenchmarkComparison.ps1` at line 375: the `Invoke-VariantRound` parameter/body had been spliced into the transfer-output regex literal. No installers, HTTP transfers, resource samples, comparison report, or artifact were produced by this run.
+
+### Correction to be validated before the next build
+
+- Reconstruct `Set-ControlledRoundMetadata` as a bounded function: validate all 21 local-round transfer records, verify size and SHA-256 before rename, rename outputs only to their enclosing round label, re-hash after rename, and update manifest metadata.
+- Normalize all three resource CSVs (`active-1/4/16`) and the three-row `round-summary.csv`, preserving exact app/harness SHA and rejecting unexpected local round labels or overwrite targets.
+- Add a source regression for the full regex terminator and unique function boundaries.
+- Keep path ownership fail-closed and refuse cleanup of a shortcut with an empty target.
+
+**Pre-build question:** do the source-contract suite and PowerShell parser accept the corrected runner, allowing the two fixed app snapshots to build and the paired installed Windows matrix to execute with truthful round-1/2/3 provenance?
+
+**Expected:** both exact installers build; 63 SHA-verified 32-MiB transfers per app snapshot; nine resource rounds per snapshot; strict live 1/4/16 overlap; exact app/harness provenance; official paired throughput and peak Working Set/Private Bytes deltas within the predeclared 15% gates, or a genuine regression is reported. Any uninstall residue remains a separate diagnostic and is not converted into uninstall PASS.
+
+**Why source tests are insufficient:** only the installed Windows binaries can establish real byte transfer, socket overlap, process-tree resource measurements, NSIS behavior, shortcut targets and uninstall residue. This correction must pass source/PowerShell gates before packaging; only then is a new Windows run justified.
+
+**Status: OPEN.** The prior matrix's preliminary deltas are not official acceptance because the comparator rejected round metadata. No build or performance result is claimed from run 40475434465. No merge, release, main write or Torrent.
