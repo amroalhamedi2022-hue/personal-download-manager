@@ -1627,3 +1627,13 @@ This does **not** close overall HyperGet release acceptance: final independent W
 **Why source tests are insufficient:** they cannot show the actual contrast/shape in Compose rendering or prove that the installed app and transfer still work. The existing screenshot is the baseline; one purposeful Windows visual build is justified for this UI change, not as a release build.
 
 **Status before build:** visual acceptance remains **OPEN** until the new exact-head screenshot and report are inspected.
+
+
+## 2026-10-27 — Liquid Progress contrast recheck (PRE-BUILD)
+
+The current PR branch contains the proposed visual delta from prior passing SHA `77f8c7e637b0fc6430484249af148588cc01837f`: 5dp→7dp track, shimmer alpha 0.30→0.42, 0.16 top-edge gloss, and brighter/larger bubbles (0.42 at 2dp; 0.30 at 1.3dp). The prior Windows screenshot does not verify these newer pixels.
+
+**Question before build:** does the exact current PR head visibly render this treatment at ≥25% of a real 16 MiB transfer while status is `Downloading`, bytes advance, and the final output SHA-256 matches the fixture?
+**Expected:** numeric source thresholds and PowerShell parse pass; the exact-head Windows installer builds/launches; native-scale screenshot shows gloss/shimmer/bubbles; final size is 16,777,216 bytes and expected/actual SHA-256 both equal `341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1`.
+**Why source tests are insufficient:** source assertions cannot prove Compose pixel contrast or that installed GUI, IPC, and transfer remain active during capture.
+**Status:** OPEN; no final visual acceptance or release EXE claim until the exact-head artifact is inspected.
