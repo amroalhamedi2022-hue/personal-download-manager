@@ -85,6 +85,19 @@ class ControlledBenchmarkSourceTests(unittest.TestCase):
         self.assertIn("[System.Management.Automation.Language.Parser]::ParseFile", workflow)
         self.assertIn('Write-Host "$($psFile):$($_.Extent.StartLineNumber):$($_.Message)"', workflow)
 
+
+    def test_registry_residue_is_owned_audited_and_separate_from_performance_acceptance(self):
+        source = read("scripts/Run-WindowsControlledBenchmarkComparison.ps1")
+        self.assertIn("function Normalize-RegistryValuePath", source)
+        self.assertIn("function Clear-OwnedRegistryResidue", source)
+        self.assertIn("registry-residue.csv", source)
+        self.assertIn("Refusing to remove registry key not proven to belong to the controlled install", source)
+        self.assertIn("Clear-OwnedRegistryResidue -Variant $Variant -Round $Round", source)
+        self.assertIn("Action = 'Removed test-owned residue after recording'", source)
+        self.assertIn("This cleanup diagnostic is separate from performance comparison and is not evidence that application uninstall acceptance passed.", source)
+        self.assertIn('Refusing to touch pre-existing registry key: $key', source)
+        self.assertIn("RegistryKey = $key", source)
+
     def test_checkpoint_is_written_before_build_and_does_not_claim_results(self):
         checkpoint = read("docs/checkpoints/HG_E061_CONTROLLED_PERFORMANCE_COMPARISON.md")
         self.assertIn("Pre-build question", checkpoint)

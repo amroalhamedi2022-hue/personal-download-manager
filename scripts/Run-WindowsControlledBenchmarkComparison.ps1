@@ -67,6 +67,7 @@ $candidateInstallerSha = (Get-FileHash -LiteralPath $CandidateInstaller -Algorit
 $script:ActiveInstallDir = $null
 $script:ActiveMarkerToken = $null
 $script:ActiveDataDir = $dataDir
+$script:RegistryResiduePath = Join-Path $root 'registry-residue.csv'
 $transcriptStarted = $false
 try {
     Start-Transcript -Path (Join-Path $root 'controlled-comparison-transcript.txt') -Force | Out-Null
@@ -105,9 +106,70 @@ try {
         if (Test-Path -LiteralPath $dataDir) { throw 'Owned benchmark data cleanup did not complete.' }
         $script:ActiveMarkerToken = $null
     }
-    function Assert-NoProductResidue {
+    function Normalize-RegistryValuePath {
+        param([AllowNull()][string] $Value)
+        if ([string]::IsNullOrWhiteSpace($Value)) { return '' }
+        $trimmed = $Value.Trim().Trim([char]'"')
+        if ([string]::IsNullOrWhiteSpace($trimmed)) { return '' }
+        try { return [IO.Path]::GetFullPath($trimmed).TrimEnd([char[]]@('\\','/')) }
+        catch { return '' }
+    }
+    function Clear-OwnedRegistryResidue {
+        param([ValidateSet('baseline','candidate')][string] $Variant, [int] $Round)
+        $expectedInstall = Normalize-RegistryValuePath $installDir
         foreach ($key in $uninstallKeys) {
-            if (Test-Path -LiteralPath $key) { throw "Uninstall left registry key: $key" }
+            if (-not (Test-Path -LiteralPath $key)) { continue }
+            $properties = Get-ItemProperty -LiteralPath $key -ErrorAction Stop
+            $owned = $false
+            $evidence = ''
+            if ($key -eq $uninstallKeys[0]) {
+                $registeredInstall = Normalize-RegistryValuePath ([string]$properties.InstallLocation)
+                $registeredUninstaller = Normalize-RegistryValuePath ([string]$properties.UninstallString)
+                $expectedUninstaller = Normalize-RegistryValuePath (Join-Path $installDir 'uninstall.exe')
+                $owned = $registeredInstall -eq $expectedInstall -and $registeredUninstaller -eq $expectedUninstaller
+                $evidence = "InstallLocation=$registeredInstall; UninstallString=$registeredUninstaller"
+            } elseif ($key -eq $uninstallKeys[1]) {
+                $registeredInstall = Normalize-RegistryValuePath ([string]$properties.InstallPath)
+                $owned = $registeredInstall -eq $expectedInstall
+                $evidence = "InstallPath=$registeredInstall"
+            } else {
+                $runTarget = Normalize-RegistryValuePath ([string]$properties.DownloadManager)
+                $expectedExe = Normalize-RegistryValuePath (Join-Path $installDir 'DownloadManager.exe')
+                $nonMetadata = @($properties.PSObject.Properties | Where-Object { $_.Name -notmatch '^PS' })
+                if (-not [string]::IsNullOrWhiteSpace($runTarget)) {
+                    $owned = $runTarget -eq $expectedExe
+                    $evidence = "DownloadManager=$runTarget"
+                } elseif ($nonMetadata.Count -eq 0) {
+                    # Preflight proved this known product key did not exist before this isolated install.
+                    $owned = $true
+                    $evidence = 'Empty known product key; absent during preflight'
+                }
+            }
+            if (-not $owned) {
+                throw "Refusing to remove registry key not proven to belong to the controlled install: $key"
+            }
+            $record = [pscustomobject]@{
+                Variant = $Variant
+                Round = $Round
+                RegistryKey = $key
+                Evidence = $evidence
+                Action = 'Removed test-owned residue after recording'
+            }
+            if (Test-Path -LiteralPath $script:RegistryResiduePath -PathType Leaf) {
+                $record | Export-Csv -LiteralPath $script:RegistryResiduePath -NoTypeInformation -Append -Encoding utf8
+            } else {
+                $record | Export-Csv -LiteralPath $script:RegistryResiduePath -NoTypeInformation -Encoding utf8
+            }
+            Remove-Item -LiteralPath $key -Recurse -Force
+            if (Test-Path -LiteralPath $key) { throw "Failed to clear recorded test-owned registry residue: $key" }
+            Write-Warning "$Variant round $Round uninstaller left a test-owned registry key; recorded and removed it to isolate performance rounds: $key"
+        }
+    }
+    function Assert-NoProductResidue {
+        param([ValidateSet('baseline','candidate')][string] $Variant, [int] $Round)
+        Clear-OwnedRegistryResidue -Variant $Variant -Round $Round
+        foreach ($key in $uninstallKeys) {
+            if (Test-Path -LiteralPath $key) { throw "Registry residue cleanup did not complete: $key" }
         }
         foreach ($shortcut in $shortcuts) {
             if (Test-Path -LiteralPath $shortcut) { throw "Uninstall left product shortcut: $shortcut" }
@@ -153,7 +215,7 @@ try {
             throw "$Variant silent uninstall timed out."
         }
         if ($remove.ExitCode -ne 0) { throw "$Variant silent uninstall exit code $($remove.ExitCode)." }
-        Assert-NoProductResidue
+        Assert-NoProductResidue -Variant $Variant -Round $Round
         Remove-OwnedData -ExpectedToken $token
         $script:ActiveInstallDir = $null
         Write-Host "PASS: $Variant round $Round completed; install, registry, shortcuts and owned profile data cleaned."
@@ -162,7 +224,24 @@ try {
         $order = if ($round -eq 2) { @('candidate','baseline') } else { @('baseline','candidate') }
         foreach ($variant in $order) { Invoke-VariantRound -Variant $variant -Round $round }
     }
-    & $compareScript -BaselineDirectory (Join-Path $root 'baseline') -CandidateDirectory (Join-Path $root 'candidate') -BaselineSourceSha $BaselineSourceSha -CandidateSourceSha $CandidateSourceSha -HarnessSha $HarnessSha -OutputPath (Join-Path $root 'comparison-report.md') -FileSizeMiB 32 -MaxRegressionPercent 15
+    try {
+        & $compareScript -BaselineDirectory (Join-Path $root 'baseline') -CandidateDirectory (Join-Path $root 'candidate') -BaselineSourceSha $BaselineSourceSha -CandidateSourceSha $CandidateSourceSha -HarnessSha $HarnessSha -OutputPath (Join-Path $root 'comparison-report.md') -FileSizeMiB 32 -MaxRegressionPercent 15
+    } finally {
+        if (Test-Path -LiteralPath $script:RegistryResiduePath -PathType Leaf) {
+            $residueCount = @(Import-Csv -LiteralPath $script:RegistryResiduePath).Count
+            $diagnostic = @(
+                ''
+                '## Separate installer-uninstall diagnostic'
+                ''
+                "- Registry key residue records: $residueCount."
+                '- The harness removed only known product keys that were absent at preflight and whose values proved ownership by the controlled install (or were empty known product keys).'
+                '- This cleanup diagnostic is separate from performance comparison and is not evidence that application uninstall acceptance passed.'
+            )
+            $reportPath = Join-Path $root 'comparison-report.md'
+            Add-Content -LiteralPath $reportPath -Value $diagnostic -Encoding utf8
+            Write-Warning "Installer-uninstall diagnostic: $residueCount owned registry key(s) remained after uninstall; details are in registry-residue.csv. This is not an uninstall acceptance PASS."
+        }
+    }
     Write-Host 'Controlled baseline/candidate comparison finished.'
 } finally {
     if ($script:ActiveInstallDir) {

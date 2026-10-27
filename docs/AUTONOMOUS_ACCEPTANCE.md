@@ -1731,3 +1731,15 @@ The Liquid Progress visual gate passed on exact source SHA `90e8d6eac09d4d84ef33
 - **Observed run:** [40442154203](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40442154203) failed before packaging. The PowerShell parser passed after the harness repair, but Python reported an unterminated string literal in the newly added source-contract test. No installer was built and no performance evidence exists from this run.
 - **Correction:** reconstructed `test_hyperget_controlled_benchmark_source.py` as a complete module and retained regression assertions for SHA-256 equality, duplicate output names, and use of the actual current round.
 - **Next gate:** rerun source contracts + PowerShell parsing, then exact baseline/candidate builds and paired Windows measurements. Do not treat the failed pre-build run as a performance FAIL or PASS; the performance question remains **NOT TESTED**.
+
+ 
+## 2026-10-27 — E061 controlled performance rerun blocked by uninstall registry residue (OPEN)
+
+- Run [40442377970](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40442377970), exact harness source `8eb8af3fe585564a93ad8ede55fb0956970f71c2`: source contracts, PowerShell parse and both installer builds passed.
+- Baseline installer SHA-256: `247df866be8d0c64301f00e0189d70d450a1192fed8b8649c67653693c976964`; candidate installer SHA-256: `eb474ec951a591f2551e90a1d8350b019347632f8ffd2728531d624ee7be50ed`.
+- Baseline round 1 alone completed 21/21 SHA-verified HTTP downloads and produced resource samples for 1/4/16. The run then failed because silent uninstall left `HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\DownloadManager`; no candidate round or paired 15% comparison was completed.
+- Artifact [12707770712](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40442377970/artifacts/12707770712), digest `0c7754001905ae944fee7e53dce946a73ad6c669827cd13fe00a02e07a8ec820`.
+- Harness fix: log registry residue, require ownership proof against the controlled install and absent preflight state, then remove only that test-owned key to isolate later rounds. Preserve the separate residue CSV and explicitly state that this is **not uninstall acceptance**; unknown or mismatched keys remain fatal.
+- Pre-build question: can both exact snapshots complete 3 alternating rounds each, 63 SHA-verified downloads per version, nine resource rounds per version, and the unchanged 15% throughput/peak-memory thresholds?
+- Why source tests are insufficient: compiled installed Windows GUI/CLI, real sockets, file bytes, OS process measurements and registry state must be exercised.
+- **Status: OPEN / performance NOT TESTED as a paired comparison.** No source production change, merge, release, main write, paid runner/API or Torrent.

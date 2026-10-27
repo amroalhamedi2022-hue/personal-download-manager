@@ -39,3 +39,25 @@ The repaired PowerShell comparison script passed the Windows parser gate. The ru
 The source-contract test file has now been reconstructed as a complete valid Python module and includes explicit checks for the full SHA-256 guard, duplicate output-name guard, and current-round selection. The next exact-head run must pass these contracts and the PowerShell parser before any packaging begins.
 
 **Status remains OPEN.** The paired 63+63 download matrix, SHA verification, real overlap, resource samples and 15% gates remain untested until the next run finishes.
+
+## 2026-10-27 — E061 paired benchmark stopped after baseline round 1 (registry-residue isolation fix; pre-rerun)
+
+**Observed Windows run:** [40442377970](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40442377970), harness SHA `8eb8af3fe585564a93ad8ede55fb0956970f71c2`.
+
+- **PASS:** source contracts and PowerShell parsing; both exact-snapshot installers built.
+- **Installer SHA-256:** baseline `247df866be8d0c64301f00e0189d70d450a1192fed8b8649c67653693c976964`; candidate `eb474ec951a591f2551e90a1d8350b019347632f8ffd2728531d624ee7be50ed`.
+- **PASS for baseline round 1 only:** 21/21 HTTP outputs matched expected size/SHA; real peak task counts met 1/4/16; three resource CSVs were produced.
+- **FAIL / blocker:** after baseline round 1, silent uninstall left `HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\DownloadManager`. The harness stopped before baseline rounds 2–3 and all candidate rounds. Therefore the paired 63+63 matrix and the 15% performance thresholds are **NOT TESTED**.
+- **Evidence artifact:** [12707770712](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40442377970/artifacts/12707770712), uploaded archive digest `0c7754001905ae944fee7e53dce946a73ad6c669827cd13fe00a02e07a8ec820`. The log is the source for the exact failure; no performance conclusion is accepted.
+
+### Controlled correction before the next build
+
+The benchmark now records residual registry keys to `registry-residue.csv` and removes a key only when preflight proved it absent and the remaining values prove it belongs to the just-used controlled install (or it is an empty known product key). Unknown/mismatched keys remain fatal. This prevents an unrelated uninstall residue from blocking the performance experiment while retaining an explicit diagnostic; **it does not convert uninstall cleanup into a PASS**.
+
+**Pre-build question:** can the same Windows runner complete all three alternating rounds for both exact app snapshots, 63 verified 32-MiB downloads and nine resource rounds per version, while preserving a separate uninstall-residue record?
+
+**Expected:** 63/63 hashes per version, live 1/4/16 overlap on each round, source/harness provenance matched, and the predeclared 15% throughput/peak-memory gates reported without weakening them. If residue persists, the artifact must explicitly retain it as a separate uninstall diagnostic.
+
+**Why source tests are insufficient:** only the built and installed Windows binaries can prove byte hashes, socket overlap, process-tree resource readings, installer behavior and actual registry values after uninstall.
+
+**Status: OPEN.** No performance result is accepted until the next exact-head Windows artifact and comparison report are inspected.
