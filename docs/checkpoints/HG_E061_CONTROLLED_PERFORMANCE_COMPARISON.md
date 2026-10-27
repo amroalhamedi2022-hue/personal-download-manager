@@ -339,3 +339,17 @@ Source inspection found the NSIS uninstall section was deleting the running unin
 **Why source checks are insufficient:** only the built installer/uninstaller can demonstrate the actual NSIS execution order, registry view, shortcut removal, process shutdown and preservation of download data. The Windows cross-version upgrade/rollback workflow is now in the PR path-triggered queue.
 
 **Status:** E061 throughput/memory comparison **PASS**; installer uninstall **OPEN**; overall release acceptance remains **OPEN**. No merge, release, main write or final `HyperGet.exe` delivery is claimed.
+
+
+## 2026-10-27 — Per-user NSIS context pinned for uninstall acceptance
+
+Follow-up production commit [`fbc5b69`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/fbc5b695253a9ecd3d9a8eef357ad28f17f0b179) makes the install model explicit: `SetShellVarContext current` is set in installer `.onInit` and again in the uninstaller section. The product installs under `$LOCALAPPDATA` and registers under HKCU, so the shell-folder and `SHCTX` context must remain per-user on both sides. Shortcut/registry removal is ordered before `clearFiles`, which deletes the running uninstaller/install files.
+
+Reference: [official NSIS SetShellVarContext documentation](https://nsis.sourceforge.io/Reference/SetShellVarContext) states that this command affects shell folders and that the context must be set in both installer and uninstaller code to affect both.
+
+Regression coverage:
+- `scripts/source-tests/test_hyperget_uninstaller_cleanup_order.py` checks install and uninstall context plus cleanup ordering.
+- `scripts/source-tests/test_hyperget_cross_version_upgrade_source.py` checks the same contract before Windows packaging.
+- Source-only CI [40520016914](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40520016914) **PASS** on the updated PR head after correcting a syntax error in the first version of the new test.
+
+**Windows acceptance remains pending:** cross-version run [40519751066](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40519751066) passed PowerShell parsing and source contracts and is building the exact baseline installer before the candidate. Its actual uninstall assertions must prove registry keys and shortcuts are absent immediately after uninstaller exit, before any harness cleanup, while the completed download/history, settings, sentinel and synthetic WinCred remain intact. Do not infer uninstall PASS from source tests or the prior benchmark's cleanup.
