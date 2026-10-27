@@ -511,6 +511,7 @@ try {
         Write-Host "Starting $Variant round $Round with app SHA $sourceSha."
         & $matrixScript -GuiExecutable $gui[0].FullName -CliExecutable $cli[0].FullName -SourceSha $sourceSha -HarnessSha $HarnessSha -OutputDirectory $roundDir -Rounds 1 -SampleSeconds 8 -ServerChunkDelayMs 500 -FileSizeMiB 32 -CompletionTimeoutSeconds 300
         & $summarizeScript -Directory $roundDir -SourceSha $sourceSha -HarnessSha $HarnessSha -Rounds 1
+        Set-ControlledRoundMetadata -Directory $roundDir -Round $Round -SourceSha $sourceSha -HarnessSha $HarnessSha
         Stop-ProcessesUnderInstall -Path $installDir
         $uninstaller = Join-Path $installDir 'uninstall.exe'
         if (-not (Test-Path -LiteralPath $uninstaller -PathType Leaf)) { throw "$Variant uninstaller missing after benchmark." }

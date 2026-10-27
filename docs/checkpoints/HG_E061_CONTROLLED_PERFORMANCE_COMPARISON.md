@@ -217,3 +217,22 @@ The normalizer combined source/harness/verification validation and the local `Ro
 **Why source tests are insufficient:** only the installed Windows binaries can prove actual transfer bytes, socket overlap, OS process measurements and installer/uninstaller behavior. This source assertion must pass first; the previous run did not build anything.
 
 **Status: OPEN.** No performance or uninstall acceptance is claimed from run 40478758287. No merge, release, main write or Torrent.
+
+
+## 2026-10-27 — E061 source-contract gate found missing normalizer call (OPEN)
+
+**Exact harness SHA:** `78644f615e2b5ea2cea1b1202223453638c85c60`.  
+**Windows comparison run:** [40478984763](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40478984763).  
+**Result:** the PowerShell parser passed, but the benchmark-specific source suite failed before build because `Set-ControlledRoundMetadata` was defined and tested yet its invocation had been lost while the malformed splice was removed. No installer was built and no transfer/resource measurements were produced.
+
+### Correction before the next build
+
+Restore the invocation immediately after the one-round summarizer and before stopping the installed process/uninstalling. This ordering means the normalizer can verify the completed local-round manifest, rename only the 21 verified output files, update all resource/summary round labels, and preserve evidence before the controlled installation is removed. The source regression explicitly checks summary → normalization → uninstall order.
+
+**Pre-build question:** do the parser and all 14 benchmark source tests pass with the normalizer invoked at the required point, before any installer build?
+
+**Expected:** parser + source contracts PASS; only then build both exact snapshots and run the full 126-transfer matrix, 18 resource rounds, strict 1/4/16 overlap, exact source provenance and 15% paired throughput/peak-memory gates.
+
+**Why source tests are insufficient:** the normalizer's file renames and re-hashes, real HTTP output, Windows resource sampling and NSIS lifecycle require the installed Windows run. The previous run did none of those because it failed before build.
+
+**Status: OPEN.** No performance or uninstall acceptance is claimed from run 40478984763. No merge, release, main write or Torrent.

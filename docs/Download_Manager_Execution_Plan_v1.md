@@ -1097,3 +1097,8 @@ The controlled Windows performance milestone remains **OPEN**. Run [40475434465]
 ## 2026-10-27 — E061 source gate follow-up
 
 Run [40478758287](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40478758287) passed PowerShell parsing but failed one benchmark source assertion before build because the local transfer-round check was combined with other provenance guards. The code now separates source/harness/verification checks from explicit `Round=1` validation. No installer or performance data was produced by that run; E061 remains OPEN until exact-head source+parser gates pass and the installed Windows matrix produces the official comparison report.
+
+
+## 2026-10-27 — E061 normalizer invocation restored
+
+Run [40478984763](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40478984763) passed the PowerShell parser but failed the benchmark source contract because the round-normalizer invocation was missing between the one-round summary and uninstall. It has been restored in that exact order. No installer build or performance data was produced; E061 remains OPEN until exact-head source+parser gates pass and the installed matrix emits the official paired report.
