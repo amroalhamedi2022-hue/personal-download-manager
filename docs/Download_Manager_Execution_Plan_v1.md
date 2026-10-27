@@ -1028,3 +1028,26 @@ Commit/نسخة المصدر:
 **E056 pending:** GUI smoke workflow now calls `scripts/Measure-WindowsDownloadManager.ps1` on the REAL installed app process tree, capturing a 30-second idle WorkingSet/PrivateBytes/CPU/handles/threads CSV artifact; source commit `982ffe0a5ee083511090e88f3d573a3d17e44aa6`. Workflow [39765365895](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/39765365895) still pending/in progress when this evidence block was authored. No measured CPU/RAM improvement claim until its artifact is reviewed. Next expand to repeat baseline rounds and active 1/4/16 workload with equal hardware; compare under same conditions only.
 
 **Unclosed acceptance:** M04 interactive anonymous/auth FTP add/check/pause-resume/edit/delete/WinCred/relocation/restart and LAN/WAN; M06 visual Liquid progress screenshot parity; M07-M08 original IDM navigation/settings and functionality; M09 full repeated CPU/RAM comparisons incl minimized and downloads; M10 accepted media/browser features; M11 upgrade/uninstall and whole-product release. Torrent excluded. Do not call the snapshot a final release.
+
+
+## E056 follow-up — installed idle-process evidence reviewed (2026-10-27)
+
+Windows GUI run [40425830147](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40425830147), PR source `77f8c7e637b0fc6430484249af148588cc01837f`, uploaded idle metrics artifact [12700256551](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40425830147/artifacts/12700256551), ZIP SHA-256 `3dcbb0a31a6005dbe3d04538c78375b4dce1646ab52bed0dfa45aeb12511bb53`. It contains 6 CSVs (20 samples each across 3 warm and 3 minimized rounds). Warm medians were about 222.7–224.6 MiB Working Set and 238.2–242.1 MiB Private Bytes; maxima were 228.6/245.9 MiB. CPU median was 0%, with observed sample maxima below 0.8%. **Provenance caveat:** CSV rows embed `SourceSha=09d16d595b8f4166f108f5e4356c0fd4224f51ec`, not the checked-out head `77f8c7e`; do not use this as exact-head performance acceptance until the measurement script's SHA source is corrected. This is idle-only evidence, not active 1/4/16 performance.
+
+## E057 — Liquid Progress visible-fill Windows E2E (2026-10-27, PASS)
+
+- Exact tested source SHA `77f8c7e637b0fc6430484249af148588cc01837f`; Windows run [40425830147](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40425830147) terminal SUCCESS.
+- Source contracts [40425830410](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40425830410): 17/17 Liquid Progress checks PASS.
+- Visual artifact [12699952296](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40425830147/artifacts/12699952296), SHA-256 `110dd6ae8a51bf619b093707a4e3e39fe29784666ee73ba310ab2eb5c2babc3d`. Screenshot captured while Downloading at 5,570,816/16,777,216 bytes (33.2%), with one active task and bytes advancing; final size and expected/actual SHA-256 matched `341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1`.
+- Same-version reinstall/silent uninstall PASS; test installer SHA-256 `b8b113af3e7e38b928fda49ca9762a84efcb2b16ffe2ab34bce5d3065dec3bf2`.
+- Visual review confirms the bubble path is exercised, but contrast is still too subtle. Cross-version upgrade/rollback separately passed on `f023a0e`; no release claim.
+
+## E058 — Liquid Progress contrast polish (PRE-BUILD)
+
+**Pre-build question:** does increasing track height from 5dp to 7dp, strengthening the cached shimmer and bubbles, and adding a 1dp top-edge gloss make the liquid treatment visibly clearer while preserving the shared animation clock and cached draw path?
+
+**Expected:** source tests retain active-only animation, no row-level infinite transition, and cached gradients; a purposeful Windows build/install captures the UI at >=25% live transfer, CLI status `Downloading`, active fixture bytes advancing, and a 16 MiB final SHA-256 match.
+
+**Why source-only is insufficient:** only the installed Windows screenshot can prove actual visual contrast/Compose rendering; the build also checks Kotlin/Compose compilation. This is a targeted visual acceptance build, not release packaging.
+
+**Status:** implementation and regression test are being prepared; exact-head Windows visual acceptance remains **NOT TESTED** until the new screenshot is inspected.

@@ -496,19 +496,19 @@ private fun ProgressStatus(
             Spacer(
                 Modifier
                     .fillMaxWidth()
-                    .height(5.dp)
+                    .height(7.dp)
                     .drawWithCache {
                         // This full-track size is stable while progress animates. Caching
                         // the shader brushes here avoids creating a new gradient shader
                         // for every row and every animation frame.
-                        val shimmerWidth = (size.width * 0.24f)
+                        val shimmerWidth = (size.width * 0.28f)
                             .coerceAtMost(size.width)
                             .coerceAtLeast(1f)
                         val shimmerBrush = if (isLiquidActive && size.width > 1f) {
                             Brush.horizontalGradient(
                                 colors = listOf(
                                     Color.Transparent,
-                                    Color.White.copy(alpha = 0.30f),
+                                    Color.White.copy(alpha = 0.42f),
                                     Color.Transparent,
                                 ),
                                 startX = 0f,
@@ -550,6 +550,18 @@ private fun ProgressStatus(
                                     val phase = liquidProgressPhase.value.coerceIn(0f, 1f)
                                     val shimmerStart = -shimmerWidth + (fillWidth + shimmerWidth) * phase
                                     clipRect(right = fillWidth) {
+                                        // A narrow top-edge highlight makes the active fill read as
+                                        // glossy liquid without allocating another brush or shader.
+                                        val glossInset = 1.dp.toPx()
+                                        val glossHeight = 1.dp.toPx()
+                                        if (fillWidth > glossInset * 2f) {
+                                            drawRoundRect(
+                                                color = Color.White.copy(alpha = 0.16f),
+                                                topLeft = Offset(glossInset, glossInset * 0.35f),
+                                                size = Size((fillWidth - glossInset * 2f).coerceAtLeast(0f), glossHeight),
+                                                cornerRadius = CornerRadius(glossHeight / 2f),
+                                            )
+                                        }
                                         withTransform({
                                             translate(left = shimmerStart, top = 0f)
                                         }) {
@@ -565,13 +577,13 @@ private fun ProgressStatus(
                                             val secondPhase = (phase + 0.5f) % 1f
                                             val secondX = fillWidth * (0.12f + secondPhase * 0.76f)
                                             drawCircle(
-                                                color = Color.White.copy(alpha = 0.28f),
-                                                radius = 1.4.dp.toPx(),
+                                                color = Color.White.copy(alpha = 0.42f),
+                                                radius = 2.dp.toPx(),
                                                 center = Offset(firstX, size.height * 0.34f),
                                             )
                                             drawCircle(
-                                                color = Color.White.copy(alpha = 0.20f),
-                                                radius = 1.dp.toPx(),
+                                                color = Color.White.copy(alpha = 0.30f),
+                                                radius = 1.3.dp.toPx(),
                                                 center = Offset(secondX, size.height * 0.70f),
                                             )
                                         }

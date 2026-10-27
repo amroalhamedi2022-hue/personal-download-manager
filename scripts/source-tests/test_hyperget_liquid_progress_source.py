@@ -237,5 +237,20 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("BytesSentAtCapture = [long]$preScreenshotStats.bytes_sent", SCRIPT)
         self.assertIn("visible Liquid Progress fill reached", SCRIPT)
 
+
+    def test_liquid_fill_has_visible_gloss_and_bubbles_without_new_animation_loops(self):
+        progress = TABLE.split("private fun ProgressStatus(", 1)[1]
+        draw_body = progress.split("onDrawBehind {", 1)[1]
+        self.assertIn(".height(7.dp)", progress)
+        self.assertIn("val shimmerWidth = (size.width * 0.28f)", progress)
+        self.assertIn("Color.White.copy(alpha = 0.42f)", progress)
+        self.assertIn("val glossHeight = 1.dp.toPx()", draw_body)
+        self.assertIn("Color.White.copy(alpha = 0.16f)", draw_body)
+        self.assertIn("radius = 2.dp.toPx()", draw_body)
+        self.assertIn("radius = 1.3.dp.toPx()", draw_body)
+        self.assertIn("drawCircle(", draw_body)
+        self.assertIn("drawWithCache", progress)
+        self.assertNotIn("rememberInfiniteTransition", progress)
+
 if __name__ == "__main__":
     unittest.main()

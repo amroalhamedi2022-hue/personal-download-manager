@@ -1596,3 +1596,34 @@ This does **not** close overall HyperGet release acceptance: final independent W
 **Why source tests are insufficient:** only the installed Windows renderer can show whether the glossy band and two bubbles are actually visible at a sufficient fill width while IPC and real network transfer remain active. This is one purposeful UI acceptance build, not a release build.
 
 **Status before build:** visible-bubble screenshot acceptance is **NOT TESTED**. No production renderer change is assumed until the improved capture is inspected.
+
+
+## 2026-10-27 — Liquid Progress visible-fill Windows E2E PASS
+
+**Exact tested source SHA:** `77f8c7e637b0fc6430484249af148588cc01837f`.  
+**Windows run:** [40425830147](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40425830147) — terminal **SUCCESS**.  
+**Visual artifact:** [windows-liquid-progress-visual, ID 12699952296](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40425830147/artifacts/12699952296), ZIP SHA-256 `110dd6ae8a51bf619b093707a4e3e39fe29784666ee73ba310ab2eb5c2babc3d` (downloaded and independently rehashed).  
+**Source contracts:** [run 40425830410](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40425830410) PASS, including **17/17** Liquid Progress source-contract tests.
+
+### Results
+
+- **PASS:** exact-head Windows Compose build and single NSIS installer build; isolated installation and real GUI launch succeeded.
+- Installer SHA-256: `b8b113af3e7e38b928fda49ca9762a84efcb2b16ffe2ab34bce5d3065dec3bf2`.
+- **PASS:** screenshot report records `StatusAtCapture=Downloading`, one active distinct task, bytes advancing during the observation window, and a minimum threshold of 4,194,304 bytes.
+- **PASS:** screenshot was captured after 5,570,816 of 16,777,216 bytes (`ProgressFractionAtCapture=0.332`, about 33.2%). Final file size was exactly 16,777,216 bytes; expected and actual SHA-256 both `341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1`; final status `Finished`.
+- **PASS:** same-version silent reinstall and uninstall; registry uninstall key removed; no unexpected GUI auto-launch. Lifecycle artifact [12700176654](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40425830147/artifacts/12700176654), ZIP SHA-256 `5f618406ac3031598b0739d52f18d50b765206e8511fdfa4dd64d8d740164ff3`.
+- **Visual inspection:** the 33.2%-fill screenshot now exercises the bubble path. The gloss and bubbles are present, but still low-contrast at normal window scale; this is a visual polish opportunity, not a transfer-integrity failure.
+- **Separate idle profile caveat:** artifact [12700256551](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40425830147/artifacts/12700256551), ZIP SHA-256 `3dcbb0a31a6005dbe3d04538c78375b4dce1646ab52bed0dfa45aeb12511bb53`, contains six 20-sample idle CSVs. Their embedded `SourceSha=09d16d595b8f4166f108f5e4356c0fd4224f51ec` does not match the checked-out PR head, so these samples are **not accepted as exact-head performance evidence** and no performance win is claimed.
+
+**Gate decision:** live-transfer and file-integrity acceptance for Liquid Progress is **PASS** on `77f8c7e`. The visual style itself is not final; the next targeted gate is a higher-contrast gloss/bubble treatment with the same live-transfer and SHA acceptance. The cross-version upgrade/rollback gate separately passed on `f023a0e`; it was not rerun by this UI-only change. No release or merge.
+
+
+## 2026-10-27 — Liquid Progress contrast polish (PRE-BUILD)
+
+**Question:** does a modestly taller track, a stronger cached glossy band, and clearer bubbles improve visible Liquid Progress at normal Windows scale without changing transfer behavior or adding per-row animation loops?
+
+**Expected:** source contracts prove the single list-level clock and cached draw-phase implementation remain intact; the exact-head Windows build/install captures a live screenshot at at least 25% progress; status remains `Downloading`, one fixture task is active, bytes advance during the observation window, and the final 16 MiB output has the same expected/actual SHA-256. Inspect the screenshot at native scale before deciding whether the visual gate is complete.
+
+**Why source tests are insufficient:** they cannot show the actual contrast/shape in Compose rendering or prove that the installed app and transfer still work. The existing screenshot is the baseline; one purposeful Windows visual build is justified for this UI change, not as a release build.
+
+**Status before build:** visual acceptance remains **OPEN** until the new exact-head screenshot and report are inspected.
