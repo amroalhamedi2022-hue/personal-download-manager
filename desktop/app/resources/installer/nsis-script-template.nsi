@@ -66,6 +66,10 @@ InstallDir "$LOCALAPPDATA\${APP_NAME}"
 
 !define INSTALL_DIR `$INSTDIR`
 Function .onInit
+    ; This is a per-user install under $LOCALAPPDATA with HKCU registration.
+    ; Pin the same shell context used by the uninstaller instead of relying on
+    ; account/elevation-dependent NSIS defaults.
+    SetShellVarContext current
 
     ; Call RestorePreviousInstallLocation
 
@@ -234,6 +238,9 @@ SectionEnd
 
 Section "Uninstall"
     SectionInstType RO
+
+    ; Match the installer's per-user shell/registry context explicitly.
+    SetShellVarContext current
 
     !insertmacro closeApp
 

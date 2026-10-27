@@ -58,6 +58,28 @@ class HyperGetCrossVersionUpgradeContracts(unittest.TestCase):
             uninstall_section,
         )
 
+    def test_uninstaller_pins_per_user_context_and_cleans_registration_before_self_removal(self):
+        init_start = self.nsis.index("Function .onInit")
+        init_end = self.nsis.index("FunctionEnd", init_start)
+        self.assertIn("SetShellVarContext current", self.nsis[init_start:init_end])
+
+        uninstall_start = self.nsis.index('Section "Uninstall"')
+        uninstall_section = self.nsis[uninstall_start:]
+        self.assertIn("SetShellVarContext current", uninstall_section)
+        commands = (
+            "SetShellVarContext current",
+            "!insertmacro RemoveStartMenu",
+            "!insertmacro RemoveDesktopShortCut",
+            "!insertmacro RemoveKnownBrandShortcuts",
+            'DeleteRegKey SHCTX "${REG_UNINSTALL_KEY}"',
+            'DeleteRegKey SHCTX "${REG_APP_KEY}"',
+            'DeleteRegValue SHCTX "${REG_RUN_KEY}" "${APP_NAME}"',
+            "!insertmacro clearFiles",
+        )
+        positions = [uninstall_section.index(command) for command in commands]
+        self.assertEqual(positions, sorted(positions))
+        self.assertEqual(uninstall_section.count("!insertmacro clearFiles"), 1)
+
     def test_harness_refuses_to_touch_existing_profile_and_proves_real_state(self):
         for expected in (
             "RUNNER_TEMP",

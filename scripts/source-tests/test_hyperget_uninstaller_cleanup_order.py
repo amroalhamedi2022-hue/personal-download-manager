@@ -41,6 +41,30 @@ class HyperGetUninstallerCleanupOrderTests(unittest.TestCase):
             'The uninstall section must perform file cleanup exactly once, at the end.',
         )
 
+    def test_installer_and_uninstaller_pin_current_user_context(self):
+        init_match = re.search(
+            r'(?ms)^Function \.onInit\s*$([\s\S]*?)^FunctionEnd\s*
+        self.assertIn('Section /o "un.Remove User Data"', self.source)
+        self.assertNotIn('!insertmacro RemoveUserData', self.uninstall_section)
+
+
+if __name__ == "__main__":
+    unittest.main()
+,
+            self.source,
+        )
+        self.assertIsNotNone(init_match, 'Installer .onInit must be present.')
+        self.assertIn('SetShellVarContext current', init_match.group(1))
+        self.assertIn('SetShellVarContext current', self.uninstall_section)
+        self.assertLess(
+            self.uninstall_section.index('SetShellVarContext current'),
+            self.uninstall_section.index('!insertmacro RemoveStartMenu'),
+        )
+        self.assertLess(
+            self.uninstall_section.index('SetShellVarContext current'),
+            self.uninstall_section.index('DeleteRegKey SHCTX "${REG_UNINSTALL_KEY}"'),
+        )
+
     def test_user_data_deletion_remains_opt_in_and_outside_uninstall_section(self):
         self.assertIn('Section /o "un.Remove User Data"', self.source)
         self.assertNotIn('!insertmacro RemoveUserData', self.uninstall_section)
