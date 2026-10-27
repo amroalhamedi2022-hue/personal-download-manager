@@ -1664,3 +1664,13 @@ The idle metrics artifact [12701507224](https://github.com/amroalhamedi2022-hue/
 
 ### Gate decision and next milestone
 **Liquid Progress functional/visual acceptance: PASS** for the exact tested source SHA above. The earlier cross-version upgrade/rollback proof remains PASS on its recorded source SHA; it was not rerun by this UI-only delta. Next, correct idle-metric source provenance with a regression guard, then run a controlled, comparable resource profile before making any performance claim. Overall HyperGet release acceptance remains OPEN: external/restart cases, controlled performance comparison, final independent Windows recheck and final single `HyperGet.exe` artifact are still required. No merge/release/Torrent.
+
+
+## 2026-10-27 — idle resource-profile provenance repair (PRE-BUILD)
+
+The Liquid Progress visual gate passed on exact source SHA `90e8d6eac09d4d84ef3391754778dfb17a70b88d`, but its idle CPU/RAM artifact is **not accepted**: the CSVs record merge-ref SHA `4fe66db27d185f69d2ccbbf01810d35b6f954354` because `windows-installed-ui-smoke.yml` passes `$env:GITHUB_SHA` to the profile script. The checked-out source is the exact PR head, so the profile must be tagged with `(git rev-parse HEAD).Trim()` and checked against `github.event.pull_request.head.sha || github.sha` before collection.
+
+**Pre-build question:** does a fresh installed Windows run produce all six idle-profile CSVs tagged with the exact checked-out PR head, while preserving the passing Liquid Progress screenshot and 16 MiB SHA gate?
+**Expected:** fast source contracts pass; exact-head Windows Compose/NSIS build and GUI launch pass; the profile script receives the checked-out HEAD SHA, checks it against the event's expected SHA, produces six CSVs with matching SourceSha, and the active transfer still captures at ≥25% with matching expected/actual SHA-256.
+**Why source tests are insufficient:** only the installed Windows run executes the real process-tree profile and can verify the emitted CSV provenance alongside actual GUI/transfer behavior. This is a targeted measurement-integrity build, not a release build.
+**Gate:** OPEN until the new Windows artifacts and every CSV's SourceSha are inspected. Do not use the prior idle artifact for performance claims.
