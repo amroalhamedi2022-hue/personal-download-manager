@@ -88,7 +88,7 @@ class PartDownloaderIoLifecycleTest {
 
     @Test
     fun sharedBodyCopyPermitNeverExceedsConfiguredParallelism() = runBlocking {
-        assertEquals(48, PART_BODY_COPY_PARALLELISM)
+        assertEquals(60, PART_BODY_COPY_PARALLELISM)
         val taskCount = PART_BODY_COPY_PARALLELISM * 2
         val active = AtomicInteger(0)
         val peak = AtomicInteger(0)
@@ -136,7 +136,7 @@ class PartDownloaderIoLifecycleTest {
                 } ?: false
                 assertFalse(
                     overflowWasAdmitted,
-                    "the 49th body copy must remain suspended while all 48 permits are held",
+                    "the 61st body copy must remain suspended while all 60 permits are held",
                 )
             } finally {
                 release.complete(Unit)
