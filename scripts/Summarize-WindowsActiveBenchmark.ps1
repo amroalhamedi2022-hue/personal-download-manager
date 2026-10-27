@@ -10,11 +10,14 @@ CSV, failed hashes, incomplete overlap evidence and implausible measurements.
 param(
     [Parameter(Mandatory = $true)][string] $Directory,
     [Parameter(Mandatory = $true)][string] $SourceSha,
+    [string] $HarnessSha = '',
     [ValidateRange(1, 5)][int] $Rounds = 3
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $root = [IO.Path]::GetFullPath($Directory)
+if ([string]::IsNullOrWhiteSpace($HarnessSha)) { $HarnessSha = $SourceSha }
+if ($HarnessSha -notmatch '^[0-9a-fA-F]{40}$') { throw 'HarnessSha must be the exact 40-character checkout SHA.' }
 $manifestPath = Join-Path $root 'verified-transfers.csv'
 if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) { throw 'Verified download manifest is missing.' }
 $manifest = @(Import-Csv -LiteralPath $manifestPath)
@@ -24,8 +27,14 @@ if ($manifest.Count -ne $expectedTransfers) {
 }
 $allNames = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
 foreach ($record in $manifest) {
-    if ($record.SourceSha -ne $SourceSha -or $record.Verified -ne 'True') {
-        throw 'Manifest contains unverified or mismatched-source transfer.'
+    if ($record.SourceSha -ne $SourceSha -or $record.HarnessSha -ne $HarnessSha -or $record.Verified -ne 'True') {
+        throw 'Manifest contains unverified or mismatched app/harness source.'
+    }
+    if ([long]$record.Bytes -ne [long]$record.ExpectedBytes -or $record.SHA256 -ne $record.ExpectedSHA256) {
+        throw "Manifest size/SHA-256 does not match the expected fixture: $($record.OutputName)"
+    }
+    if ([double]$record.ElapsedSeconds -le 0 -or [double]$record.AggregateMiBPerSecond -le 0) {
+        throw 'Manifest contains invalid elapsed-time or throughput measurements.'
     }
     if (-not $allNames.Add($record.OutputName)) {
         throw "Duplicate output in manifest: $($record.OutputName)"
@@ -54,8 +63,8 @@ foreach ($jobs in @(1, 4, 16)) {
         $private = [System.Collections.Generic.List[double]]::new()
         $cpu = [System.Collections.Generic.List[double]]::new()
         foreach ($sample in $rows) {
-            if ($sample.SourceSha -ne $SourceSha -or $sample.Scenario -ne $scenario -or $sample.RunLabel -ne "round-$round") {
-                throw "Mixed sources or scenarios in $path"
+            if ($sample.SourceSha -ne $SourceSha -or $sample.HarnessSha -ne $HarnessSha -or $sample.Scenario -ne $scenario -or $sample.RunLabel -ne "round-$round") {
+                throw "Mixed app/harness sources or scenarios in $path"
             }
             if ([int]$sample.ProcessCount -lt 1 -or [int]$sample.LogicalCpuCount -lt 1) {
                 throw "Missing app process or CPU count in $path"
@@ -86,6 +95,7 @@ foreach ($jobs in @(1, 4, 16)) {
         $memoryStat = $set | Measure-Object -Average -Maximum
         $privateStat = $private | Measure-Object -Average -Maximum
         $roundSummaries.Add([pscustomobject]@{
+            SourceSha = $SourceSha; HarnessSha = $HarnessSha
             Scenario = $scenario; Round = $round; ConcurrentTasks = $jobs
             VerifiedFiles = $workloadFiles.Count; Samples = $rows.Count
             AverageCpuMachinePercent = [math]::Round($cpuStat.Average, 3)
@@ -102,7 +112,8 @@ $roundSummaries | Export-Csv -LiteralPath (Join-Path $root 'round-summary.csv') 
 $report = [System.Collections.Generic.List[string]]::new()
 $report.Add('# Windows installed downloader: verified active transfer benchmark')
 $report.Add('')
-$report.Add("- Source SHA: $SourceSha")
+$report.Add("- App source SHA: $SourceSha")
+$report.Add("- Harness source SHA: $HarnessSha")
 $report.Add("- Host OS: $machineOs; logical CPUs: $logicalCpu")
 $report.Add("- Verified transfers: $expectedTransfers, all SHA-256 identical to the local fixture")
 $report.Add("- Workloads: 1/4/16 **distinct simultaneously transferring tasks**, $Rounds rounds each")

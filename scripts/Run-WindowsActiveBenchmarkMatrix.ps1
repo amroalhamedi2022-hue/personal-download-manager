@@ -12,6 +12,7 @@ param(
     [Parameter(Mandatory = $true)][string] $GuiExecutable,
     [Parameter(Mandatory = $true)][string] $CliExecutable,
     [Parameter(Mandatory = $true)][string] $SourceSha,
+    [string] $HarnessSha = '',
     [Parameter(Mandatory = $true)][string] $OutputDirectory,
     [ValidateRange(1, 5)][int] $Rounds = 3,
     [ValidateRange(5, 60)][int] $SampleSeconds = 8,
@@ -51,6 +52,8 @@ if ((Get-Item -LiteralPath $fixture).Length -ne $expectedBytes) {
     throw 'HTTP fixture length differs from the requested workload.'
 }
 $expectedSha = (Get-FileHash -LiteralPath $fixture -Algorithm SHA256).Hash.ToLowerInvariant()
+if ([string]::IsNullOrWhiteSpace($HarnessSha)) { $HarnessSha = $SourceSha }
+if ($HarnessSha -notmatch '^[0-9a-fA-F]{40}$') { throw 'HarnessSha must be the exact 40-character checkout SHA.' }
 $records = [System.Collections.Generic.List[object]]::new()
 $server = $null
 $gui = $null
@@ -180,6 +183,7 @@ try {
                 throw 'An Added-only task started HTTP without Resume.'
             }
             $startIds = @($taskFiles | ForEach-Object { [long]$_.Id })
+            $transferStartedUtc = [DateTime]::UtcNow
             & $cliPath download resume @startIds
             if ($LASTEXITCODE -ne 0) {
                 throw "Batch CLI Resume failed for $scenario round $round."
@@ -226,7 +230,7 @@ try {
             # Slow loopback source ensures the test samples real in-flight transfers,
             # even with the downloader's parallel HTTP Range segments.
             $csvPath = Join-Path $metricFolder "$scenario-round-$round.csv"
-            & $sampler -RootProcessName 'DownloadManager' -Scenario $scenario -SourceSha $SourceSha -OutputCsv $csvPath -DurationSeconds $SampleSeconds -WarmupSeconds 1 -SampleIntervalMs 1000 -RunLabel "round-$round"
+            & $sampler -RootProcessName 'DownloadManager' -Scenario $scenario -SourceSha $SourceSha -HarnessSha $HarnessSha -OutputCsv $csvPath -DurationSeconds $SampleSeconds -WarmupSeconds 1 -SampleIntervalMs 1000 -RunLabel "round-$round"
             if (-not (Test-Path -LiteralPath $csvPath)) {
                 throw "Missing Windows process-tree CSV for $scenario round $round"
             }
@@ -303,6 +307,10 @@ try {
             if ([int]$after.active_requests -ne 0 -or [int]$after.peak_distinct_tasks -lt $jobs -or [int]$after.unique_tasks_seen -ne $jobs) {
                 throw "HTTP concurrency counters invalid for $scenario round $round."
             }
+            $roundFinishedUtc = [DateTime]::UtcNow
+            $roundElapsedSeconds = [math]::Round(($roundFinishedUtc - $transferStartedUtc).TotalSeconds, 3)
+            if ($roundElapsedSeconds -le 0) { throw 'Measured transfer duration must be positive.' }
+            $aggregateMiBPerSecond = [math]::Round((($expectedBytes * $jobs) / 1MB) / $roundElapsedSeconds, 3)
             foreach ($task in $taskFiles) {
                 $actualLength = (Get-Item -LiteralPath $task.Path).Length
                 $actualSha = (Get-FileHash -LiteralPath $task.Path -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -310,9 +318,11 @@ try {
                     throw "Output mutated after completion: $($task.Name)"
                 }
                 $records.Add([pscustomobject]@{
-                    SourceSha = $SourceSha; Scenario = $scenario; Round = $round
+                    SourceSha = $SourceSha; HarnessSha = $HarnessSha; Scenario = $scenario; Round = $round
                     TaskId = $task.Id; OutputName = $task.Name
-                    Bytes = $actualLength; SHA256 = $actualSha; Verified = $true
+                    Bytes = $actualLength; ExpectedBytes = $expectedBytes
+                    SHA256 = $actualSha; ExpectedSHA256 = $expectedSha; Verified = $true
+                    ElapsedSeconds = $roundElapsedSeconds; AggregateMiBPerSecond = $aggregateMiBPerSecond
                     PeakDistinctTasks = [int]$after.peak_distinct_tasks
                     PeakHttpConnections = [int]$after.peak_requests
                 })
