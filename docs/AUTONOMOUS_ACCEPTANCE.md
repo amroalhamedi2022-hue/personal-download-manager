@@ -1921,3 +1921,16 @@ Restore the invocation immediately after the one-round summarizer and before sto
 - **Next acceptance question:** does the built NSIS uninstaller remove those owned registry/shortcut entries without harness cleanup, while leaving user data intact by default? Source tests cannot prove real installer behavior; Windows cross-version upgrade/rollback and other relevant PR workflows have been queued by the installer-template change.
 
 **Status:** E061 performance comparison **PASS**. Uninstall acceptance and independent release recheck remain **OPEN**. Do not deliver final `HyperGet.exe`, merge, release, or disable the scheduled developer yet.
+
+
+## 2026-10-27 — NSIS per-user context fix; Windows uninstall proof pending
+
+Production installer template commit [`fbc5b69`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/fbc5b695253a9ecd3d9a8eef357ad28f17f0b179) now sets `SetShellVarContext current` in installer `.onInit` and the uninstaller section. It also performs shortcut/registry cleanup before `clearFiles` removes the running uninstaller and install files. This matches the per-user `$LOCALAPPDATA`/HKCU design and the [NSIS documented rule](https://nsis.sourceforge.io/Reference/SetShellVarContext) that shell context must be set separately in installer and uninstaller code.
+
+- New uninstaller source contract: [`0572c67`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/0572c679559d74a30feba73899d9da4a0cd57996).
+- Source-only CI [40520016914](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40520016914): **PASS**, including the new uninstaller cleanup-order/context tests.
+- Windows cross-version upgrade/rollback run [40519751066](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40519751066): source contracts and PowerShell parser **PASS**; exact baseline installer build **IN PROGRESS** at last inspection.
+
+**Required before uninstall acceptance:** the real Windows run must show no owned uninstall registry keys or Start Menu/Desktop shortcuts immediately after both candidate and baseline uninstaller exits, before cleanup; it must also prove the user-data sentinel, completed download and history, max-concurrent setting, and synthetic WinCred survive normal uninstall. The earlier performance harness's 12 registry/12 shortcut cleanup records remain evidence of the defect, not a pass.
+
+E061 cap-60 performance gate is **PASS**; uninstall acceptance and independent final release recheck remain **OPEN**. No final EXE delivery, merge or release.
