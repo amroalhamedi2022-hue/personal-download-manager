@@ -6,6 +6,7 @@ ROOT = Path(__file__).resolve().parents[2]
 PROFILE = (ROOT / "scripts/Collect-WindowsJvmMemoryProfile.ps1").read_text(encoding="utf-8")
 WORKFLOW = (ROOT / ".github/workflows/windows-installed-memory-profile.yml").read_text(encoding="utf-8")
 MATRIX_SCRIPT = (ROOT / "scripts/Run-WindowsActiveBenchmarkMatrix.ps1").read_text(encoding="utf-8")
+UI_WORKFLOW = (ROOT / ".github/workflows/windows-installed-ui-smoke.yml").read_text(encoding="utf-8")
 
 
 class WindowsJvmMemoryProfileContract(unittest.TestCase):
@@ -68,6 +69,19 @@ class WindowsJvmMemoryProfileContract(unittest.TestCase):
         self.assertIn("if: always()", WORKFLOW)
         self.assertIn("jvm-profile", WORKFLOW)
         self.assertIn("if-no-files-found: warn", WORKFLOW)
+
+
+    def test_installed_ui_idle_profile_uses_exact_checked_out_pr_head(self):
+        # GITHUB_SHA is the synthetic merge ref on pull_request events. The
+        # installed GUI's idle CSVs must identify the exact checked-out source.
+        idle_step = UI_WORKFLOW.split(
+            "- name: Launch installed desktop app and capture Windows GUI", 1
+        )[1].split("- name: Verify real Liquid Progress while an installed download is active", 1)[0]
+        self.assertIn("$sourceSha = (git rev-parse HEAD).Trim()", idle_step)
+        self.assertIn("$expectedSourceSha = '${{ github.event.pull_request.head.sha || github.sha }}'", idle_step)
+        self.assertIn("if ($sourceSha -ne $expectedSourceSha)", idle_step)
+        self.assertIn("-SourceSha $sourceSha", idle_step)
+        self.assertNotIn("-SourceSha $env:GITHUB_SHA", idle_step)
 
 
 if __name__ == "__main__":
