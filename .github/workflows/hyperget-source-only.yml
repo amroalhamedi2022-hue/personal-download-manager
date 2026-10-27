@@ -156,7 +156,7 @@ jobs:
       - name: Verify all Windows installed acceptance harnesses follow HyperGet executable identity
         run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_executable_identity_workflows.py -v
       - name: Verify installed Windows acceptance uses the full PR diff
-        run: python3 -m unittest scripts/source-tests/test_hyperget_pr_diff_scope.py -v
+        run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_pr_diff_scope.py -v
       - name: Verify bounded OkHttp dispatcher and explicit transport cancellation source contract
         run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_http_dispatcher_bound_source.py -v
       - name: Verify installed JVM memory profile harness
