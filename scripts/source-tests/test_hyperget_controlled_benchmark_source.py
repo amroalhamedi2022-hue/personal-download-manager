@@ -94,7 +94,7 @@ class ControlledBenchmarkSourceTests(unittest.TestCase):
         self.assertIn("Refusing to remove registry key not proven to belong to the controlled install", source)
         self.assertIn("Clear-OwnedRegistryResidue -Variant $Variant -Round $Round", source)
         self.assertIn("Action = 'Removed test-owned residue after recording'", source)
-        self.assertIn("This cleanup diagnostic is separate from performance comparison and is not evidence that application uninstall acceptance passed.", source)
+        self.assertIn("Any registry, shortcut, or install-file residue is a separate uninstall defect diagnostic; cleanup is not evidence that application uninstall acceptance passed.", source)
         self.assertIn('Refusing to touch pre-existing registry key: $key', source)
         self.assertIn("RegistryKey = $key", source)
 
