@@ -21,6 +21,9 @@ $root = [IO.Path]::GetFullPath($OutputDirectory)
 foreach ($path in @($guiPath, $hostPath)) {
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Installed executable missing: $path" }
 }
+if ([IO.Path]::GetFileName($guiPath) -cne 'HyperGet.exe') {
+    throw 'Installed GUI must be named HyperGet.exe; technical CLI/native-host names remain legacy-compatible.'
+}
 if (Test-Path -LiteralPath $root) {
     if (@(Get-ChildItem -LiteralPath $root -Force).Count -gt 0) { throw 'Evidence directory must be empty' }
 }

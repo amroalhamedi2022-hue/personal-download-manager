@@ -7,6 +7,8 @@ import unittest
 ROOT = Path(__file__).resolve().parents[2]
 NSIS = ROOT / "desktop/app/resources/installer/nsis-script-template.nsi"
 VERSION_UTIL = ROOT / "buildSrc/src/main/kotlin/buildlogic/versioning/VersionUtil.kt"
+RESOLVER = ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/MainExecutableResolver.kt"
+SETTINGS = ROOT / "settings.gradle.kts"
 SHARED_BUILD = ROOT / "shared/app/build.gradle.kts"
 DESKTOP_BUILD = ROOT / "desktop/app/build.gradle.kts"
 HARNESS = ROOT / "scripts/Run-WindowsCrossVersionUpgradeRollbackE2E.ps1"
@@ -18,6 +20,8 @@ class HyperGetCrossVersionUpgradeContracts(unittest.TestCase):
     def setUpClass(cls):
         cls.nsis = NSIS.read_text(encoding="utf-8")
         cls.version_util = VERSION_UTIL.read_text(encoding="utf-8")
+        cls.resolver = RESOLVER.read_text(encoding="utf-8")
+        cls.settings = SETTINGS.read_text(encoding="utf-8")
         cls.shared_build = SHARED_BUILD.read_text(encoding="utf-8")
         cls.desktop_build = DESKTOP_BUILD.read_text(encoding="utf-8")
         cls.harness = HARNESS.read_text(encoding="utf-8")
@@ -322,6 +326,30 @@ class HyperGetCrossVersionUpgradeContracts(unittest.TestCase):
             parser.index("if ($insideTargetRow) {"),
         )
 
+
+    def test_windows_gui_launcher_is_branded_without_renaming_stable_helpers_or_data(self):
+        # Windows main launcher becomes HyperGet.exe; technical IDs stay stable.
+        self.assertIn('rootProject.name = "DownloadManager"', self.settings)
+        self.assertIn('packageName = if (Platform.isWindows()) getPrettifiedAppName() else getAppName()', self.desktop_build)
+        self.assertIn('inputDir = project.file("build/compose/binaries/main-release/app/${if (Platform.isWindows()) getPrettifiedAppName() else getAppName()}")', self.desktop_build)
+        self.assertIn('outputFileName = "${getPrettifiedAppName()}Setup"', self.desktop_build)
+        self.assertIn('"main_binary_name" to getPrettifiedAppName()', self.desktop_build)
+        self.assertIn('val cliBinaryName = "${getAppName()}Cli"', self.desktop_build)
+        self.assertIn('val nativeMessagingHostBinaryName = "${getAppName()}NativeMessagingHost"', self.desktop_build)
+        self.assertIn('!define MAIN_BINARY_NAME "{{ main_binary_name }}"', self.nsis)
+        self.assertIn('!define LEGACY_MAIN_BINARY_NAME "${APP_NAME}"', self.nsis)
+        self.assertIn('Delete "${INSTALL_DIR}\\${LEGACY_MAIN_BINARY_NAME}.exe"', self.nsis)
+        self.assertIn('!insertmacro closeProcess "${MAIN_BINARY_NAME}.exe" ${phaseId}_main', self.nsis)
+        self.assertIn('Get-InstalledGuiPath', self.harness)
+        self.assertIn("'HyperGet.exe'", self.harness)
+        self.assertIn("'DownloadManager.exe'", self.harness)
+        self.assertIn('CreateShortcut($shortcutPath).TargetPath', self.harness)
+        self.assertIn('return ".personal-download-manager"', self.version_util)
+        self.assertIn('return "app.personaldownloadmanager"', self.version_util)
+        self.assertIn('legacy.isFile -> legacy.path', self.resolver)
+        self.assertIn('branded.isFile -> branded.path', self.resolver)
+        self.assertIn('desktop/app/build.gradle.kts', self.workflow)
+        self.assertIn('desktop/app/icons/icon.ico', self.workflow)
 
     def test_uninstall_display_version_uses_full_semver_but_internal_version_stays_numeric(self):
         # The Windows installer receives both values: appVersion is numeric for PE/installer

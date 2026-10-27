@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <title>HyperGet — Liquid Glass download icon</title>
+  <defs>
+    <linearGradient id="glass" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#071435"/><stop offset=".38" stop-color="#0d3b8b"/><stop offset=".7" stop-color="#3c1f86"/><stop offset="1" stop-color="#08183d"/></linearGradient>
+    <linearGradient id="ring" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#23d8ff"/><stop offset=".35" stop-color="#2f7bff"/><stop offset=".72" stop-color="#9649ff"/><stop offset="1" stop-color="#ff71bc"/></linearGradient>
+    <linearGradient id="arrow" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#72eaff"/><stop offset=".24" stop-color="#1daaff"/><stop offset=".48" stop-color="#2d70ff"/><stop offset=".72" stop-color="#8048ff"/><stop offset=".9" stop-color="#e74fcf"/><stop offset="1" stop-color="#ff935b"/></linearGradient>
+    <linearGradient id="tray" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#36ebff"/><stop offset=".35" stop-color="#2a8bff"/><stop offset=".7" stop-color="#9a46ff"/><stop offset="1" stop-color="#ff899a"/></linearGradient>
+    <filter id="shadow" x="-25%" y="-25%" width="150%" height="160%"><feGaussianBlur stdDeviation="5"/></filter>
+  </defs>
+  <rect x="8" y="8" width="240" height="240" rx="52" fill="url(#glass)" stroke="#cef4ff" stroke-opacity=".6" stroke-width="2"/>
+  <ellipse cx="94" cy="43" rx="83" ry="23" fill="#e0faff" opacity=".08"/>
+  <circle cx="128" cy="120" r="79" fill="none" stroke="url(#ring)" stroke-width="9" opacity=".7"/>
+  <path d="M105 48H151V126H183L128 185 73 126H105Z" transform="translate(1 4)" fill="#01081f" opacity=".6" filter="url(#shadow)"/>
+  <path d="M105 48H151V126H183L128 185 73 126H105Z" fill="url(#arrow)" stroke="#c6f1ff" stroke-opacity=".65" stroke-width="2" stroke-linejoin="round"/>
+  <path d="M110 56H120V128H137L127 139 110 125Z" fill="#effcff" opacity=".27"/>
+  <rect x="54" y="193" width="148" height="23" rx="11" fill="url(#tray)" stroke="#d8f8ff" stroke-opacity=".55" stroke-width="1.5"/>
+  <path d="M64 197H192" stroke="#fff" stroke-opacity=".48" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="52" cy="66" r="3.2" fill="#e7fcff"/><circle cx="204" cy="72" r="2.2" fill="#ffebff"/>
+</svg>

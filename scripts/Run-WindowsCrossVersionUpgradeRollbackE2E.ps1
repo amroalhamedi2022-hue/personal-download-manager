@@ -269,6 +269,17 @@ function Invoke-AppCli([string[]] $Arguments, [string] $Purpose) {
     }
     return $lines
 }
+function Get-InstalledGuiPath {
+    $legacyPath = Join-Path $installDir 'DownloadManager.exe'
+    $brandedPath = Join-Path $installDir 'HyperGet.exe'
+    $hasLegacy = Test-Path -LiteralPath $legacyPath -PathType Leaf
+    $hasBranded = Test-Path -LiteralPath $brandedPath -PathType Leaf
+    if ($hasLegacy -eq $hasBranded) {
+        throw "Expected exactly one GUI launcher; legacy=$hasLegacy branded=$hasBranded"
+    }
+    if ($hasBranded) { return $brandedPath }
+    return $legacyPath
+}
 function Install-Snapshot([string] $InstallerPath, [string] $Label) {
     if (-not (Test-Path -LiteralPath $InstallerPath -PathType Leaf)) {
         throw ($Label + ' installer missing: ' + $InstallerPath)
@@ -281,13 +292,18 @@ function Install-Snapshot([string] $InstallerPath, [string] $Label) {
     }
     if ($process.ExitCode -ne 0) { throw ($Label + ' installer exit code ' + $process.ExitCode + '.') }
     Start-Sleep -Seconds 2
-    if (@(Get-Process -Name 'DownloadManager' -ErrorAction SilentlyContinue).Count -ne 0) {
+    if (@(Get-Process -Name 'DownloadManager','HyperGet' -ErrorAction SilentlyContinue).Count -ne 0) {
         throw ($Label + ' /S install unexpectedly auto-launched the GUI.')
     }
-    foreach ($name in @('DownloadManager.exe','DownloadManagerCli.exe','uninstall.exe')) {
+    foreach ($name in @('DownloadManagerCli.exe','DownloadManagerNativeMessagingHost.exe','uninstall.exe')) {
         if (-not (Test-Path -LiteralPath (Join-Path $installDir $name) -PathType Leaf)) {
             throw ($Label + ' installation is missing ' + $name + '.')
         }
+    }
+    $guiPath = Get-InstalledGuiPath
+    $expectedGuiName = if ($Label -eq 'HyperGet candidate') { 'HyperGet.exe' } else { 'DownloadManager.exe' }
+    if ([IO.Path]::GetFileName($guiPath) -cne $expectedGuiName) {
+        throw ($Label + ' installed unexpected GUI executable ' + [IO.Path]::GetFileName($guiPath) + '; expected ' + $expectedGuiName + '.')
     }
 }
 function Get-InstallMetadata([string] $Label) {
@@ -302,7 +318,8 @@ function Get-InstallMetadata([string] $Label) {
     return [pscustomobject]@{
         DisplayName = [string]$item.DisplayName
         DisplayVersion = [string]$item.DisplayVersion
-        GuiSha256 = (Get-FileHash -LiteralPath (Join-Path $installDir 'DownloadManager.exe') -Algorithm SHA256).Hash.ToLowerInvariant()
+        GuiExecutableName = [IO.Path]::GetFileName((Get-InstalledGuiPath))
+        GuiSha256 = (Get-FileHash -LiteralPath (Get-InstalledGuiPath) -Algorithm SHA256).Hash.ToLowerInvariant()
         CliSha256 = (Get-FileHash -LiteralPath (Join-Path $installDir 'DownloadManagerCli.exe') -Algorithm SHA256).Hash.ToLowerInvariant()
     }
 }
@@ -322,7 +339,25 @@ function Assert-ShortcutBrand([string] $Brand) {
     } else {
         throw ("Unexpected shortcut brand '" + $Brand + "'.")
     }
-    Write-Host ("PASS: only '" + $Brand + "' Start Menu and Desktop shortcuts exist.")
+    $expectedGuiPath = [IO.Path]::GetFullPath((Get-InstalledGuiPath))
+    $expectedShortcutPaths = if ($Brand -eq 'HyperGet') {
+        @($brandedStartMenuShortcut, $brandedDesktopShortcut)
+    } else {
+        @($legacyStartMenuShortcut, $legacyDesktopShortcut)
+    }
+    $shell = New-Object -ComObject WScript.Shell
+    try {
+        foreach ($shortcutPath in $expectedShortcutPaths) {
+            $target = [string]$shell.CreateShortcut($shortcutPath).TargetPath
+            if ([string]::IsNullOrWhiteSpace($target) -or
+                -not [string]::Equals([IO.Path]::GetFullPath($target), $expectedGuiPath, [StringComparison]::OrdinalIgnoreCase)) {
+                throw ("Shortcut target mismatch for " + $shortcutPath + ": expected " + $expectedGuiPath + ", got " + $target)
+            }
+        }
+    } finally {
+        [void][Runtime.InteropServices.Marshal]::ReleaseComObject($shell)
+    }
+    Write-Host ("PASS: only '" + $Brand + "' shortcuts exist and both target " + [IO.Path]::GetFileName($expectedGuiPath) + ".")
 }
 function Assert-StartMenuSentinel([string] $Label) {
     if (-not $script:StartMenuSentinelCreated) { throw ($Label + " Start Menu sentinel was not created by this test.") }
@@ -332,7 +367,7 @@ function Assert-StartMenuSentinel([string] $Label) {
     Write-Host ("PASS: " + $Label + " preserved unrelated Start Menu content and SHA-256.")
 }
 function Start-AppAndWait {
-    $guiPath = Join-Path $installDir 'DownloadManager.exe'
+    $guiPath = Get-InstalledGuiPath
     $script:CurrentCliPath = Join-Path $installDir 'DownloadManagerCli.exe'
     Start-Process -FilePath $guiPath -WorkingDirectory $installDir | Out-Null
     for ($attempt = 0; $attempt -lt 60; $attempt++) {
@@ -351,7 +386,7 @@ function Stop-AppGracefully {
         try { Invoke-AppCli -Arguments @('gui','exit') -Purpose 'graceful GUI shutdown' | Out-Null } catch {}
     }
     for ($attempt = 0; $attempt -lt 60; $attempt++) {
-        if (@(Get-Process -Name 'DownloadManager' -ErrorAction SilentlyContinue).Count -eq 0) { return }
+        if (@(Get-Process -Name 'DownloadManager','HyperGet' -ErrorAction SilentlyContinue).Count -eq 0) { return }
         Start-Sleep -Milliseconds 500
     }
     throw 'GUI did not exit after the supported gui exit command.'
@@ -721,7 +756,7 @@ try {
     }
     if ($candidateUninstall.ExitCode -ne 0) { throw ('HyperGet candidate uninstall exit code ' + $candidateUninstall.ExitCode + '.') }
     Start-Sleep -Seconds 2
-    foreach ($name in @('DownloadManager.exe','DownloadManagerCli.exe','uninstall.exe')) {
+    foreach ($name in @('HyperGet.exe','DownloadManager.exe','DownloadManagerCli.exe','DownloadManagerNativeMessagingHost.exe','uninstall.exe')) {
         if (Test-Path -LiteralPath (Join-Path $installDir $name)) { throw ('Candidate uninstall left ' + $name + ' behind.') }
     }
     foreach ($key in @($uninstallKey,$appKey)) {
@@ -759,7 +794,7 @@ try {
     }
     if ($uninstall.ExitCode -ne 0) { throw ('Baseline silent uninstall exit code ' + $uninstall.ExitCode + '.') }
     Start-Sleep -Seconds 2
-    foreach ($name in @('DownloadManager.exe','DownloadManagerCli.exe','uninstall.exe')) {
+    foreach ($name in @('HyperGet.exe','DownloadManager.exe','DownloadManagerCli.exe','DownloadManagerNativeMessagingHost.exe','uninstall.exe')) {
         if (Test-Path -LiteralPath (Join-Path $installDir $name)) { throw ('Uninstall left ' + $name + ' behind.') }
     }
     foreach ($key in @($uninstallKey,$appKey)) {
@@ -825,7 +860,7 @@ try {
             try { & $script:CurrentCliPath gui exit 2>&1 | Out-Null } catch {}
         }
         Start-Sleep -Milliseconds 500
-        Get-Process -Name 'DownloadManager' -ErrorAction SilentlyContinue |
+        Get-Process -Name 'DownloadManager','HyperGet' -ErrorAction SilentlyContinue |
             Stop-Process -Force -ErrorAction SilentlyContinue
         if (Test-Path -LiteralPath (Join-Path $installDir 'uninstall.exe') -PathType Leaf) {
             try {

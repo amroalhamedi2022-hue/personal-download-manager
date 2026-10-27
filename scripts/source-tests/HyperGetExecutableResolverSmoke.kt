@@ -16,9 +16,9 @@ import java.nio.file.Files
 fun main() {
     val root = Files.createTempDirectory("HyperGet resolver with spaces ").toFile()
     try {
-        val helper = File(root, "DownloadManagerNativeMessagingHost.bin")
-        val legacy = File(root, "DownloadManager.bin")
-        val branded = File(root, "HyperGet.bin")
+        val helper = File(root, "DownloadManagerNativeMessagingHost.exe")
+        val legacy = File(root, "DownloadManager.exe")
+        val branded = File(root, "HyperGet.exe")
         fun resolve(path: String?) = MainExecutableResolver.resolve(
             runningExecutablePath = path,
             legacyBaseName = "DownloadManager",
@@ -43,7 +43,7 @@ fun main() {
         check(branded.mkdir())
         expect(legacy.path, resolve(helper.path)) // directory is not executable
         check(branded.delete())
-        expect(File(root, "HYPERGET.BIN").path, resolve(File(root, "HYPERGET.BIN").path))
+        expect(File(root, "HYPERGET.EXE").path, resolve(File(root, "HYPERGET.EXE").path))
         println("PASS HyperGet executable path source smoke: 10 cases")
     } finally {
         root.deleteRecursively()

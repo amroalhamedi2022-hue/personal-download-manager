@@ -7,6 +7,10 @@ on:
     branches: [codex/repair-rf00-rf01]
     paths:
       - ".github/workflows/windows-installed-native-host-e2e.yml"
+      - "desktop/app/build.gradle.kts"
+      - "desktop/app/icons/icon.ico"
+      - "desktop/app/icons/hyperget-icon.svg"
+      - "desktop/app/resources/installer/nsis-script-template.nsi"
       - "scripts/Run-WindowsInstalledNativeHostE2E.ps1"
       - "scripts/Run-WindowsChromeNativeE2E.mjs"
       - "scripts/Run-WindowsFirefoxNativeE2E.mjs"
@@ -46,7 +50,7 @@ jobs:
           run=false
           while IFS= read -r file; do
             case "$file" in
-              .github/workflows/windows-installed-native-host-e2e.yml|scripts/Run-WindowsInstalledNativeHostE2E.ps1|scripts/Run-WindowsChromeNativeE2E.mjs|scripts/Run-WindowsFirefoxNativeE2E.mjs|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/nativemessaging/*|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/cli/download/show/ShowDownload.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/AppInfo.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/MainExecutableResolver.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/singleInstance/service/*|shared/app/build.gradle.kts|build.gradle.kts)
+              .github/workflows/windows-installed-native-host-e2e.yml|scripts/Run-WindowsInstalledNativeHostE2E.ps1|scripts/Run-WindowsChromeNativeE2E.mjs|scripts/Run-WindowsFirefoxNativeE2E.mjs|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/nativemessaging/*|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/cli/download/show/ShowDownload.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/AppInfo.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/MainExecutableResolver.kt|desktop/app/build.gradle.kts|desktop/app/icons/icon.ico|desktop/app/icons/hyperget-icon.svg|desktop/app/resources/installer/nsis-script-template.nsi|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/singleInstance/service/*|shared/app/build.gradle.kts|build.gradle.kts)
                 run=true
                 ;;
             esac
@@ -131,10 +135,11 @@ jobs:
             throw 'NSIS install timed out'
           }
           if ($proc.ExitCode -ne 0) { throw "NSIS exit code $($proc.ExitCode)" }
-          $gui = @(Get-ChildItem -LiteralPath $dir -File -Recurse -Filter 'DownloadManager.exe')
+          $gui = @(Get-ChildItem -LiteralPath $dir -File -Recurse -Filter 'HyperGet.exe')
+          $legacyGui = @(Get-ChildItem -LiteralPath $dir -File -Recurse -Filter 'DownloadManager.exe')
           $nativeExeFiles = @(Get-ChildItem -LiteralPath $dir -File -Recurse -Filter 'DownloadManagerNativeMessagingHost.exe')
-          if ($gui.Count -ne 1 -or $nativeExeFiles.Count -ne 1) {
-            throw "Installed GUI/native host executable missing: GUI=$($gui.Count), host=$($nativeExeFiles.Count)"
+          if ($gui.Count -ne 1 -or $legacyGui.Count -ne 0 -or $nativeExeFiles.Count -ne 1) {
+            throw "Installed GUI/native host identity mismatch: HyperGet=$($gui.Count), legacy=$($legacyGui.Count), host=$($nativeExeFiles.Count)"
           }
           "HYPERGET_GUI_EXE=$($gui[0].FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "HYPERGET_NATIVE_EXE=$($nativeExeFiles[0].FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8

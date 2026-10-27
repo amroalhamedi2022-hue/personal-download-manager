@@ -11,6 +11,14 @@ on:
     paths:
       - ".github/workflows/hyperget-source-only.yml"
       - "desktop/app/resources/installer/nsis-script-template.nsi"
+      - "desktop/app/build.gradle.kts"
+      - "desktop/app/icons/icon.ico"
+      - "desktop/app/icons/hyperget-icon.svg"
+      - "scripts/source-tests/test_hyperget_icon_contract.py"
+      - "scripts/source-tests/test_hyperget_cross_version_upgrade_source.py"
+      - "scripts/Run-WindowsCrossVersionUpgradeRollbackE2E.ps1"
+      - "scripts/Run-WindowsInstallerLifecycleE2E.ps1"
+      - "scripts/Run-WindowsInstalledNativeHostE2E.ps1"
       - "scripts/source-tests/test_hyperget_uninstaller_cleanup_order.py"
       - "scripts/Run-WindowsActiveBenchmarkMatrix.ps1"
       - "scripts/LocalHttpRangeFixture.py"
@@ -149,3 +157,7 @@ jobs:
         run: python3 -m unittest scripts/test_local_http_range_fixture.py -v
       - name: Verify local FTP fixture protocol
         run: python3 -m unittest scripts/test_local_ftp_fixture.py -v
+      - name: Verify HyperGet icon binary/vector contract
+        run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_icon_contract.py -v
+      - name: Verify HyperGet executable identity and cross-version compatibility contracts
+        run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_cross_version_upgrade_source.py -v

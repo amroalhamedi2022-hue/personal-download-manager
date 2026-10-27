@@ -18,7 +18,8 @@ SetCompressor /SOLID lzma
 
 !define INPUT_DIR "{{ input_dir }}"
 !define LICENSE_FILE "{{ license_file }}"
-!define MAIN_BINARY_NAME "${APP_NAME}"
+!define MAIN_BINARY_NAME "{{ main_binary_name }}"
+!define LEGACY_MAIN_BINARY_NAME "${APP_NAME}"
 !define NATIVE_MESSAGING_HOST_BINARY_NAME "{{ native_messaging_host_binary_name }}"
 !define CLI_BINARY_NAME "{{ cli_binary_name }}"
 
@@ -108,6 +109,8 @@ FunctionEnd
     RmDir /r "${INSTALL_DIR}\runtime"
     Delete "${INSTALL_DIR}\${MAIN_BINARY_NAME}.exe"
     Delete "${INSTALL_DIR}\${MAIN_BINARY_NAME}.ico"
+    Delete "${INSTALL_DIR}\${LEGACY_MAIN_BINARY_NAME}.exe"
+    Delete "${INSTALL_DIR}\${LEGACY_MAIN_BINARY_NAME}.ico"
     Delete "${INSTALL_DIR}\${CLI_BINARY_NAME}.exe"
     Delete "${INSTALL_DIR}\${NATIVE_MESSAGING_HOST_BINARY_NAME}.exe"
     Delete "${INSTALL_DIR}\uninstall.exe"
@@ -118,17 +121,23 @@ Function RunMainBinary
    Exec "${INSTALL_DIR}\${MAIN_BINARY_NAME}.exe"
 FunctionEnd
 
-!macro closeProcess executableName
+!macro closeProcess executableName macroId
     DetailPrint "Stopping Executable ${executableName}"
 
-    ${If} "$EXEFILE" != "${executableName}"
-        nsExec::ExecToLog 'taskkill /F /IM "${executableName}"'
-        Pop $0
+    ${If} "$EXEFILE" == "${executableName}"
+        ; Setup and GUI can share a basename. Compare directories before skipping termination.
+        StrCmp /I "$EXEDIR" "$INSTDIR" closeProcess_${macroId}_skip closeProcess_${macroId}_kill
     ${Else}
-        DetailPrint "It seems that installer file name is same as executable name"
-        DetailPrint "Please close app manually"
-        StrCpy $0 "1"
-    ${Endif}
+        Goto closeProcess_${macroId}_kill
+    ${EndIf}
+closeProcess_${macroId}_skip:
+    DetailPrint "Installer and target resolve to the same directory; not terminating the installer."
+    StrCpy $0 "1"
+    Goto closeProcess_${macroId}_done
+closeProcess_${macroId}_kill:
+    nsExec::ExecToLog 'taskkill /F /IM "${executableName}"'
+    Pop $0
+closeProcess_${macroId}_done:
 !macroend
 
 ; Function RestorePreviousInstallLocation
@@ -139,10 +148,11 @@ FunctionEnd
 ; FunctionEnd
 
 ; I should improve this.
-!macro closeApp
-    !insertmacro closeProcess "${NATIVE_MESSAGING_HOST_BINARY_NAME}.exe"
-    !insertmacro closeProcess "${CLI_BINARY_NAME}.exe"
-    !insertmacro closeProcess "${MAIN_BINARY_NAME}.exe"
+!macro closeApp phaseId
+    !insertmacro closeProcess "${NATIVE_MESSAGING_HOST_BINARY_NAME}.exe" ${phaseId}_native
+    !insertmacro closeProcess "${CLI_BINARY_NAME}.exe" ${phaseId}_cli
+    !insertmacro closeProcess "${MAIN_BINARY_NAME}.exe" ${phaseId}_main
+    !insertmacro closeProcess "${LEGACY_MAIN_BINARY_NAME}.exe" ${phaseId}_legacy
 
     ${If} $0 == "0"
         Sleep 500
@@ -195,7 +205,7 @@ Section "${APP_DISPLAY_NAME}"
     SectionInstType RO
 
     DetailPrint "Closing app (if any)"
-    !insertmacro closeApp
+    !insertmacro closeApp install
     DetailPrint "Removing stale HyperGet/legacy product shortcuts"
     !insertmacro RemoveKnownBrandShortcuts
     DetailPrint "clearing old app (if any)"
@@ -244,7 +254,7 @@ Section "Uninstall"
     ; Match the installer's per-user shell/registry context explicitly.
     SetShellVarContext current
 
-    !insertmacro closeApp
+    !insertmacro closeApp uninstall
 
     ; Remove discoverability and registration before deleting the running
     ; uninstaller and its containing directory. Keep file deletion last so
