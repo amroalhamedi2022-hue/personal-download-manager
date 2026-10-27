@@ -21,3 +21,19 @@ Expected:
 - Inspect the screenshot at native scale before accepting visual parity.
 
 Source tests cannot prove actual pixel contrast, Compose rendering, IPC, or transfer integrity; one targeted Windows visual build is justified. No release build, main write, merge, paid runner/API, or Torrent.
+
+
+## 2026-10-27 — exact-head contrast recheck preparation
+
+The current PR-branch source now contains the proposed visual delta relative to the prior passing screenshot SHA `77f8c7e637b0fc6430484249af148588cc01837f`:
+- track height: 5dp → 7dp;
+- cached shimmer white alpha: 0.30 → 0.42;
+- top-edge gloss alpha: 0.16;
+- bubble alpha/radius: first 0.42 / 2dp, second 0.30 / 1.3dp (previously lower/smaller).
+
+These are source observations, not visual acceptance. The previous screenshot proved only the older rendering; the new values require an exact-head Windows build, screenshot inspection at native scale, and the same live-transfer/SHA gates. Before that build, add numeric lower-bound regression assertions so future changes cannot silently reduce the approved contrast while leaving only string-presence checks.
+
+**Pre-build question:** does the current exact PR head render the stronger 7dp Liquid Progress treatment visibly at ≥25% real transfer, with status `Downloading`, advancing fixture bytes, and final 16 MiB SHA-256 equality?
+**Expected:** source contracts and PowerShell parsing pass; Windows installer builds and launches; the screenshot demonstrates the shimmer/gloss/two bubbles at native scale; final file is 16,777,216 bytes and expected/actual SHA-256 both equal `341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1`.
+**Why source tests are insufficient:** pixel contrast and Compose rendering cannot be established from source assertions, and the installed CLI/IPC plus real transfer must remain live during capture.
+**Gate:** OPEN until the exact-head Windows artifact is inspected. No release/merge/final EXE claim.
