@@ -12,8 +12,10 @@ ACTIVE = (ROOT / ".github/workflows/windows-installed-active-benchmark.yml").rea
 MEMORY = (ROOT / ".github/workflows/windows-installed-memory-profile.yml").read_text(encoding="utf-8")
 HTTP = (ROOT / ".github/workflows/windows-installed-http-e2e.yml").read_text(encoding="utf-8")
 FTP = (ROOT / ".github/workflows/windows-installed-ftp-e2e.yml").read_text(encoding="utf-8")
+CROSS_VERSION = (ROOT / ".github/workflows/windows-cross-version-upgrade-rollback.yml").read_text(encoding="utf-8")
 UI = (ROOT / ".github/workflows/windows-installed-ui-smoke.yml").read_text(encoding="utf-8")
 NATIVE = (ROOT / ".github/workflows/windows-installed-native-host-e2e.yml").read_text(encoding="utf-8")
+LIQUID = (ROOT / "scripts/Run-WindowsLiquidProgressVisualE2E.ps1").read_text(encoding="utf-8")
 MATRIX = (ROOT / "scripts/Run-WindowsActiveBenchmarkMatrix.ps1").read_text(encoding="utf-8")
 FTP_SCRIPT = (ROOT / "scripts/Run-WindowsInstalledFtpE2E.ps1").read_text(encoding="utf-8")
 
@@ -24,7 +26,10 @@ class HyperGetExecutableIdentityWorkflowContracts(unittest.TestCase):
             with self.subTest(workflow=name):
                 self.assertIn("BaseName -eq 'HyperGet'", workflow)
                 self.assertIn("BaseName -eq 'DownloadManager'", workflow)  # explicit legacy-GUI rejection
-                self.assertIn("DownloadManagerCli$", workflow)  # CLI stays backward-compatible
+                self.assertIn("BaseName -eq 'DownloadManagerCli'", workflow)  # CLI stays backward-compatible
+                self.assertIn("$gui.Count -ne 1", workflow)
+                self.assertIn("$legacyGui.Count -ne 0", workflow)
+                self.assertIn("$cli.Count -ne 1", workflow)
         self.assertIn("Join-Path $installed 'HyperGet.exe'", HTTP)
         self.assertIn("HyperGet.exe", NATIVE)
         self.assertIn("DownloadManagerNativeMessagingHost.exe", NATIVE)
@@ -39,9 +44,13 @@ class HyperGetExecutableIdentityWorkflowContracts(unittest.TestCase):
         self.assertNotIn("-RootProcessName DownloadManager", UI)
         self.assertIn("Get-Process -Name 'DownloadManager','HyperGet'", FTP_SCRIPT)
         self.assertIn("'HyperGet.exe'", FTP_SCRIPT)
+        self.assertIn("$guiProcessName = [IO.Path]::GetFileNameWithoutExtension($guiPath)", LIQUID)
+        self.assertIn("$guiProcessName -ne 'HyperGet'", LIQUID)
+        self.assertIn("$_.ProcessName -ieq $guiProcessName", LIQUID)
+        self.assertNotIn("ProcessName -match 'DownloadManager'", LIQUID)
 
     def test_identity_changes_trigger_the_installed_acceptance_jobs(self):
-        for name, workflow in (("active benchmark", ACTIVE), ("memory profile", MEMORY), ("HTTP E2E", HTTP), ("FTP E2E", FTP), ("GUI smoke", UI)):
+        for name, workflow in (("active benchmark", ACTIVE), ("memory profile", MEMORY), ("HTTP E2E", HTTP), ("FTP E2E", FTP), ("GUI smoke", UI), ("cross-version", CROSS_VERSION), ("browser native host", NATIVE)):
             with self.subTest(workflow=name):
                 self.assertIn("desktop/app/resources/installer/nsis-script-template.nsi", workflow)
                 self.assertIn("desktop/app/build.gradle.kts", workflow)

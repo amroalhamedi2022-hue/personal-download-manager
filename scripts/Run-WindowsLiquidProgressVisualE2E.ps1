@@ -18,6 +18,10 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $guiPath = [IO.Path]::GetFullPath($GuiExecutable)
+$guiProcessName = [IO.Path]::GetFileNameWithoutExtension($guiPath)
+if ($guiProcessName -ne 'HyperGet') {
+    throw "Liquid Progress visual acceptance requires HyperGet.exe; got '$([IO.Path]::GetFileName($guiPath))'."
+}
 $cliPath = [IO.Path]::GetFullPath($CliExecutable)
 $root = [IO.Path]::GetFullPath($OutputDirectory)
 $fixtureScript = Join-Path $PSScriptRoot 'LocalHttpRangeFixture.py'
@@ -154,7 +158,7 @@ try {
     for ($attempt = 0; $attempt -lt 40; $attempt++) {
         Start-Sleep -Milliseconds 500
         $visible = @(Get-Process -ErrorAction SilentlyContinue | Where-Object {
-            $_.ProcessName -match 'DownloadManager' -and $_.MainWindowHandle -ne [IntPtr]::Zero
+            $_.ProcessName -ieq $guiProcessName -and $_.MainWindowHandle -ne [IntPtr]::Zero
         })
         if ($visible.Count -gt 0) { break }
         if ($started.HasExited) { throw 'Installed HyperGet GUI exited before showing its main window.' }

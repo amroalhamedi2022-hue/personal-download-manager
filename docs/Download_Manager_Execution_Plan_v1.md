@@ -1197,3 +1197,10 @@ Does each installed Windows harness now discover the branded `HyperGet.exe`, sam
 **Why source tests are insufficient:** only the Windows installer and actual process tree can establish the launcher name, window process identity, installed shortcuts, real transfers and resource samples.
 
 **Status:** identity-harness patch committed on the existing PR branch; exact-head reruns pending. Final independent release recheck and final `HyperGet.exe` artifact/SHA remain OPEN.
+
+
+## 2026-10-27 — HG-03 exact-head executable-identity acceptance (OPEN)
+
+Current exact PR head e36266add4eb4e009eb6c64a4e71ceae5d5090b7 exposed two harness defects: four installed-workflow CLI selectors were malformed, and the Liquid Progress E2E still searched for the retired DownloadManager GUI process. Source-only run [40549485454](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40549485454) failed those selector contracts; Windows run [40549485330](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40549485330) built/installed/launched the GUI but stopped before the active Liquid Progress transfer because the process filter was stale. Cross-version [40549485561](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40549485561) and browser [40549485303](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40549485303) only passed their scope gates; their functional jobs were skipped.
+
+The next bounded HG-03 repair fixes exact stable CLI discovery, process identity derived from HyperGet.exe, and scope triggers so the cross-version and real Chrome/Firefox installed tests run for this acceptance change. Pre-build question: can the installed HyperGet UI complete the active Liquid Progress scenario and reach cross-version/browser assertions? Source tests cannot prove native process/window detection, NSIS layout, actual transfer bytes or Windows registry/shortcut transitions. Acceptance stays OPEN until exact-head Windows evidence is complete; no release or merge.

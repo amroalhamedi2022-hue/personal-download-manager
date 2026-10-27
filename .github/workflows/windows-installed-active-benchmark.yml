@@ -159,7 +159,10 @@ jobs:
           $exe = @(Get-ChildItem -LiteralPath $installDir -File -Recurse -Filter '*.exe')
           $gui = @($exe | Where-Object { $_.BaseName -eq 'HyperGet' })
           $legacyGui = @($exe | Where-Object { $_.BaseName -eq 'DownloadManager' })
-          $cli = @($exe | Where-Object { $_.BaseName -match 'DownloadManagerCli
+          $cli = @($exe | Where-Object { $_.BaseName -eq 'DownloadManagerCli' })
+          if ($gui.Count -ne 1 -or $legacyGui.Count -ne 0 -or $cli.Count -ne 1) {
+            throw "Expected one HyperGet GUI, no legacy GUI, and one stable CLI: HyperGet=$($gui.Count), legacy=$($legacyGui.Count), CLI=$($cli.Count)"
+          }
           "IDM_BENCH_GUI=$($gui[0].FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "IDM_BENCH_CLI=$($cli[0].FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           $digest = (Get-FileHash -LiteralPath $installers[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()

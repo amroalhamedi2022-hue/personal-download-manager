@@ -15,6 +15,7 @@ on:
       - "scripts/Run-WindowsChromeNativeE2E.mjs"
       - "scripts/Run-WindowsFirefoxNativeE2E.mjs"
       - "scripts/source-tests/test_hyperget_firefox_capture_source.py"
+      - "scripts/source-tests/test_hyperget_executable_identity_workflows.py"
       - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/nativemessaging/**"
       - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/AppInfo.kt"
   workflow_dispatch:
@@ -50,7 +51,7 @@ jobs:
           run=false
           while IFS= read -r file; do
             case "$file" in
-              .github/workflows/windows-installed-native-host-e2e.yml|scripts/Run-WindowsInstalledNativeHostE2E.ps1|scripts/Run-WindowsChromeNativeE2E.mjs|scripts/Run-WindowsFirefoxNativeE2E.mjs|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/nativemessaging/*|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/cli/download/show/ShowDownload.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/AppInfo.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/MainExecutableResolver.kt|desktop/app/build.gradle.kts|desktop/app/icons/icon.ico|desktop/app/icons/hyperget-icon.svg|desktop/app/resources/installer/nsis-script-template.nsi|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/singleInstance/service/*|shared/app/build.gradle.kts|build.gradle.kts)
+              .github/workflows/windows-installed-native-host-e2e.yml|scripts/Run-WindowsInstalledNativeHostE2E.ps1|scripts/Run-WindowsChromeNativeE2E.mjs|scripts/Run-WindowsFirefoxNativeE2E.mjs|scripts/source-tests/test_hyperget_executable_identity_workflows.py|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/nativemessaging/*|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/cli/download/show/ShowDownload.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/AppInfo.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/MainExecutableResolver.kt|desktop/app/build.gradle.kts|desktop/app/icons/icon.ico|desktop/app/icons/hyperget-icon.svg|desktop/app/resources/installer/nsis-script-template.nsi|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/singleInstance/service/*|shared/app/build.gradle.kts|build.gradle.kts)
                 run=true
                 ;;
             esac

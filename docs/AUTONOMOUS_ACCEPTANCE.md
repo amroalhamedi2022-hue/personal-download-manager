@@ -1,3 +1,27 @@
+## 2026-10-27 — HG-03 exact-head executable-identity gates (OPEN)
+
+**Exact PR head inspected:** e36266add4eb4e009eb6c64a4e71ceae5d5090b7 on automation/idm-ftp-cancel-and-category-flush; PR #3 remains open/Draft. This checkpoint is recorded before the next targeted Windows build.
+
+### Evidence from that exact head
+- Source-only run [40549485454](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40549485454) failed four identity subcases. The assertion expected the literal DownloadManagerCli$, while the active benchmark, memory profile, HTTP E2E and FTP E2E contained incomplete -match 'DownloadManagerCli lines. These were malformed acceptance scripts, not a download-engine failure.
+- Windows GUI run [40549485330](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40549485330) built and installed the exact-head installer and launched the GUI/screenshot step, but Liquid Progress E2E failed at Run-WindowsLiquidProgressVisualE2E.ps1:162: the harness still filtered ProcessName -match 'DownloadManager' after the branded process became HyperGet. Artifact [12753789808](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40549485330/artifacts/12753789808), SHA-256 b1e2404c460c8b40e13b4a923f5bfb18dc99f768c73fc920d6673d012ca734aa.
+- Cross-version run [40549485561](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40549485561) passed change-scope only; the actual upgrade/rollback job was skipped. Browser run [40549485303](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40549485303) also skipped its installed Chrome/Firefox job. Neither is a current-head functional PASS.
+- Exact-head queue lifecycle [40549485344](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40549485344), FTP Kotlin/WinCred [40549485310](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40549485310), and HLS [40549485488](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40549485488) completed successfully. These do not replace the skipped installed gates.
+
+### Controlled repair
+- Replace all four malformed CLI selectors with exact BaseName -eq 'DownloadManagerCli' selection and require exactly one branded GUI, zero legacy GUI binaries and exactly one backward-compatible CLI.
+- Make the Liquid Progress harness derive the GUI process name from the supplied installed executable, require HyperGet.exe, and discover that exact process instead of the retired GUI name.
+- Add regression assertions for the selector, cardinality and Liquid Progress process identity; add the regression file to cross-version and real Chrome/Firefox native-host workflow path/scope gates.
+
+### Pre-build question
+Can the exact-head installer now expose one HyperGet.exe plus the stable CLI, display a real active Liquid Progress window, and proceed through cross-version upgrade/rollback and Chrome/Firefox capture?
+
+**Expected:** source contracts and PowerShell parsing PASS; Windows installer builds; installed HTTP output matches fixture SHA-256; Liquid Progress is captured while a real transfer is active; upgrade/rollback and installed browser capture run rather than skip. **Why source tests are insufficient:** the renamed process name, native window handle, NSIS layout, CLI IPC, transfer bytes and Windows lifecycle only exist in the installed Windows execution.
+
+**Acceptance remains OPEN.** No final EXE/release is claimed; no merge or main write.
+
+---
+
 ## 2026-10-27 — follow-up: Windows table border hid the requested ID (OPEN)
 
 **Exact candidate SHA:** `e986936bb5ffd7f4fa6183e7cf50a53281b8afd2`.  

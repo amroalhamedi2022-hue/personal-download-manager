@@ -83,3 +83,8 @@ Does each installed Windows harness now discover the branded `HyperGet.exe`, sam
 **Why source tests are insufficient:** only the Windows installer and actual process tree can establish the launcher name, window process identity, installed shortcuts, real transfers and resource samples.
 
 **Status:** identity-harness patch committed on the existing PR branch; exact-head reruns pending. Final independent release recheck and final `HyperGet.exe` artifact/SHA remain OPEN.
+
+
+## 2026-10-27 — latest HG-03 verification checkpoint (OPEN)
+
+The prior exact-head build proved the installer can build and launch HyperGet.exe, but its Liquid Progress harness still searched for DownloadManager; the source identity suite also exposed malformed CLI selectors in four Windows acceptance workflows. The next patch repairs these harnesses and ensures cross-version and installed Chrome/Firefox checks are triggered by the identity regression. This is test/acceptance infrastructure, not evidence of a new production-engine change. Current-head Windows runtime, final independent recheck and final HyperGet.exe SHA/artifact remain NOT COMPLETE until the new exact-head runs pass.

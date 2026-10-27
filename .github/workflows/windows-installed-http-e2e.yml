@@ -83,9 +83,12 @@ jobs:
           if ($installer.ExitCode -ne 0) { throw "Installer exit=$($installer.ExitCode)" }
           if (@(Get-Process -Name 'DownloadManager','HyperGet' -ErrorAction SilentlyContinue).Count -ne 0) { throw 'Silent HTTP installer unexpectedly launched a GUI.' }
           $exe = @(Get-ChildItem -LiteralPath $appDir -Filter '*.exe' -Recurse -File)
-          $gui = @($exe | Where-Object { $_.BaseName -eq 'HyperGet' }) | Select-Object -First 1
+          $gui = @($exe | Where-Object { $_.BaseName -eq 'HyperGet' })
           $legacyGui = @($exe | Where-Object { $_.BaseName -eq 'DownloadManager' })
-          $cli = $exe | Where-Object { $_.BaseName -match 'DownloadManagerCli
+          $cli = @($exe | Where-Object { $_.BaseName -eq 'DownloadManagerCli' })
+          if ($gui.Count -ne 1 -or $legacyGui.Count -ne 0 -or $cli.Count -ne 1) {
+            throw "Expected one HyperGet GUI, no legacy GUI, and one stable CLI: HyperGet=$($gui.Count), legacy=$($legacyGui.Count), CLI=$($cli.Count)"
+          }
           $fixture = Join-Path $fixtureDir 'fixture.bin'
           & python -c 'import pathlib,sys; pathlib.Path(sys.argv[1]).write_bytes(bytes(range(256))*65536)' $fixture
           if ($LASTEXITCODE -ne 0) { throw 'Unable to create deterministic 16 MiB HTTP fixture.' }
