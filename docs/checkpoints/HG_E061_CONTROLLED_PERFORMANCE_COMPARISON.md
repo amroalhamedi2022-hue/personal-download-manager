@@ -18,3 +18,16 @@ Does the isolated production change that bounds blocking HTTP part-body copies a
 **Required result:** retain installer SHA-256 values, raw transfer manifests, nine CSVs per snapshot, comparison report, transcript and artifact digest. If any existing transfer/hash/overlap gate fails, or a predeclared regression threshold fails, report FAIL and preserve evidence; do not weaken thresholds.
 
 **Status: OPEN — awaiting exact-snapshot Windows build and paired runtime results.**
+
+## 2026-10-27 — Harness audit correction before the paired Windows build
+
+The exact-head review found two defects in the comparison harness, so no performance result was accepted from it:
+
+- The transfer SHA guard in `scripts/Compare-WindowsActiveBenchmarks.ps1` was syntactically incomplete, and an orphaned duplicate fragment remained after the report's final gate. The workflow's PowerShell parser step must reject this before any build.
+- The comparison loop selected `Round -eq 1` for every round when reading both throughput manifests and resource summaries. That would duplicate round-one observations and invalidate the claimed three-round median.
+
+The harness now checks a full 64-hex SHA-256 against the expected fixture, keeps the deterministic fixture hash consistent across all 63 outputs, rejects duplicate output names per round, and reads the actual current round for both transfer and resource records. Source-contract regression assertions cover these conditions.
+
+**Pre-build question:** does the bounded HTTP body-copy candidate preserve byte-exact HTTP output and real 1/4/16 overlap without exceeding the predeclared 15% throughput or peak-memory regression limits against the exact baseline on the same Windows runner?
+
+**Why source tests are insufficient:** only compiled exact-snapshot installers and a real Windows loopback workload can prove byte hashes, socket overlap, and OS process measurements. The paired Windows run is still **OPEN**; no performance conclusion is claimed until its logs and artifacts are inspected.

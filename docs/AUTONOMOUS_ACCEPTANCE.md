@@ -1717,3 +1717,11 @@ The Liquid Progress visual gate passed on exact source SHA `90e8d6eac09d4d84ef33
 **Current status before run:** the prior workflow run [40432508000](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40432508000) skipped the Windows benchmark because the latest commit was documentation-only. Its skipped job is not a PASS. This checkpoint requests a deliberate exact-head run without changing downloader production code.
 
 **Gate:** OPEN until the Windows report and artifact are inspected. No release/merge/Torrent.
+
+## 2026-10-27 — E061 controlled-performance harness fix (pre-run; no result claimed)
+
+- **Defect found:** the PowerShell comparison harness had a malformed transfer SHA-256 guard plus orphaned duplicate lines after the final report gate. It also selected round 1 while iterating all three rounds for both throughput and resource evidence, which would invalidate the paired medians.
+- **Fix:** restored full SHA-256 format + expected-value equality, consistent fixture hash and duplicate-output checks; both per-workload manifest and resource selection now use the active `$round`.
+- **Regression coverage:** `test_hyperget_controlled_benchmark_source.py` now asserts the exact SHA guard, duplicate-name guard, and per-round selectors.
+- **Status:** source repair only; Windows PowerShell parsing, exact baseline/candidate installer builds, 63+63 real SHA-verified downloads, live 1/4/16 overlap, paired CPU/RAM, and 15% regression thresholds remain **NOT TESTED** until the new exact-head run finishes and its artifact/logs are inspected.
+- **Safety:** no downloader production code changed in this checkpoint; no paid runner/API, no main write, no merge/release, no Torrent.
