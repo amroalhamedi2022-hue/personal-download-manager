@@ -22,7 +22,7 @@ class PullRequestDiffScopeContract(unittest.TestCase):
                 )
                 self.assertIn('git diff --name-only "origin/$GITHUB_BASE_REF...HEAD"', source)
                 self.assertNotIn('git diff --name-only HEAD^ HEAD', source)
-                trigger_config = source.split("\\npermissions:", 1)[0]
+                trigger_config = source.split("\npermissions:", 1)[0]
                 self.assertIn(TEST_PATH, trigger_config)
 
     def test_manual_dispatch_still_runs_the_acceptance_gate(self):
@@ -35,7 +35,7 @@ class PullRequestDiffScopeContract(unittest.TestCase):
     def test_push_scope_keeps_before_sha_handling_where_supported(self):
         for relative in SCOPE_WORKFLOWS:
             source = (ROOT / relative).read_text(encoding="utf-8")
-            if "\\n  push:" in source.split("\\npermissions:", 1)[0]:
+            if "\n  push:" in source.split("\npermissions:", 1)[0]:
                 with self.subTest(workflow=relative):
                     self.assertIn('before="$HYPERGET_EVENT_BEFORE"', source)
                     self.assertIn('git diff --name-only "$before" "$GITHUB_SHA"', source)
