@@ -38,3 +38,14 @@
 
 ## Execution instruction
 Priority: design/plan accepted now; execute during future bounded development rounds without interrupting current queue/FTP/build fixes. No paid API, no paid CI, no automatic merge or release, and no direct main write. Keep the established PR and handoff continuity. Update `docs/AUTONOMOUS_ACCEPTANCE.md` with HG-01 through HG-05 evidence as implementation proceeds.
+
+
+## 2026-10-27 — verified partial status after Windows uninstall/Liquid Progress acceptance
+
+- **HG-01 UI/product copy:** PARTIAL. Installed window title and installer/Add-Remove Programs identity show HyperGet; full product-copy audit remains open.
+- **HG-02 data compatibility:** RUNTIME SUBSET PASS on [cross-version Windows run 40528393289](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40528393289): max-concurrency=4, completed task/history/output, user-data sentinel and synthetic WinCred survived upgrade → candidate uninstall → rollback → normal uninstall. This does not yet prove every browser, queue/resume and old-version migration case.
+- **HG-03 executable/installer integration:** NOT COMPLETE. The installed GUI launcher remains `DownloadManager.exe`; the final user-facing `HyperGet.exe` has not been built/delivered. Preserve stable package/registry/data-directory/CLI/native-host identities unless an exact-head migration test proves compatibility.
+- **HG-04 icon/visual identity:** PARTIAL. Installed Liquid Progress visual E2E passed on [run 40528393112](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40528393112); the current screenshot and transfer SHA are verified. Final Liquid Glass app/installer icon replacement and native-size icon inspection remain open.
+- **HG-05 verification:** uninstall user-content safety and same-version reinstall/silent-uninstall are PASS on exact source `068e2ff9b66d47764d4d76bae59361a1cf983c9d`; E061 performance remains PASS on its exact tested source. Browser E2E and throughput matrix were scope-skipped on the installer-only commit, and independent final release recheck is NOT TESTED.
+
+Next: implement the executable-name/icon migration as one compatibility-tested milestone, then perform the independent Windows release recheck. Do not deliver the test installers as `HyperGet.exe` and do not mark HG-01–HG-05 fully complete from partial evidence.
