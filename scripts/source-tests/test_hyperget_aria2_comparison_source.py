@@ -55,8 +55,9 @@ def reconcile_fixture_response_ranges(responses, expected_bytes):
         for prior in responses[:index]:
             if not (prior["range"] and prior["honored"] and prior["data_transfer"]):
                 continue
-            if int(prior["end"]) == int(retry["end"]) and int(prior["start"]) < int(retry["start"]) <= int(prior["end"]):
-                retry_overlap = int(prior["end"]) - int(retry["start"]) + 1
+            prior_served_end = int(prior["start"]) + int(prior["socket_write_bytes"]) - 1
+            if int(prior["end"]) == int(retry["end"]) and int(prior["start"]) < int(retry["start"]) <= prior_served_end:
+                retry_overlap = prior_served_end - int(retry["start"]) + 1
                 if 0 < retry_overlap <= 65536:
                     tail_retry_count += 1
                     break
@@ -176,6 +177,7 @@ class Aria2Stage2SourceContract(unittest.TestCase):
         self.assertIn("$servedIntervals = [System.Collections.Generic.List[object]]::new()", ARIA2_MATRIX)
         self.assertIn("$metadataProbeCount -gt 2", ARIA2_MATRIX)
         self.assertIn("$tailRetryCount -gt ($incompleteDataRangeCount + 1)", ARIA2_MATRIX)
+        self.assertIn("$priorServedEnd = [long]$prior.start + [long]$prior.socket_write_bytes - 1", ARIA2_MATRIX)
         self.assertIn("$overlap -gt 65536", ARIA2_MATRIX)
         self.assertIn("$coveredBytes -ne $expectedBytes", ARIA2_MATRIX)
         self.assertIn("$duplicateBytes -gt $maxDuplicateBytes", ARIA2_MATRIX)
@@ -195,16 +197,18 @@ class Aria2Stage2SourceContract(unittest.TestCase):
              "data_transfer": True, "completed": True, "socket_write_bytes": 4 * mib},
             {"start": 24 * mib, "end": 28 * mib - 1, "range": True, "honored": True,
              "data_transfer": True, "completed": True, "socket_write_bytes": 4 * mib},
+            # Reproduces the Windows failure: the 4–8 MiB Range stops at 7.75 MiB,
+            # then a completed same-end retry overlaps the actual served tail by 64 KiB.
             {"start": 4 * mib, "end": 8 * mib - 1, "range": True, "honored": True,
-             "data_transfer": True, "completed": True, "socket_write_bytes": 4 * mib},
+             "data_transfer": True, "completed": False, "socket_write_bytes": 4 * mib - 4 * 65536},
             {"start": 12 * mib, "end": 16 * mib - 1, "range": True, "honored": True,
              "data_transfer": True, "completed": True, "socket_write_bytes": 4 * mib},
             {"start": 20 * mib, "end": 24 * mib - 1, "range": True, "honored": True,
              "data_transfer": True, "completed": True, "socket_write_bytes": 4 * mib},
             {"start": 28 * mib, "end": expected - 1, "range": True, "honored": True,
              "data_transfer": True, "completed": True, "socket_write_bytes": 4 * mib},
-            {"start": 12 * mib - 65536, "end": 12 * mib - 1, "range": True, "honored": True,
-             "data_transfer": True, "completed": True, "socket_write_bytes": 65536},
+            {"start": 8 * mib - 5 * 65536, "end": 8 * mib - 1, "range": True, "honored": True,
+             "data_transfer": True, "completed": True, "socket_write_bytes": 5 * 65536},
         ]
         total, duplicate, covered = reconcile_fixture_response_ranges(responses, expected)
         self.assertEqual(total, expected + 2 * 65536)
