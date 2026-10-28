@@ -247,7 +247,7 @@ try {
         $dir = Join-Path $root "http-status-$status"
         New-Item -ItemType Directory -Force -Path $dir | Out-Null
         $failed = Invoke-Aria2 -Label "http-status-$status" -AllowFailure -Arguments ($common + @(
-            "--dir=$dir", "--out=status-$status.bin", "$baseUri/status/$status?task=status-$status"
+            "--dir=$dir", "--out=status-$status.bin", "$baseUri/status/$($status)?task=status-$status"
         ))
         if ($failed.ExitCode -eq 0) { throw "HTTP $status unexpectedly returned success." }
         $outputPath = Join-Path $dir "status-$status.bin"
