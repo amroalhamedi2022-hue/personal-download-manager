@@ -14,7 +14,7 @@ SOURCE_ONLY = (ROOT / ".github/workflows/hyperget-source-only.yml").read_text(en
 
 class HyperGetExternalHttpsAcceptanceContract(unittest.TestCase):
     def test_external_endpoint_uses_normal_https_validation_and_is_not_mislabelled_signed(self):
-        self.assertIn("https://httpbin.io/range/8388608", SCRIPT)
+        self.assertIn("https://httpbin.io/range/1048576", SCRIPT)
         self.assertIn("?hg_external_https_e2e=1", SCRIPT)
         executable_lines = [line for line in SCRIPT.splitlines() if not line.lstrip().startswith("#")]
         executable_source = "\n".join(executable_lines)
@@ -24,20 +24,22 @@ class HyperGetExternalHttpsAcceptanceContract(unittest.TestCase):
         self.assertIn("not a provider-specific signed-token expiry test", SCRIPT)
 
     def test_external_endpoint_failover_records_only_sanitized_status(self):
-        self.assertIn("[Uri]'https://httpbin.org/range/8388608'", SCRIPT)
-        self.assertIn("[Uri]'https://httpbingo.org/range/8388608'", SCRIPT)
-        self.assertIn("[Uri]'https://httpbin.io/range/8388608'", SCRIPT)
+        self.assertIn("[Uri]'https://bom.proof.ovh.net/files/1Mb.dat'", SCRIPT)
+        self.assertIn("[Uri]'https://proof.ovh.net/files/1Mb.dat'", SCRIPT)
+        self.assertIn("[Uri]'https://httpbin.org/range/1048576'", SCRIPT)
+        self.assertIn("[Uri]'https://httpbingo.org/range/1048576'", SCRIPT)
+        self.assertIn("[Uri]'https://httpbin.io/range/1048576'", SCRIPT)
         self.assertIn("foreach ($candidate in $endpointCandidates)", SCRIPT)
         self.assertIn("EndpointAttempts=$($endpointAttempts -join ',')", SCRIPT)
         self.assertIn("Get-ExternalHttpFailureCode -Record $_", SCRIPT)
         self.assertIn("No approved external HTTPS Range endpoint passed", SCRIPT)
-        self.assertIn("$allowedHosts = @('httpbin.org', 'httpbingo.org', 'httpbin.io')", SCRIPT)
+        self.assertIn("$allowedHosts = @('bom.proof.ovh.net', 'proof.ovh.net', 'httpbin.org', 'httpbingo.org', 'httpbin.io')", SCRIPT)
 
     def test_external_range_is_real_206_and_matches_reference_prefix(self):
         self.assertIn("@{ Range = 'bytes=0-1023' }", SCRIPT)
         self.assertIn("$rangeStatus -ne 206", SCRIPT)
         self.assertIn("$rangeBytes -ne 1024", SCRIPT)
-        self.assertIn("^bytes 0-1023/8388608$", SCRIPT)
+        self.assertIn("^bytes 0-1023/1048576$", SCRIPT)
         self.assertIn("$rangeHash -ne $rangePrefixHash", SCRIPT)
 
     def test_installed_hyperget_download_requires_exact_size_and_sha256(self):
@@ -50,7 +52,7 @@ class HyperGetExternalHttpsAcceptanceContract(unittest.TestCase):
             "ExpectedSHA256=$expectedHash",
             "ActualSHA256=$actualHash",
             "Get-FileHash",
-            "8388608",
+            "1048576",
             "Start-Sleep -Seconds 2",
             "SignedTokenExpiry=NOT_TESTED",
         ):
