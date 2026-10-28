@@ -2217,3 +2217,26 @@ The first HG-E072 patch triggered source-only workflow [40641209772](https://git
 Exact source/harness SHA: `89cfb72f0ffeaf5f58d7b609d18c63999a949d71`. Windows run [40641435306](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40641435306) passed all 29 guarded HLS JUnit tests (0 failures/errors/skips), source and PowerShell pre-build contracts, targeted installer build, and installed process-kill/relaunch acceptance. Installer SHA-256: `7318eb3bced7ddd0aff6299069d6936134a719e6879d3a0b071b44c68231001f`. Evidence artifact [12796480062](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40641435306/artifacts/12796480062), archive SHA-256 `e5c574b0587e65ae3f69ff3b8d7453f83a17dab3a0abf3055f4055fc9a6b0933`. Final output was 25,296,896 bytes with expected=actual SHA-256 `ea79f691986481e8983f41728fdf61174c54b548c3afcc5dedd05f9d0d5b25bb`; playlist requests=2; segment 1 requests/completed=1/1; segments 2–4 requests/completed=2/1 each; active sockets=0. The initial harness defect was the stale persisted `Downloading` label suppressing Resume after process kill; unconditional CLI Resume plus captured diagnostics fixed the test sequence. The intermediate malformed Python guard failure on `083728f` was corrected, and source-only run [40641435300](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40641435300) passed on the exact tested SHA.
 
 **Closed:** installed HLS process-kill/relaunch milestone on `89cfb72`. **Still open:** behavioral scheduled start/stop; independent external HTTPS signed-link acceptance; independent final Windows recheck; final standalone user-facing `HyperGet.exe` artifact and SHA. No merge/release/main write; Torrent remains excluded.
+
+
+## 2026-10-28 — HG-E073 scheduled queue start/stop acceptance (pre-test)
+
+
+## Milestone
+Prove the existing HyperGet queue schedule is behavioral, not just persisted UI settings: with one queued task and both schedule switches enabled, the queue must emit the scheduled-start event at the next start time, start the task exactly once, emit the scheduled-stop event at the next end time, stop the task exactly once, and finish inactive.
+
+## Pre-test declaration
+**Question:** does `DownloadQueue` execute its configured start and end timers against the current local wall clock and transition the actual queue/task lifecycle in the expected order?
+
+**Expected:** Windows Gradle/JUnit compiles the new `ScheduledQueueWindowTest`; within a bounded 18-second window, start and stop events each occur exactly once, the task's start/stop callbacks are each recorded exactly once, the start event observes an inactive queue, the stop event observes an active queue, and the queue is inactive afterward.
+
+**Why source tests are insufficient:** static assertions cannot prove coroutine delay scheduling, local-time conversion, queue admission, event ordering, or stop callbacks under an actual runtime clock. This milestone requires the targeted Windows JUnit run, but does not require an installer because no production code or Windows packaging identity is changed.
+
+## Change
+- Added a bounded wall-clock integration test using the existing `QueueManager`, file-backed queue persistence, and a recording `DownloadManagerMinimalControl`.
+- Wired the test into the existing Windows queue-lifecycle workflow and its JUnit artifact/count gate.
+- No production code, dependencies, browser repo, paid service, Torrent, main write, or auto-merge.
+
+## Status before test
+OPEN / NOT YET TESTED. The next exact-head Windows run must pass the new test and existing queue/part lifecycle suites with zero failures/errors/skips. If it fails, use the exact event order and callback evidence to repair the scheduler rather than weakening the assertions.
+

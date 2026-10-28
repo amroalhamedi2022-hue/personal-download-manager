@@ -1,6 +1,6 @@
 name: HyperGet Windows queue + part I/O lifecycle regression
-# Question: do queue lifecycle and blocking part-source cancellation compile and pass real JUnit tests?
-# Expected: queue suites plus the interrupt-ignoring source regression pass with no failures/skips.
+# Question: do queue lifecycle, scheduled start/stop, and blocking part-source cancellation pass real JUnit tests?
+# Expected: scheduled queue starts/stops once at its configured wall-clock window; existing lifecycle suites pass with no failures/skips.
 # Targeted Windows compile only; NO EXE or installer.
 on:
   pull_request:
@@ -18,6 +18,9 @@ on:
       - "downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/DownloadManagerLifecycleContextTest.kt"
       - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/queue/ManualDownloadQueue.kt"
       - "downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/queue/ManualDownloadQueueBatchResumeTest.kt"
+      - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/queue/DownloadQueue.kt"
+      - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/queue/ScheduleTimes.kt"
+      - "downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/queue/ScheduledQueueWindowTest.kt"
   workflow_dispatch:
 permissions:
   contents: read
@@ -50,10 +53,10 @@ jobs:
           java-package: jdk
           java-version: "25"
           cache: gradle
-      - name: Compile and run two targeted Kotlin suites
+      - name: Compile and run targeted Kotlin lifecycle and schedule suites
         shell: pwsh
         run: |
-          & ./gradlew.bat --no-daemon --stacktrace --dependency-verification strict :downloader:core:desktopTest --tests '*DownloadManagerLifecycleContextTest*' --tests '*ManualDownloadQueueBatchResumeTest*' --tests '*PartResponseDeadlineTest*' --tests '*PartDownloaderIoLifecycleTest*'
+          & ./gradlew.bat --no-daemon --stacktrace --dependency-verification strict :downloader:core:desktopTest --tests '*DownloadManagerLifecycleContextTest*' --tests '*ManualDownloadQueueBatchResumeTest*' --tests '*PartResponseDeadlineTest*' --tests '*PartDownloaderIoLifecycleTest*' --tests '*ScheduledQueueWindowTest*'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify exact JUnit XML counts and zero failures
         shell: pwsh
@@ -63,7 +66,8 @@ jobs:
             @{Name='ir.amirab.downloader.DownloadManagerLifecycleContextTest';Min=4},
             @{Name='ir.amirab.downloader.queue.ManualDownloadQueueBatchResumeTest';Min=7},
             @{Name='ir.amirab.downloader.part.PartResponseDeadlineTest';Min=4},
-            @{Name='ir.amirab.downloader.part.PartDownloaderIoLifecycleTest';Min=1}
+            @{Name='ir.amirab.downloader.part.PartDownloaderIoLifecycleTest';Min=1},
+            @{Name='ir.amirab.downloader.queue.ScheduledQueueWindowTest';Min=1}
           )
           foreach ($suite in $suites) {
             $path = Join-Path $dir "TEST-$($suite.Name).xml"
@@ -87,5 +91,6 @@ jobs:
             downloader/core/build/test-results/desktopTest/TEST-ir.amirab.downloader.queue.ManualDownloadQueueBatchResumeTest.xml
             downloader/core/build/test-results/desktopTest/TEST-ir.amirab.downloader.part.PartResponseDeadlineTest.xml
             downloader/core/build/test-results/desktopTest/TEST-ir.amirab.downloader.part.PartDownloaderIoLifecycleTest.xml
+            downloader/core/build/test-results/desktopTest/TEST-ir.amirab.downloader.queue.ScheduledQueueWindowTest.xml
           if-no-files-found: warn
           retention-days: 7
