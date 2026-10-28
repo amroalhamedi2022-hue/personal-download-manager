@@ -38,3 +38,18 @@ Complete the missing Stage 1 viability evidence for the pinned upstream aria2 1.
 - Final HyperGet.exe and independent Windows release recheck: OPEN.
 
 No merge, main write, auto-merge, release, paid API/runner, or production aria2 wiring.
+
+
+## 2026-10-28 — Stage 1 workflow wiring correction (pre-run checkpoint)
+
+The audit found that the Windows workflow still ran only the small single/segmented HTTP smoke; it did **not** execute scripts/Run-WindowsAria2Viability.ps1, even though the source-contract test expected the Stage 1 gate. Therefore the existing HTTP smoke is not Stage 1 acceptance evidence.
+
+This cohesive repair wires the real harness into the pinned-aria2 Windows job and makes source contracts, fixture unit tests, Python syntax checks, and PowerShell parsing mandatory before the viability runtime stage. The workflow will verify the exact PR source SHA, invoke the harness only after verifying the upstream archive SHA, and upload a separate sanitized viability artifact. It also strengthens the regression test to require the actual command invocation and ordering, not merely a filename mention.
+
+**Pre-run question:** can the pinned Windows aria2 1.37.0 binary pass all ten runtime assertions—redirect, 404/429/500 rejection, ignored-Range safety, true interrupted nonzero-offset resume with exact SHA, authenticated FTP, RPC loopback/authentication/malformed-input recovery/shutdown/stale-secret rejection—without leaking a secret?
+
+**Expected:** all ten harness results PASS, source/fixture checks PASS, PowerShell parse PASS, and a separate artifact with the CSV/report/logs. If any gate fails, preserve the exact failure and sanitized evidence; do not treat the smoke pass as a substitute.
+
+**Why source checks are insufficient:** process interruption, active socket closure, aria2 resume-control state, actual FTP credentials/RETR, Windows listener addresses, RPC lifecycle and exact output hashes require a real Windows runtime.
+
+**Progress before this run:** basic aria2 HTTP smoke = 2/2 PASS on the prior tested SHA; comprehensive Stage 1 runtime assertions = 0/10 verified. The stock binary remains **BLOCKED for bundling** because BitTorrent is enabled; no production engine switch or Torrent exposure is permitted. Stage 2 paired performance remains NOT STARTED.
