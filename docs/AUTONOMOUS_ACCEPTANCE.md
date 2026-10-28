@@ -2205,3 +2205,8 @@ After a real installed HyperGet HLS transfer completes and persists segment 1, f
 - **Current status before rerun: OPEN / NOT YET VERIFIED.** The next exact-head Windows run must prove the change; source-contract success alone is not acceptance.
 - Other release gates remain open: behavioral scheduled start/stop, external HTTPS signed-link acceptance, independent final Windows recheck, and final standalone user-facing `HyperGet.exe` with verified SHA-256/artifact.
 
+
+
+## 2026-10-28 — HG-E072 source-guard syntax correction
+
+The first HG-E072 patch triggered source-only workflow [40641209772](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40641209772), which correctly failed before any app build because the newly added Python guard contained an unterminated string literal. This was a regression in the acceptance test itself, not a product or HLS result. The next patch reconstructs the guard cleanly, asserts the stale-status conditional is absent without embedding a fragile quote sequence, and keeps the installed HLS job gated behind source/Python/PowerShell syntax checks. The HLS installer run on the earlier patch is not acceptance evidence; rerun the exact new head and require source PASS before packaging.
