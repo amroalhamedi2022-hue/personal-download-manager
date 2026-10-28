@@ -16,7 +16,11 @@ The loopback fixture records each request when its handler starts. With many con
 
 Production download code and performance thresholds are unchanged. Commit `20932bd6964532c6a23cccd47e692c195a82910f` changes only the benchmark harness so each completed same-end range is compared against every *other* distinct same-end range, independent of handler arrival order. The 64-KiB maximum per overlap, retry-count bound, complete unique coverage, no-gap/no-out-of-bounds checks, exact socket-write reconciliation and final SHA-256 requirements remain intact.
 
-The companion source regression will reorder the existing fixture responses to reproduce out-of-order arrival and will retain rejection cases for oversized overlap and missing bytes.
+The companion source regression was added in commit `4b053cc6d674ce70112b30d10f80711c5284776e`, including a reordered response list plus the existing oversized-overlap and missing-byte rejection cases.
+
+### First regression attempt on the updated head — FAIL (8/9 source contract cases)
+
+Run [40745429146](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40745429146) checked out exact SHA `4b053cc6d674ce70112b30d10f80711c5284776e`. The new reordered fixture case exposed a second copy of the same assumption in the Python reference model: it still searched only `responses[:index]`, so it undercounted a tail overlap when the handler-arrival order differed from byte-offset order. The PowerShell harness loop had already been changed, but the mirrored source model had not yet been updated. The aria2 preflight therefore failed and Stage 1 was skipped; this is a test-model failure, not a product-download failure. The separate Windows build job was still running when this result was inspected. Do not count this run as acceptance. The next patch updates the Python model in lockstep and reruns the full exact-head gate.
 
 ### Pre-build acceptance question
 
