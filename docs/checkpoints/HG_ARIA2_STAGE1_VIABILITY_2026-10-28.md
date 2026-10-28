@@ -79,3 +79,15 @@ Exact tested PR source SHA: 18d25c4eb7ae5956d0192d65cd67ce4b031d32c5.
 - **Harness repair:** explicitly set --auto-save-interval=1 and --always-resume=true; wait until at least 2 MiB and a control file exist, then require a newer control-file timestamp after 1.6 seconds before killing the process. Save first-attempt and restart Range telemetry as JSON and include offsets/bytes in any failure. No assertion is weakened.
 - Evidence artifact [12808540829](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40670419404/artifacts/12808540829), ZIP SHA-256 6224d07ccb14a46cbac3068b34b06a878c7ae25f95f5d5a678066f622ac6a763. It confirms the second process fetched from the beginning; the next exact-head Windows run must prove a nonzero honored offset and fewer than 16 MiB requested, or keep the engine gate open.
 - FTP and RPC cases were not reached and remain NOT TESTED. Stock aria2 still has BitTorrent enabled and remains blocked from packaging.
+
+
+## 2026-10-28 — Resume artifact reanalysis: telemetry metric false negative
+
+The diagnostic artifact for exact source SHA 010bca3354c894f1b1245d2dd829e81ddf8d28d3 proves that the transfer **did resume from a nonzero honored Range offset**:
+
+- First attempt: 2,752,512 bytes actually served; partial output was 2,310,144 bytes when interrupted.
+- Restart: Range starts were 0 and 2,310,144; the latter was marked range=true and honored=true.
+- Restart actual bytes served: 14,532,608, below the 16,777,216-byte fixture size; final output length and SHA-256 were correct.
+- The gate failed because it compared task_requested_bytes (31,244,288), which sums the *declared range lengths* of both a preliminary full-response GET that the client aborted after about 64 KiB and the resumed Range request. It did not measure actual data served.
+
+**Correction:** keep requested-byte telemetry for diagnostics, but gate resume on the nonzero honored Range offset plus task_bytes_sent < expectedBytes. This matches the fixture's actual socket-write counter and avoids falsely rejecting a valid resume. No runtime criterion is relaxed; the corrected exact-head Windows run must still pass before Stage 1 is closed. Artifact: [12808482015](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40671624364/artifacts/12808482015), ZIP SHA-256 21a8bb9b11e0670b3d36ee977889ef342b8d68b50cf8990d94a71b54dc6a0a53.
