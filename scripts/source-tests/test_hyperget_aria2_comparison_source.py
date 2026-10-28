@@ -11,6 +11,116 @@ WORKFLOW = (ROOT / ".github/workflows/hyperget-windows-exe-aria2-evaluation.yml"
 ARIA2_PLAN = (ROOT / "docs/ARIA2_CORE_MIGRATION_PLAN_2026-10-27.md").read_text(encoding="utf-8")
 
 
+def reconcile_fixture_response_ranges(responses, expected_bytes):
+    """Mirror the benchmark's strict interval/overlap reconciliation."""
+    socket_write_sum = 0
+    metadata_probe_bytes = 0
+    metadata_probe_count = 0
+    intervals = []
+    for response in responses:
+        written = int(response["socket_write_bytes"])
+        if written < 0:
+            raise AssertionError("negative socket write")
+        socket_write_sum += written
+        honored_range = bool(response["range"] and response["honored"])
+        start = int(response["start"]) if honored_range else 0
+        response_length = int(response["end"]) - int(response["start"]) + 1 if honored_range else expected_bytes
+        if written > response_length or (response["completed"] and written != response_length):
+            raise AssertionError("impossible response byte count")
+        if not response["data_transfer"]:
+            if written:
+                metadata_probe_count += 1
+                metadata_probe_bytes += written
+            continue
+        if written:
+            intervals.append({
+                "start": start,
+                "end": start + written - 1,
+                "is_range": honored_range,
+                "is_unranged_interrupted": (not response["range"] and not response["completed"]),
+                "requested_start": start,
+                "requested_end": int(response["end"]) if honored_range else expected_bytes - 1,
+            })
+    if metadata_probe_count > 2:
+        raise AssertionError("too many metadata probes")
+
+    incomplete_data_range_count = sum(
+        bool(r["range"] and r["honored"] and r["data_transfer"] and not r["completed"])
+        for r in responses
+    )
+    tail_retry_count = 0
+    for index, retry in enumerate(responses):
+        if not (retry["range"] and retry["honored"] and retry["completed"] and retry["data_transfer"]):
+            continue
+        for prior in responses[:index]:
+            if not (prior["range"] and prior["honored"] and prior["data_transfer"]):
+                continue
+            if int(prior["end"]) == int(retry["end"]) and int(prior["start"]) < int(retry["start"]) <= int(prior["end"]):
+                retry_overlap = int(prior["end"]) - int(retry["start"]) + 1
+                if 0 < retry_overlap <= 65536:
+                    tail_retry_count += 1
+                    break
+    if tail_retry_count > incomplete_data_range_count + 1:
+        raise AssertionError("too many tail retries")
+
+    ordered = sorted(intervals, key=lambda x: (x["start"], x["end"]))
+    covered_end = -1
+    covered_bytes = 0
+    duplicate_bytes = 0
+    overlap_count = 0
+    unranged_overlap_count = 0
+    tail_retry_overlap_count = 0
+    for interval in ordered:
+        start, end = interval["start"], interval["end"]
+        if start > covered_end + 1:
+            raise AssertionError("coverage gap")
+        if end >= expected_bytes:
+            raise AssertionError("coverage past expected payload")
+        overlap = min(end, covered_end) - start + 1 if start <= covered_end else 0
+        if overlap > 65536:
+            raise AssertionError("overlap exceeds one 64-KiB chunk")
+        if overlap:
+            prior_unranged = any(
+                p["is_unranged_interrupted"] and p["start"] < start and p["end"] >= start
+                for p in ordered
+            )
+            prior_tail = any(
+                p["is_range"] and p["requested_end"] == interval["requested_end"]
+                and p["requested_start"] < interval["requested_start"] and p["end"] >= start
+                for p in ordered
+            )
+            if prior_unranged == prior_tail:
+                raise AssertionError("unclassified overlap")
+            overlap_count += 1
+            duplicate_bytes += overlap
+            if prior_unranged:
+                unranged_overlap_count += 1
+            else:
+                tail_retry_overlap_count += 1
+        if end > covered_end:
+            new_start = max(start, covered_end + 1)
+            covered_bytes += end - new_start + 1
+            covered_end = end
+
+    if covered_bytes != expected_bytes or covered_end != expected_bytes - 1:
+        raise AssertionError("incomplete unique coverage")
+    unranged_interrupted_count = sum(
+        (not r["range"] and not r["completed"] and r["data_transfer"] and int(r["socket_write_bytes"]) > 0)
+        for r in responses
+    )
+    max_duplicate_bytes = 65536 * (unranged_interrupted_count + tail_retry_count)
+    if (
+        unranged_overlap_count > unranged_interrupted_count
+        or tail_retry_overlap_count > tail_retry_count
+        or overlap_count > unranged_interrupted_count + tail_retry_count
+        or duplicate_bytes > max_duplicate_bytes
+    ):
+        raise AssertionError("unexplained duplicate bytes")
+    if socket_write_sum != covered_bytes + duplicate_bytes + metadata_probe_bytes:
+        raise AssertionError("socket writes do not reconcile")
+    return socket_write_sum, duplicate_bytes, covered_bytes
+
+
 class Aria2Stage2SourceContract(unittest.TestCase):
     def test_matrix_uses_exact_http_fixture_hashes_and_real_concurrency(self):
         self.assertIn("LocalHttpRangeFixture.py", ARIA2_MATRIX)
@@ -62,9 +172,54 @@ class Aria2Stage2SourceContract(unittest.TestCase):
         self.assertIn("if (-not $recoveredByTailRetry)", ARIA2_MATRIX)
         self.assertIn("$unrecoveredDataRanges.Count -gt 0", ARIA2_MATRIX)
         self.assertNotIn("if ($incompleteDataRanges.Count -gt 0)", ARIA2_MATRIX)
-        self.assertIn("$maxSocketOvercount = [long]$interrupted * [long]65536", ARIA2_MATRIX)
-        self.assertIn("$bytesSent -lt $expectedBytes -or $bytesSent -gt $maxBytesSent", ARIA2_MATRIX)
+        self.assertIn("$socketWriteSum = [long]0", ARIA2_MATRIX)
+        self.assertIn("$servedIntervals = [System.Collections.Generic.List[object]]::new()", ARIA2_MATRIX)
+        self.assertIn("$metadataProbeCount -gt 2", ARIA2_MATRIX)
+        self.assertIn("$tailRetryCount -gt ($incompleteDataRangeCount + 1)", ARIA2_MATRIX)
+        self.assertIn("$overlap -gt 65536", ARIA2_MATRIX)
+        self.assertIn("$coveredBytes -ne $expectedBytes", ARIA2_MATRIX)
+        self.assertIn("$duplicateBytes -gt $maxDuplicateBytes", ARIA2_MATRIX)
+        self.assertIn("$socketWriteSum -ne $reconciledBytes", ARIA2_MATRIX)
+        self.assertNotIn("$maxSocketOvercount = [long]$interrupted * [long]65536", ARIA2_MATRIX)
         self.assertNotIn("$bytesSent -ne $expectedBytes", ARIA2_MATRIX)
+
+    def test_socket_write_accounting_accepts_bounded_tail_overlap_and_rejects_gaps(self):
+        mib = 1024 * 1024
+        expected = 32 * mib
+        responses = [
+            {"start": 0, "end": expected - 1, "range": False, "honored": False,
+             "data_transfer": True, "completed": False, "socket_write_bytes": 4 * mib + 65536},
+            {"start": 16 * mib, "end": 20 * mib - 1, "range": True, "honored": True,
+             "data_transfer": True, "completed": True, "socket_write_bytes": 4 * mib},
+            {"start": 8 * mib, "end": 12 * mib - 1, "range": True, "honored": True,
+             "data_transfer": True, "completed": True, "socket_write_bytes": 4 * mib},
+            {"start": 24 * mib, "end": 28 * mib - 1, "range": True, "honored": True,
+             "data_transfer": True, "completed": True, "socket_write_bytes": 4 * mib},
+            {"start": 4 * mib, "end": 8 * mib - 1, "range": True, "honored": True,
+             "data_transfer": True, "completed": True, "socket_write_bytes": 4 * mib},
+            {"start": 12 * mib, "end": 16 * mib - 1, "range": True, "honored": True,
+             "data_transfer": True, "completed": True, "socket_write_bytes": 4 * mib},
+            {"start": 20 * mib, "end": 24 * mib - 1, "range": True, "honored": True,
+             "data_transfer": True, "completed": True, "socket_write_bytes": 4 * mib},
+            {"start": 28 * mib, "end": expected - 1, "range": True, "honored": True,
+             "data_transfer": True, "completed": True, "socket_write_bytes": 4 * mib},
+            {"start": 12 * mib - 65536, "end": 12 * mib - 1, "range": True, "honored": True,
+             "data_transfer": True, "completed": True, "socket_write_bytes": 65536},
+        ]
+        total, duplicate, covered = reconcile_fixture_response_ranges(responses, expected)
+        self.assertEqual(total, expected + 2 * 65536)
+        self.assertEqual(duplicate, 2 * 65536)
+        self.assertEqual(covered, expected)
+
+        oversized_overlap = [dict(r) for r in responses]
+        oversized_overlap[0]["socket_write_bytes"] = 4 * mib + 2 * 65536
+        with self.assertRaises(AssertionError):
+            reconcile_fixture_response_ranges(oversized_overlap, expected)
+
+        missing_byte = [dict(r) for r in responses]
+        missing_byte[0]["socket_write_bytes"] = 4 * mib - 1
+        with self.assertRaises(AssertionError):
+            reconcile_fixture_response_ranges(missing_byte, expected)
 
     def test_stage2_thresholds_are_separate_and_no_go_keeps_current_engine(self):
         self.assertIn("MaxThroughputRegressionPercent = 10", GATES)

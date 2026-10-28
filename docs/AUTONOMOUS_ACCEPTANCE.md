@@ -1,3 +1,27 @@
+## 2026-10-28 — Stage 2 exact-head failure and strict socket-byte reconciliation (FIX SUBMITTED; Windows rerun pending)
+
+**Exact PR head:** \`84cf6671d9ef5297a8ab5441d3db6f23016bb11d\` on \`automation/idm-ftp-cancel-and-category-flush\` → PR #3, base \`codex/repair-rf00-rf01\`.
+
+### Current evidence
+- **PASS:** exact-head Windows desktop/downloader regression and installer job in [run 40723169362](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40723169362); the build job staged the test installer with SHA-256 \`515a160e42c9e3f556277e95f9fdb239757009e1ab2de4576ce04188b2760dab\`. This is a test installer, not final delivery.
+- **PASS:** pinned aria2 1.37.0 archive SHA-256 and Stage 1 HTTP/FTP/RPC viability job in the same run.
+- **PASS:** the exact-head FTP loopback/REST/WinCred, queue lifecycle, HTTP, external HTTPS/Range, HLS, installed GUI, browser capture, upgrade/rollback and one-round 1/4/16 workload jobs completed successfully. These results remain scoped to this SHA and their own gates.
+- **FAIL — Stage 2 harness accounting:** the paired comparison stopped at aria2 active-16 round 1, task 10, in \`scripts/Run-WindowsAria2ActiveBenchmarkMatrix.ps1\`. Fixture socket-write count was \`33,685,504\` bytes; the old bound allowed only \`33,619,968\` (32 MiB plus one 64-KiB chunk). The artifact shows an interrupted un-ranged response that overlapped the first honored Range by 64 KiB, plus a completed same-end tail retry that overlapped a prior range by another 64 KiB. The resulting 128-KiB duplicate write is concrete, bounded overlap—not unexplained missing payload.
+- **Independent artifact post-check:** all 21 available aria2 outputs in the failed round (1 + 4 + 16) were byte-for-byte equal to the 32-MiB fixture and had SHA-256 \`e09320c5b00b34bb704802136c599a95b3996332ba84d7c7f21112b6231b6bd0\`. This post-check does **not** convert the failed matrix into PASS: the workflow stopped before its own full aria2 acceptance loop and the three-round comparison/1-4-8 sweep did not complete.
+- Failure artifact: [Stage 2 diagnostics and outputs, artifact 12830914928](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40723169362/artifacts/12830914928), archive digest \`sha256:46e3a3c45b42b58f45aad5747c8f953bb117f39a5474c413d2df3da11e41371a\`.
+
+### Controlled repair in this commit
+Replace the single \`interrupted × 64 KiB\` threshold with exact response-interval reconciliation: response socket-write totals must match fixture counters; unique intervals must cover exactly the expected payload with no gaps or out-of-bounds bytes; each overlap is capped at 64 KiB and must be attributable to an interrupted un-ranged response or a same-end tail retry; tiny metadata probes are separately bounded; duplicate bytes must reconcile exactly with the served intervals. Final SHA-256 checks remain mandatory. Add a source regression model for the observed 128-KiB case and for oversized overlap/missing-byte rejection.
+
+### Pre-build acceptance question
+Does the strict interval accounting accept the observed bounded 128-KiB overlap while rejecting larger overlaps and any byte-coverage gap, and then allow the full exact-head three-round 1/4/16 comparison plus 1/4/8 segmentation sweep to finish?
+
+**Expected:** source regression PASS, then a purposeful Windows run on the new exact SHA with all outputs SHA-256 verified and the unchanged performance/working-set gates applied. Source tests alone cannot reproduce real socket timing or aria2 retry behavior. Until that run completes, Stage 2 is **NOT PASS**, production engine migration remains blocked, and the prior \`STAGE2_PERFORMANCE_GO\` is valid only for its previously tested SHA.
+
+**No merge, no main write, no release, no Torrent workload or bundling.**
+
+---
+
 ## 2026-10-27 — restored HTTP lifecycle and Windows destination mutation (FIX SUBMITTED; exact-head verification pending)
 
 **Prior exact PR head:** `fdc971c117f166a007d5ea5beeed1be2a6a23239`. The Windows desktop test workflow [40577539587](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40577539587) compiled the test sources and ran 202 downloader-core tests; **200 passed, 2 failed**:

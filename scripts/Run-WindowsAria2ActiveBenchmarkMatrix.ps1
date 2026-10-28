@@ -341,15 +341,154 @@ try {
                     throw "aria2 task $($task.Name) had an incomplete data Range without a completed tail retry."
                 }
 
-                # bytes_sent is socket-writer accounting, not peer acknowledgement.
-                # A canceled response can leave one buffered 64-KiB write accepted.
-                # Completed segment count, recovered tail requests and final SHA-256
-                # remain the hard acceptance gates.
-                $maxSocketOvercount = [long]$interrupted * [long]65536
-                $maxBytesSent = $expectedBytes + $maxSocketOvercount
-                if ($bytesSent -lt $expectedBytes -or $bytesSent -gt $maxBytesSent) {
-                    Write-FailureDiagnostics -Scenario $scenario -Round $round -Stats $after -Tasks @($taskFiles) -Reason "Fixture socket-write counter $bytesSent bytes; expected payload $expectedBytes with at most $maxSocketOvercount buffered-write overcount from $interrupted interrupted GET(s)."
-                    throw "aria2 task $($task.Name) socket-write bytes $bytesSent outside accepted range $expectedBytes..$maxBytesSent."
+                # Reconcile socket-writer counters against exact byte intervals. aria2 can
+                # start an un-ranged response before splitting, and a later same-end
+                # tail retry can overlap bytes already accepted by the socket writer.
+                # Do not widen a byte threshold blindly: prove complete unique coverage,
+                # classify each overlap, cap it at one 64-KiB chunk, and retain final SHA-256.
+                $socketWriteSum = [long]0
+                $metadataProbeBytes = [long]0
+                $metadataProbeCount = 0
+                $servedIntervals = [System.Collections.Generic.List[object]]::new()
+                foreach ($response in $ranges) {
+                    $written = [long]$response.socket_write_bytes
+                    if ($written -lt 0) {
+                        Write-FailureDiagnostics -Scenario $scenario -Round $round -Stats $after -Tasks @($taskFiles) -Reason "Negative socket-write count for $($task.Name)."
+                        throw "aria2 task $($task.Name) has a negative socket-write count."
+                    }
+                    $socketWriteSum += $written
+                    $isHonoredRange = [bool]$response.range -and [bool]$response.honored
+                    $responseStart = if ($isHonoredRange) { [long]$response.start } else { 0L }
+                    $responseLength = if ($isHonoredRange) { [long]$response.end - [long]$response.start + 1 } else { $expectedBytes }
+                    if ($written -gt $responseLength -or ([bool]$response.completed -and $written -ne $responseLength)) {
+                        Write-FailureDiagnostics -Scenario $scenario -Round $round -Stats $after -Tasks @($taskFiles) -Reason "Socket-write length disagrees with the HTTP response interval for $($task.Name)."
+                        throw "aria2 task $($task.Name) has an impossible response byte count."
+                    }
+                    if (-not [bool]$response.data_transfer) {
+                        if ($written -gt 0) {
+                            $metadataProbeCount++
+                            $metadataProbeBytes += $written
+                        }
+                        continue
+                    }
+                    if ($written -gt 0) {
+                        $servedIntervals.Add([pscustomobject]@{
+                            Start = $responseStart
+                            End = $responseStart + $written - 1
+                            IsRange = $isHonoredRange
+                            IsUnrangedInterrupted = (-not [bool]$response.range -and -not [bool]$response.completed)
+                            RequestedStart = $responseStart
+                            RequestedEnd = if ($isHonoredRange) { [long]$response.end } else { [long]$expectedBytes - 1 }
+                        }) | Out-Null
+                    }
+                }
+                if ($socketWriteSum -ne $bytesSent) {
+                    Write-FailureDiagnostics -Scenario $scenario -Round $round -Stats $after -Tasks @($taskFiles) -Reason "Per-response socket writes total $socketWriteSum but fixture task counter reports $bytesSent."
+                    throw "aria2 task $($task.Name) socket-write counters do not reconcile."
+                }
+                if ($metadataProbeCount -gt 2) {
+                    Write-FailureDiagnostics -Scenario $scenario -Round $round -Stats $after -Tasks @($taskFiles) -Reason "Unexpected metadata-probe count $metadataProbeCount."
+                    throw "aria2 task $($task.Name) issued more than two tiny metadata probes."
+                }
+
+                $incompleteDataRangeCount = @($ranges | Where-Object {
+                    [bool]$_.range -and [bool]$_.honored -and [bool]$_.data_transfer -and -not [bool]$_.completed
+                }).Count
+                $tailRetryCount = 0
+                for ($retryIndex = 0; $retryIndex -lt $ranges.Count; $retryIndex++) {
+                    $retry = $ranges[$retryIndex]
+                    if (-not [bool]$retry.range -or -not [bool]$retry.honored -or -not [bool]$retry.completed -or -not [bool]$retry.data_transfer) {
+                        continue
+                    }
+                    for ($priorIndex = 0; $priorIndex -lt $retryIndex; $priorIndex++) {
+                        $prior = $ranges[$priorIndex]
+                        if (-not [bool]$prior.range -or -not [bool]$prior.honored -or -not [bool]$prior.data_transfer) {
+                            continue
+                        }
+                        if ([long]$prior.end -eq [long]$retry.end -and [long]$retry.start -gt [long]$prior.start -and [long]$retry.start -le [long]$prior.end) {
+                            $retryOverlap = [long]$prior.end - [long]$retry.start + 1
+                            if ($retryOverlap -gt 0 -and $retryOverlap -le 65536) {
+                                $tailRetryCount++
+                                break
+                            }
+                        }
+                    }
+                }
+                if ($tailRetryCount -gt ($incompleteDataRangeCount + 1)) {
+                    Write-FailureDiagnostics -Scenario $scenario -Round $round -Stats $after -Tasks @($taskFiles) -Reason "Tail retry count $tailRetryCount exceeds incomplete data ranges $incompleteDataRangeCount plus one bounded completed-response retry."
+                    throw "aria2 task $($task.Name) issued too many tail retries."
+                }
+
+                $orderedIntervals = @($servedIntervals | Sort-Object -Property Start, End)
+                $coveredEnd = [long](-1)
+                $coveredBytes = [long]0
+                $duplicateBytes = [long]0
+                $overlapCount = 0
+                $unrangedOverlapCount = 0
+                $tailRetryOverlapCount = 0
+                foreach ($interval in $orderedIntervals) {
+                    if ([long]$interval.Start -gt ($coveredEnd + 1)) {
+                        Write-FailureDiagnostics -Scenario $scenario -Round $round -Stats $after -Tasks @($taskFiles) -Reason "Served HTTP byte intervals leave a gap before offset $($interval.Start)."
+                        throw "aria2 task $($task.Name) has a gap in fixture-served byte coverage."
+                    }
+                    if ([long]$interval.End -ge $expectedBytes) {
+                        Write-FailureDiagnostics -Scenario $scenario -Round $round -Stats $after -Tasks @($taskFiles) -Reason "Served HTTP interval extends past expected payload end $($expectedBytes - 1)."
+                        throw "aria2 task $($task.Name) served bytes beyond the expected payload."
+                    }
+                    $overlap = if ([long]$interval.Start -le $coveredEnd) {
+                        [Math]::Min([long]$interval.End, $coveredEnd) - [long]$interval.Start + 1
+                    } else { 0L }
+                    if ($overlap -gt 65536) {
+                        Write-FailureDiagnostics -Scenario $scenario -Round $round -Stats $after -Tasks @($taskFiles) -Reason "A served interval overlaps prior data by $overlap bytes; maximum permitted overlap is one 64-KiB chunk."
+                        throw "aria2 task $($task.Name) has an unbounded HTTP range overlap."
+                    }
+                    if ($overlap -gt 0) {
+                        $priorUnranged = @($orderedIntervals | Where-Object {
+                            $_.IsUnrangedInterrupted -and
+                            [long]$_.Start -lt [long]$interval.Start -and
+                            [long]$_.End -ge [long]$interval.Start
+                        }).Count -gt 0
+                        $priorTail = @($orderedIntervals | Where-Object {
+                            $_.IsRange -and
+                            [long]$_.RequestedEnd -eq [long]$interval.RequestedEnd -and
+                            [long]$_.RequestedStart -lt [long]$interval.RequestedStart -and
+                            [long]$_.End -ge [long]$interval.Start
+                        }).Count -gt 0
+                        if ($priorUnranged -eq $priorTail) {
+                            Write-FailureDiagnostics -Scenario $scenario -Round $round -Stats $after -Tasks @($taskFiles) -Reason "An overlapping interval is not uniquely attributable to an interrupted un-ranged response or a same-end tail retry."
+                            throw "aria2 task $($task.Name) has an unclassified HTTP range overlap."
+                        }
+                        $overlapCount++
+                        $duplicateBytes += $overlap
+                        if ($priorUnranged) { $unrangedOverlapCount++ } else { $tailRetryOverlapCount++ }
+                    }
+                    if ([long]$interval.End -gt $coveredEnd) {
+                        $newStart = [Math]::Max([long]$interval.Start, $coveredEnd + 1)
+                        $coveredBytes += [long]$interval.End - $newStart + 1
+                        $coveredEnd = [long]$interval.End
+                    }
+                }
+                if ($coveredBytes -ne $expectedBytes -or $coveredEnd -ne ($expectedBytes - 1)) {
+                    Write-FailureDiagnostics -Scenario $scenario -Round $round -Stats $after -Tasks @($taskFiles) -Reason "Unique served coverage is $coveredBytes bytes ending at $coveredEnd; expected $expectedBytes bytes."
+                    throw "aria2 task $($task.Name) does not prove complete unique fixture coverage."
+                }
+                $unrangedInterruptedCount = @($ranges | Where-Object {
+                    -not [bool]$_.range -and -not [bool]$_.completed -and [bool]$_.data_transfer -and [long]$_.socket_write_bytes -gt 0
+                }).Count
+                $maxDuplicateBytes = [long]65536 * [long]($unrangedInterruptedCount + $tailRetryCount)
+                if (
+                    $unrangedOverlapCount -gt $unrangedInterruptedCount -or
+                    $tailRetryOverlapCount -gt $tailRetryCount -or
+                    $overlapCount -gt ($unrangedInterruptedCount + $tailRetryCount) -or
+                    $duplicateBytes -gt $maxDuplicateBytes
+                ) {
+                    Write-FailureDiagnostics -Scenario $scenario -Round $round -Stats $after -Tasks @($taskFiles) -Reason "Duplicate bytes $duplicateBytes across $overlapCount overlap(s) exceed bounded interrupted-response/tail-retry accounting $maxDuplicateBytes."
+                    throw "aria2 task $($task.Name) has unexplained duplicate socket bytes."
+                }
+                $reconciledBytes = $coveredBytes + $duplicateBytes + $metadataProbeBytes
+                if ($socketWriteSum -ne $reconciledBytes) {
+                    Write-FailureDiagnostics -Scenario $scenario -Round $round -Stats $after -Tasks @($taskFiles) -Reason "Socket writes $socketWriteSum do not reconcile to unique coverage $coveredBytes + overlap $duplicateBytes + metadata probes $metadataProbeBytes."
+                    throw "aria2 task $($task.Name) socket bytes do not reconcile to served intervals."
                 }
                 if ($honoredRangeCount -lt ($Segments - 1)) {
                     Write-FailureDiagnostics -Scenario $scenario -Round $round -Stats $after -Tasks @($taskFiles) -Reason "Only $honoredRangeCount completed, honored data Range GETs were observed; expected at least $($Segments - 1)."
