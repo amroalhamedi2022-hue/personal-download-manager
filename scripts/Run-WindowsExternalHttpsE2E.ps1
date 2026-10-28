@@ -3,7 +3,7 @@
 Installed Windows HyperGet external HTTPS + Range acceptance.
 .DESCRIPTION
 Uses a public HTTP test endpoint over normal HTTPS certificate validation.
-Compares the installed application's complete 10 MiB output against an
+Compares the installed application's complete 8 MiB output against an
 independent reference fetch and verifies a query-bearing Range request.
 This is not a provider-specific signed-token expiry test; the local verified-TLS
 JUnit test remains the controlled old-token/new-token acceptance.
@@ -17,7 +17,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $stage = 'prepare'
-$expectedBytes = 10485760
+$expectedBytes = 8388608
 $installerSha = 'NOT_AVAILABLE'
 $expectedHash = 'NOT_AVAILABLE'
 $actualHash = 'NOT_AVAILABLE'
@@ -28,8 +28,9 @@ $rangeBytes = 0
 $failureTypeOverride = $null
 $guiProcess = $null
 $endpointCandidates = @(
-    [Uri]'https://httpbingo.org/range/10485760',
-    [Uri]'https://httpbin.io/range/10485760'
+    [Uri]'https://httpbin.org/range/8388608',
+    [Uri]'https://httpbingo.org/range/8388608',
+    [Uri]'https://httpbin.io/range/8388608'
 )
 $canonicalUri = $endpointCandidates[0]
 $endpointAttempts = [Collections.Generic.List[string]]::new()
@@ -39,7 +40,7 @@ $reportPath = Join-Path $outputRoot 'external-https-e2e.txt'
 $runRoot = Join-Path $env:RUNNER_TEMP ("hyperget-external-https-" + [Guid]::NewGuid().ToString('N'))
 $appDir = Join-Path $runRoot 'application'
 $downloadsDir = Join-Path $runRoot 'downloads'
-$referencePath = Join-Path $runRoot 'reference-10MiB.bin'
+$referencePath = Join-Path $runRoot 'reference-8MiB.bin'
 $rangePath = Join-Path $runRoot 'range-1KiB.bin'
 $prefixPath = Join-Path $runRoot 'reference-prefix-1KiB.bin'
 $downloadPath = Join-Path $downloadsDir 'external-https.bin'
@@ -86,7 +87,7 @@ function Write-ExternalHttpsEvidence {
 try {
     $stage = 'validate-installer-and-endpoints'
     if (-not (Test-Path -LiteralPath $InstallerPath -PathType Leaf)) { throw 'Test installer not found.' }
-    $allowedHosts = @('httpbingo.org', 'httpbin.io')
+    $allowedHosts = @('httpbin.org', 'httpbingo.org', 'httpbin.io')
     foreach ($candidate in $endpointCandidates) {
         if ($candidate.Scheme -ne 'https' -or $allowedHosts -notcontains $candidate.Host -or $candidate.UserInfo) {
             throw 'An external endpoint failed HTTPS host preflight.'
@@ -129,7 +130,7 @@ try {
                 throw "External HTTPS Range probe failed: status=$rangeStatus bytes=$rangeBytes."
             }
             $contentRange = [string]$rangeResponse.Headers['Content-Range']
-            if ($contentRange -notmatch '^bytes 0-1023/10485760$') {
+            if ($contentRange -notmatch '^bytes 0-1023/8388608$') {
                 throw 'External HTTPS Range response did not report the exact expected Content-Range.'
             }
             $referenceBytes = [IO.File]::ReadAllBytes($referencePath)
