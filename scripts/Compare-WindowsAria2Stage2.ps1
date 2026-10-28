@@ -155,7 +155,7 @@ foreach ($jobs in @(1,4,16)) {
         BaselineMedianPeakWorkingSetMiB=[math]::Round($bWs,3); CandidateMedianPeakWorkingSetMiB=[math]::Round($cWs,3); PeakWorkingSetDeltaPercent=$wsDelta
         BaselineMedianPeakPrivateMiB=[math]::Round($bPrivate,3); CandidateMedianPeakPrivateMiB=[math]::Round($cPrivate,3); PeakPrivateDeltaPercent=$privateDelta
         BaselineMedianCpuPercent=[math]::Round($bCpu,3); CandidateMedianCpuPercent=[math]::Round($cCpu,3)
-        Gate=if ($pass) { 'PASS' } else { 'FAIL' }
+        Gate = $(if ($pass) { 'PASS' } else { 'FAIL' })
     }) | Out-Null
 }
 $report = [System.Collections.Generic.List[string]]::new()
