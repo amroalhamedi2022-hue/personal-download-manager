@@ -27,6 +27,9 @@ $rangeStatus = 'NOT_AVAILABLE'
 $rangeBytes = 0
 $failureTypeOverride = $null
 $guiProcess = $null
+$finalReadAttempts = 0
+$finalReadFailureType = 'none'
+$stableReadSamples = 0
 $endpointCandidates = @(
     [Uri]'https://bom.proof.ovh.net/files/1Mb.dat',
     [Uri]'https://proof.ovh.net/files/1Mb.dat',
@@ -80,6 +83,9 @@ function Write-ExternalHttpsEvidence {
         "RangeBytes=$rangeBytes"
         "RangePrefixSHA256=$rangePrefixHash"
         "RangeActualSHA256=$rangeHash"
+        "FinalReadAttempts=$finalReadAttempts"
+        "FinalReadFailureType=$finalReadFailureType"
+        "StableReadSamples=$stableReadSamples"
         "InstallerSHA256=$installerSha"
         "SignedTokenExpiry=NOT_TESTED"
         "FailureType=$FailureType"
@@ -212,11 +218,48 @@ try {
     }
     if (-not $success) { throw 'Installed HyperGet external HTTPS output did not reach the reference size and SHA-256 before timeout.' }
 
-    Start-Sleep -Seconds 2
-    $finalLength = (Get-Item -LiteralPath $downloadPath).Length
-    $finalHash = (Get-FileHash -LiteralPath $downloadPath -Algorithm SHA256).Hash.ToLowerInvariant()
-    if ($finalLength -ne $expectedBytes -or $finalHash -ne $expectedHash) {
-        throw 'Installed HyperGet external HTTPS output changed after the initial hash match.'
+    # The first exact hash can become visible just before the Windows file
+    # handle is released. Re-read until the same complete bytes are readable
+    # twice, separated by two seconds. Transient sharing/IO errors are retried,
+    # but never treated as success; failure remains bounded and diagnostic.
+    $stableDeadline = [DateTime]::UtcNow.AddSeconds(30)
+    $stableReadSamples = 0
+    $lastObservedLength = -1L
+    $lastObservedHash = ''
+    $finalLength = 0L
+    $finalHash = 'NOT_AVAILABLE'
+    while ([DateTime]::UtcNow -lt $stableDeadline) {
+        $finalReadAttempts++
+        try {
+            $sampleLength = [long](Get-Item -LiteralPath $downloadPath -ErrorAction Stop).Length
+            $sampleHash = (Get-FileHash -LiteralPath $downloadPath -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant()
+            $finalLength = $sampleLength
+            $finalHash = $sampleHash
+            if ($sampleLength -eq $expectedBytes -and $sampleHash -eq $expectedHash) {
+                if ($lastObservedLength -eq $sampleLength -and $lastObservedHash -eq $sampleHash) {
+                    $stableReadSamples++
+                } else {
+                    $stableReadSamples = 1
+                }
+                $lastObservedLength = $sampleLength
+                $lastObservedHash = $sampleHash
+                if ($stableReadSamples -ge 2) { break }
+            } else {
+                $stableReadSamples = 0
+                $lastObservedLength = $sampleLength
+                $lastObservedHash = $sampleHash
+                $actualHash = $sampleHash
+            }
+        } catch {
+            $finalReadFailureType = $_.Exception.GetType().Name
+            $stableReadSamples = 0
+            $lastObservedLength = -1L
+            $lastObservedHash = ''
+        }
+        if ($stableReadSamples -lt 2) { Start-Sleep -Seconds 2 }
+    }
+    if ($stableReadSamples -lt 2 -or $finalLength -ne $expectedBytes -or $finalHash -ne $expectedHash) {
+        throw "Installed HyperGet output did not remain readable and SHA-256-stable for two samples within 30 seconds; attempts=$finalReadAttempts; lastReadFailureType=$finalReadFailureType."
     }
     $actualHash = $finalHash
     $stage = 'accepted'
