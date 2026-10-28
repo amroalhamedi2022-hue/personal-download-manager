@@ -156,3 +156,28 @@ A test-harness patch now emits sanitized last-probe diagnostics, including HTTP 
 On exact source `6c30f1fc1596e51f35ffa69a6ba90ef423192a63`, run [40678234198](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40678234198) again passed the 7 non-RPC runtime checks, including true resumed Range at offset `2,768,896`, reduced actual bytes after restart, exact SHA-256, and authenticated FTP. The last RPC probe received HTTP 200 but produced no parsed JSON-RPC result or error; no response body metadata was recorded, so the cause remains unknown.
 
 The next harness change uses .NET `HttpClient` directly against `127.0.0.1`, sets `UseProxy = false` so RPC secrets cannot be sent through inherited proxies, and captures sanitized status/content metadata and JSON parse failures. This is a harness/transport isolation change, not a production engine switch. Await exact-head Windows evidence for RPC authentication, malformed-input recovery, shutdown and stale-secret rejection before Stage 1 can close. Stage 2 comparison is still **NOT STARTED**; stock aria2 remains blocked from bundling because BitTorrent is enabled.
+
+
+## 2026-10-28 — Exact-head Stage 1 runtime PASS; Stage 2 paired gate wired
+
+This section supersedes earlier "RPC unresolved / Stage 1 open" notes for the exact source below; those earlier entries remain historical.
+
+- Exact HyperGet source: a78df67d1e25be85a2f18939a15b40268b39144b.
+- Windows evaluation run [40679541630](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40679541630) completed successfully.
+- Stage 1 runtime: **10/10 assertions PASS**. This includes redirect, 404/429/500 failure handling, ignored-Range safety, real interrupted/resumed Range transfer (restart offset 2,768,896; actual bytes served after restart 14,073,856; exact SHA-256), authenticated FTP with exact SHA-256, RPC JSON-RPC readiness, missing/wrong-token rejection, malformed-input recovery, authenticated shutdown/listener closure, and stale-session rejection.
+- Basic aria2 HTTP smoke: single and segmented transfers both verified 16,777,216 bytes with SHA-256 287507f403176f1f5b22b9a4d9cb49f7d7f88ac19e406b5ae87ce109564846bd. The official release archive SHA-256 is 67d015301eef0b612191212d564c5bb0a14b5b9c4796b76454276a4d28d9b288; signed tag release-1.37.0 resolves to source commit 02f2d0d8472b3c38c29b4dba8c75ebd5fdd2899a.
+- Current HyperGet regression gate also passed on that exact source: 249 JUnit tests, zero failures/errors/skips; the test installer is HyperGet_1.0.0-sha.ga78df67_windows_x64.exe, SHA-256 6ffb89b7775dd1c38a1816a6d5df4e125b1d796cac27a01aaae9f6a1aba3bf91. Artifact ZIP ID 12812257820, digest 7c30a6c0df675a7aa6a689ee8e47ad9e0df63ac82657918b314bd710cdb38591.
+- The current HyperGet-vs-previous-snapshot performance gate [40679541742](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40679541742) passed 63 SHA-256-verified downloads per snapshot and nine CPU/RAM samples per snapshot. Throughput deltas were +0.22% (1 task), +0.82% (4), +2.54% (16); peak Working Set deltas +2.51%, +1.20%, -4.16%; peak Private Bytes +1.96%, +1.29%, -4.06%. This is a regression check between HyperGet snapshots, **not** the aria2 comparison. Its installer-uninstall diagnostic recorded 12 registry and 12 shortcut residue records with zero install-file residue; that is **not** an uninstall-acceptance PASS.
+- The current stock aria2 binary advertises BitTorrent. Torrent remains prohibited: this binary is evaluation-only, no Torrent workload is invoked, RPC is disabled in the Stage 2 harness, and it is never bundled. Actual SFTP transfer remains **NOT TESTED**; no-BitTorrent build, GPL/security review and adapter parity remain release/migration gates.
+
+### Stage 2 pre-build question and acceptance gate
+
+**Question:** does aria2 1.37.0 improve HyperGet's measured core workload enough to justify adapter work without an unacceptable throughput or memory regression?
+
+**Why a Windows runtime benchmark is necessary:** source tests cannot establish real socket overlap, transfer completion, CPU/Working Set/Private Bytes, installer execution, or exact payload integrity under concurrency. The Stage 2 job therefore reuses the exact-head installer artifact, installs it only into a preflight-absent runner-temp path, and runs both engines on the same Windows runner.
+
+- Three paired rounds, alternating engine order; deterministic 32 MiB loopback HTTP fixture; workloads 1/4/16; 63 SHA-256-verified outputs per engine; real distinct-task overlap; CPU, peak Working Set and Private Bytes.
+- Supplemental aria2 single-file segmentation sweep at 1/4/8 connections, three verified rounds each.
+- Decision gates: no workload throughput regression worse than 10%; no peak Working Set or Private Bytes regression above 15%; median throughput gain across the three workloads at least +5% for STAGE2_PERFORMANCE_GO. Otherwise NO_GO_KEEP_HYPERGET_ENGINE. Missing/inconsistent evidence fails the workflow.
+- The stage-2 job runs only after the exact-head Stage 1 job and current HyperGet test/installer job pass. Expensive Windows gates now use relevant source/harness paths; docs-only checkpoint updates remain source-only and do not rebuild the app.
+- Stage 2 is **WIRED / NOT YET RUN** on the next PR head. No production engine switch has been made.

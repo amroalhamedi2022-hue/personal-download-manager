@@ -113,3 +113,24 @@ Exact tested source SHA `6c30f1fc1596e51f35ffa69a6ba90ef423192a63`; Windows eval
 - **RPC diagnostic result:** the last readiness probe received HTTP 200 with no transport exception, but the harness parsed neither a JSON-RPC `result` nor an `error`. Because the previous helper did not record response content length/type or parse errors, the root cause is still **unresolved**; do not label this an aria2 engine failure or an RPC pass.
 - **Cohesive follow-up:** replace the PowerShell web-wrapper call with .NET `HttpClient`, explicitly disable inherited proxies for the hard-coded loopback endpoint (the secret must never be sent to a proxy), and record sanitized content length/type, parse-error class, and a 120-character redacted preview only on failure. Source contracts require loopback-only/no-proxy behavior and secret redaction.
 - **Expected next result:** the same Windows test must successfully parse `aria2.getVersion`, then pass missing/wrong-token rejection, malformed-input recovery, authenticated shutdown/listener closure and stale-token rejection. Until the exact-head runtime passes, RPC and overall Stage 1 remain **NOT TESTED/OPEN** beyond the seven confirmed cases. No Stage 2 or production engine change yet.
+
+
+## 2026-10-28 — Exact-head Stage 1 runtime closure and Stage 2 handoff
+
+Exact source: a78df67d1e25be85a2f18939a15b40268b39144b; Windows run [40679541630](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40679541630).
+
+- Stage 1: **10/10 defined runtime assertions PASS**, including authenticated JSON-RPC readiness/authentication, malformed-input recovery, shutdown/listener closure and stale-session rejection; real HTTP resume at byte offset 2,768,896 with exact SHA-256; authenticated FTP with exact SHA-256; 404/429/500 and ignored-Range safety.
+- HTTP smoke: single and segmented aria2 transfers both verified 16,777,216 bytes, SHA-256 287507f403176f1f5b22b9a4d9cb49f7d7f88ac19e406b5ae87ce109564846bd.
+- Current HyperGet regression/build gate: **249 JUnit tests PASS**, no failures/errors/skips; test installer SHA-256 6ffb89b7775dd1c38a1816a6d5df4e125b1d796cac27a01aaae9f6a1aba3bf91; artifact ID 12812257820.
+- Existing current-vs-previous HyperGet benchmark [40679541742](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40679541742): 63 verified outputs per snapshot, nine CPU/RAM samples each; throughput +0.22%/+0.82%/+2.54% at 1/4/16; peak Working Set +2.51%/+1.20%/-4.16%; Private Bytes +1.96%/+1.29%/-4.06%. This is **not** the aria2 comparison.
+- Open items retained: actual SFTP transfer **NOT TESTED**; stock aria2 has BitTorrent enabled and is **not bundled**; no-BitTorrent build and GPL/security review are still required before any packaging; adapter parity/failure-injection remains a separate gate.
+
+### Stage 2 execution contract (before its Windows run)
+
+Question: does aria2 1.37.0 measurably improve HyperGet's 1/4/16 workload without unacceptable throughput or memory regression? Source checks alone cannot prove real socket overlap, Windows process memory, transfer completion, or byte-for-byte integrity, so a dedicated Windows runtime comparison is justified.
+
+- Three paired rounds with alternating engine order; 32 MiB deterministic HTTP fixture; 63 SHA-256-verified outputs per engine; real active-task overlap; CPU, peak Working Set and Private Bytes.
+- Supplemental aria2 single-file segmentation sweep: 1/4/8 connections, three verified rounds each.
+- Gate: no workload throughput regression worse than 10%; peak Working Set and Private Bytes regression no greater than 15%; median throughput gain at least +5% to record STAGE2_PERFORMANCE_GO. Otherwise retain current engine (NO_GO_KEEP_HYPERGET_ENGINE). Missing/corrupt evidence fails.
+- The Stage 2 job depends on both exact-head Stage 1 and current HyperGet regression/build jobs. It downloads the already-built installer artifact rather than rebuilding it, uses a preflight-absent runner-temp installation, and records cleanup evidence. Docs-only updates do not trigger Windows packaging.
+- Current state: **Stage 2 harness and workflow wired in the next commit; runtime decision PENDING**. No production engine change and no Torrent feature.

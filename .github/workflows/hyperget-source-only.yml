@@ -40,6 +40,12 @@ on:
       - "scripts/LocalHttpRangeFixture.py"
       - "scripts/test_local_http_range_fixture.py"
       - "scripts/source-tests/test_hyperget_active_benchmark_source.py"
+      - "scripts/Run-WindowsAria2ActiveBenchmarkMatrix.ps1"
+      - "scripts/Run-WindowsAria2PairedComparison.ps1"
+      - "scripts/Compare-WindowsAria2Stage2.ps1"
+      - "scripts/Assert-WindowsAria2Stage2Gates.ps1"
+      - "scripts/source-tests/test_hyperget_aria2_comparison_source.py"
+      - "docs/ARIA2_CORE_MIGRATION_PLAN_2026-10-27.md"
       - "scripts/source-tests/test_hyperget_http_dispatcher_bound_source.py"
       - "scripts/source-tests/test_hyperget_memory_profile_source.py"
       - "scripts/source-tests/test_hyperget_relative_time_refresh_source.py"
@@ -199,3 +205,9 @@ jobs:
         run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_icon_resource_audit.py -v
       - name: Verify HyperGet executable identity and cross-version compatibility contracts
         run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_cross_version_upgrade_source.py -v
+
+      - name: Verify aria2 Stage 2 paired-comparison contract (source only; no build)
+        run: |
+          python3 -m py_compile scripts/source-tests/test_hyperget_aria2_comparison_source.py
+          python3 -m unittest discover -s scripts/source-tests -p test_hyperget_aria2_comparison_source.py -v
+          ruby -e "require 'yaml'; YAML.parse_file('.github/workflows/hyperget-windows-exe-aria2-evaluation.yml')"
