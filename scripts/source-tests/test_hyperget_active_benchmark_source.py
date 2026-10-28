@@ -130,6 +130,8 @@ class Aria2Stage1ViabilityContract(unittest.TestCase):
     def test_fault_fixture_routes_and_resume_range_telemetry_are_locked(self):
         self.assertIn('address.path == "/redirect"', FIXTURE)
         self.assertIn('address.path.startswith("/status/")', FIXTURE)
+        self.assertIn('"$baseUri/status/$($status)?task=status-$status"', self.ARIA2)
+        self.assertNotIn('"$baseUri/status/$status?task=status-$status"', self.ARIA2)
         self.assertIn('address.path == "/ignore-range"', FIXTURE)
         self.assertIn('snapshot["task_ranges"]', FIXTURE)
         self.assertIn('task_ranges.clear()', FIXTURE)
