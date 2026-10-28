@@ -179,10 +179,51 @@ function Invoke-Rpc {
         params = @($Params)
     } | ConvertTo-Json -Depth 8 -Compress
     try {
-        return Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:$Port/jsonrpc" -ContentType 'application/json' -Body $body -TimeoutSec 5
+        # Keep the HTTP status even for 4xx responses. Invoke-RestMethod throws
+        # for these by default, and collapsing an expected auth rejection to
+        # $null would confuse "denied" with "RPC unreachable".
+        $response = Invoke-WebRequest -Method Post -Uri "http://127.0.0.1:$Port/jsonrpc" -ContentType 'application/json' -Body $body -TimeoutSec 5 -SkipHttpErrorCheck
+        $json = $null
+        if (-not [string]::IsNullOrWhiteSpace([string]$response.Content)) {
+            try {
+                $json = $response.Content | ConvertFrom-Json -ErrorAction Stop
+            } catch {
+                $json = $null
+            }
+        }
+        return [pscustomobject]@{
+            StatusCode = [int]$response.StatusCode
+            Json = $json
+            TransportError = $null
+        }
     } catch {
-        return $null
+        return [pscustomobject]@{
+            StatusCode = 0
+            Json = $null
+            TransportError = $_.Exception.GetType().Name
+        }
     }
+}
+
+function Test-RpcSucceeded {
+    param([object] $Response)
+    return ($null -ne $Response -and $Response.StatusCode -ge 200 -and $Response.StatusCode -lt 300 -and $null -ne $Response.Json -and $null -ne $Response.Json.result)
+}
+
+function Test-RpcRejected {
+    param([object] $Response)
+    if ($null -eq $Response) { return $false }
+    if ($Response.StatusCode -in @(400, 401, 403)) { return $true }
+    return ($Response.StatusCode -ge 200 -and $Response.StatusCode -lt 300 -and $null -ne $Response.Json -and $null -ne $Response.Json.error -and $null -eq $Response.Json.result)
+}
+
+function Get-RpcOutcome {
+    param([object] $Response)
+    if ($null -eq $Response) { return 'missing-response' }
+    if ($Response.StatusCode -eq 0) { return "transport-$($Response.TransportError)" }
+    if ($null -ne $Response.Json -and $null -ne $Response.Json.error) { return "jsonrpc-error-http-$($Response.StatusCode)" }
+    if ($null -ne $Response.Json -and $null -ne $Response.Json.result) { return "result-http-$($Response.StatusCode)" }
+    return "http-$($Response.StatusCode)-no-json-result"
 }
 
 function Start-RpcServer {
@@ -204,7 +245,7 @@ function Wait-RpcReady {
         $Process.Refresh()
         if ($Process.HasExited) { throw "$Label exited before RPC became ready." }
         $response = Invoke-Rpc -Port $Port -Method 'aria2.getVersion' -Params @("token:$Secret")
-        if ($response -and $response.result -and $response.result.version) { return }
+        if ((Test-RpcSucceeded -Response $response) -and $response.Json.result.version) { return }
         Start-Sleep -Milliseconds 125
     }
     throw "$Label did not become ready on its loopback RPC port."
@@ -212,8 +253,14 @@ function Wait-RpcReady {
 
 function Stop-RpcServer {
     param([int] $Port, [string] $Secret, [object] $Process, [string] $Label)
+    $Process.Refresh()
+    if ($Process.HasExited) { throw "$Label exited before authenticated shutdown." }
     $response = Invoke-Rpc -Port $Port -Method 'aria2.shutdown' -Params @("token:$Secret")
-    if ($response -and $response.error) { throw "$Label rejected authenticated shutdown." }
+    if (($response -and $response.StatusCode -ge 400) -or ($response -and $response.Json -and $response.Json.error)) {
+        throw "$Label rejected authenticated shutdown."
+    }
+    # aria2 may close the HTTP connection while acknowledging shutdown; the
+    # process-exit and listener-closure gates below remain mandatory.
     if (-not $Process.WaitForExit(10000)) {
         Stop-Process -Id $Process.Id -Force -ErrorAction SilentlyContinue
         throw "$Label did not stop after aria2.shutdown."
@@ -424,9 +471,11 @@ try {
     }
     $noToken = Invoke-Rpc -Port $rpcPort -Method 'aria2.getVersion' -Params @()
     $wrongToken = Invoke-Rpc -Port $rpcPort -Method 'aria2.getVersion' -Params @('token:invalid')
-    if (($noToken -and $noToken.result) -or -not ($noToken -and $noToken.error) -or
-        ($wrongToken -and $wrongToken.result) -or -not ($wrongToken -and $wrongToken.error)) {
-        throw 'aria2 RPC accepted a missing or incorrect secret.'
+    $noTokenRejected = Test-RpcRejected -Response $noToken
+    $wrongTokenRejected = Test-RpcRejected -Response $wrongToken
+    if (-not $noTokenRejected -or -not $wrongTokenRejected -or
+        ($noToken.Json -and $noToken.Json.result) -or ($wrongToken.Json -and $wrongToken.Json.result)) {
+        throw "aria2 RPC auth rejection failed (missing-token=$(Get-RpcOutcome -Response $noToken); wrong-token=$(Get-RpcOutcome -Response $wrongToken))."
     }
     $malformed = $null
     try {
@@ -437,8 +486,8 @@ try {
     $rpcProcessOne.Refresh()
     if ($rpcProcessOne.HasExited) { throw 'Malformed JSON terminated the aria2 RPC process.' }
     $validAfterMalformed = Invoke-Rpc -Port $rpcPort -Method 'aria2.getVersion' -Params @("token:$rpcSecretOne")
-    if (-not ($validAfterMalformed -and $validAfterMalformed.result -and $validAfterMalformed.result.version)) {
-        throw 'RPC did not recover after malformed JSON input.'
+    if (-not (Test-RpcSucceeded -Response $validAfterMalformed) -or -not $validAfterMalformed.Json.result.version) {
+        throw "RPC did not recover after malformed JSON input ($(Get-RpcOutcome -Response $validAfterMalformed))."
     }
     Add-Result -Name 'RPCLoopbackAuthentication' -Result 'PASS' -Evidence 'missing/wrong token rejected; valid token accepted; wildcard bind absent'
     Add-Result -Name 'RPCMalformedInputRecovery' -Result 'PASS' -Evidence 'process stayed alive and valid JSON-RPC succeeded after malformed input'
@@ -449,9 +498,10 @@ try {
     Wait-RpcReady -Port $rpcPort -Secret $rpcSecretTwo -Process $rpcProcessTwo -Label 'RPC session two'
     $staleToken = Invoke-Rpc -Port $rpcPort -Method 'aria2.getVersion' -Params @("token:$rpcSecretOne")
     $freshToken = Invoke-Rpc -Port $rpcPort -Method 'aria2.getVersion' -Params @("token:$rpcSecretTwo")
-    if (($staleToken -and $staleToken.result) -or -not ($staleToken -and $staleToken.error) -or
-        -not ($freshToken -and $freshToken.result -and $freshToken.result.version)) {
-        throw 'RPC restart did not invalidate the old session secret.'
+    $staleTokenRejected = Test-RpcRejected -Response $staleToken
+    if (-not $staleTokenRejected -or ($staleToken.Json -and $staleToken.Json.result) -or
+        -not (Test-RpcSucceeded -Response $freshToken) -or -not $freshToken.Json.result.version) {
+        throw "RPC restart session check failed (stale-token=$(Get-RpcOutcome -Response $staleToken); fresh-token=$(Get-RpcOutcome -Response $freshToken))."
     }
     Stop-RpcServer -Port $rpcPort -Secret $rpcSecretTwo -Process $rpcProcessTwo -Label 'RPC session two'
     $rpcProcessTwo = $null
