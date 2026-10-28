@@ -14,7 +14,7 @@ class HyperGetHlsRestartSourceContract(unittest.TestCase):
         self.assertIn("#EXTM3U", FIXTURE)
         self.assertIn("/playlist.m3u8", FIXTURE)
         self.assertIn("/segments/segment-", FIXTURE)
-        self.assertIn("segment1_completed", FIXTURE)
+        self.assertIn("segment{segment_id}_completed", FIXTURE)
         self.assertIn("active_segment_requests", FIXTURE)
         self.assertIn("expected_hash.hexdigest()", FIXTURE)
         self.assertNotIn("https://", FIXTURE)
