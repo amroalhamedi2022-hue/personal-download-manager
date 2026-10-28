@@ -57,6 +57,12 @@ def main():
         parser.error("invalid fixture password")
 
     expected_path = "/" + source.name
+    # FTP clients differ on whether a URL path's leading slash is preserved in
+    # SIZE/MDTM/RETR. Accept only the exact fixture name in either form; never
+    # normalize arbitrary paths or permit traversal outside this one file.
+    expected_paths = {source.name, expected_path}
+    def is_fixture_path(value):
+        return value in expected_paths
     stats_lock = threading.Lock()
     stats = {
         "control_connections": 0,
@@ -174,7 +180,7 @@ def main():
                         self.reply(f"229 Entering Extended Passive Mode (|||{port}|)")
                     elif command == "SIZE":
                         if self.require_login():
-                            self.reply(f"213 {source.stat().st_size}" if argument == expected_path else "550 File unavailable")
+                            self.reply(f"213 {source.stat().st_size}" if is_fixture_path(argument) else "550 File unavailable")
                     elif command == "MDTM":
                         if self.require_login():
                             self.reply("213 20261023000000" if argument == expected_path else "550 File unavailable")
@@ -194,7 +200,7 @@ def main():
                     elif command == "RETR":
                         if not self.require_login():
                             continue
-                        if argument != expected_path:
+                        if not is_fixture_path(argument):
                             self.reply("550 File unavailable")
                             continue
                         if self.passive is None:
