@@ -405,8 +405,12 @@ try {
                         if (-not [bool]$prior.range -or -not [bool]$prior.honored -or -not [bool]$prior.data_transfer) {
                             continue
                         }
-                        if ([long]$prior.end -eq [long]$retry.end -and [long]$retry.start -gt [long]$prior.start -and [long]$retry.start -le [long]$prior.end) {
-                            $retryOverlap = [long]$prior.end - [long]$retry.start + 1
+                        # A partial response's declared Range end is not the end actually
+                        # accepted by the socket writer. Use served bytes when classifying a
+                        # same-end retry, otherwise a valid 64-KiB tail overlap is miscounted.
+                        $priorServedEnd = [long]$prior.start + [long]$prior.socket_write_bytes - 1
+                        if ([long]$prior.end -eq [long]$retry.end -and [long]$retry.start -gt [long]$prior.start -and [long]$retry.start -le $priorServedEnd) {
+                            $retryOverlap = $priorServedEnd - [long]$retry.start + 1
                             if ($retryOverlap -gt 0 -and $retryOverlap -le 65536) {
                                 $tailRetryCount++
                                 break
