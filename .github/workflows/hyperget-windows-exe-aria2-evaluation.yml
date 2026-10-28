@@ -66,7 +66,7 @@ jobs:
           python -m py_compile scripts/LocalHttpRangeFixture.py scripts/LocalFtpFixture.py scripts/test_local_http_range_fixture.py scripts/source-tests/test_hyperget_active_benchmark_source.py scripts/source-tests/test_hyperget_aria2_comparison_source.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python scripts/source-tests/test_hyperget_active_benchmark_source.py
-python scripts/source-tests/test_hyperget_aria2_comparison_source.py
+          python scripts/source-tests/test_hyperget_aria2_comparison_source.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m unittest discover -s scripts -p test_local_http_range_fixture.py -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
