@@ -178,24 +178,50 @@ function Invoke-Rpc {
         method = $Method
         params = @($Params)
     } | ConvertTo-Json -Depth 8 -Compress
+
+    # This request is strictly local. Disable inherited system/environment
+    # proxies so an RPC token can never be sent to a proxy instead of loopback.
+    $handler = [System.Net.Http.HttpClientHandler]::new()
+    $handler.UseProxy = $false
+    $client = [System.Net.Http.HttpClient]::new($handler)
+    $client.Timeout = [TimeSpan]::FromSeconds(5)
+    $request = $null
+    $response = $null
     try {
-        # Keep the HTTP status even for 4xx responses. Invoke-RestMethod throws
-        # for these by default, and collapsing an expected auth rejection to
-        # $null would confuse "denied" with "RPC unreachable".
-        $response = Invoke-WebRequest -Method Post -Uri "http://127.0.0.1:$Port/jsonrpc" -ContentType 'application/json' -Body $body -TimeoutSec 5 -SkipHttpErrorCheck
+        $request = [System.Net.Http.HttpRequestMessage]::new(
+            [System.Net.Http.HttpMethod]::Post,
+            "http://127.0.0.1:$Port/jsonrpc"
+        )
+        $request.Content = [System.Net.Http.StringContent]::new(
+            $body,
+            [System.Text.Encoding]::UTF8,
+            'application/json'
+        )
+        $response = $client.SendAsync($request).GetAwaiter().GetResult()
+        $content = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
         $json = $null
-        if (-not [string]::IsNullOrWhiteSpace([string]$response.Content)) {
+        $jsonParseError = $null
+        if (-not [string]::IsNullOrWhiteSpace($content)) {
             try {
-                $json = $response.Content | ConvertFrom-Json -ErrorAction Stop
+                $json = $content | ConvertFrom-Json -ErrorAction Stop
             } catch {
-                $json = $null
+                $jsonParseError = $_.Exception.GetType().Name
             }
+        }
+        $preview = if ([string]::IsNullOrWhiteSpace($content)) {
+            '<empty>'
+        } else {
+            $content.Substring(0, [Math]::Min(120, $content.Length))
         }
         return [pscustomobject]@{
             StatusCode = [int]$response.StatusCode
             Json = $json
             TransportError = $null
             TransportMessage = $null
+            ContentLength = $content.Length
+            ContentType = [string]$response.Content.Headers.ContentType
+            JsonParseError = $jsonParseError
+            ContentPreview = $preview
         }
     } catch {
         return [pscustomobject]@{
@@ -203,7 +229,15 @@ function Invoke-Rpc {
             Json = $null
             TransportError = $_.Exception.GetType().Name
             TransportMessage = $_.Exception.Message
+            ContentLength = 0
+            ContentType = 'none'
+            JsonParseError = 'none'
+            ContentPreview = 'none'
         }
+    } finally {
+        if ($null -ne $response) { $response.Dispose() }
+        if ($null -ne $request) { $request.Dispose() }
+        $client.Dispose()
     }
 }
 
@@ -254,24 +288,33 @@ function Get-RpcDiagnostic {
     $errorObject = Get-RpcJsonProperty -Response $Response -Name 'error'
     $errorCode = Get-ObjectPropertyValue -Object $errorObject -Name 'code'
     $errorMessage = [string](Get-ObjectPropertyValue -Object $errorObject -Name 'message')
-    if (-not [string]::IsNullOrEmpty($Secret) -and $errorMessage.Contains($Secret)) {
-        $errorMessage = $errorMessage.Replace($Secret, '[REDACTED]')
+    $transportError = [string]$Response.TransportError
+    $transportMessage = [string]$Response.TransportMessage
+    $contentType = [string]$Response.ContentType
+    $jsonParseError = [string]$Response.JsonParseError
+    $contentPreview = [string]$Response.ContentPreview
+
+    foreach ($field in @('errorMessage', 'transportMessage', 'contentType', 'jsonParseError', 'contentPreview')) {
+        $value = [string](Get-Variable -Name $field -ValueOnly)
+        if (-not [string]::IsNullOrEmpty($Secret) -and $value.Contains($Secret)) {
+            Set-Variable -Name $field -Value $value.Replace($Secret, '[REDACTED]')
+        }
     }
     if ([string]::IsNullOrWhiteSpace($errorMessage)) { $errorMessage = 'none' }
-    $errorMessage = $errorMessage -replace '[\r\n]+', ' '
-
-    $transportError = [string]$Response.TransportError
     if ([string]::IsNullOrWhiteSpace($transportError)) { $transportError = 'none' }
-    $transportMessage = [string]$Response.TransportMessage
-    if (-not [string]::IsNullOrEmpty($Secret) -and $transportMessage.Contains($Secret)) {
-        $transportMessage = $transportMessage.Replace($Secret, '[REDACTED]')
-    }
     if ([string]::IsNullOrWhiteSpace($transportMessage)) { $transportMessage = 'none' }
-    $transportMessage = $transportMessage -replace '[\r\n]+', ' '
+    if ([string]::IsNullOrWhiteSpace($contentType)) { $contentType = 'none' }
+    if ([string]::IsNullOrWhiteSpace($jsonParseError)) { $jsonParseError = 'none' }
+    if ([string]::IsNullOrWhiteSpace($contentPreview)) { $contentPreview = '<empty>' }
+    foreach ($field in @('errorMessage', 'transportMessage', 'contentType', 'jsonParseError', 'contentPreview')) {
+        $value = [string](Get-Variable -Name $field -ValueOnly)
+        Set-Variable -Name $field -Value ($value -replace '[\r\n]+', ' ')
+    }
 
     $result = Get-RpcJsonProperty -Response $Response -Name 'result'
     $version = Get-ObjectPropertyValue -Object $result -Name 'version'
-    return "http=$($Response.StatusCode); transport=$transportError; transportMessage=$transportMessage; rpcErrorCode=$errorCode; rpcErrorMessage=$errorMessage; resultPresent=$($null -ne $result); versionPresent=$([bool]$version)"
+    $errorPresent = $null -ne $errorObject
+    return "http=$($Response.StatusCode); transport=$transportError; transportMessage=$transportMessage; contentLength=$($Response.ContentLength); contentType=$contentType; jsonParseError=$jsonParseError; contentPreview=$contentPreview; rpcErrorCode=$errorCode; rpcErrorMessage=$errorMessage; resultPresent=$($null -ne $result); errorPresent=$errorPresent; versionPresent=$([bool]$version)"
 }
 
 function Start-RpcServer {
@@ -297,7 +340,7 @@ function Wait-RpcReady {
         $lastDiagnostic = Get-RpcDiagnostic -Response $response -Secret $Secret
         $version = Get-ObjectPropertyValue -Object (Get-RpcJsonProperty -Response $response -Name 'result') -Name 'version'
         if ((Test-RpcSucceeded -Response $response) -and $version) {
-            Write-Host "$Label RPC readiness PASS: $lastDiagnostic"
+            Write-Host "$Label RPC readiness PASS (HTTP $($response.StatusCode), result and version present)."
             return
         }
         Start-Sleep -Milliseconds 125

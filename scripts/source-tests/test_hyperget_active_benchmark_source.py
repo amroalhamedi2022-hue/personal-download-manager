@@ -187,10 +187,15 @@ class Aria2Stage1ViabilityContract(unittest.TestCase):
 
     def test_rpc_auth_gate_preserves_http_rejection_without_swallowing_transport_failures(self):
         invoke_rpc = self.ARIA2.split("function Invoke-Rpc", 1)[1].split("function Get-ObjectPropertyValue", 1)[0]
-        self.assertIn("Invoke-WebRequest -Method Post", invoke_rpc)
-        self.assertIn("-SkipHttpErrorCheck", invoke_rpc)
+        self.assertIn("[System.Net.Http.HttpClientHandler]::new()", invoke_rpc)
+        self.assertIn("$handler.UseProxy = $false", invoke_rpc)
+        self.assertIn("SendAsync($request).GetAwaiter().GetResult()", invoke_rpc)
+        self.assertIn('"http://127.0.0.1:$Port/jsonrpc"', invoke_rpc)
         self.assertIn("StatusCode = [int]$response.StatusCode", invoke_rpc)
         self.assertIn("TransportError = $_.Exception.GetType().Name", invoke_rpc)
+        self.assertIn("JsonParseError = $jsonParseError", invoke_rpc)
+        self.assertIn("ContentPreview = $preview", invoke_rpc)
+        self.assertNotIn("Invoke-WebRequest", invoke_rpc)
         self.assertNotIn("return $null", invoke_rpc)
         self.assertIn("function Get-ObjectPropertyValue", self.ARIA2)
         self.assertIn("$Object.PSObject.Properties[$Name]", self.ARIA2)
@@ -206,8 +211,12 @@ class Aria2Stage1ViabilityContract(unittest.TestCase):
         self.assertIn("lastDiagnostic = Get-RpcDiagnostic -Response $response -Secret $Secret", self.ARIA2)
         self.assertIn("Last probe: $lastDiagnostic", self.ARIA2)
         self.assertIn("TransportMessage = $_.Exception.Message", self.ARIA2)
-        self.assertIn("$errorMessage.Replace($Secret, '[REDACTED]')", self.ARIA2)
-        self.assertIn("$transportMessage.Replace($Secret, '[REDACTED]')", self.ARIA2)
+        self.assertIn("contentLength=$($Response.ContentLength)", self.ARIA2)
+        self.assertIn("contentType=$contentType", self.ARIA2)
+        self.assertIn("jsonParseError=$jsonParseError", self.ARIA2)
+        self.assertIn("contentPreview=$contentPreview", self.ARIA2)
+        self.assertIn("value.Replace($Secret, '[REDACTED]')", self.ARIA2)
+        self.assertIn("$handler.UseProxy = $false", self.ARIA2)
 
     def test_stock_bitTorrent_binary_is_evaluation_only(self):
         self.assertIn("$bitTorrentEnabled", self.ARIA2)
