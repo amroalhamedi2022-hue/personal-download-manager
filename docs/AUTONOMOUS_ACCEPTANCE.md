@@ -2258,3 +2258,14 @@ The first scheduled-window test draft waited for both timer events but asserted 
 
 **Remaining/open:** installed HLS restart and cross-version upgrade/rollback are still running on this code SHA; external HTTPS signed-link acceptance, independent final Windows recheck, and final standalone `HyperGet.exe` with verified SHA/artifact remain OPEN. Do not infer final release readiness from this one milestone. No production scheduler code or thresholds changed; no merge, main write, release, paid service, or Torrent.
 
+
+
+## 2026-10-28 — HG-E074 pre-build contract: external HTTPS + Range acceptance
+
+**Question before the targeted Windows build:** can the exact PR-head installed HyperGet use normal HTTPS certificate validation against a public range-test endpoint, accept a query-bearing URL with a real 206 Range response, and download exactly 10,485,760 bytes matching an independent reference SHA-256?
+
+**Expected:** source contract and PowerShell syntax PASS before packaging; one test installer built from the exact PR head; external Range probe returns 206 with `Content-Range: bytes 0-1023/10485760` and matching first-1-KiB bytes; installed HyperGet output matches the independent 10-MiB reference hash and remains stable after completion. The evidence artifact contains source/installer hashes and sanitized diagnostics.
+
+**Why source tests are insufficient:** public DNS/TLS trust, external Range behavior, JVM HTTPS negotiation, installed GUI/CLI IPC, Windows file publication and exact bytes require a real Windows network run.
+
+**Interpretation boundary:** the public endpoint is not a signed-URL issuer; the query value is synthetic. This gate tests external HTTPS transport and Range only. Provider-specific signed-token expiry remains NOT TESTED; controlled old-token rejection/new-token resume is covered by the local verified-TLS JUnit test. The build is test-only, not a release. Status before run: OPEN / NOT YET RUN. No production source, main, merge, release, paid service/runner, browser repo or Torrent changes.

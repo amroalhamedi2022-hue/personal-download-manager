@@ -12,13 +12,16 @@ on:
       - ".github/workflows/hyperget-source-only.yml"
       - ".github/workflows/windows-installed-active-benchmark.yml"
       - ".github/workflows/windows-installed-http-e2e.yml"
+      - ".github/workflows/windows-installed-external-https-e2e.yml"
       - "scripts/Run-WindowsIdleBenchmarkMatrix.ps1"
       - "scripts/Run-WindowsInstalledFtpE2E.ps1"
       - "scripts/Run-WindowsInstalledResumeE2E.ps1"
+      - "scripts/Run-WindowsExternalHttpsE2E.ps1"
       - "scripts/Wait-WindowsLoopbackHttpPort.ps1"
       - "scripts/source-tests/test_hyperget_executable_identity_workflows.py"
       - "scripts/source-tests/test_hyperget_pr_diff_scope.py"
       - "scripts/source-tests/test_hyperget_http_fixture_port_readiness.py"
+      - "scripts/source-tests/test_hyperget_external_https_e2e.py"
       - "desktop/app/resources/installer/nsis-script-template.nsi"
       - "desktop/app/build.gradle.kts"
       - "desktop/app/icons/icon.ico"
@@ -124,6 +127,10 @@ jobs:
         run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_ftp_workflow_scope.py -v
       - name: Verify loopback HTTP fixture port readiness (source only)
         run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_http_fixture_port_readiness.py -v
+      - name: Verify installed external HTTPS acceptance contract (source only)
+        run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_external_https_e2e.py -v
+      - name: Parse installed external HTTPS workflow YAML (source only)
+        run: ruby -e "require 'yaml'; YAML.parse_file('.github/workflows/windows-installed-external-https-e2e.yml')"
       - name: Verify HLS playlist refresh source contract
         run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_hls_playlist_source.py -v
       - name: Verify HLS media identity after playlist relocation (source only)
