@@ -89,6 +89,14 @@ class PartDownloaderIoLifecycleTest {
     }
 
     @Test
+    fun stopRequestedBeforeCoroutineDispatchPreventsAnyDownloadAttempt() {
+        assertTrue(shouldContinuePartWorker(coroutineActive = true, stopRequested = false))
+        assertFalse(shouldContinuePartWorker(coroutineActive = true, stopRequested = true))
+        assertFalse(shouldContinuePartWorker(coroutineActive = false, stopRequested = false))
+        assertFalse(shouldContinuePartWorker(coroutineActive = false, stopRequested = true))
+    }
+
+    @Test
     fun sharedBodyCopyPermitNeverExceedsConfiguredParallelism() = runBlocking {
         assertEquals(60, PART_BODY_COPY_PARALLELISM)
         val taskCount = PART_BODY_COPY_PARALLELISM * 2

@@ -59,6 +59,10 @@ internal suspend fun <T> withPartBodyCopyPermit(block: suspend () -> T): T {
     }
 }
 
+// A stop request must win even if the worker coroutine has not been dispatched yet.
+internal fun shouldContinuePartWorker(coroutineActive: Boolean, stopRequested: Boolean): Boolean =
+    coroutineActive && !stopRequested
+
 /**
  * A suspended HTTP call may otherwise leave a part Connecting forever while the
  * persisted job reports Downloading. Turn the response-header deadline into an
@@ -136,7 +140,7 @@ abstract class PartDownloader<
             lastCriticalException = null
             lastException = null
             val result = runCatching {
-                while (coroutineContext.isActive || !stop) {
+                while (shouldContinuePartWorker(coroutineContext.isActive, stop)) {
                     if (tries > 0) {
                         delay(RetryDelay.milliseconds)
 //                        println("#${part.from}retrying $tries")

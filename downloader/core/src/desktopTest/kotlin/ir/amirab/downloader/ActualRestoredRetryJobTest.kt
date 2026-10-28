@@ -547,7 +547,11 @@ class ActualRestoredRetryJobTest {
 
                 assertTrue(job.status.value is DownloadJobStatus.Canceled)
                 assertFalse(job.isDownloadActive.value)
-                assertEquals(requestsAfterStop, fixture.requestsFor("/file/101.bin"))
+                assertEquals(
+                    requestsAfterStop,
+                    fixture.requestsFor("/file/101.bin"),
+                    "Stop All must not allow a part worker to issue a late request after it drains in-flight Resume",
+                )
                 assertEquals(0, manager.hostLimitRegistry.activeConnections("127.0.0.1"))
             } finally {
                 fixture.releaseBlockedInfoRequest()

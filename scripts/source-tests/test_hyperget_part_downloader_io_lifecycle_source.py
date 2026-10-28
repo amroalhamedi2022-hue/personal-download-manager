@@ -9,6 +9,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[2]
 PART_PATH = ROOT / "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/part/PartDownloader.kt"
 TEST_PATH = ROOT / "downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/part/PartDownloaderIoLifecycleTest.kt"
+RETRY_TEST_PATH = ROOT / "downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/ActualRestoredRetryJobTest.kt"
 ACTIVE_WORKFLOW_PATH = ROOT / ".github/workflows/windows-installed-active-benchmark.yml"
 MEMORY_WORKFLOW_PATH = ROOT / ".github/workflows/windows-installed-memory-profile.yml"
 
@@ -18,9 +19,24 @@ class PartDownloaderIoLifecycleContract(unittest.TestCase):
     def setUpClass(cls):
         cls.part = PART_PATH.read_text(encoding="utf-8")
         cls.test = TEST_PATH.read_text(encoding="utf-8")
+        cls.retry_test = RETRY_TEST_PATH.read_text(encoding="utf-8")
         cls.active_workflow = ACTIVE_WORKFLOW_PATH.read_text(encoding="utf-8")
         cls.memory_workflow = MEMORY_WORKFLOW_PATH.read_text(encoding="utf-8")
         cls.part_path = "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/part/PartDownloader.kt"
+
+    def test_stop_requested_before_worker_dispatch_cannot_start_late_request(self):
+        self.assertIn(
+            "while (shouldContinuePartWorker(coroutineContext.isActive, stop))",
+            self.part,
+        )
+        self.assertIn("coroutineActive && !stopRequested", self.part)
+        self.assertNotIn("while (coroutineContext.isActive || !stop)", self.part)
+        self.assertIn("stopRequestedBeforeCoroutineDispatchPreventsAnyDownloadAttempt", self.test)
+        self.assertIn("stopAllWaitsForActualHttpResumingThenLeavesNoLateWorker", self.retry_test)
+        self.assertIn(
+            "Stop All must not allow a part worker to issue a late request",
+            self.retry_test,
+        )
 
     def test_raw_thread_per_part_is_removed(self):
         self.assertNotIn("kotlin.concurrent.thread", self.part)
