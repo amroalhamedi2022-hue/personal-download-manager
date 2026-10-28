@@ -115,6 +115,14 @@ class ControlledBenchmarkSourceTests(unittest.TestCase):
             self.assertIn(path, run_scope)
         self.assertIn("comparison=true", run_scope)
 
+    def test_controlled_runner_selects_legacy_baseline_and_branded_candidate_gui(self):
+        source = read("scripts/Run-WindowsControlledBenchmarkComparison.ps1")
+        self.assertIn("$expectedGuiName = if ($Variant -eq 'candidate') { 'HyperGet.exe' } else { 'DownloadManager.exe' }", source)
+        self.assertIn("$unexpectedGuiName = if ($Variant -eq 'candidate') { 'DownloadManager.exe' } else { 'HyperGet.exe' }", source)
+        self.assertIn("$unexpectedGui.Count -ne 0", source)
+        self.assertIn("expected GUI $expectedGuiName", source)
+        self.assertIn("DownloadManagerCli.exe", source)
+
     def test_registry_residue_is_owned_audited_and_separate_from_performance_acceptance(self):
         source = read("scripts/Run-WindowsControlledBenchmarkComparison.ps1")
         self.assertIn("function Normalize-RegistryValuePath", source)

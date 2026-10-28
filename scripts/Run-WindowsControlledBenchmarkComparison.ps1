@@ -509,9 +509,16 @@ try {
         }
         if ($install.ExitCode -ne 0) { throw "$Variant installer exit code $($install.ExitCode)." }
         $script:ActiveInstallDir = $installDir
-        $gui = @(Get-ChildItem -LiteralPath $installDir -File -Recurse -Filter 'DownloadManager.exe')
+        # The comparison intentionally uses the legacy base-branch app and the branded PR candidate.
+        # Discover the expected GUI by variant; a stale/duplicate opposite-name GUI is a packaging defect.
+        $expectedGuiName = if ($Variant -eq 'candidate') { 'HyperGet.exe' } else { 'DownloadManager.exe' }
+        $unexpectedGuiName = if ($Variant -eq 'candidate') { 'DownloadManager.exe' } else { 'HyperGet.exe' }
+        $gui = @(Get-ChildItem -LiteralPath $installDir -File -Recurse -Filter $expectedGuiName)
+        $unexpectedGui = @(Get-ChildItem -LiteralPath $installDir -File -Recurse -Filter $unexpectedGuiName)
         $cli = @(Get-ChildItem -LiteralPath $installDir -File -Recurse -Filter 'DownloadManagerCli.exe')
-        if ($gui.Count -ne 1 -or $cli.Count -ne 1) { throw "$Variant installed executable set is invalid: GUI=$($gui.Count), CLI=$($cli.Count)." }
+        if ($gui.Count -ne 1 -or $unexpectedGui.Count -ne 0 -or $cli.Count -ne 1) {
+            throw "$Variant installed executable set is invalid: expected GUI $expectedGuiName=$($gui.Count), unexpected GUI $unexpectedGuiName=$($unexpectedGui.Count), CLI=$($cli.Count)."
+        }
         $script:ExpectedGuiPath = $gui[0].FullName
         $script:ExpectedCliPath = $cli[0].FullName
         New-Item -ItemType Directory -Path (Split-Path -Parent $markerPath) -Force | Out-Null

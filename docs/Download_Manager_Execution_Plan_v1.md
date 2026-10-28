@@ -1234,3 +1234,8 @@ The cohesive patch introduces scripts/Wait-WindowsLoopbackHttpPort.ps1 and wires
 ## 2026-10-28 — HG-E063: Stop All late-worker lifecycle gate
 
 A fresh exact-head Windows JUnit run found one failing regression among 203 tests: Stop All could return with a late HTTP request still appearing after an in-flight Resume drained. The cause was an OR worker-loop predicate that did not let a stop request win against a still-active coroutine. The production loop now uses `coroutineActive && !stopRequested`, with a Kotlin predicate regression, stronger real HTTP late-request assertion, and source contract. This is a release-blocking lifecycle gate until a new exact-head Windows run passes with zero failures/errors/skips. The paired 1/4/16 benchmark must also be rerun on the fixed source; results from the pre-fix candidate are not reusable. No threshold changes, merge, release, or Torrent.
+
+
+## 2026-10-28 — HG-E064 controlled benchmark executable identity
+
+The exact-head paired Windows benchmark exposed a harness-only blocker after baseline round 1: candidate install was checked for legacy `DownloadManager.exe`, while the branded candidate installs `HyperGet.exe`. No candidate performance measurements were produced, so this is not a performance result. The harness now resolves the expected GUI by variant, rejects opposite-name residue, and keeps `DownloadManagerCli.exe` stable. Source regression covers the selection; installed Windows comparison must still validate the actual NSIS trees and pass all existing 1/4/16, SHA-256, resource-sampling and 15% gates. Do not reuse the pre-fix run as acceptance evidence.
