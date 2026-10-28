@@ -186,12 +186,15 @@ class Aria2Stage1ViabilityContract(unittest.TestCase):
         self.assertIn("LocalAddress -notin @('127.0.0.1', '::1')", self.ARIA2)
 
     def test_rpc_auth_gate_preserves_http_rejection_without_swallowing_transport_failures(self):
-        invoke_rpc = self.ARIA2.split("function Invoke-Rpc", 1)[1].split("function Test-RpcSucceeded", 1)[0]
+        invoke_rpc = self.ARIA2.split("function Invoke-Rpc", 1)[1].split("function Get-ObjectPropertyValue", 1)[0]
         self.assertIn("Invoke-WebRequest -Method Post", invoke_rpc)
         self.assertIn("-SkipHttpErrorCheck", invoke_rpc)
         self.assertIn("StatusCode = [int]$response.StatusCode", invoke_rpc)
         self.assertIn("TransportError = $_.Exception.GetType().Name", invoke_rpc)
         self.assertNotIn("return $null", invoke_rpc)
+        self.assertIn("function Get-ObjectPropertyValue", self.ARIA2)
+        self.assertIn("$Object.PSObject.Properties[$Name]", self.ARIA2)
+        self.assertIn("function Get-RpcJsonProperty", self.ARIA2)
         self.assertIn("function Test-RpcRejected", self.ARIA2)
         self.assertIn("$noTokenRejected = Test-RpcRejected", self.ARIA2)
         self.assertIn("$wrongTokenRejected = Test-RpcRejected", self.ARIA2)
