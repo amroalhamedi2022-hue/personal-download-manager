@@ -67,3 +67,15 @@ Exact tested PR source SHA: f661703efa08c5e9f7ace316b5bbbcea7385d646.
 - **Fix:** delimit the PowerShell variable as $($status) in the URL and add a regression assertion that rejects the ambiguous form. The next exact-head Windows run must continue through all ten assertions; no Stage 1 GO decision is inferred from this partial attempt.
 
 The stock binary still reports BitTorrent enabled and is blocked from packaging. No production engine wiring, main write, merge, release, or Torrent feature.
+
+
+## 2026-10-28 — Stage 1 resume gate: full redownload observed; checkpoint timing hardened
+
+Exact tested PR source SHA: 18d25c4eb7ae5956d0192d65cd67ce4b031d32c5.
+
+- **PASS 5/10 runtime assertions:** HTTP redirect, 404, 429, 500, and ignored-Range safety. Every successful transfer was SHA-256 checked; ignored Range fell back to exact output SHA 341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1.
+- **Resume case: FAIL (resume-efficiency gate), data integrity PASS.** The restarted aria2 process completed a correct 16 MiB file, but the fixture recorded 16 MiB requested after restart and no honored nonzero offset. Therefore this is not a resume PASS.
+- The first process log showed it was interrupted around 896 KiB, below aria2's default 1 MiB HTTP piece length. The official aria2 manual documents a 60-second default for saving the .aria2 control file, with --auto-save-interval controlling the cadence: https://aria2.github.io/manual/en/html/aria2c.html. The likely explanation is that the hard-kill happened before useful progress had been checkpointed; this is a hypothesis, not yet proven.
+- **Harness repair:** explicitly set --auto-save-interval=1 and --always-resume=true; wait until at least 2 MiB and a control file exist, then require a newer control-file timestamp after 1.6 seconds before killing the process. Save first-attempt and restart Range telemetry as JSON and include offsets/bytes in any failure. No assertion is weakened.
+- Evidence artifact [12808540829](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40670419404/artifacts/12808540829), ZIP SHA-256 6224d07ccb14a46cbac3068b34b06a878c7ae25f95f5d5a678066f622ac6a763. It confirms the second process fetched from the beginning; the next exact-head Windows run must prove a nonzero honored offset and fewer than 16 MiB requested, or keep the engine gate open.
+- FTP and RPC cases were not reached and remain NOT TESTED. Stock aria2 still has BitTorrent enabled and remains blocked from packaging.
