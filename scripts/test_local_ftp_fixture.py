@@ -86,6 +86,14 @@ class LocalFtpFixtureTest(unittest.TestCase):
             ftp.retrbinary("RETR /" + self.source.name, received.write)
         self.assertEqual(self.source.read_bytes(), received.getvalue())
 
+    def test_relative_ftp_paths_are_accepted_for_aria2_compatibility(self):
+        with self.connect() as ftp:
+            self.assertEqual(self.source.stat().st_size, ftp.size(self.source.name))
+            self.assertEqual("213 20261023000000", ftp.sendcmd("MDTM " + self.source.name))
+            received = BytesIO()
+            ftp.retrbinary("RETR " + self.source.name, received.write)
+        self.assertEqual(self.source.read_bytes(), received.getvalue())
+
     def test_wrong_password_is_rejected_without_retrieval(self):
         ftp = ftplib.FTP()
         ftp.connect("127.0.0.1", self.port, timeout=5)
