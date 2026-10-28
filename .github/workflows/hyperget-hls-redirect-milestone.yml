@@ -135,7 +135,9 @@ jobs:
           if ($installers.Count -ne 1) { throw "Expected exactly one test installer, found $($installers.Count)." }
           $root = Join-Path $env:RUNNER_TEMP 'hyperget-hls-process-restart'
           $appDir = Join-Path $root 'application'
-          New-Item -ItemType Directory -Path $root,$appDir,'build/ci-release/hls-restart-e2e' -Force | Out-Null
+          New-Item -ItemType Directory -Path $root -Force | Out-Null
+          New-Item -ItemType Directory -Path $appDir -Force | Out-Null
+          New-Item -ItemType Directory -Path 'build/ci-release/hls-restart-e2e' -Force | Out-Null
           $installerSha = (Get-FileHash -LiteralPath $installers[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
           $installer = Start-Process -FilePath $installers[0].FullName -ArgumentList @('/S', "/D=$appDir") -PassThru
           if (-not $installer.WaitForExit(180000)) {
