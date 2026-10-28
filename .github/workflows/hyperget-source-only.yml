@@ -49,6 +49,7 @@ on:
       - "scripts/Collect-WindowsJvmMemoryProfile.ps1"
       - ".github/workflows/windows-installed-memory-profile.yml"
       - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/di/Di.kt"
+      - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/singleInstance/EnsureAppIsAwake.kt"
       - "scripts/source-tests/test_hyperget_http_part_admission_source.py"
       - "scripts/source-tests/test_hyperget_http_part_deadline_source.py"
       - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/part/PartDownloader.kt"

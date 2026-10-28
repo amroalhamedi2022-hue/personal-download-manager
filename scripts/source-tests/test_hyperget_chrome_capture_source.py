@@ -8,6 +8,7 @@ import unittest
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 SCRIPT = (ROOT / "scripts/Run-WindowsChromeNativeE2E.mjs").read_text(encoding="utf-8")
 WORKFLOW = (ROOT / ".github/workflows/windows-installed-native-host-e2e.yml").read_text(encoding="utf-8")
+STARTUP_SOURCE = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/singleInstance/EnsureAppIsAwake.kt").read_text(encoding="utf-8")
 
 
 class ChromeInstalledCaptureSourceTest(unittest.TestCase):
@@ -19,6 +20,12 @@ class ChromeInstalledCaptureSourceTest(unittest.TestCase):
         self.assertIn("spawnFailureCode(warmup, true)", SCRIPT)
         self.assertLess(SCRIPT.index("const guiStart = spawnSync"), SCRIPT.index("const warmup = spawnSync"))
         self.assertLess(SCRIPT.index("const warmup = spawnSync"), SCRIPT.index("const fixtureName ="))
+
+    def test_cold_start_budget_leaves_time_to_launch_and_poll_readiness(self):
+        self.assertIn("timeout: Long = 50_000", STARTUP_SOURCE)
+        self.assertIn("howMuchWait: Long = 30_000", STARTUP_SOURCE)
+        self.assertIn("awaitToBeReady(timeout = 2.seconds)", STARTUP_SOURCE)
+        self.assertIn("{ encoding: 'utf8', timeout: 45000, windowsHide: true }", SCRIPT)
 
     def test_gui_warmup_failure_artifact_is_sanitized(self):
         self.assertIn("writeGuiWarmupFailure('GUI_START'", SCRIPT)

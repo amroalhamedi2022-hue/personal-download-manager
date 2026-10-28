@@ -13,7 +13,7 @@ import kotlin.time.Duration.Companion.seconds
 
 object EnsureAppIsAwake {
     suspend fun awakeTheApp(
-        timeout: Long = 10_000
+        timeout: Long = 50_000
     ) {
         if (awaitToBeReady()) {
             return
@@ -44,7 +44,7 @@ object StartIfNotStartedCommand {
 
 
     suspend fun startAndWaitForRunIfNotRunning(
-        howMuchWait: Long = 10_000,
+        howMuchWait: Long = 30_000,
         initialDelay: Long = 0,
         eachTimeDelay: Long = 500L,
     ): AppStartResult {
@@ -54,7 +54,8 @@ object StartIfNotStartedCommand {
         }
         var firstLoop = true
         while (true) {
-            val isReady: Boolean = awaitToBeReady()
+            // A single IPC probe must not consume the entire cold-start budget before launch.
+            val isReady: Boolean = awaitToBeReady(timeout = 2.seconds)
 //          println("isReady: $isReady")
             if (isReady) {
                 return if (firstLoop) {
