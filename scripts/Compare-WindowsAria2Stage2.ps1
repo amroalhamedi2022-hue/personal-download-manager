@@ -168,7 +168,7 @@ $report.Add("- Environment: $($environment.OS); logical CPUs: $($environment.Log
 $report.Add("- Workload: 32 MiB deterministic loopback HTTP fixture; 1/4/16 distinct active tasks; three paired rounds on the same Windows runner.")
 $report.Add("- Transfers: 63 SHA-256-verified outputs per engine; engine order alternates each round.")
 $report.Add("- Broad pre-gate: throughput regression must not exceed $MaxRegressionPercent%; peak Working Set and Private Bytes regression must not exceed $MaxRegressionPercent% per workload. A separate Stage 2 gate applies the stricter 10% throughput limit, 15% memory limit and at least +5% median throughput benefit.")
-$report.Add('- This compares HyperGet's current implementation with aria2, not with Internet Download Manager (IDM).')
+$report.Add("- This compares HyperGet's current implementation with aria2, not with Internet Download Manager (IDM).")
 $report.Add('')
 $report.Add('| Tasks | Baseline median s | Candidate median s | Baseline MiB/s | Candidate MiB/s | Throughput Δ | Baseline peak WS | Candidate peak WS | WS Δ | Baseline peak Private | Candidate peak Private | Private Δ | Gate |')
 $report.Add('| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |')
