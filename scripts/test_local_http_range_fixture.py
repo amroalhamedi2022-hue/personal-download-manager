@@ -416,5 +416,65 @@ class LocalHttpRangeFixtureTest(unittest.TestCase):
         self.assertEqual(0, zero["unique_tasks_seen"])
 
 
+    def test_redirect_route_preserves_task_query(self):
+        status, headers, body = self.request("GET", "/redirect?task=redirect-test")
+        self.assertEqual(302, status)
+        self.assertEqual(b"", body)
+        self.assertEqual("/fixture.bin?task=redirect-test", headers["Location"])
+        status, _, body = self.request("GET", headers["Location"])
+        self.assertEqual(200, status)
+        self.assertEqual(self.payload, body)
+        self.wait_idle()
+
+    def test_http_error_routes_return_the_requested_status_without_a_body(self):
+        for expected in (404, 429, 500):
+            status, headers, body = self.request("GET", f"/status/{expected}?task=status-{expected}")
+            self.assertEqual(expected, status)
+            self.assertEqual("0", headers["Content-Length"])
+            self.assertEqual(b"", body)
+        self.wait_idle()
+        self.assertEqual(0, self.get_stats()["active_requests"])
+        self.get_stats(reset=True)
+
+    def test_ignore_range_route_returns_full_200_and_records_the_ignored_header(self):
+        self.wait_idle()
+        self.get_stats(reset=True)
+        status, headers, body = self.request(
+            "GET", "/ignore-range?task=ignored-range",
+            {"Range": "bytes=100-199"},
+        )
+        self.assertEqual(200, status)
+        self.assertNotIn("Content-Range", headers)
+        self.assertEqual(self.payload, body)
+        self.wait_idle()
+        ranges = self.get_stats()["task_ranges"]["ignored-range"]
+        self.assertEqual(1, len(ranges))
+        self.assertTrue(ranges[0]["range"])
+        self.assertFalse(ranges[0]["honored"])
+        self.assertEqual(0, ranges[0]["start"])
+        self.assertEqual(len(self.payload) - 1, ranges[0]["end"])
+        self.get_stats(reset=True)
+
+    def test_range_telemetry_records_nonzero_resume_offsets_and_reset_clears_it(self):
+        self.wait_idle()
+        self.get_stats(reset=True)
+        status, _, body = self.request(
+            "GET", "/fixture.bin?task=resume-offset",
+            {"Range": "bytes=1000-"},
+        )
+        self.assertEqual(206, status)
+        self.assertEqual(self.payload[1000:], body)
+        self.wait_idle()
+        snapshot = self.get_stats()
+        ranges = snapshot["task_ranges"]["resume-offset"]
+        self.assertEqual(1, len(ranges))
+        self.assertEqual(1000, ranges[0]["start"])
+        self.assertEqual(len(self.payload) - 1, ranges[0]["end"])
+        self.assertTrue(ranges[0]["range"])
+        self.assertTrue(ranges[0]["honored"])
+        self.assertEqual(len(self.payload) - 1000, snapshot["task_requested_bytes"]["resume-offset"])
+        reset = self.get_stats(reset=True)
+        self.assertEqual({}, reset["task_ranges"])
+
 if __name__ == "__main__":
     unittest.main()
