@@ -9,6 +9,17 @@ class LifecycleSource(unittest.TestCase):
             body = code.split("internal fun " + name, 1)[1].split("\n\n", 1)[0]
             self.assertIn("minusKey(StoppedBy).minusKey(ResumedBy)", body)
             self.assertIn("contextContainer.updateContext(id) { " + name + "(it, context) }", code)
+    def test_stop_all_gate_blocks_inflight_resume_before_part_admission(self):
+        manager = (ROOT / "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/DownloadManager.kt").read_text()
+        http = (ROOT / "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/downloaditem/http/HttpDownloadJob.kt").read_text()
+        hls = (ROOT / "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/downloaditem/hls/HLSDownloadJob.kt").read_text()
+        self.assertIn("@Volatile private var stopAllInProgress = false", manager)
+        self.assertIn("internal fun isStopAllInProgress(): Boolean = stopAllInProgress", manager)
+        self.assertIn("internal fun throwIfStopAllRequested()", manager)
+        for job in (http, hls):
+            self.assertIn("downloadManager.throwIfStopAllRequested()", job)
+            self.assertIn("if (!downloadManager.isStopAllInProgress())", job)
+
     def test_kotlin_regression_has_four_cases(self):
         tests = (ROOT / "downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/DownloadManagerLifecycleContextTest.kt").read_text()
         self.assertEqual(tests.count("@Test"), 4)

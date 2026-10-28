@@ -394,7 +394,7 @@ class DownloadManager(
 
     private val lifecycleCommandLock = Mutex()
     private val stopAllLock = Mutex()
-    private var stopAllInProgress = false
+    @Volatile private var stopAllInProgress = false
     private var startsInFlight = 0
     private var startsDrained = CompletableDeferred(Unit).apply { complete(Unit) }
 
@@ -416,6 +416,15 @@ class DownloadManager(
             if (startsInFlight == 0) {
                 startsDrained.complete(Unit)
             }
+        }
+    }
+
+    /** Read by in-flight jobs that must not start workers after Stop All has been requested. */
+    internal fun isStopAllInProgress(): Boolean = stopAllInProgress
+
+    internal fun throwIfStopAllRequested() {
+        if (stopAllInProgress) {
+            throw kotlinx.coroutines.CancellationException("Stop All requested while a download was resuming")
         }
     }
 

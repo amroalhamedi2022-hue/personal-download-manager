@@ -1239,3 +1239,8 @@ A fresh exact-head Windows JUnit run found one failing regression among 203 test
 ## 2026-10-28 — HG-E064 controlled benchmark executable identity
 
 The exact-head paired Windows benchmark exposed a harness-only blocker after baseline round 1: candidate install was checked for legacy `DownloadManager.exe`, while the branded candidate installs `HyperGet.exe`. No candidate performance measurements were produced, so this is not a performance result. The harness now resolves the expected GUI by variant, rejects opposite-name residue, and keeps `DownloadManagerCli.exe` stable. Source regression covers the selection; installed Windows comparison must still validate the actual NSIS trees and pass all existing 1/4/16, SHA-256, resource-sampling and 15% gates. Do not reuse the pre-fix run as acceptance evidence.
+
+
+## 2026-10-28 — HG-E065 Stop All / in-flight Resume race
+
+The first PartDownloader loop-predicate change did not fully prevent a late request. The Windows regression still failed because an in-flight Resume could finish HTTP metadata validation and admit a part worker after Stop All had already raised its gate. The manager now publishes a volatile Stop All flag, and HTTP/HLS resume flows abort before part admission when the flag is set; they also avoid racing Stop All with a duplicate asynchronous pause. The previous exact-head suite was 203/204 and remains FAIL. Re-run full Windows JUnit, installed HTTP/FTP and the corrected exact-head paired benchmark before accepting this lifecycle milestone.

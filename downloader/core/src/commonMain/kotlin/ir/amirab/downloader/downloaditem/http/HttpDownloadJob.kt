@@ -216,12 +216,14 @@ class HttpDownloadJob(
             onDownloadResuming()
             try {
                 fetchDownloadInfoAndValidate()
+                downloadManager.throwIfStopAllRequested()
                 createPartsIfNotCreated()
                 prepareDestination {
                     _status.value = DownloadJobStatus.PreparingFile(it)
                 }
                 createPartDownloaderList()
 //                println("part downloaders created")
+                downloadManager.throwIfStopAllRequested()
                 beginDownloadParts()
                 startAutoSaver()
                 downloadItem.status = DownloadStatus.Downloading
@@ -239,10 +241,12 @@ class HttpDownloadJob(
                     else -> false
                 }
                 if (shouldStop) {
-                    // this function called from activeDownloadScope
-                    // so we change the scope here to prevent cancel this suspend function
-                    scope.launch {
-                        pause(e)
+                    // Stop All owns cancellation once its gate is raised; do not race it with
+                    // a second asynchronous pause command from the resuming job.
+                    if (!downloadManager.isStopAllInProgress()) {
+                        scope.launch {
+                            pause(e)
+                        }
                     }
                 } else {
                     downloadFailedRetryOrPause(
