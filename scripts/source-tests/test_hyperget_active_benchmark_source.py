@@ -145,6 +145,12 @@ class Aria2Stage1ViabilityContract(unittest.TestCase):
 
     def test_resume_requires_a_real_partial_file_and_nonzero_restart_offset(self):
         self.assertIn("--continue=true", self.ARIA2)
+        self.assertIn("--always-resume=true", self.ARIA2)
+        self.assertIn("--auto-save-interval=1", self.ARIA2)
+        self.assertIn("$partial -ge 2MB", self.ARIA2)
+        self.assertIn("$controlAfter -le $controlBefore", self.ARIA2)
+        self.assertIn("http-resume-first-stats.json", self.ARIA2)
+        self.assertIn("http-resume-restart-stats.json", self.ARIA2)
         self.assertIn("resume.bin.aria2", self.ARIA2)
         self.assertIn("partialBytes -ge $expectedBytes", self.ARIA2)
         self.assertIn("$_.start -gt 0", self.ARIA2)
