@@ -291,18 +291,32 @@ try {
                 $interrupted = if ($null -ne $interruptedProperty) { [int]$interruptedProperty.Value } else { 0 }
                 $bytesSent = if ($null -ne $bytesProperty) { [long]$bytesProperty.Value } else { 0L }
                 $ranges = if ($null -ne $rangesProperty) { @($rangesProperty.Value) } else { @() }
-                $honoredRangeCount = @($ranges | Where-Object { [bool]$_.range -and [bool]$_.honored }).Count
+                # Exclude tiny metadata probes: only full data Range responses
+                # count toward the segmentation acceptance gate.
+                $dataRangeRequests = @($ranges | Where-Object { [bool]$_.range -and [bool]$_.data_transfer })
+                $completedDataRanges = @($dataRangeRequests | Where-Object { [bool]$_.honored -and [bool]$_.completed })
+                $incompleteDataRanges = @($dataRangeRequests | Where-Object { -not [bool]$_.completed })
+                $honoredRangeCount = $completedDataRanges.Count
                 $minimumCompletedGets = [Math]::Max(1, $Segments - 1)
                 if ($started -lt $Segments -or ($completed + $interrupted) -ne $started -or $completed -lt $minimumCompletedGets) {
                     Write-FailureDiagnostics -Scenario $scenario -Round $round -Stats $after -Tasks @($taskFiles) -Reason "Task GET lifecycle incomplete: started=$started completed=$completed interrupted=$interrupted segments=$Segments."
                     throw "aria2 task $($task.Name) did not complete the required range GET lifecycle."
                 }
-                if ($bytesSent -ne $expectedBytes) {
-                    Write-FailureDiagnostics -Scenario $scenario -Round $round -Stats $after -Tasks @($taskFiles) -Reason "Fixture served $bytesSent bytes for one task; expected exactly $expectedBytes."
-                    throw "aria2 task $($task.Name) served $bytesSent HTTP bytes; expected exactly $expectedBytes."
+                if ($incompleteDataRanges.Count -gt 0) {
+                    Write-FailureDiagnostics -Scenario $scenario -Round $round -Stats $after -Tasks @($taskFiles) -Reason "One or more data Range responses did not complete; completed=$($completedDataRanges.Count) incomplete=$($incompleteDataRanges.Count)."
+                    throw "aria2 task $($task.Name) had incomplete data Range responses."
+                }
+                # bytes_sent is socket-writer accounting, not peer acknowledgement.
+                # A canceled initial full GET can leave one final 64-KiB chunk buffered.
+                # Final SHA-256 and per-request Range completion remain the integrity gates.
+                $maxSocketOvercount = [long]$interrupted * [long]65536
+                $maxBytesSent = $expectedBytes + $maxSocketOvercount
+                if ($bytesSent -lt $expectedBytes -or $bytesSent -gt $maxBytesSent) {
+                    Write-FailureDiagnostics -Scenario $scenario -Round $round -Stats $after -Tasks @($taskFiles) -Reason "Fixture socket-write counter $bytesSent bytes; expected payload $expectedBytes with at most $maxSocketOvercount buffered-write overcount from $interrupted interrupted GET(s)."
+                    throw "aria2 task $($task.Name) socket-write bytes $bytesSent outside accepted range $expectedBytes..$maxBytesSent."
                 }
                 if ($honoredRangeCount -lt ($Segments - 1)) {
-                    Write-FailureDiagnostics -Scenario $scenario -Round $round -Stats $after -Tasks @($taskFiles) -Reason "Only $honoredRangeCount honored Range GETs were observed; expected at least $($Segments - 1)."
+                    Write-FailureDiagnostics -Scenario $scenario -Round $round -Stats $after -Tasks @($taskFiles) -Reason "Only $honoredRangeCount completed, honored data Range GETs were observed; expected at least $($Segments - 1)."
                     throw "aria2 task $($task.Name) did not prove $Segments-way HTTP segmentation."
                 }
             }

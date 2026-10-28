@@ -3,6 +3,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 ARIA2_MATRIX = (ROOT / "scripts/Run-WindowsAria2ActiveBenchmarkMatrix.ps1").read_text(encoding="utf-8")
+FIXTURE = (ROOT / "scripts/LocalHttpRangeFixture.py").read_text(encoding="utf-8")
 PAIRED = (ROOT / "scripts/Run-WindowsAria2PairedComparison.ps1").read_text(encoding="utf-8")
 GATES = (ROOT / "scripts/Assert-WindowsAria2Stage2Gates.ps1").read_text(encoding="utf-8")
 COMPARATOR = (ROOT / "scripts/Compare-WindowsAria2Stage2.ps1").read_text(encoding="utf-8")
@@ -46,9 +47,17 @@ class Aria2Stage2SourceContract(unittest.TestCase):
         self.assertIn("task_get_completed", ARIA2_MATRIX)
         self.assertIn("task_get_interrupted", ARIA2_MATRIX)
         self.assertIn("task_bytes_sent", ARIA2_MATRIX)
+        self.assertIn('"data_transfer": remaining >= MIN_DATA_TRANSFER_BYTES', FIXTURE)
+        self.assertIn('request_record["completed"] = remaining == 0', FIXTURE)
+        self.assertIn('request_record["socket_write_bytes"] = response_socket_write_bytes', FIXTURE)
         self.assertIn("$minimumCompletedGets = [Math]::Max(1, $Segments - 1)", ARIA2_MATRIX)
+        self.assertIn("$dataRangeRequests = @($ranges | Where-Object { [bool]$_.range -and [bool]$_.data_transfer })", ARIA2_MATRIX)
+        self.assertIn("$completedDataRanges = @($dataRangeRequests | Where-Object { [bool]$_.honored -and [bool]$_.completed })", ARIA2_MATRIX)
+        self.assertIn("$incompleteDataRanges.Count -gt 0", ARIA2_MATRIX)
         self.assertIn("$honoredRangeCount -lt ($Segments - 1)", ARIA2_MATRIX)
-        self.assertIn("$bytesSent -ne $expectedBytes", ARIA2_MATRIX)
+        self.assertIn("$maxSocketOvercount = [long]$interrupted * [long]65536", ARIA2_MATRIX)
+        self.assertIn("$bytesSent -lt $expectedBytes -or $bytesSent -gt $maxBytesSent", ARIA2_MATRIX)
+        self.assertNotIn("$bytesSent -ne $expectedBytes", ARIA2_MATRIX)
 
     def test_stage2_thresholds_are_separate_and_no_go_keeps_current_engine(self):
         self.assertIn("MaxThroughputRegressionPercent = 10", GATES)

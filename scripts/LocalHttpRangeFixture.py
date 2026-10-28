@@ -242,13 +242,18 @@ def main():
                 return
 
             task_id = parse_qs(address.query).get("task", ["unlabeled"])[0][:128]
+            request_record = {
+                "start": start,
+                "end": end,
+                "range": bool(incoming_range),
+                "honored": bool(requested),
+                "data_transfer": remaining >= MIN_DATA_TRANSFER_BYTES,
+                "completed": False,
+                "socket_write_bytes": 0,
+            }
+            response_socket_write_bytes = 0
             with guard:
-                task_ranges.setdefault(task_id, []).append({
-                    "start": start,
-                    "end": end,
-                    "range": bool(incoming_range),
-                    "honored": bool(requested),
-                })
+                task_ranges.setdefault(task_id, []).append(request_record)
                 # The 16-task barrier previously counted 256-byte metadata
                 # probes as live downloads. Those probes finished before any
                 # actual file data socket opened, yielding a false peak=16.
@@ -297,8 +302,11 @@ def main():
                             else:
                                 self.wfile.write(chunk)
                                 self.wfile.flush()
+                            response_socket_write_bytes += len(chunk)
                             remaining -= len(chunk)
                             with guard:
+                                # Counts local socket-writer acceptance, not peer acknowledgement.
+                                # A canceled response may have one buffered 64-KiB write accepted.
                                 stats["bytes_sent"] += len(chunk)
                                 task_bytes_sent[task_id] = (
                                     task_bytes_sent.get(task_id, 0) + len(chunk)
@@ -317,6 +325,9 @@ def main():
                         pass
             finally:
                 with guard:
+                    # Record request completion after the body finishes or is interrupted.
+                    request_record["completed"] = remaining == 0
+                    request_record["socket_write_bytes"] = response_socket_write_bytes
                     if remaining == 0:
                         task_get_completed[task_id] = task_get_completed.get(task_id, 0) + 1
                     else:
