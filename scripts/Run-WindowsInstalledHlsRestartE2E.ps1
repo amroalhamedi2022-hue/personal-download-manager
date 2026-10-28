@@ -166,11 +166,37 @@ try {
     if ($LASTEXITCODE -ne 0 -or $statusLines.Count -ne 1 -or "$($statusLines[0])" -notmatch "^\s*$taskId\s+") {
         throw "Persisted HLS task was not visible after GUI relaunch: $($statusLines -join ' ')"
     }
-    if ("$($statusLines[0])" -notmatch '\s+(Downloading|Resuming|Retrying|PreparingFile)$') {
-        $resumeOutput = @(& $cliPath download resume $taskId 2>&1)
-        if ($LASTEXITCODE -ne 0) {
-            throw "HLS resume after GUI relaunch failed: $($resumeOutput -join ' ')"
+    # After a forced process kill, a persisted "Downloading" label can be stale:
+    # it does not prove that worker coroutines or sockets survived process exit.
+    # Always issue an explicit Resume after relaunch so the new manager rehydrates
+    # the saved task and validates/reuses completed segment files.
+    $resumeOutput = @(& $cliPath download resume $taskId 2>&1)
+    $resumeExitCode = $LASTEXITCODE
+    @(
+        "StatusAfterRelaunch=$($statusLines[0])"
+        "ResumeExitCode=$resumeExitCode"
+        "ResumeOutput=$($resumeOutput -join ' ')"
+    ) | Set-Content -LiteralPath (Join-Path $root 'post-relaunch-resume.txt') -Encoding utf8
+    if ($resumeExitCode -ne 0) {
+        throw "HLS resume after GUI relaunch failed: $($resumeOutput -join ' ')"
+    }
+
+    # Fail promptly with fixture evidence if explicit Resume did not recreate
+    # the playlist/segment requests; do not wait four minutes for a missing file.
+    $restartDeadline = [DateTime]::UtcNow.AddSeconds(30)
+    $observedRestartRequests = $false
+    while ([DateTime]::UtcNow -lt $restartDeadline) {
+        $restartStats = Get-HlsFixtureStats
+        if ([int]$restartStats.playlist_requests -ge 2 -and
+            [int]$restartStats.total_segment_requests -gt 4) {
+            $observedRestartRequests = $true
+            break
         }
+        Start-Sleep -Milliseconds 250
+    }
+    $restartStats | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $root 'post-resume-fixture-stats.json') -Encoding utf8
+    if (-not $observedRestartRequests) {
+        throw "HLS task did not issue new playlist/segment requests after explicit Resume: $($restartStats | ConvertTo-Json -Compress)"
     }
 
     $finalPath = Join-Path $downloads 'hls-restarted.ts'
@@ -209,6 +235,10 @@ try {
         $completedField = "segment${segmentId}_completed"
         if ([int]$finalStats.$completedField -lt 1) {
             throw "HLS segment $segmentId did not complete after restart."
+        }
+        $requestsField = "segment${segmentId}_requests"
+        if ([int]$finalStats.$requestsField -lt 2) {
+            throw "HLS segment $segmentId was not requested again after process restart."
         }
     }
     if ([int]$finalStats.active_segment_requests -ne 0) {

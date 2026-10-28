@@ -24,6 +24,34 @@ class HyperGetHlsRestartSourceContract(unittest.TestCase):
         self.assertIn("Stop-HyperGetGui -ProcessToStop $gui", SCRIPT)
         self.assertIn("download show --status-lines", SCRIPT)
         self.assertIn("download resume $taskId", SCRIPT)
+        self.assertIn('Persisted "Downloading" label can be stale', SCRIPT)
+        self.assertIn('$resumeOutput = @(& $cliPath download resume $taskId 2>&1)', SCRIPT)
+        self.assertIn("ResumeExitCode=$resumeExitCode", SCRIPT)
+        self.assertIn("total_segment_requests -gt 4", SCRIPT)
+        self.assertIn('segment${segmentId}_requests', SCRIPT)
+        self.assertNotIn("PreparingFile)
+        self.assertIn("segment1_requests -ne 1", SCRIPT)
+        self.assertIn("active_segment_requests", SCRIPT)
+        self.assertIn("Get-FileHash -LiteralPath $finalPath -Algorithm SHA256", SCRIPT)
+        self.assertIn("Result=PASS", SCRIPT)
+
+    def test_runtime_gate_builds_only_after_source_and_junit_gates(self):
+        self.assertIn("runs-on: windows-2022", WORKFLOW)
+        self.assertIn("needs: guarded-redirect-unit", WORKFLOW)
+        self.assertIn("test_hyperget_hls_restart_e2e_source.py", WORKFLOW)
+        self.assertIn("Run-WindowsInstalledHlsRestartE2E.ps1", WORKFLOW)
+        self.assertIn("createReleaseFolderForCi", WORKFLOW)
+        self.assertLess(
+            WORKFLOW.index("Validate HLS restart source contract and script syntax before installer packaging"),
+            WORKFLOW.index("Build one Windows installer for process-restart acceptance"),
+        )
+        self.assertIn("workflow_dispatch:", WORKFLOW)
+        self.assertIn("retention-days: 7", WORKFLOW)
+
+
+if __name__ == "__main__":
+    unittest.main()
+) {", SCRIPT)
         self.assertIn("playlist_requests -lt 2", SCRIPT)
         self.assertIn("segment1_requests -ne 1", SCRIPT)
         self.assertIn("active_segment_requests", SCRIPT)
