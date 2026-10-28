@@ -52,7 +52,10 @@ def reconcile_fixture_response_ranges(responses, expected_bytes):
     for index, retry in enumerate(responses):
         if not (retry["range"] and retry["honored"] and retry["completed"] and retry["data_transfer"]):
             continue
-        for prior in responses[:index]:
+        # Fixture records concurrent handlers by arrival time, not byte offset.
+        for prior_index, prior in enumerate(responses):
+            if prior_index == index:
+                continue
             if not (prior["range"] and prior["honored"] and prior["data_transfer"]):
                 continue
             prior_served_end = int(prior["start"]) + int(prior["socket_write_bytes"]) - 1
