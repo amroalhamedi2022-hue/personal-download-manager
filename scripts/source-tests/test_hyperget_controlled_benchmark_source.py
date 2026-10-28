@@ -77,8 +77,9 @@ class ControlledBenchmarkSourceTests(unittest.TestCase):
     def test_workflow_builds_exact_pair_on_same_windows_runner_and_uploads_failure_evidence(self):
         workflow = read(".github/workflows/windows-installed-active-benchmark.yml")
         self.assertIn("controlled-baseline-candidate-comparison", workflow)
-        self.assertIn("d6ea54a885277cb5b8fd545eb3f3fb0e185b6aa5", workflow)
-        self.assertIn("c99b6f627de5f1ef1cba9e79f4f8e1baba20ffe1", workflow)
+        self.assertIn("HYPERGET_BASELINE_SHA: d6ea54a885277cb5b8fd545eb3f3fb0e185b6aa5", workflow)
+        self.assertIn("HYPERGET_CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}", workflow)
+        self.assertNotIn("HYPERGET_CANDIDATE_SHA: c99b6f627de5f1ef1cba9e79f4f8e1baba20ffe1", workflow)
         self.assertIn("runs-on: windows-2022", workflow)
         self.assertIn("if: always()", workflow)
         self.assertNotIn("HG_E061_CONTROLLED_PERFORMANCE_COMPARISON.md", workflow)
@@ -89,6 +90,30 @@ class ControlledBenchmarkSourceTests(unittest.TestCase):
         self.assertIn("[System.Management.Automation.Language.Parser]::ParseFile", workflow)
         self.assertIn('Write-Host "$($psFile):$($_.Extent.StartLineNumber):$($_.Message)"', workflow)
 
+
+    def test_controlled_comparison_uses_current_pr_head_for_http_lifecycle_changes(self):
+        workflow = read(".github/workflows/windows-installed-active-benchmark.yml")
+        expected_paths = (
+            "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/downloaditem/http/HttpDownloadItem.kt",
+            "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/downloaditem/http/HttpDownloadJob.kt",
+            "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/destination/SimpleDownloadDestination.kt",
+            "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/connection/Connection.kt",
+            "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/connection/OkHttpHttpDownloaderClient.kt",
+        )
+        self.assertIn(
+            "HYPERGET_CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}",
+            workflow,
+        )
+        self.assertNotIn(
+            "HYPERGET_CANDIDATE_SHA: c99b6f627de5f1ef1cba9e79f4f8e1baba20ffe1",
+            workflow,
+        )
+        for path in expected_paths:
+            self.assertIn(path, workflow)
+        run_scope = workflow.split('case "$file" in', 1)[1].split("done <<<", 1)[0]
+        for path in expected_paths:
+            self.assertIn(path, run_scope)
+        self.assertIn("comparison=true", run_scope)
 
     def test_registry_residue_is_owned_audited_and_separate_from_performance_acceptance(self):
         source = read("scripts/Run-WindowsControlledBenchmarkComparison.ps1")
