@@ -185,5 +185,18 @@ class Aria2Stage1ViabilityContract(unittest.TestCase):
         self.assertIn("aria2-viability-report.md", self.ARIA2_WORKFLOW)
         self.assertIn("if: always()", self.ARIA2_WORKFLOW)
 
+    def test_workflow_executes_viability_gate_after_pinned_archive_and_preflight(self):
+        preflight = self.ARIA2_WORKFLOW.index("Verify exact source SHA and preflight source/fixture tests")
+        archive = self.ARIA2_WORKFLOW.index("Download and verify pinned upstream aria2 archive")
+        invocation = self.ARIA2_WORKFLOW.index("& ./scripts/Run-WindowsAria2Viability.ps1")
+        upload = self.ARIA2_WORKFLOW.index("name: Upload sanitized Stage 1 viability evidence")
+        self.assertLess(preflight, archive)
+        self.assertLess(archive, invocation)
+        self.assertLess(invocation, upload)
+        self.assertIn("-Aria2Executable $env:ARIA2_EXE", self.ARIA2_WORKFLOW)
+        self.assertIn("-SourceSha $env:HYPERGET_TESTED_SHA", self.ARIA2_WORKFLOW)
+        self.assertIn("HYPERGET_TESTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}", self.ARIA2_WORKFLOW)
+
+
 if __name__ == "__main__":
     unittest.main()
