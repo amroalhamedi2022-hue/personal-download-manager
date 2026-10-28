@@ -37,7 +37,7 @@ class HyperGetHlsRestartSourceContract(unittest.TestCase):
         self.assertIn("Run-WindowsInstalledHlsRestartE2E.ps1", WORKFLOW)
         self.assertIn("createReleaseFolderForCi", WORKFLOW)
         self.assertLess(
-            WORKFLOW.index("Validate HLS restart source contract and script syntax before any build"),
+            WORKFLOW.index("Validate HLS restart source contract and script syntax before installer packaging"),
             WORKFLOW.index("Build one Windows installer for process-restart acceptance"),
         )
         self.assertIn("workflow_dispatch:", WORKFLOW)
