@@ -80,6 +80,21 @@ class HyperGetExternalHttpsAcceptanceContract(unittest.TestCase):
                 self.assertIn(required, SOURCE_ONLY)
         self.assertIn("test_hyperget_external_https_e2e.py", SOURCE_ONLY)
 
+    def test_final_download_verification_retries_transient_io_but_requires_two_stable_hash_samples(self):
+        for required in (
+            "$stableDeadline = [DateTime]::UtcNow.AddSeconds(30)",
+            "$finalReadAttempts++",
+            "$finalReadFailureType = $_.Exception.GetType().Name",
+            "$stableReadSamples -ge 2",
+            "if ($stableReadSamples -lt 2",
+            "FinalReadAttempts=$finalReadAttempts",
+            "FinalReadFailureType=$finalReadFailureType",
+            "StableReadSamples=$stableReadSamples",
+            "SHA-256-stable for two samples within 30 seconds",
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, SCRIPT)
+
     def test_workflow_has_no_duplicate_top_level_keys(self):
         root_keys = {}
         for line_number, line in enumerate(WORKFLOW.splitlines(), start=1):
