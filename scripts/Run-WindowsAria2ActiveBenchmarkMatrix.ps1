@@ -295,20 +295,56 @@ try {
                 # count toward the segmentation acceptance gate.
                 $dataRangeRequests = @($ranges | Where-Object { [bool]$_.range -and [bool]$_.data_transfer })
                 $completedDataRanges = @($dataRangeRequests | Where-Object { [bool]$_.honored -and [bool]$_.completed })
-                $incompleteDataRanges = @($dataRangeRequests | Where-Object { -not [bool]$_.completed })
                 $honoredRangeCount = $completedDataRanges.Count
                 $minimumCompletedGets = [Math]::Max(1, $Segments - 1)
                 if ($started -lt $Segments -or ($completed + $interrupted) -ne $started -or $completed -lt $minimumCompletedGets) {
                     Write-FailureDiagnostics -Scenario $scenario -Round $round -Stats $after -Tasks @($taskFiles) -Reason "Task GET lifecycle incomplete: started=$started completed=$completed interrupted=$interrupted segments=$Segments."
                     throw "aria2 task $($task.Name) did not complete the required range GET lifecycle."
                 }
-                if ($incompleteDataRanges.Count -gt 0) {
-                    Write-FailureDiagnostics -Scenario $scenario -Round $round -Stats $after -Tasks @($taskFiles) -Reason "One or more data Range responses did not complete; completed=$($completedDataRanges.Count) incomplete=$($incompleteDataRanges.Count)."
-                    throw "aria2 task $($task.Name) had incomplete data Range responses."
+
+                # aria2 can cancel an in-flight segment after its peers finish and
+                # request only the remaining tail. Treat that as recovered only
+                # when a later honored Range response reaches the same end offset.
+                # The old blanket $incompleteDataRanges.Count -gt 0 check rejected
+                # this valid retry pattern even when the final file was byte-exact.
+                $unrecoveredDataRanges = [System.Collections.Generic.List[object]]::new()
+                for ($rangeIndex = 0; $rangeIndex -lt $ranges.Count; $rangeIndex++) {
+                    $range = $ranges[$rangeIndex]
+                    if (-not [bool]$range.range -or -not [bool]$range.data_transfer -or [bool]$range.completed) {
+                        continue
+                    }
+                    if (-not [bool]$range.honored) {
+                        $unrecoveredDataRanges.Add($range)
+                        continue
+                    }
+                    $recoveredByTailRetry = $false
+                    for ($retryIndex = $rangeIndex + 1; $retryIndex -lt $ranges.Count; $retryIndex++) {
+                        $retry = $ranges[$retryIndex]
+                        if (
+                            [bool]$retry.range -and
+                            [bool]$retry.honored -and
+                            [bool]$retry.completed -and
+                            [long]$retry.start -ge [long]$range.start -and
+                            [long]$retry.start -le [long]$range.end -and
+                            [long]$retry.end -eq [long]$range.end
+                        ) {
+                            $recoveredByTailRetry = $true
+                            break
+                        }
+                    }
+                    if (-not $recoveredByTailRetry) {
+                        $unrecoveredDataRanges.Add($range)
+                    }
                 }
+                if ($unrecoveredDataRanges.Count -gt 0) {
+                    Write-FailureDiagnostics -Scenario $scenario -Round $round -Stats $after -Tasks @($taskFiles) -Reason "Incomplete data Range response(s) lacked a later completed honored tail retry; completed=$($completedDataRanges.Count) unrecovered=$($unrecoveredDataRanges.Count)."
+                    throw "aria2 task $($task.Name) had an incomplete data Range without a completed tail retry."
+                }
+
                 # bytes_sent is socket-writer accounting, not peer acknowledgement.
-                # A canceled initial full GET can leave one final 64-KiB chunk buffered.
-                # Final SHA-256 and per-request Range completion remain the integrity gates.
+                # A canceled response can leave one buffered 64-KiB write accepted.
+                # Completed segment count, recovered tail requests and final SHA-256
+                # remain the hard acceptance gates.
                 $maxSocketOvercount = [long]$interrupted * [long]65536
                 $maxBytesSent = $expectedBytes + $maxSocketOvercount
                 if ($bytesSent -lt $expectedBytes -or $bytesSent -gt $maxBytesSent) {
