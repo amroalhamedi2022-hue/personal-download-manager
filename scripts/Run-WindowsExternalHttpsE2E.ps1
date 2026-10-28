@@ -95,7 +95,7 @@ try {
         throw 'External HTTPS Range response did not report the exact expected Content-Range.'
     }
     $referenceBytes = [IO.File]::ReadAllBytes($referencePath)
-    $prefixBytes = New-Object byte[] 1024
+    $prefixBytes = [byte[]]::new(1024)
     [Array]::Copy($referenceBytes, $prefixBytes, 1024)
     [IO.File]::WriteAllBytes($prefixPath, $prefixBytes)
     $rangePrefixHash = (Get-FileHash -LiteralPath $prefixPath -Algorithm SHA256).Hash.ToLowerInvariant()

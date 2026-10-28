@@ -2274,3 +2274,8 @@ The first scheduled-window test draft waited for both timer events but asserted 
 ### HG-E074 first preflight attempt — FAIL before build (2026-10-28)
 
 The first source-only and external-HTTPS workflow attempts stopped before any Gradle build or Windows runtime test. One source contract falsely treated the explanatory comment mentioning `-SkipCertificateCheck` as executable use of the TLS-bypass option. This is a **test-contract false positive**, not a downloader or TLS failure. The contract now ignores full-line PowerShell comments while still rejecting the bypass option in executable lines. No Windows build was performed in the failed attempt; the external HTTPS gate remains OPEN until a new exact-head run completes.
+
+
+### HG-E074 second preflight attempt — FAIL before build (2026-10-28)
+
+The corrected source test then failed on a second contract-only mismatch: it required the literal phrase `default TLS validation`, while the harness accurately described `normal HTTPS certificate validation` and named its stage `fetch-external-reference-with-default-tls-validation`. The test now asserts the actual reference-fetch command instead of prose wording. The PowerShell byte-prefix allocation was also changed to the unambiguous `[byte[]]::new(1024)` form before runtime execution. This attempt again stopped before Gradle packaging and before any external endpoint or installed-app test; E074 remains OPEN.

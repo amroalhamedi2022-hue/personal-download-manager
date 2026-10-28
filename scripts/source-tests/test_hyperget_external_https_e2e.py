@@ -19,7 +19,7 @@ class HyperGetExternalHttpsAcceptanceContract(unittest.TestCase):
         executable_lines = [line for line in SCRIPT.splitlines() if not line.lstrip().startswith("#")]
         executable_source = "\n".join(executable_lines)
         self.assertNotIn("-SkipCertificateCheck", executable_source)
-        self.assertIn("default TLS validation", SCRIPT)
+        self.assertIn("Invoke-WebRequest -Uri $canonicalUri.AbsoluteUri -OutFile $referencePath", executable_source)
         self.assertIn("SignedTokenExpiry=NOT_TESTED", SCRIPT)
         self.assertIn("not a provider-specific signed-token expiry test", SCRIPT)
 
