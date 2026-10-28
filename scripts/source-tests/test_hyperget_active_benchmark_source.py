@@ -181,8 +181,9 @@ class Aria2Stage1ViabilityContract(unittest.TestCase):
     def test_workflow_pins_archive_before_viability_and_uploads_sanitized_evidence(self):
         self.assertIn("67d015301eef0b612191212d564c5bb0a14b5b9c4796b76454276a4d28d9b288", self.ARIA2_WORKFLOW)
         self.assertIn("Run-WindowsAria2Viability.ps1", self.ARIA2_WORKFLOW)
-        self.assertIn("aria2-viability-results.csv", self.ARIA2_WORKFLOW)
-        self.assertIn("aria2-viability-report.md", self.ARIA2_WORKFLOW)
+        self.assertIn("aria2-viability-results.csv", self.ARIA2)
+        self.assertIn("aria2-viability-report.md", self.ARIA2)
+        self.assertIn("path: ${{ runner.temp }}/aria2-viability", self.ARIA2_WORKFLOW)
         self.assertIn("if: always()", self.ARIA2_WORKFLOW)
 
     def test_workflow_executes_viability_gate_after_pinned_archive_and_preflight(self):
