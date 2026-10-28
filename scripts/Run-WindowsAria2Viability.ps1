@@ -297,28 +297,37 @@ try {
     New-Item -ItemType Directory -Force -Path $resumeDir | Out-Null
     $resumeTask = 'aria2-resume'
     $resumeUrl = "$($slowHttp.BaseUri)/fixture.bin?task=$resumeTask"
+    $controlPath = Join-Path $resumeDir 'resume.bin.aria2'
     $resumeArgs = @(
         '--no-conf=true', '--console-log-level=notice', '--summary-interval=0',
         '--file-allocation=none', '--auto-file-renaming=false',
-        '--continue=true', '--split=1', '--max-connection-per-server=1',
+        '--continue=true', '--always-resume=true', '--auto-save-interval=1',
+        '--split=1', '--max-connection-per-server=1',
         '--max-tries=3', '--connect-timeout=5', '--timeout=30', '--enable-rpc=false',
         "--dir=$resumeDir", '--out=resume.bin', $resumeUrl
     )
     $resumeProcess = Start-OwnedProcess -FilePath $aria2 -Arguments $resumeArgs -Label 'http-resume-first'
     $partialPath = Join-Path $resumeDir 'resume.bin'
-    $partialDeadline = [DateTime]::UtcNow.AddSeconds(15)
+    $partialDeadline = [DateTime]::UtcNow.AddSeconds(30)
     while ([DateTime]::UtcNow -lt $partialDeadline) {
         $resumeProcess.Refresh()
         if ($resumeProcess.HasExited) { throw 'aria2 completed or failed before interruption could be tested.' }
         if (Test-Path -LiteralPath $partialPath -PathType Leaf) {
             $partial = (Get-Item -LiteralPath $partialPath).Length
-            if ($partial -gt 0 -and $partial -lt $expectedBytes) { break }
+            if ($partial -ge 2MB -and $partial -lt $expectedBytes -and (Test-Path -LiteralPath $controlPath -PathType Leaf)) { break }
         }
         Start-Sleep -Milliseconds 100
     }
     if (-not (Test-Path -LiteralPath $partialPath -PathType Leaf)) { throw 'aria2 never created a partial resume file.' }
+    if (-not (Test-Path -LiteralPath $controlPath -PathType Leaf)) { throw 'aria2 did not create a resume control file before interruption.' }
+    $controlBefore = (Get-Item -LiteralPath $controlPath).LastWriteTimeUtc
+    Start-Sleep -Milliseconds 1600
+    if (-not (Test-Path -LiteralPath $controlPath -PathType Leaf)) { throw 'aria2 removed its resume control file before interruption.' }
+    $controlAfter = (Get-Item -LiteralPath $controlPath).LastWriteTimeUtc
+    if ($controlAfter -le $controlBefore) { throw 'aria2 did not refresh its resume control checkpoint before interruption.' }
+    $controlFileBytes = (Get-Item -LiteralPath $controlPath).Length
     $partialBytes = (Get-Item -LiteralPath $partialPath).Length
-    if ($partialBytes -le 0 -or $partialBytes -ge $expectedBytes) { throw "Resume interruption did not catch a true partial file ($partialBytes bytes)." }
+    if ($partialBytes -lt 2MB -or $partialBytes -ge $expectedBytes) { throw "Resume interruption did not catch a checkpointed partial file ($partialBytes bytes)." }
     Stop-Process -Id $resumeProcess.Id -Force -ErrorAction SilentlyContinue
     $resumeProcess.WaitForExit(10000) | Out-Null
     $resumeProcess = $null
@@ -329,9 +338,11 @@ try {
         Start-Sleep -Milliseconds 100
     }
     if (-not $idle) { throw 'HTTP fixture did not observe socket closure after aria2 process interruption.' }
-    if (-not (Test-Path -LiteralPath (Join-Path $resumeDir 'resume.bin.aria2') -PathType Leaf)) {
+    if (-not (Test-Path -LiteralPath $controlPath -PathType Leaf)) {
         throw 'aria2 did not persist its resume control file after interruption.'
     }
+    $firstResumeStats = Get-HttpStats -BaseUri $slowHttp.BaseUri
+    $firstResumeStats | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $root 'http-resume-first-stats.json') -Encoding utf8
     $null = Get-HttpStats -BaseUri $slowHttp.BaseUri -Reset
     $resumeProcess = Start-OwnedProcess -FilePath $aria2 -Arguments $resumeArgs -Label 'http-resume-second'
     if (-not $resumeProcess.WaitForExit(240000)) {
@@ -342,16 +353,19 @@ try {
     if ($resumeProcess.ExitCode -ne 0) { throw 'aria2 resume process returned nonzero exit.' }
     $resumeHash = Assert-ExactFile -Path $partialPath -Label 'HTTP restart/resume'
     $resumeStats = Get-HttpStats -BaseUri $slowHttp.BaseUri
+    $resumeStats | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $root 'http-resume-restart-stats.json') -Encoding utf8
     $rangeProperty = $resumeStats.task_ranges.PSObject.Properties | Where-Object { $_.Name -eq $resumeTask } | Select-Object -First 1
     $requestedProperty = $resumeStats.task_requested_bytes.PSObject.Properties | Where-Object { $_.Name -eq $resumeTask } | Select-Object -First 1
     if ($null -eq $rangeProperty -or $null -eq $requestedProperty) { throw 'Resume range telemetry is missing.' }
     $ranges = @($rangeProperty.Value)
     $resumedOffsets = @($ranges | Where-Object { [long]$_.start -gt 0 -and [bool]$_.range -and [bool]$_.honored })
     $requestedAfterRestart = [long]$requestedProperty.Value
+    $rangeStarts = @($ranges | ForEach-Object { [string]$_.start }) -join ','
+    $rangeDetails = @($ranges | ForEach-Object { '{0}-{1};range={2};honored={3}' -f $_.start, $_.end, $_.range, $_.honored }) -join '|'
     if ($resumedOffsets.Count -lt 1 -or $requestedAfterRestart -ge $expectedBytes) {
-        throw "Resume did not prove a nonzero byte offset and reduced transfer ($requestedAfterRestart requested bytes)."
+        throw "Resume did not prove a nonzero byte offset and reduced transfer (interruptedBytes=$partialBytes; controlBytes=$controlFileBytes; requestedBytes=$requestedAfterRestart; rangeStarts=$rangeStarts; ranges=$rangeDetails)."
     }
-    Add-Result -Name 'HTTPResumeRestart' -Result 'PASS' -Evidence "interruptedBytes=$partialBytes; resumedRequestedBytes=$requestedAfterRestart; SHA256=$resumeHash"
+    Add-Result -Name 'HTTPResumeRestart' -Result 'PASS' -Evidence "interruptedBytes=$partialBytes; controlBytes=$controlFileBytes; resumedRequestedBytes=$requestedAfterRestart; rangeStarts=$rangeStarts; SHA256=$resumeHash"
 
     # Authenticated FTP using the existing standard-library loopback fixture.
     $ftpDir = Join-Path $root 'ftp-output'
