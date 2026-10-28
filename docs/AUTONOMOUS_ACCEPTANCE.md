@@ -1,3 +1,33 @@
+## 2026-10-28 — Stage 2 same-end Range accounting must ignore concurrent handler arrival order (FIX STAGED; exact-head Windows rerun required)
+
+**Previous exact tested code/harness SHA:** `d0f146776233f21b9d96ba0a0de23457d4b05178` on `automation/idm-ftp-cancel-and-category-flush` → PR #3, base `codex/repair-rf00-rf01`.
+
+### Evidence from the preceding Windows run
+
+- **PASS:** the exact-head desktop/downloader regression suites and Windows installer job in [run 40733504846](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40733504846); the staged test installer SHA-256 was `e33bc6587084ef09e24a8ab1b5e7112b3079de1f632536b736282cb1a3590596`. This is a test installer, not final delivery.
+- **PASS:** pinned aria2 1.37.0 archive verification and Stage 1 HTTP/FTP/RPC viability; the source contract passed 9/9.
+- **PASS:** the other exact-head Windows gates for installed HTTP, FTP Pause/REST resume, HLS, HTTPS/Range, browser capture, GUI smoke, upgrade/rollback, queue lifecycle, relative-time refresh, memory profiling and HyperGet's one-round 1/4/16 workload.
+- **FAIL — Stage 2 harness accounting only:** the paired matrix stopped during aria2 active-16 round 1 at task 2, after the installed HyperGet 1/4/16 round and aria2 1- and 4-task rounds passed. The exception was `has unexplained duplicate socket bytes`; the three paired rounds and the 1/4/8 segmentation sweep did not finish. Do not promote this run to Stage 2 PASS.
+- Run artifacts: [comparison diagnostics and outputs](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40733504846/artifacts/12836303521), archive SHA-256 `591fdb81c61f98acfc4842eb57556de8808927a1c940a4f7da039cd6d1644332`.
+
+### Root cause and controlled fix
+
+The loopback fixture records each request when its handler starts. With many concurrent Range GETs, that arrival order is not guaranteed to match byte-offset order. The matrix already classified overlap after sorting intervals by byte offsets, but counted a same-end tail overlap only when its lower-start range happened to appear earlier in the request-arrival list. That nondeterminism could undercount the allowed retry event and falsely reject otherwise fully reconciled bytes.
+
+Production download code and performance thresholds are unchanged. Commit `20932bd6964532c6a23cccd47e692c195a82910f` changes only the benchmark harness so each completed same-end range is compared against every *other* distinct same-end range, independent of handler arrival order. The 64-KiB maximum per overlap, retry-count bound, complete unique coverage, no-gap/no-out-of-bounds checks, exact socket-write reconciliation and final SHA-256 requirements remain intact.
+
+The companion source regression will reorder the existing fixture responses to reproduce out-of-order arrival and will retain rejection cases for oversized overlap and missing bytes.
+
+### Pre-build acceptance question
+
+Does the revised accounting accept the known bounded 128-KiB total overlap when the two causes arrive in a different order, while still rejecting oversized overlap or incomplete coverage, and then allow the full exact-head Windows comparison to finish?
+
+**Expected:** the source regression passes first; then a purposeful Windows run on the commit containing both harness fix and regression proves all 63 outputs per engine, all three paired 1/4/16 rounds, the 1/4/8 segmentation sweep, SHA-256 equality, real concurrency and CPU/RAM gates. Source tests alone cannot reproduce concurrent Windows socket-handler ordering and aria2's actual Range retry behavior.
+
+**Status until that exact-head run completes:** Stage 2 **NOT PASS**; aria2 migration remains blocked. Stock aria2 is evaluation-only because Torrent is prohibited; no Torrent workload or bundling, no merge, no main write, and no final EXE/release claim.
+
+---
+
 ## 2026-10-28 — Stage 2 exact-head failure and strict socket-byte reconciliation (FIX SUBMITTED; Windows rerun pending)
 
 **Exact PR head:** \`84cf6671d9ef5297a8ab5441d3db6f23016bb11d\` on \`automation/idm-ftp-cancel-and-category-flush\` → PR #3, base \`codex/repair-rf00-rf01\`.
