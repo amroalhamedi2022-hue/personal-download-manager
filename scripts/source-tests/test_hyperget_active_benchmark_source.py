@@ -157,7 +157,9 @@ class Aria2Stage1ViabilityContract(unittest.TestCase):
         self.assertIn("resume.bin.aria2", self.ARIA2)
         self.assertIn("partialBytes -ge $expectedBytes", self.ARIA2)
         self.assertIn("$_.start -gt 0", self.ARIA2)
-        self.assertIn("$requestedAfterRestart -ge $expectedBytes", self.ARIA2)
+        # Declared request lengths include an aborted probe GET; only actual socket bytes may gate resume efficiency.
+        self.assertIn("servedAfterRestart -ge $expectedBytes", self.ARIA2)
+        self.assertNotIn("$requestedAfterRestart -ge $expectedBytes", self.ARIA2)
         self.assertIn("Assert-ExactFile", self.ARIA2)
 
     def test_ftp_is_authenticated_and_transfer_bytes_are_verified(self):
