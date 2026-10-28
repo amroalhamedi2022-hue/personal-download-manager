@@ -53,3 +53,17 @@ This cohesive repair wires the real harness into the pinned-aria2 Windows job an
 **Why source checks are insufficient:** process interruption, active socket closure, aria2 resume-control state, actual FTP credentials/RETR, Windows listener addresses, RPC lifecycle and exact output hashes require a real Windows runtime.
 
 **Progress before this run:** basic aria2 HTTP smoke = 2/2 PASS on the prior tested SHA; comprehensive Stage 1 runtime assertions = 0/10 verified. The stock binary remains **BLOCKED for bundling** because BitTorrent is enabled; no production engine switch or Torrent exposure is permitted. Stage 2 paired performance remains NOT STARTED.
+
+
+## 2026-10-28 — First wired Stage 1 runtime attempt and harness correction
+
+Exact tested PR source SHA: f661703efa08c5e9f7ace316b5bbbcea7385d646.
+
+- **PASS:** exact-SHA checkout, Python syntax, all source-contract tests, local HTTP fixture unit tests, and PowerShell parsing.
+- **PASS:** pinned aria2 1.37.0 archive SHA verification and the basic single/segmented 16 MiB HTTP smoke; both outputs matched SHA-256 287507f403176f1f5b22b9a4d9cb49f7d7f88ac19e406b5ae87ce109564846bd.
+- **PASS 1/10 Stage 1 runtime assertions:** HTTP redirect produced the exact 16 MiB fixture and SHA-256 341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1.
+- **FAIL — test harness only, before HTTP status assertions:** PowerShell interpreted the interpolated URL segment "$status?task" as a variable name. This is not an aria2 status-handling failure. HTTP 404/429/500, ignored-Range, restart/resume, FTP, and RPC cases did not run and remain NOT TESTED on this attempt.
+- Evidence artifacts: basic smoke [12806888836](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40670133507/artifacts/12806888836), SHA-256 f5254e9050d30b86935de1b8b1d1cbaf4368c52ff91d3a4ca1550ef6d97b2cb5; incomplete Stage 1 logs [12807627862](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40670133507/artifacts/12807627862), SHA-256 969df994ea7178aa493239fcf24e3b10827dfaf05d778c72616ac61705865a1b.
+- **Fix:** delimit the PowerShell variable as $($status) in the URL and add a regression assertion that rejects the ambiguous form. The next exact-head Windows run must continue through all ten assertions; no Stage 1 GO decision is inferred from this partial attempt.
+
+The stock binary still reports BitTorrent enabled and is blocked from packaging. No production engine wiring, main write, merge, release, or Torrent feature.
