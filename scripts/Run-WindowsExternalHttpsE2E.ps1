@@ -25,8 +25,14 @@ $rangeHash = 'NOT_AVAILABLE'
 $rangePrefixHash = 'NOT_AVAILABLE'
 $rangeStatus = 'NOT_AVAILABLE'
 $rangeBytes = 0
+$failureTypeOverride = $null
 $guiProcess = $null
-$canonicalUri = [Uri]'https://httpbin.io/range/10485760'
+$endpointCandidates = @(
+    [Uri]'https://httpbingo.org/range/10485760',
+    [Uri]'https://httpbin.io/range/10485760'
+)
+$canonicalUri = $endpointCandidates[0]
+$endpointAttempts = [Collections.Generic.List[string]]::new()
 $outputRoot = [IO.Path]::GetFullPath($OutputDirectory)
 New-Item -ItemType Directory -Path $outputRoot -Force | Out-Null
 $reportPath = Join-Path $outputRoot 'external-https-e2e.txt'
@@ -39,6 +45,19 @@ $prefixPath = Join-Path $runRoot 'reference-prefix-1KiB.bin'
 $downloadPath = Join-Path $downloadsDir 'external-https.bin'
 $externalUrl = $canonicalUri.AbsoluteUri + '?hg_external_https_e2e=1'
 
+function Get-ExternalHttpFailureCode {
+    param([Parameter(Mandatory = $true)] $Record)
+    try {
+        $response = $Record.Exception.Response
+        if ($null -ne $response -and $null -ne $response.StatusCode) {
+            return [string][int]$response.StatusCode
+        }
+    } catch {
+        # Preserve only the exception type if the HTTP status is unavailable.
+    }
+    return $Record.Exception.GetType().Name
+}
+
 function Write-ExternalHttpsEvidence {
     param(
         [Parameter(Mandatory = $true)][string] $Result,
@@ -50,6 +69,7 @@ function Write-ExternalHttpsEvidence {
         "Stage=$stage"
         "EndpointHost=$($canonicalUri.Host)"
         "EndpointScheme=$($canonicalUri.Scheme)"
+        "EndpointAttempts=$($endpointAttempts -join ',')"
         "ExpectedBytes=$expectedBytes"
         "ExpectedSHA256=$expectedHash"
         "ActualSHA256=$actualHash"
@@ -64,44 +84,80 @@ function Write-ExternalHttpsEvidence {
 }
 
 try {
-    $stage = 'validate-installer-and-endpoint'
+    $stage = 'validate-installer-and-endpoints'
     if (-not (Test-Path -LiteralPath $InstallerPath -PathType Leaf)) { throw 'Test installer not found.' }
-    if ($canonicalUri.Scheme -ne 'https' -or $canonicalUri.Host -ne 'httpbin.io' -or $canonicalUri.UserInfo) {
-        throw 'External endpoint failed HTTPS host preflight.'
+    $allowedHosts = @('httpbingo.org', 'httpbin.io')
+    foreach ($candidate in $endpointCandidates) {
+        if ($candidate.Scheme -ne 'https' -or $allowedHosts -notcontains $candidate.Host -or $candidate.UserInfo) {
+            throw 'An external endpoint failed HTTPS host preflight.'
+        }
     }
     $installerPathResolved = (Resolve-Path -LiteralPath $InstallerPath).Path
     $installerSha = (Get-FileHash -LiteralPath $installerPathResolved -Algorithm SHA256).Hash.ToLowerInvariant()
 
     New-Item -ItemType Directory -Path $runRoot,$downloadsDir -Force | Out-Null
 
-    $stage = 'fetch-external-reference-with-default-tls-validation'
-    # Deliberately do not use -SkipCertificateCheck or a custom trust bypass.
-    Invoke-WebRequest -Uri $canonicalUri.AbsoluteUri -OutFile $referencePath -TimeoutSec 180 -MaximumRedirection 5 -ErrorAction Stop | Out-Null
-    $referenceLength = (Get-Item -LiteralPath $referencePath).Length
-    if ($referenceLength -ne $expectedBytes) {
-        throw "External HTTPS reference length mismatch: expected $expectedBytes bytes, got $referenceLength."
-    }
-    $expectedHash = (Get-FileHash -LiteralPath $referencePath -Algorithm SHA256).Hash.ToLowerInvariant()
+    # Two independent public HTTPS range-test hosts prevent one service's
+    # transient HTTP rejection/outage from masquerading as a HyperGet failure.
+    # The report records only host + status/type, never a full URL or query.
+    $selectedEndpoint = $false
+    $lastEndpointFailureStage = 'fetch-external-reference-with-default-tls-validation'
+    $lastEndpointFailureType = 'NoEndpointSucceeded'
+    foreach ($candidate in $endpointCandidates) {
+        $canonicalUri = $candidate
+        $externalUrl = $canonicalUri.AbsoluteUri + '?hg_external_https_e2e=1'
+        $expectedHash = 'NOT_AVAILABLE'
+        $rangeStatus = 'NOT_AVAILABLE'
+        $rangeBytes = 0
+        $rangePrefixHash = 'NOT_AVAILABLE'
+        $rangeHash = 'NOT_AVAILABLE'
+        try {
+            $stage = 'fetch-external-reference-with-default-tls-validation'
+            # Deliberately do not use -SkipCertificateCheck or a custom trust bypass.
+            Invoke-WebRequest -Uri $canonicalUri.AbsoluteUri -OutFile $referencePath -TimeoutSec 180 -MaximumRedirection 5 -ErrorAction Stop | Out-Null
+            $referenceLength = (Get-Item -LiteralPath $referencePath).Length
+            if ($referenceLength -ne $expectedBytes) {
+                throw "External HTTPS reference length mismatch: expected $expectedBytes bytes, got $referenceLength."
+            }
+            $expectedHash = (Get-FileHash -LiteralPath $referencePath -Algorithm SHA256).Hash.ToLowerInvariant()
 
-    $stage = 'verify-external-range-response'
-    $rangeResponse = Invoke-WebRequest -Uri $externalUrl -Headers @{ Range = 'bytes=0-1023' } -OutFile $rangePath -PassThru -TimeoutSec 90 -MaximumRedirection 5 -ErrorAction Stop
-    $rangeStatus = [int]$rangeResponse.StatusCode
-    $rangeBytes = (Get-Item -LiteralPath $rangePath).Length
-    if ($rangeStatus -ne 206 -or $rangeBytes -ne 1024) {
-        throw "External HTTPS Range probe failed: status=$rangeStatus bytes=$rangeBytes."
+            $stage = 'verify-external-range-response'
+            $rangeResponse = Invoke-WebRequest -Uri $externalUrl -Headers @{ Range = 'bytes=0-1023' } -OutFile $rangePath -PassThru -TimeoutSec 90 -MaximumRedirection 5 -ErrorAction Stop
+            $rangeStatus = [int]$rangeResponse.StatusCode
+            $rangeBytes = (Get-Item -LiteralPath $rangePath).Length
+            if ($rangeStatus -ne 206 -or $rangeBytes -ne 1024) {
+                throw "External HTTPS Range probe failed: status=$rangeStatus bytes=$rangeBytes."
+            }
+            $contentRange = [string]$rangeResponse.Headers['Content-Range']
+            if ($contentRange -notmatch '^bytes 0-1023/10485760$') {
+                throw 'External HTTPS Range response did not report the exact expected Content-Range.'
+            }
+            $referenceBytes = [IO.File]::ReadAllBytes($referencePath)
+            $prefixBytes = [byte[]]::new(1024)
+            [Array]::Copy($referenceBytes, $prefixBytes, 1024)
+            [IO.File]::WriteAllBytes($prefixPath, $prefixBytes)
+            $rangePrefixHash = (Get-FileHash -LiteralPath $prefixPath -Algorithm SHA256).Hash.ToLowerInvariant()
+            $rangeHash = (Get-FileHash -LiteralPath $rangePath -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($rangeHash -ne $rangePrefixHash) {
+                throw 'External HTTPS Range bytes do not match the prefix of the full reference resource.'
+            }
+
+            $endpointAttempts.Add("$($canonicalUri.Host):PASS")
+            $selectedEndpoint = $true
+            break
+        } catch {
+            $lastEndpointFailureStage = $stage
+            $lastEndpointFailureType = Get-ExternalHttpFailureCode -Record $_
+            $endpointAttempts.Add("$($canonicalUri.Host):$lastEndpointFailureType")
+            foreach ($candidatePath in @($referencePath, $rangePath, $prefixPath)) {
+                Remove-Item -LiteralPath $candidatePath -Force -ErrorAction SilentlyContinue
+            }
+        }
     }
-    $contentRange = [string]$rangeResponse.Headers['Content-Range']
-    if ($contentRange -notmatch '^bytes 0-1023/10485760$') {
-        throw 'External HTTPS Range response did not report the exact expected Content-Range.'
-    }
-    $referenceBytes = [IO.File]::ReadAllBytes($referencePath)
-    $prefixBytes = [byte[]]::new(1024)
-    [Array]::Copy($referenceBytes, $prefixBytes, 1024)
-    [IO.File]::WriteAllBytes($prefixPath, $prefixBytes)
-    $rangePrefixHash = (Get-FileHash -LiteralPath $prefixPath -Algorithm SHA256).Hash.ToLowerInvariant()
-    $rangeHash = (Get-FileHash -LiteralPath $rangePath -Algorithm SHA256).Hash.ToLowerInvariant()
-    if ($rangeHash -ne $rangePrefixHash) {
-        throw 'External HTTPS Range bytes do not match the prefix of the full reference resource.'
+    if (-not $selectedEndpoint) {
+        $stage = $lastEndpointFailureStage
+        $failureTypeOverride = $lastEndpointFailureType
+        throw "No approved external HTTPS Range endpoint passed the reference and Range checks. Attempts=$($endpointAttempts -join ',')."
     }
 
     $stage = 'install-hyperget'
@@ -166,7 +222,7 @@ try {
     Write-Host "Evidence=$reportPath"
 }
 catch {
-    $failureType = $_.Exception.GetType().Name
+    $failureType = if ($failureTypeOverride) { $failureTypeOverride } else { $_.Exception.GetType().Name }
     Write-ExternalHttpsEvidence -Result 'FAIL' -FailureType $failureType
     throw "External HTTPS acceptance failed at stage '$stage' (exception type '$failureType'). See sanitized evidence at '$reportPath'."
 }

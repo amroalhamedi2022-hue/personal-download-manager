@@ -23,6 +23,15 @@ class HyperGetExternalHttpsAcceptanceContract(unittest.TestCase):
         self.assertIn("SignedTokenExpiry=NOT_TESTED", SCRIPT)
         self.assertIn("not a provider-specific signed-token expiry test", SCRIPT)
 
+    def test_external_endpoint_failover_records_only_sanitized_status(self):
+        self.assertIn("[Uri]'https://httpbingo.org/range/10485760'", SCRIPT)
+        self.assertIn("[Uri]'https://httpbin.io/range/10485760'", SCRIPT)
+        self.assertIn("foreach ($candidate in $endpointCandidates)", SCRIPT)
+        self.assertIn("EndpointAttempts=$($endpointAttempts -join ',')", SCRIPT)
+        self.assertIn("Get-ExternalHttpFailureCode -Record $_", SCRIPT)
+        self.assertIn("No approved external HTTPS Range endpoint passed", SCRIPT)
+        self.assertIn("$allowedHosts = @('httpbingo.org', 'httpbin.io')", SCRIPT)
+
     def test_external_range_is_real_206_and_matches_reference_prefix(self):
         self.assertIn("@{ Range = 'bytes=0-1023' }", SCRIPT)
         self.assertIn("$rangeStatus -ne 206", SCRIPT)
