@@ -400,7 +400,10 @@ try {
                     if (-not [bool]$retry.range -or -not [bool]$retry.honored -or -not [bool]$retry.completed -or -not [bool]$retry.data_transfer) {
                         continue
                     }
-                    for ($priorIndex = 0; $priorIndex -lt $retryIndex; $priorIndex++) {
+                    for ($priorIndex = 0; $priorIndex -lt $ranges.Count; $priorIndex++) {
+                        # Fixture handlers record concurrent GETs in arrival order, not byte-offset order.
+                        # Classify same-end tail overlaps independently of that nondeterministic order.
+                        if ($priorIndex -eq $retryIndex) { continue }
                         $prior = $ranges[$priorIndex]
                         if (-not [bool]$prior.range -or -not [bool]$prior.honored -or -not [bool]$prior.data_transfer) {
                             continue
