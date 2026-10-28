@@ -89,6 +89,10 @@ on:
       - "scripts/source-tests/test_hyperget_hls_body_source.py"
       - "scripts/source-tests/HyperGetHlsContentTypeSmoke.kt"
       - "scripts/source-tests/test_hyperget_hls_mime_source.py"
+      - "scripts/LocalHlsRestartFixture.py"
+      - "scripts/Run-WindowsInstalledHlsRestartE2E.ps1"
+      - "scripts/source-tests/test_hyperget_hls_restart_e2e_source.py"
+      - ".github/workflows/hyperget-hls-redirect-milestone.yml"
       - "downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/ftp/FtpStagedIdentityTest.kt"
       - "scripts/source-tests/test_hyperget_ftp_stage_source.py"
       - "scripts/source-tests/test_hyperget_ftp_workflow_scope.py"
@@ -146,6 +150,10 @@ jobs:
         run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_hls_body_source.py -v
       - name: Verify HLS MIME source contract
         run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_hls_mime_source.py -v
+      - name: Verify installed HLS process-kill/relaunch source contract (no build)
+        run: |
+          python3 -m py_compile scripts/LocalHlsRestartFixture.py scripts/source-tests/test_hyperget_hls_restart_e2e_source.py
+          python3 -m unittest discover -s scripts/source-tests -p test_hyperget_hls_restart_e2e_source.py -v
       - name: Verify installed Chrome capture warm-start and privacy source contracts
         run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_chrome_capture_source.py -v
       - name: Verify CLI status-lines source regression (previously omitted)
