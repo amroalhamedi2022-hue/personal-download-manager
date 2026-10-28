@@ -16,7 +16,9 @@ class HyperGetExternalHttpsAcceptanceContract(unittest.TestCase):
     def test_external_endpoint_uses_normal_https_validation_and_is_not_mislabelled_signed(self):
         self.assertIn("https://httpbin.io/range/10485760", SCRIPT)
         self.assertIn("?hg_external_https_e2e=1", SCRIPT)
-        self.assertNotIn("-SkipCertificateCheck", SCRIPT)
+        executable_lines = [line for line in SCRIPT.splitlines() if not line.lstrip().startswith("#")]
+        executable_source = "\n".join(executable_lines)
+        self.assertNotIn("-SkipCertificateCheck", executable_source)
         self.assertIn("default TLS validation", SCRIPT)
         self.assertIn("SignedTokenExpiry=NOT_TESTED", SCRIPT)
         self.assertIn("not a provider-specific signed-token expiry test", SCRIPT)

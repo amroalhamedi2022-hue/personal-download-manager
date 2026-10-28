@@ -2269,3 +2269,8 @@ The first scheduled-window test draft waited for both timer events but asserted 
 **Why source tests are insufficient:** public DNS/TLS trust, external Range behavior, JVM HTTPS negotiation, installed GUI/CLI IPC, Windows file publication and exact bytes require a real Windows network run.
 
 **Interpretation boundary:** the public endpoint is not a signed-URL issuer; the query value is synthetic. This gate tests external HTTPS transport and Range only. Provider-specific signed-token expiry remains NOT TESTED; controlled old-token rejection/new-token resume is covered by the local verified-TLS JUnit test. The build is test-only, not a release. Status before run: OPEN / NOT YET RUN. No production source, main, merge, release, paid service/runner, browser repo or Torrent changes.
+
+
+### HG-E074 first preflight attempt — FAIL before build (2026-10-28)
+
+The first source-only and external-HTTPS workflow attempts stopped before any Gradle build or Windows runtime test. One source contract falsely treated the explanatory comment mentioning `-SkipCertificateCheck` as executable use of the TLS-bypass option. This is a **test-contract false positive**, not a downloader or TLS failure. The contract now ignores full-line PowerShell comments while still rejecting the bypass option in executable lines. No Windows build was performed in the failed attempt; the external HTTPS gate remains OPEN until a new exact-head run completes.

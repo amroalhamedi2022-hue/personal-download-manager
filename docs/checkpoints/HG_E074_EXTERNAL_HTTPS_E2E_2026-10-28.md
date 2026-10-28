@@ -22,4 +22,4 @@ The public range endpoint is not a signed-URL issuer. The query value is synthet
 
 ## Pre-run status
 
-**OPEN / NOT YET RUN** at the time this contract is committed. No result is inferred from older HTTP, HLS, FTP, browser, scheduler, or benchmark runs. No production source is changed, no merge or `main` write, no release, no paid API/runner, no browser-repository change, and no Torrent feature.
+**FIRST ATTEMPT BLOCKED BEFORE BUILD:** the source contract incorrectly matched the explanatory comment containing `-SkipCertificateCheck`; both the source-only and external-HTTPS jobs stopped before Gradle or Windows runtime. The contract is corrected to inspect executable PowerShell lines only. This was a harness false positive, not a product result. The gate remains OPEN pending a new exact-head run. No result is inferred from older HTTP, HLS, FTP, browser, scheduler, or benchmark runs. No production source is changed, no merge or `main` write, no release, no paid API/runner, no browser-repository change, and no Torrent feature.
