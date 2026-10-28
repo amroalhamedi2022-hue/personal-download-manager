@@ -107,6 +107,7 @@ def main():
     task_get_completed = {}
     task_get_interrupted = {}
     task_requested_bytes = {}
+    task_ranges = {}
     task_probe_get_started = {}
     task_data_get_started = {}
     task_pacer = TaskChunkPacer(args.task_chunk_delay_ms / 1000.0)
@@ -151,6 +152,7 @@ def main():
                     task_get_completed.clear()
                     task_get_interrupted.clear()
                     task_requested_bytes.clear()
+                    task_ranges.clear()
                     task_probe_get_started.clear()
                     task_data_get_started.clear()
                     task_pacer.reset()
@@ -172,6 +174,7 @@ def main():
                 snapshot["task_get_completed"] = dict(sorted(task_get_completed.items()))
                 snapshot["task_get_interrupted"] = dict(sorted(task_get_interrupted.items()))
                 snapshot["task_requested_bytes"] = dict(sorted(task_requested_bytes.items()))
+                snapshot["task_ranges"] = dict(sorted(task_ranges.items()))
                 snapshot["task_probe_get_started"] = dict(sorted(task_probe_get_started.items()))
                 snapshot["task_data_get_started"] = dict(sorted(task_data_get_started.items()))
             body = json.dumps(snapshot, sort_keys=True).encode("ascii")
@@ -187,11 +190,34 @@ def main():
             if address.path == "/stats":
                 self.stats_request(address.query)
                 return
-            if address.path != "/fixture.bin":
+            if address.path == "/redirect":
+                target = "/fixture.bin"
+                if address.query:
+                    target += "?" + address.query
+                self.send_response(302)
+                self.send_header("Location", target)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+            if address.path.startswith("/status/"):
+                try:
+                    status = int(address.path.rsplit("/", 1)[1])
+                except ValueError:
+                    status = 400
+                if status not in (404, 429, 500):
+                    status = 400
+                self.send_response(status)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+            if address.path not in ("/fixture.bin", "/ignore-range"):
                 self.send_error(404)
                 return
             start, end = 0, size - 1
-            requested = self.headers.get("Range")
+            incoming_range = self.headers.get("Range")
+            # Deliberately ignore Range only on this explicit test route.
+            # The default fixture endpoint keeps strict 206/416 behavior.
+            requested = None if address.path == "/ignore-range" else incoming_range
             if requested:
                 m = RANGE.fullmatch(requested.strip())
                 if m:
@@ -217,6 +243,12 @@ def main():
 
             task_id = parse_qs(address.query).get("task", ["unlabeled"])[0][:128]
             with guard:
+                task_ranges.setdefault(task_id, []).append({
+                    "start": start,
+                    "end": end,
+                    "range": bool(incoming_range),
+                    "honored": bool(requested),
+                })
                 # The 16-task barrier previously counted 256-byte metadata
                 # probes as live downloads. Those probes finished before any
                 # actual file data socket opened, yielding a false peak=16.
