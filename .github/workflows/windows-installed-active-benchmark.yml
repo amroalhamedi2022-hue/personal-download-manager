@@ -27,6 +27,11 @@ on:
       - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/di/Di.kt"
       - "shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/util/TimeUtil.kt"
       - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/TableDownloadItem.kt"
+      - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/downloaditem/http/HttpDownloadItem.kt"
+      - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/downloaditem/http/HttpDownloadJob.kt"
+      - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/destination/SimpleDownloadDestination.kt"
+      - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/connection/Connection.kt"
+      - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/connection/OkHttpHttpDownloaderClient.kt"
   push:
     branches: [codex/repair-rf00-rf01]
     paths:
@@ -48,6 +53,11 @@ on:
       - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/di/Di.kt"
       - "shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/util/TimeUtil.kt"
       - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/TableDownloadItem.kt"
+      - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/downloaditem/http/HttpDownloadItem.kt"
+      - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/downloaditem/http/HttpDownloadJob.kt"
+      - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/destination/SimpleDownloadDestination.kt"
+      - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/connection/Connection.kt"
+      - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/connection/OkHttpHttpDownloaderClient.kt"
 
 permissions:
   contents: read
@@ -98,12 +108,12 @@ jobs:
           comparison=false
           while IFS= read -r file; do
             case "$file" in
-              .github/workflows/windows-installed-active-benchmark.yml|docs/checkpoints/HG_E060_ACTIVE_PERFORMANCE_RECHECK.md|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/di/Di.kt|shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/util/TimeUtil.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/TableDownloadItem.kt|scripts/Run-WindowsActiveBenchmarkMatrix.ps1|scripts/Wait-WindowsLoopbackHttpPort.ps1|scripts/LocalHttpRangeFixture.py|scripts/test_local_http_range_fixture.py|scripts/source-tests/test_hyperget_http_dispatcher_bound_source.py|downloader/core/src/commonMain/kotlin/ir/amirab/downloader/part/PartDownloader.kt|downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/part/PartResponseDeadlineTest.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/cli/settings/*|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/singleInstance/service/*|scripts/Run-WindowsControlledBenchmarkComparison.ps1|scripts/Wait-WindowsLoopbackHttpPort.ps1|scripts/Compare-WindowsActiveBenchmarks.ps1|scripts/Measure-WindowsDownloadManager.ps1|scripts/Summarize-WindowsActiveBenchmark.ps1|desktop/app/build.gradle.kts|desktop/app/resources/installer/nsis-script-template.nsi|desktop/app/icons/icon.ico|desktop/app/icons/hyperget-icon.svg|buildSrc/src/main/kotlin/buildlogic/versioning/VersionUtil.kt|scripts/source-tests/test_hyperget_executable_identity_workflows.py)
+              .github/workflows/windows-installed-active-benchmark.yml|docs/checkpoints/HG_E060_ACTIVE_PERFORMANCE_RECHECK.md|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/di/Di.kt|shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/util/TimeUtil.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/TableDownloadItem.kt|downloader/core/src/commonMain/kotlin/ir/amirab/downloader/downloaditem/http/HttpDownloadItem.kt|downloader/core/src/commonMain/kotlin/ir/amirab/downloader/downloaditem/http/HttpDownloadJob.kt|downloader/core/src/commonMain/kotlin/ir/amirab/downloader/destination/SimpleDownloadDestination.kt|downloader/core/src/commonMain/kotlin/ir/amirab/downloader/connection/Connection.kt|downloader/core/src/commonMain/kotlin/ir/amirab/downloader/connection/OkHttpHttpDownloaderClient.kt|scripts/Run-WindowsActiveBenchmarkMatrix.ps1|scripts/Wait-WindowsLoopbackHttpPort.ps1|scripts/LocalHttpRangeFixture.py|scripts/test_local_http_range_fixture.py|scripts/source-tests/test_hyperget_http_dispatcher_bound_source.py|downloader/core/src/commonMain/kotlin/ir/amirab/downloader/part/PartDownloader.kt|downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/part/PartResponseDeadlineTest.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/cli/settings/*|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/singleInstance/service/*|scripts/Run-WindowsControlledBenchmarkComparison.ps1|scripts/Wait-WindowsLoopbackHttpPort.ps1|scripts/Compare-WindowsActiveBenchmarks.ps1|scripts/Measure-WindowsDownloadManager.ps1|scripts/Summarize-WindowsActiveBenchmark.ps1|desktop/app/build.gradle.kts|desktop/app/resources/installer/nsis-script-template.nsi|desktop/app/icons/icon.ico|desktop/app/icons/hyperget-icon.svg|buildSrc/src/main/kotlin/buildlogic/versioning/VersionUtil.kt|scripts/source-tests/test_hyperget_executable_identity_workflows.py)
                 run=true
                 ;;
             esac
             case "$file" in
-              .github/workflows/windows-installed-active-benchmark.yml|scripts/Run-WindowsControlledBenchmarkComparison.ps1|scripts/Wait-WindowsLoopbackHttpPort.ps1|scripts/Compare-WindowsActiveBenchmarks.ps1|scripts/Measure-WindowsDownloadManager.ps1|scripts/Summarize-WindowsActiveBenchmark.ps1)
+              .github/workflows/windows-installed-active-benchmark.yml|downloader/core/src/commonMain/kotlin/ir/amirab/downloader/downloaditem/http/HttpDownloadItem.kt|downloader/core/src/commonMain/kotlin/ir/amirab/downloader/downloaditem/http/HttpDownloadJob.kt|downloader/core/src/commonMain/kotlin/ir/amirab/downloader/destination/SimpleDownloadDestination.kt|downloader/core/src/commonMain/kotlin/ir/amirab/downloader/connection/Connection.kt|downloader/core/src/commonMain/kotlin/ir/amirab/downloader/connection/OkHttpHttpDownloaderClient.kt|scripts/Run-WindowsControlledBenchmarkComparison.ps1|scripts/Wait-WindowsLoopbackHttpPort.ps1|scripts/Compare-WindowsActiveBenchmarks.ps1|scripts/Measure-WindowsDownloadManager.ps1|scripts/Summarize-WindowsActiveBenchmark.ps1)
                 comparison=true
                 run=true
                 ;;
@@ -224,7 +234,7 @@ jobs:
     env:
       SKIP_ANDROID_BUILD: "true"
       HYPERGET_BASELINE_SHA: d6ea54a885277cb5b8fd545eb3f3fb0e185b6aa5
-      HYPERGET_CANDIDATE_SHA: c99b6f627de5f1ef1cba9e79f4f8e1baba20ffe1
+      HYPERGET_CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
       HYPERGET_HARNESS_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - name: Check out current harness at the exact PR head
@@ -300,7 +310,7 @@ jobs:
           Copy-Item -LiteralPath $files[0].FullName -Destination $dest -Force
           Write-Host "Baseline installer SHA256: $((Get-FileHash -LiteralPath $dest -Algorithm SHA256).Hash.ToLowerInvariant())"
           "HYPERGET_BASELINE_INSTALLER=$dest" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-      - name: Build candidate installer from exact bounded-copy source
+      - name: Build candidate installer from exact PR-head source
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
