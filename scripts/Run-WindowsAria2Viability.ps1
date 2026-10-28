@@ -356,16 +356,18 @@ try {
     $resumeStats | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $root 'http-resume-restart-stats.json') -Encoding utf8
     $rangeProperty = $resumeStats.task_ranges.PSObject.Properties | Where-Object { $_.Name -eq $resumeTask } | Select-Object -First 1
     $requestedProperty = $resumeStats.task_requested_bytes.PSObject.Properties | Where-Object { $_.Name -eq $resumeTask } | Select-Object -First 1
-    if ($null -eq $rangeProperty -or $null -eq $requestedProperty) { throw 'Resume range telemetry is missing.' }
+    $servedProperty = $resumeStats.task_bytes_sent.PSObject.Properties | Where-Object { $_.Name -eq $resumeTask } | Select-Object -First 1
+    if ($null -eq $rangeProperty -or $null -eq $requestedProperty -or $null -eq $servedProperty) { throw 'Resume range/byte telemetry is missing.' }
     $ranges = @($rangeProperty.Value)
     $resumedOffsets = @($ranges | Where-Object { [long]$_.start -gt 0 -and [bool]$_.range -and [bool]$_.honored })
     $requestedAfterRestart = [long]$requestedProperty.Value
+    $servedAfterRestart = [long]$servedProperty.Value
     $rangeStarts = @($ranges | ForEach-Object { [string]$_.start }) -join ','
     $rangeDetails = @($ranges | ForEach-Object { '{0}-{1};range={2};honored={3}' -f $_.start, $_.end, $_.range, $_.honored }) -join '|'
-    if ($resumedOffsets.Count -lt 1 -or $requestedAfterRestart -ge $expectedBytes) {
-        throw "Resume did not prove a nonzero byte offset and reduced transfer (interruptedBytes=$partialBytes; controlBytes=$controlFileBytes; requestedBytes=$requestedAfterRestart; rangeStarts=$rangeStarts; ranges=$rangeDetails)."
+    if ($resumedOffsets.Count -lt 1 -or $servedAfterRestart -ge $expectedBytes) {
+        throw "Resume did not prove a nonzero honored byte offset and reduced actual transfer (interruptedBytes=$partialBytes; controlBytes=$controlFileBytes; requestedBytes=$requestedAfterRestart; servedBytes=$servedAfterRestart; rangeStarts=$rangeStarts; ranges=$rangeDetails)."
     }
-    Add-Result -Name 'HTTPResumeRestart' -Result 'PASS' -Evidence "interruptedBytes=$partialBytes; controlBytes=$controlFileBytes; resumedRequestedBytes=$requestedAfterRestart; rangeStarts=$rangeStarts; SHA256=$resumeHash"
+    Add-Result -Name 'HTTPResumeRestart' -Result 'PASS' -Evidence "interruptedBytes=$partialBytes; controlBytes=$controlFileBytes; resumedRequestedBytes=$requestedAfterRestart; actualBytesServedAfterRestart=$servedAfterRestart; rangeStarts=$rangeStarts; SHA256=$resumeHash"
 
     # Authenticated FTP using the existing standard-library loopback fixture.
     $ftpDir = Join-Path $root 'ftp-output'
