@@ -20,6 +20,8 @@ on:
       - "scripts/source-tests/test_hyperget_liquid_progress_source.py"
       - "scripts/source-tests/test_hyperget_executable_identity_workflows.py"
       - "scripts/source-tests/test_hyperget_pr_diff_scope.py"
+      - "scripts/audit_windows_icon_resources.py"
+      - "scripts/source-tests/test_hyperget_icon_resource_audit.py"
   pull_request:
     branches: [codex/repair-rf00-rf01]
     paths:
@@ -38,6 +40,8 @@ on:
       - "scripts/source-tests/test_hyperget_liquid_progress_source.py"
       - "scripts/source-tests/test_hyperget_executable_identity_workflows.py"
       - "scripts/source-tests/test_hyperget_pr_diff_scope.py"
+      - "scripts/audit_windows_icon_resources.py"
+      - "scripts/source-tests/test_hyperget_icon_resource_audit.py"
 
 permissions:
   contents: read
@@ -158,6 +162,7 @@ jobs:
           if (Test-Path -LiteralPath $isolated) { throw "Test installation already exists: $isolated" }
           $digest = (Get-FileHash -Algorithm SHA256 -LiteralPath $installers[0].FullName).Hash.ToLowerInvariant()
           Write-Host "Installer SHA256: $digest"
+          "IDM_SMOKE_INSTALLER=$($installers[0].FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           # NSIS: /S silent; /D=destination must be the FINAL argument.
           $installation = Start-Process -FilePath $installers[0].FullName -ArgumentList @('/S', "/D=$isolated") -PassThru
           # Start-Process -Wait waits for the entire descendant process tree.
@@ -190,6 +195,17 @@ jobs:
           Write-Host "Installed CLI: $($cliApps[0].FullName)"
           "IDM_SMOKE_EXECUTABLE=$($main.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "IDM_SMOKE_CLI=$($cliApps[0].FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+
+      - name: Audit embedded HyperGet icon resources
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python scripts/audit_windows_icon_resources.py `
+            --source-icon desktop/app/icons/icon.ico `
+            --application-exe $env:IDM_SMOKE_EXECUTABLE `
+            --installer-exe $env:IDM_SMOKE_INSTALLER
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Launch installed desktop app and capture Windows GUI
         shell: pwsh

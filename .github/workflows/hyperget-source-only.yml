@@ -24,6 +24,8 @@ on:
       - "desktop/app/icons/icon.ico"
       - "desktop/app/icons/hyperget-icon.svg"
       - "scripts/source-tests/test_hyperget_icon_contract.py"
+      - "scripts/audit_windows_icon_resources.py"
+      - "scripts/source-tests/test_hyperget_icon_resource_audit.py"
       - "scripts/source-tests/test_hyperget_cross_version_upgrade_source.py"
       - "scripts/Run-WindowsCrossVersionUpgradeRollbackE2E.ps1"
       - "scripts/Run-WindowsInstallerLifecycleE2E.ps1"
@@ -175,5 +177,7 @@ jobs:
         run: python3 -m unittest scripts/test_local_ftp_fixture.py -v
       - name: Verify HyperGet icon binary/vector contract
         run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_icon_contract.py -v
+      - name: Verify Windows PE icon audit wiring (source only)
+        run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_icon_resource_audit.py -v
       - name: Verify HyperGet executable identity and cross-version compatibility contracts
         run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_cross_version_upgrade_source.py -v
