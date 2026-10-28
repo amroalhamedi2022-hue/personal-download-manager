@@ -220,6 +220,12 @@ class Aria2Stage2SourceContract(unittest.TestCase):
         with self.assertRaises(AssertionError):
             reconcile_fixture_response_ranges(oversized_overlap, expected)
 
+        oversized_tail_retry = [dict(r) for r in responses]
+        oversized_tail_retry[-1]["start"] = 8 * mib - 6 * 65536
+        oversized_tail_retry[-1]["socket_write_bytes"] = 6 * 65536
+        with self.assertRaises(AssertionError):
+            reconcile_fixture_response_ranges(oversized_tail_retry, expected)
+
         missing_byte = [dict(r) for r in responses]
         missing_byte[0]["socket_write_bytes"] = 4 * mib - 1
         with self.assertRaises(AssertionError):
