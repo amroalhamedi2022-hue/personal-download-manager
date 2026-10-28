@@ -120,5 +120,70 @@ class ActiveBenchmarkContract(unittest.TestCase):
         self.assertIn("if: needs.change-scope.outputs.run == 'true'", WORKFLOW)
 
 
+
+class Aria2Stage1ViabilityContract(unittest.TestCase):
+    ROOT = Path(__file__).resolve().parents[2]
+    ARIA2 = (ROOT / "scripts/Run-WindowsAria2Viability.ps1").read_text(encoding="utf-8")
+    ARIA2_WORKFLOW = (ROOT / ".github/workflows/hyperget-windows-exe-aria2-evaluation.yml").read_text(encoding="utf-8")
+    HTTP_FIXTURE_TESTS = (ROOT / "scripts/test_local_http_range_fixture.py").read_text(encoding="utf-8")
+
+    def test_fault_fixture_routes_and_resume_range_telemetry_are_locked(self):
+        self.assertIn('address.path == "/redirect"', FIXTURE)
+        self.assertIn('address.path.startswith("/status/")', FIXTURE)
+        self.assertIn('address.path == "/ignore-range"', FIXTURE)
+        self.assertIn('snapshot["task_ranges"]', FIXTURE)
+        self.assertIn('task_ranges.clear()', FIXTURE)
+        for case in (
+            "test_redirect_route_preserves_task_query",
+            "test_http_error_routes_return_the_requested_status_without_a_body",
+            "test_ignore_range_route_returns_full_200_and_records_the_ignored_header",
+            "test_range_telemetry_records_nonzero_resume_offsets_and_reset_clears_it",
+        ):
+            self.assertIn(case, self.HTTP_FIXTURE_TESTS)
+
+    def test_resume_requires_a_real_partial_file_and_nonzero_restart_offset(self):
+        self.assertIn("--continue=true", self.ARIA2)
+        self.assertIn("resume.bin.aria2", self.ARIA2)
+        self.assertIn("partialBytes -ge $expectedBytes", self.ARIA2)
+        self.assertIn("$_.start -gt 0", self.ARIA2)
+        self.assertIn("$requestedAfterRestart -ge $expectedBytes", self.ARIA2)
+        self.assertIn("Assert-ExactFile", self.ARIA2)
+
+    def test_ftp_is_authenticated_and_transfer_bytes_are_verified(self):
+        self.assertIn("LocalFtpFixture.py", self.ARIA2)
+        self.assertIn("--ftp-user=hypergettest", self.ARIA2)
+        self.assertIn("--ftp-passwd=$ftpPassword", self.ARIA2)
+        self.assertIn("login_successes", self.ARIA2)
+        self.assertIn("completed_retrievals", self.ARIA2)
+        self.assertIn("SHA256=$ftpHash", self.ARIA2)
+        self.assertIn("[REDACTED]", self.ARIA2)
+        self.assertIn("SecretLeakDetected", self.ARIA2)
+
+    def test_rpc_is_local_authenticated_and_rejects_stale_secrets(self):
+        for required in (
+            "--rpc-listen-all=false",
+            "--rpc-secret=$Secret",
+            "Get-NetTCPConnection -State Listen",
+            "token:invalid",
+            "aria2.shutdown",
+            "$staleToken",
+            "-SkipHttpErrorCheck",
+        ):
+            self.assertIn(required, self.ARIA2)
+        self.assertIn("LocalAddress -notin @('127.0.0.1', '::1')", self.ARIA2)
+
+    def test_stock_bitTorrent_binary_is_evaluation_only(self):
+        self.assertIn("$bitTorrentEnabled", self.ARIA2)
+        self.assertIn("never bundle this stock binary", self.ARIA2.lower())
+        self.assertIn("no SFTP server E2E was run", self.ARIA2)
+        self.assertIn("no production engine switch", self.ARIA2)
+
+    def test_workflow_pins_archive_before_viability_and_uploads_sanitized_evidence(self):
+        self.assertIn("67d015301eef0b612191212d564c5bb0a14b5b9c4796b76454276a4d28d9b288", self.ARIA2_WORKFLOW)
+        self.assertIn("Run-WindowsAria2Viability.ps1", self.ARIA2_WORKFLOW)
+        self.assertIn("aria2-viability-results.csv", self.ARIA2_WORKFLOW)
+        self.assertIn("aria2-viability-report.md", self.ARIA2_WORKFLOW)
+        self.assertIn("if: always()", self.ARIA2_WORKFLOW)
+
 if __name__ == "__main__":
     unittest.main()
