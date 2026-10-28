@@ -2240,3 +2240,8 @@ Prove the existing HyperGet queue schedule is behavioral, not just persisted UI 
 ## Status before test
 OPEN / NOT YET TESTED. The next exact-head Windows run must pass the new test and existing queue/part lifecycle suites with zero failures/errors/skips. If it fails, use the exact event order and callback evidence to repair the scheduler rather than weakening the assertions.
 
+
+
+## 2026-10-28 — HG-E073 test synchronization hardening before result
+
+The first scheduled-window test draft waited for both timer events but asserted start/stop callbacks immediately afterward. Because `DownloadQueue.stop()` dispatches shutdown asynchronously, that assertion could race the actual stop callback. The test now waits under the same bounded timeout for both events, one start callback, one stop callback, and the queue to be inactive before asserting exact-once behavior. This is test determinism hardening; no production behavior or acceptance threshold was changed. The prior run, if any, on `5f03629` is not final evidence; require the new exact-head queue workflow to pass.

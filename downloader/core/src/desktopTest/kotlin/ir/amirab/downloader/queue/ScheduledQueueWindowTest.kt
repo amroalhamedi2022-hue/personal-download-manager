@@ -68,7 +68,10 @@ class ScheduledQueueWindowTest {
             withTimeout(18.seconds) {
                 while (
                     observedEvents.none { it is QueueEvent.OnQueueStartTimeReached } ||
-                    observedEvents.none { it is QueueEvent.QueueEndTimeReached }
+                    observedEvents.none { it is QueueEvent.QueueEndTimeReached } ||
+                    downloads.started.size < 1 ||
+                    downloads.stopped.size < 1 ||
+                    queue.isQueueActive
                 ) {
                     delay(25)
                 }
