@@ -2245,3 +2245,16 @@ OPEN / NOT YET TESTED. The next exact-head Windows run must pass the new test an
 ## 2026-10-28 — HG-E073 test synchronization hardening before result
 
 The first scheduled-window test draft waited for both timer events but asserted start/stop callbacks immediately afterward. Because `DownloadQueue.stop()` dispatches shutdown asynchronously, that assertion could race the actual stop callback. The test now waits under the same bounded timeout for both events, one start callback, one stop callback, and the queue to be inactive before asserting exact-once behavior. This is test determinism hardening; no production behavior or acceptance threshold was changed. The prior run, if any, on `5f03629` is not final evidence; require the new exact-head queue workflow to pass.
+
+## 2026-10-28 — HG-E073 scheduled queue start/stop acceptance PASS
+
+**Functional code/test SHA:** `9f7c489055330119f818a1a146b26d7bf12009d6` (the subsequent checkpoint-only commit does not change source).
+
+- First attempt at parent `9d762b4` failed compilation in the newly added `ScheduledQueueWindowTest`: wrong Clock import and invalid time-based `LocalDateTime.plus` overload. This was a test compilation defect, not a scheduler behavior result.
+- Corrected in [`9f7c489`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/9f7c489055330119f818a1a146b26d7bf12009d6) by using `kotlin.time.Clock`, adding durations to `Instant`, and then converting to the local time zone. Assertions were not weakened.
+- **PASS:** targeted Windows queue/part-I/O run [40644326650](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40644326650). Gradle succeeded; `ScheduledQueueWindowTest` **1/1 PASS**; JUnit XML gate confirmed zero failures/errors/skips in the selected lifecycle/schedule suites. The real queue emitted one scheduled-start and one scheduled-stop event; task 73 received exactly one start and one stop callback; state was inactive before start, active before stop, and inactive at the end.
+- JUnit artifact [12796742980](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40644326650/artifacts/12796742980), ZIP SHA-256 `ee81e7b7913333e9b23c03ec55a20a7c9447092d7b185d8c53b846973bec150e`.
+- Source safety [40644326843](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40644326843) and relative-time tests [40644326736](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40644326736) PASS. FTP Kotlin/WinCred suite [40644326681](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40644326681) PASS.
+
+**Remaining/open:** installed HLS restart and cross-version upgrade/rollback are still running on this code SHA; external HTTPS signed-link acceptance, independent final Windows recheck, and final standalone `HyperGet.exe` with verified SHA/artifact remain OPEN. Do not infer final release readiness from this one milestone. No production scheduler code or thresholds changed; no merge, main write, release, paid service, or Torrent.
+
