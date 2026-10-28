@@ -2127,3 +2127,45 @@ The controlled Windows comparison [40606763940](https://github.com/amroalhamedi2
 ## 2026-10-28 — HG-E065 Stop All in-flight Resume gate
 
 The first worker-loop repair did not close the race: exact-head Windows run [40609757642](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40609757642) ran 204 downloader-core tests with 203 PASS and one FAIL. `stopAllWaitsForActualHttpResumingThenLeavesNoLateWorker` still observed a late HTTP request (expected 1, actual 2; report artifact [12782437181](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40609757642/artifacts/12782437181)). Root cause: an in-flight Resume continued from metadata validation into part admission after Stop All had raised its gate. The manager now exposes a volatile Stop All state and cancellation check; HTTP and HLS resume paths check it after metadata validation and immediately before part-worker admission, and avoid racing Stop All with a second asynchronous pause. Fresh exact-head JUnit/installed HTTP and paired benchmark results are required; no PASS is claimed from the failed run. See [HG-E065](https://github.com/amroalhamedi2022-hue/personal-download-manager/blob/HEAD/docs/checkpoints/HG_E065_STOP_ALL_INFLIGHT_RESUME_2026-10-28.md).
+
+## 2026-10-28 — HG-E070: exact-head Windows 1/4/16 performance PASS; HG-E071 HLS restart gate opened
+
+**Exact tested application and harness SHA:** `e273a001d254125f1443a7d3ca92f9121c5dc13b` (existing PR #3 head at this checkpoint; no main write/merge).
+
+### HG-E070 — accepted controlled Windows comparison
+
+- Windows run [40626221330](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40626221330), job “Paired exact-snapshot HTTP throughput and memory regression check”: SUCCESS.
+- The job checked out the exact baseline and candidate snapshots, ran source contracts before building both installers, installed each variant in alternating order, and completed three rounds at real concurrency 1/4/16.
+- **63 SHA-256-verified 32 MiB outputs per version** (126 download files across the paired evidence ZIP) and **nine resource measurement sets per version**. The artifact includes per-round download files, verification ledgers, CSV measurements and reports.
+- Artifact [12792141357](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40626221330/artifacts/12792141357), downloaded and independently hashed in this run: `c8744c2f2df96a6fba1e936fc1b35b8205b4ff3209fc91e552de18bf288c387f`.
+- Baseline SHA: `d6ea54a885277cb5b8fd545eb3f3fb0e185b6aa5`; candidate SHA: `e273a001d254125f1443a7d3ca92f9121c5dc13b`; shared measurement harness SHA equals candidate SHA.
+- Candidate median throughput deltas: **+0.33% at 1**, **-0.14% at 4**, **+28.53% at 16**. Peak Working Set deltas: **-1.07%, +3.12%, -0.72%**. Peak Private Bytes deltas: **-0.01%, +3.11%, -2.81%**. All predeclared 15% regression gates PASS.
+- This is a same-runner version-to-version regression comparison, **not** a claim of superiority over Internet Download Manager (IDM). The workflow's separate “Install once; 63 SHA256-verified downloads and 9 real CPU/RAM runs” job was skipped by its scope gate and is not counted as evidence; the paired comparison job above did run the complete three-round matrix.
+- The harness reported candidate-round-3 uninstall registry/shortcut residue and removed those test-owned entries to isolate the next round. This warning is not counted as a clean-uninstall acceptance result.
+
+### Exact-head Windows evidence additionally closed on `e273a00`
+
+- Full downloader/desktop JUnit and installer build: [40626221310](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40626221310) — **248 tests, 0 failures, 0 errors, 0 skips**; test installer SHA-256 `d9294f87897a8eb05b5a7b23efadec189c7b558194ae06f4524fb611e70d68e2`.
+- Installed HTTP Pause/socket-close/Resume/SHA: [40626221413](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40626221413) — PASS.
+- Installed authenticated FTP Pause/REST-after-GUI-restart/WinCred/SHA: [40626221360](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40626221360) — PASS.
+- HLS redirect/segment/JUnit: [40626221317](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40626221317) — PASS; this is not yet installed process-kill/relaunch evidence.
+- Chrome + Firefox installed native-host downloads with SHA verification: [40626221340](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40626221340) — PASS.
+- Installed GUI/Liquid Progress and PE resource audit: [40626221366](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40626221366) — PASS. Actual GUI launcher and setup installer both contain 16/32/48/64/128/256 px 32-bit-alpha icon resources; Liquid Progress reached 32% during a real SHA-verified transfer.
+- Cross-version upgrade/rollback: [40626221354](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40626221354) — PASS.
+- Idle metrics artifact is available from [40626221366](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40626221366); it is idle-only and must not be represented as active-transfer memory acceptance.
+
+### HG-E071 — pre-build contract for installed HLS process-kill/relaunch
+
+**Acceptance question:** After a real installed HyperGet HLS download has completed and persisted at least one segment while other segments are still active, can the GUI process be force-killed, all segment sockets drain and bytes stop changing, then the same persisted task be resumed after GUI relaunch and assemble the exact original bytes without requesting the already-completed first segment again?
+
+**Expected:** playlist is fetched again after relaunch; segment 1 is requested/completed exactly once; segments 2–4 each finish; no active segment sockets remain; the final assembled file size and SHA-256 match the deterministic local fixture. Any lost task, late writes, repeated completed-segment request, wrong output or timeout is FAIL, not a skip.
+
+**Why source/JUnit checks are insufficient:** they cannot establish Windows process termination, durable task/segment state, installed GUI/CLI IPC, real HTTP socket closure, filesystem staging after a crash, or final assembly across a process boundary. The next targeted Windows installer build is therefore purposeful. Its source contract and PowerShell/Python syntax checks must pass before the build step; no paid runner/API, external service, main write, auto-merge, release or Torrent is involved.
+
+### Still OPEN after E070
+
+- HG-E071 installed HLS process-kill/relaunch acceptance (new targeted E2E gate).
+- Behavioral scheduled-start/stop acceptance.
+- Independent external HTTPS signed-link endpoint acceptance; local verified-TLS/JUnit coverage already passes, but is not an external endpoint test.
+- Independent second full Windows release recheck on the final source SHA.
+- Final user-facing standalone `HyperGet.exe` delivery with verified SHA-256 and a verified artifact link. The current installer artifact is a test build, not that deliverable.
