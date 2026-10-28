@@ -205,24 +205,43 @@ function Invoke-Rpc {
     }
 }
 
+function Get-ObjectPropertyValue {
+    param([object] $Object, [string] $Name)
+    if ($null -eq $Object) { return $null }
+    $property = $Object.PSObject.Properties[$Name]
+    if ($null -eq $property) { return $null }
+    return $property.Value
+}
+
+function Get-RpcJsonProperty {
+    param([object] $Response, [string] $Name)
+    if ($null -eq $Response) { return $null }
+    return Get-ObjectPropertyValue -Object $Response.Json -Name $Name
+}
+
 function Test-RpcSucceeded {
     param([object] $Response)
-    return ($null -ne $Response -and $Response.StatusCode -ge 200 -and $Response.StatusCode -lt 300 -and $null -ne $Response.Json -and $null -ne $Response.Json.result)
+    $result = Get-RpcJsonProperty -Response $Response -Name 'result'
+    return ($null -ne $Response -and $Response.StatusCode -ge 200 -and $Response.StatusCode -lt 300 -and $null -ne $result)
 }
 
 function Test-RpcRejected {
     param([object] $Response)
     if ($null -eq $Response) { return $false }
     if ($Response.StatusCode -in @(400, 401, 403)) { return $true }
-    return ($Response.StatusCode -ge 200 -and $Response.StatusCode -lt 300 -and $null -ne $Response.Json -and $null -ne $Response.Json.error -and $null -eq $Response.Json.result)
+    $result = Get-RpcJsonProperty -Response $Response -Name 'result'
+    $rpcError = Get-RpcJsonProperty -Response $Response -Name 'error'
+    return ($Response.StatusCode -ge 200 -and $Response.StatusCode -lt 300 -and $null -ne $rpcError -and $null -eq $result)
 }
 
 function Get-RpcOutcome {
     param([object] $Response)
     if ($null -eq $Response) { return 'missing-response' }
     if ($Response.StatusCode -eq 0) { return "transport-$($Response.TransportError)" }
-    if ($null -ne $Response.Json -and $null -ne $Response.Json.error) { return "jsonrpc-error-http-$($Response.StatusCode)" }
-    if ($null -ne $Response.Json -and $null -ne $Response.Json.result) { return "result-http-$($Response.StatusCode)" }
+    $rpcError = Get-RpcJsonProperty -Response $Response -Name 'error'
+    $result = Get-RpcJsonProperty -Response $Response -Name 'result'
+    if ($null -ne $rpcError) { return "jsonrpc-error-http-$($Response.StatusCode)" }
+    if ($null -ne $result) { return "result-http-$($Response.StatusCode)" }
     return "http-$($Response.StatusCode)-no-json-result"
 }
 
@@ -245,7 +264,8 @@ function Wait-RpcReady {
         $Process.Refresh()
         if ($Process.HasExited) { throw "$Label exited before RPC became ready." }
         $response = Invoke-Rpc -Port $Port -Method 'aria2.getVersion' -Params @("token:$Secret")
-        if ((Test-RpcSucceeded -Response $response) -and $response.Json.result.version) { return }
+        $version = Get-ObjectPropertyValue -Object (Get-RpcJsonProperty -Response $response -Name 'result') -Name 'version'
+        if ((Test-RpcSucceeded -Response $response) -and $version) { return }
         Start-Sleep -Milliseconds 125
     }
     throw "$Label did not become ready on its loopback RPC port."
@@ -256,7 +276,7 @@ function Stop-RpcServer {
     $Process.Refresh()
     if ($Process.HasExited) { throw "$Label exited before authenticated shutdown." }
     $response = Invoke-Rpc -Port $Port -Method 'aria2.shutdown' -Params @("token:$Secret")
-    if (($response -and $response.StatusCode -ge 400) -or ($response -and $response.Json -and $response.Json.error)) {
+    if (($response -and $response.StatusCode -ge 400) -or ($null -ne (Get-RpcJsonProperty -Response $response -Name 'error'))) {
         throw "$Label rejected authenticated shutdown."
     }
     # aria2 may close the HTTP connection while acknowledging shutdown; the
@@ -473,8 +493,10 @@ try {
     $wrongToken = Invoke-Rpc -Port $rpcPort -Method 'aria2.getVersion' -Params @('token:invalid')
     $noTokenRejected = Test-RpcRejected -Response $noToken
     $wrongTokenRejected = Test-RpcRejected -Response $wrongToken
+    $noTokenResult = Get-RpcJsonProperty -Response $noToken -Name 'result'
+    $wrongTokenResult = Get-RpcJsonProperty -Response $wrongToken -Name 'result'
     if (-not $noTokenRejected -or -not $wrongTokenRejected -or
-        ($noToken.Json -and $noToken.Json.result) -or ($wrongToken.Json -and $wrongToken.Json.result)) {
+        $null -ne $noTokenResult -or $null -ne $wrongTokenResult) {
         throw "aria2 RPC auth rejection failed (missing-token=$(Get-RpcOutcome -Response $noToken); wrong-token=$(Get-RpcOutcome -Response $wrongToken))."
     }
     $malformed = $null
@@ -486,7 +508,8 @@ try {
     $rpcProcessOne.Refresh()
     if ($rpcProcessOne.HasExited) { throw 'Malformed JSON terminated the aria2 RPC process.' }
     $validAfterMalformed = Invoke-Rpc -Port $rpcPort -Method 'aria2.getVersion' -Params @("token:$rpcSecretOne")
-    if (-not (Test-RpcSucceeded -Response $validAfterMalformed) -or -not $validAfterMalformed.Json.result.version) {
+    $validAfterMalformedVersion = Get-ObjectPropertyValue -Object (Get-RpcJsonProperty -Response $validAfterMalformed -Name 'result') -Name 'version'
+    if (-not (Test-RpcSucceeded -Response $validAfterMalformed) -or -not $validAfterMalformedVersion) {
         throw "RPC did not recover after malformed JSON input ($(Get-RpcOutcome -Response $validAfterMalformed))."
     }
     Add-Result -Name 'RPCLoopbackAuthentication' -Result 'PASS' -Evidence 'missing/wrong token rejected; valid token accepted; wildcard bind absent'
@@ -499,8 +522,10 @@ try {
     $staleToken = Invoke-Rpc -Port $rpcPort -Method 'aria2.getVersion' -Params @("token:$rpcSecretOne")
     $freshToken = Invoke-Rpc -Port $rpcPort -Method 'aria2.getVersion' -Params @("token:$rpcSecretTwo")
     $staleTokenRejected = Test-RpcRejected -Response $staleToken
-    if (-not $staleTokenRejected -or ($staleToken.Json -and $staleToken.Json.result) -or
-        -not (Test-RpcSucceeded -Response $freshToken) -or -not $freshToken.Json.result.version) {
+    $staleTokenResult = Get-RpcJsonProperty -Response $staleToken -Name 'result'
+    $freshTokenVersion = Get-ObjectPropertyValue -Object (Get-RpcJsonProperty -Response $freshToken -Name 'result') -Name 'version'
+    if (-not $staleTokenRejected -or $null -ne $staleTokenResult -or
+        -not (Test-RpcSucceeded -Response $freshToken) -or -not $freshTokenVersion) {
         throw "RPC restart session check failed (stale-token=$(Get-RpcOutcome -Response $staleToken); fresh-token=$(Get-RpcOutcome -Response $freshToken))."
     }
     Stop-RpcServer -Port $rpcPort -Secret $rpcSecretTwo -Process $rpcProcessTwo -Label 'RPC session two'
