@@ -104,6 +104,19 @@ function Get-HttpStats {
     }
     return Invoke-RestMethod -Uri $uri -TimeoutSec 10
 }
+function Wait-HttpIdle {
+    param([string] $BaseUri, [ValidateRange(1, 60)][int] $TimeoutSeconds = 20)
+    $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+    $latest = $null
+    do {
+        $latest = Get-HttpStats -BaseUri $BaseUri
+        if ([int]$latest.active_requests -eq 0 -and [int]$latest.active_distinct_tasks -eq 0) {
+            return $latest
+        }
+        Start-Sleep -Milliseconds 100
+    } while ([DateTime]::UtcNow -lt $deadline)
+    return $latest
+}
 function Write-FailureDiagnostics {
     param([string] $Scenario, [int] $Round, [object] $Stats, [object[]] $Tasks, [string] $Reason)
     $lines = [System.Collections.Generic.List[string]]::new()
@@ -255,10 +268,43 @@ try {
                 }
             }
 
-            $after = Get-HttpStats -BaseUri $baseUri
-            if ([int]$after.active_requests -ne 0 -or [int]$after.peak_distinct_tasks -lt $jobs -or [int]$after.unique_tasks_seen -ne $jobs) {
+            # aria2 may exit after consuming the final byte while the loopback
+            # server threads are still unwinding their final writes. Do not sample
+            # final counters until every real GET handler has settled.
+            $after = Wait-HttpIdle -BaseUri $baseUri -TimeoutSeconds 20
+            if ([int]$after.active_requests -ne 0 -or [int]$after.active_distinct_tasks -ne 0) {
+                Write-FailureDiagnostics -Scenario $scenario -Round $round -Stats $after -Tasks @($taskFiles) -Reason 'Loopback GET handlers did not settle after aria2 exited.'
+                throw "HTTP fixture still has $($after.active_requests) active GET handler(s) after aria2 $scenario round $round."
+            }
+            if ([int]$after.peak_distinct_tasks -lt $jobs -or [int]$after.unique_tasks_seen -ne $jobs) {
                 Write-FailureDiagnostics -Scenario $scenario -Round $round -Stats $after -Tasks @($taskFiles) -Reason 'Final fixture counters do not prove the requested workload.'
                 throw "HTTP fixture counters invalid for aria2 $scenario round $round."
+            }
+            foreach ($task in $taskFiles) {
+                $startedProperty = $after.task_get_started.PSObject.Properties[$task.Name]
+                $completedProperty = $after.task_get_completed.PSObject.Properties[$task.Name]
+                $interruptedProperty = $after.task_get_interrupted.PSObject.Properties[$task.Name]
+                $bytesProperty = $after.task_bytes_sent.PSObject.Properties[$task.Name]
+                $rangesProperty = $after.task_ranges.PSObject.Properties[$task.Name]
+                $started = if ($null -ne $startedProperty) { [int]$startedProperty.Value } else { 0 }
+                $completed = if ($null -ne $completedProperty) { [int]$completedProperty.Value } else { 0 }
+                $interrupted = if ($null -ne $interruptedProperty) { [int]$interruptedProperty.Value } else { 0 }
+                $bytesSent = if ($null -ne $bytesProperty) { [long]$bytesProperty.Value } else { 0L }
+                $ranges = if ($null -ne $rangesProperty) { @($rangesProperty.Value) } else { @() }
+                $honoredRangeCount = @($ranges | Where-Object { [bool]$_.range -and [bool]$_.honored }).Count
+                $minimumCompletedGets = [Math]::Max(1, $Segments - 1)
+                if ($started -lt $Segments -or ($completed + $interrupted) -ne $started -or $completed -lt $minimumCompletedGets) {
+                    Write-FailureDiagnostics -Scenario $scenario -Round $round -Stats $after -Tasks @($taskFiles) -Reason "Task GET lifecycle incomplete: started=$started completed=$completed interrupted=$interrupted segments=$Segments."
+                    throw "aria2 task $($task.Name) did not complete the required range GET lifecycle."
+                }
+                if ($bytesSent -ne $expectedBytes) {
+                    Write-FailureDiagnostics -Scenario $scenario -Round $round -Stats $after -Tasks @($taskFiles) -Reason "Fixture served $bytesSent bytes for one task; expected exactly $expectedBytes."
+                    throw "aria2 task $($task.Name) served $bytesSent HTTP bytes; expected exactly $expectedBytes."
+                }
+                if ($honoredRangeCount -lt ($Segments - 1)) {
+                    Write-FailureDiagnostics -Scenario $scenario -Round $round -Stats $after -Tasks @($taskFiles) -Reason "Only $honoredRangeCount honored Range GETs were observed; expected at least $($Segments - 1)."
+                    throw "aria2 task $($task.Name) did not prove $Segments-way HTTP segmentation."
+                }
             }
             $finishedUtc = [DateTime]::UtcNow
             $elapsed = [math]::Round(($finishedUtc - $transferStartedUtc).TotalSeconds, 3)

@@ -39,6 +39,17 @@ class Aria2Stage2SourceContract(unittest.TestCase):
         self.assertIn("foreach ($segments in @(1, 4, 8))", PAIRED)
         self.assertIn("aria2-segmentation-summary.csv", PAIRED)
 
+    def test_matrix_waits_for_http_handlers_and_proves_real_segment_completion(self):
+        self.assertIn("function Wait-HttpIdle", ARIA2_MATRIX)
+        self.assertIn("$after = Wait-HttpIdle -BaseUri $baseUri -TimeoutSeconds 20", ARIA2_MATRIX)
+        self.assertIn("task_get_started", ARIA2_MATRIX)
+        self.assertIn("task_get_completed", ARIA2_MATRIX)
+        self.assertIn("task_get_interrupted", ARIA2_MATRIX)
+        self.assertIn("task_bytes_sent", ARIA2_MATRIX)
+        self.assertIn("$minimumCompletedGets = [Math]::Max(1, $Segments - 1)", ARIA2_MATRIX)
+        self.assertIn("$honoredRangeCount -lt ($Segments - 1)", ARIA2_MATRIX)
+        self.assertIn("$bytesSent -ne $expectedBytes", ARIA2_MATRIX)
+
     def test_stage2_thresholds_are_separate_and_no_go_keeps_current_engine(self):
         self.assertIn("MaxThroughputRegressionPercent = 10", GATES)
         self.assertIn("MaxMemoryRegressionPercent = 15", GATES)
