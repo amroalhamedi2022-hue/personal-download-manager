@@ -2327,3 +2327,12 @@ A workflow audit found that the Stage 1 PowerShell harness existed but was not c
 **Pre-build question:** can the pinned stock aria2 binary pass all ten Stage 1 HTTP/FTP/RPC/resume checks with exact output hashes and no secret leakage? **Expected:** 10/10 runtime assertions PASS; the source and PowerShell preflight must pass first. **Why source tests are insufficient:** Windows process interruption, real sockets, resume-control state, FTP login/RETR and RPC listener/shutdown behavior require runtime evidence.
 
 Status before the new run: basic HTTP smoke 2/2 PASS on the earlier tested SHA; comprehensive Stage 1 runtime 0/10 verified; stock binary bundling FAIL/BLOCKED because BitTorrent is enabled; SFTP actual transfer NOT TESTED; Stage 2 paired 1/4/16 comparison NOT STARTED. No production engine switch, main write, merge, release or Torrent feature.
+
+
+## 2026-10-28 — HG-ARIA2-S1 first wired Windows runtime attempt — FAIL (harness defect)
+
+Exact PR source SHA: f661703efa08c5e9f7ace316b5bbbcea7385d646. Source/fixture preflight and PowerShell parsing **PASS**; pinned upstream aria2 archive verification **PASS**; basic HTTP single/segmented smoke **2/2 PASS** with SHA-256 287507f403176f1f5b22b9a4d9cb49f7d7f88ac19e406b5ae87ce109564846bd. Stage 1 redirect **1/10 PASS** with SHA-256 341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1.
+
+The run then **FAILed in the test harness before HTTP 404/429/500 assertions** because PowerShell parsed the URL fragment $status?task as a variable. This is not evidence of aria2 protocol failure. Ignored-Range, real interrupted resume, FTP, and RPC cases were not reached and remain **NOT TESTED**. Incomplete evidence artifacts: [basic smoke](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40670133507/artifacts/12806888836) (SHA-256 f5254e9050d30b86935de1b8b1d1cbaf4368c52ff91d3a4ca1550ef6d97b2cb5) and [Stage 1 diagnostic bundle](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40670133507/artifacts/12807627862) (SHA-256 969df994ea7178aa493239fcf24e3b10827dfaf05d778c72616ac61705865a1b).
+
+The harness now brackets the status variable as $($status), with a source regression rejecting the ambiguous expression. Exact-head Windows rerun is pending. Stock aria2 has BitTorrent enabled and remains ineligible for bundling; no production engine switch or Torrent feature is permitted.
