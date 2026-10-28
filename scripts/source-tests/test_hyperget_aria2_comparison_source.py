@@ -215,6 +215,19 @@ class Aria2Stage2SourceContract(unittest.TestCase):
         self.assertEqual(duplicate, 2 * 65536)
         self.assertEqual(covered, expected)
 
+        # Parallel HTTP handlers may record the short same-end tail range
+        # before the larger range it overlaps. Accounting must not depend on
+        # request-arrival order; byte-offset sorting still determines coverage.
+        out_of_order = [dict(r) for r in responses]
+        out_of_order[2], out_of_order[8] = out_of_order[8], out_of_order[2]
+        total, duplicate, covered = reconcile_fixture_response_ranges(out_of_order, expected)
+        self.assertEqual(total, expected + 2 * 65536)
+        self.assertEqual(duplicate, 2 * 65536)
+        self.assertEqual(covered, expected)
+        self.assertIn("for ($priorIndex = 0; $priorIndex -lt $ranges.Count; $priorIndex++)", ARIA2_MATRIX)
+        self.assertIn("if ($priorIndex -eq $retryIndex) { continue }", ARIA2_MATRIX)
+        self.assertNotIn("for ($priorIndex = 0; $priorIndex -lt $retryIndex; $priorIndex++)", ARIA2_MATRIX)
+
         oversized_overlap = [dict(r) for r in responses]
         oversized_overlap[0]["socket_write_bytes"] = 4 * mib + 2 * 65536
         with self.assertRaises(AssertionError):
