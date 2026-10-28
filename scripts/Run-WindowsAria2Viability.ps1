@@ -195,12 +195,14 @@ function Invoke-Rpc {
             StatusCode = [int]$response.StatusCode
             Json = $json
             TransportError = $null
+            TransportMessage = $null
         }
     } catch {
         return [pscustomobject]@{
             StatusCode = 0
             Json = $null
             TransportError = $_.Exception.GetType().Name
+            TransportMessage = $_.Exception.Message
         }
     }
 }
@@ -245,6 +247,33 @@ function Get-RpcOutcome {
     return "http-$($Response.StatusCode)-no-json-result"
 }
 
+function Get-RpcDiagnostic {
+    param([object] $Response, [string] $Secret)
+    if ($null -eq $Response) { return 'response=missing' }
+
+    $errorObject = Get-RpcJsonProperty -Response $Response -Name 'error'
+    $errorCode = Get-ObjectPropertyValue -Object $errorObject -Name 'code'
+    $errorMessage = [string](Get-ObjectPropertyValue -Object $errorObject -Name 'message')
+    if (-not [string]::IsNullOrEmpty($Secret) -and $errorMessage.Contains($Secret)) {
+        $errorMessage = $errorMessage.Replace($Secret, '[REDACTED]')
+    }
+    if ([string]::IsNullOrWhiteSpace($errorMessage)) { $errorMessage = 'none' }
+    $errorMessage = $errorMessage -replace '[\r\n]+', ' '
+
+    $transportError = [string]$Response.TransportError
+    if ([string]::IsNullOrWhiteSpace($transportError)) { $transportError = 'none' }
+    $transportMessage = [string]$Response.TransportMessage
+    if (-not [string]::IsNullOrEmpty($Secret) -and $transportMessage.Contains($Secret)) {
+        $transportMessage = $transportMessage.Replace($Secret, '[REDACTED]')
+    }
+    if ([string]::IsNullOrWhiteSpace($transportMessage)) { $transportMessage = 'none' }
+    $transportMessage = $transportMessage -replace '[\r\n]+', ' '
+
+    $result = Get-RpcJsonProperty -Response $Response -Name 'result'
+    $version = Get-ObjectPropertyValue -Object $result -Name 'version'
+    return "http=$($Response.StatusCode); transport=$transportError; transportMessage=$transportMessage; rpcErrorCode=$errorCode; rpcErrorMessage=$errorMessage; resultPresent=$($null -ne $result); versionPresent=$([bool]$version)"
+}
+
 function Start-RpcServer {
     param([int] $Port, [string] $Secret, [string] $Label)
     $rpcDir = Join-Path $root $Label
@@ -260,15 +289,20 @@ function Start-RpcServer {
 
 function Wait-RpcReady {
     param([int] $Port, [string] $Secret, [object] $Process, [string] $Label)
+    $lastDiagnostic = 'no RPC probe completed'
     for ($i = 0; $i -lt 80; $i++) {
         $Process.Refresh()
         if ($Process.HasExited) { throw "$Label exited before RPC became ready." }
         $response = Invoke-Rpc -Port $Port -Method 'aria2.getVersion' -Params @("token:$Secret")
+        $lastDiagnostic = Get-RpcDiagnostic -Response $response -Secret $Secret
         $version = Get-ObjectPropertyValue -Object (Get-RpcJsonProperty -Response $response -Name 'result') -Name 'version'
-        if ((Test-RpcSucceeded -Response $response) -and $version) { return }
+        if ((Test-RpcSucceeded -Response $response) -and $version) {
+            Write-Host "$Label RPC readiness PASS: $lastDiagnostic"
+            return
+        }
         Start-Sleep -Milliseconds 125
     }
-    throw "$Label did not become ready on its loopback RPC port."
+    throw "$Label did not become ready on its loopback RPC port. Last probe: $lastDiagnostic"
 }
 
 function Stop-RpcServer {

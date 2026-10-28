@@ -201,6 +201,14 @@ class Aria2Stage1ViabilityContract(unittest.TestCase):
         self.assertIn("Get-RpcOutcome -Response $noToken", self.ARIA2)
         self.assertIn("Test-RpcSucceeded -Response $freshToken", self.ARIA2)
 
+    def test_rpc_readiness_failure_reports_sanitized_last_probe(self):
+        self.assertIn("function Get-RpcDiagnostic", self.ARIA2)
+        self.assertIn("lastDiagnostic = Get-RpcDiagnostic -Response $response -Secret $Secret", self.ARIA2)
+        self.assertIn("Last probe: $lastDiagnostic", self.ARIA2)
+        self.assertIn("TransportMessage = $_.Exception.Message", self.ARIA2)
+        self.assertIn("$errorMessage.Replace($Secret, '[REDACTED]')", self.ARIA2)
+        self.assertIn("$transportMessage.Replace($Secret, '[REDACTED]')", self.ARIA2)
+
     def test_stock_bitTorrent_binary_is_evaluation_only(self):
         self.assertIn("$bitTorrentEnabled", self.ARIA2)
         self.assertIn("never bundle this stock binary", self.ARIA2.lower())
