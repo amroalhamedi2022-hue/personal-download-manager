@@ -15,11 +15,9 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
-import kotlinx.datetime.Clock
-import kotlinx.datetime.DateTimeUnit
+import kotlin.time.Clock
 import kotlinx.datetime.DayOfWeek
 import kotlinx.datetime.TimeZone
-import kotlinx.datetime.plus
 import kotlinx.datetime.toLocalDateTime
 import kotlinx.serialization.json.Json
 import java.nio.file.Files
@@ -52,9 +50,9 @@ class ScheduledQueueWindowTest {
             manager.addToQueue(DefaultQueueInfo.ID, 73L)
 
             val zone = TimeZone.currentSystemDefault()
-            val now = Clock.System.now().toLocalDateTime(zone)
-            val start = now.plus(5, DateTimeUnit.SECOND).time
-            val end = now.plus(11, DateTimeUnit.SECOND).time
+            val now = Clock.System.now()
+            val start = now.plus(5.seconds).toLocalDateTime(zone).time
+            val end = now.plus(11.seconds).toLocalDateTime(zone).time
             queue.setScheduledTimes {
                 copy(
                     daysOfWeek = DayOfWeek.entries.toSet(),
