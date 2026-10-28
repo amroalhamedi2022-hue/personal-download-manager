@@ -183,7 +183,7 @@ def main():
                             self.reply(f"213 {source.stat().st_size}" if is_fixture_path(argument) else "550 File unavailable")
                     elif command == "MDTM":
                         if self.require_login():
-                            self.reply("213 20261023000000" if argument == expected_path else "550 File unavailable")
+                            self.reply("213 20261023000000" if is_fixture_path(argument) else "550 File unavailable")
                     elif command == "REST":
                         if not self.require_login():
                             continue
