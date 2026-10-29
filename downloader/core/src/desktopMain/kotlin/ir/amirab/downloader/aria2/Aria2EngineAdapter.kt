@@ -13,7 +13,6 @@ data class Aria2AddRequest(
 
 data class Aria2TaskSnapshot(
     val hyperGetTaskId: Long,
-    val aria2Gid: String,
     val progress: Aria2ProgressSample,
     val errorCode: String?,
     val hasErrorMessage: Boolean,
@@ -30,6 +29,7 @@ class Aria2EngineAdapter private constructor(
     private val registry: Aria2TaskRegistry,
 ) {
     private val progressByTask = mutableMapOf<Long, Aria2MonotonicProgress>()
+    private var acceptingCommands = true
 
     companion object {
         fun restore(rpc: Aria2RpcApi, bindingStore: Aria2BindingStore): Aria2EngineAdapter =
@@ -37,8 +37,9 @@ class Aria2EngineAdapter private constructor(
     }
 
     @Synchronized
-    fun add(request: Aria2AddRequest): Aria2TaskBinding {
-        registry.bindingForTask(request.hyperGetTaskId)?.let { return it }
+    fun add(request: Aria2AddRequest): Long {
+        checkOpen()
+        registry.bindingForTask(request.hyperGetTaskId)?.let { return it.hyperGetTaskId }
         val source = validateSource(request.source)
         val directory = validateDestination(request.destinationDirectory, request.fileName)
         val options = mapOf(
@@ -50,20 +51,32 @@ class Aria2EngineAdapter private constructor(
         )
         val gid = rpc.addUri(source, options)
         val binding = Aria2TaskBinding(request.hyperGetTaskId, gid)
+        var bound = false
         try {
             registry.bind(binding)
+            bound = true
             bindingStore.save(registry.snapshot())
             progressByTask.putIfAbsent(request.hyperGetTaskId, Aria2MonotonicProgress())
-            return registry.bindingForTask(request.hyperGetTaskId)!!
-        } catch (failure: Throwable) {
-            registry.removeTask(request.hyperGetTaskId)
-            runCatching { rpc.remove(gid) }
+            return request.hyperGetTaskId
+        } catch (failure: Exception) {
+            try {
+                removeEngineTask(gid)
+            } catch (cleanupFailure: Exception) {
+                failure.addSuppressed(cleanupFailure)
+                if (!bound) registry.removeTask(request.hyperGetTaskId)
+                throw Aria2AdapterConsistencyException(
+                    "aria2 task cleanup failed after durable binding failed; engine shutdown is required.",
+                    failure,
+                )
+            }
+            if (bound) registry.removeTask(request.hyperGetTaskId)
             throw failure
         }
     }
 
     @Synchronized
     fun status(hyperGetTaskId: Long): Aria2TaskSnapshot {
+        checkOpen()
         val binding = requireBinding(hyperGetTaskId)
         val status = rpc.tellStatus(binding.aria2Gid)
         val progress = progressByTask.getOrPut(hyperGetTaskId, ::Aria2MonotonicProgress).accept(
@@ -76,7 +89,6 @@ class Aria2EngineAdapter private constructor(
         )
         return Aria2TaskSnapshot(
             hyperGetTaskId = hyperGetTaskId,
-            aria2Gid = binding.aria2Gid,
             progress = progress,
             errorCode = status.errorCode,
             // Raw engine messages can contain source URLs or credentials. The UI
@@ -88,12 +100,14 @@ class Aria2EngineAdapter private constructor(
 
     @Synchronized
     fun pause(hyperGetTaskId: Long) {
+        checkOpen()
         val binding = requireBinding(hyperGetTaskId)
         rpc.pause(binding.aria2Gid)
     }
 
     @Synchronized
     fun unpause(hyperGetTaskId: Long) {
+        checkOpen()
         val binding = requireBinding(hyperGetTaskId)
         rpc.unpause(binding.aria2Gid)
     }
@@ -105,6 +119,7 @@ class Aria2EngineAdapter private constructor(
     /** Removes the engine task before forgetting its durable association. */
     @Synchronized
     fun remove(hyperGetTaskId: Long): Boolean {
+        checkOpen()
         val binding = registry.bindingForTask(hyperGetTaskId) ?: return false
         removeEngineTask(binding.aria2Gid)
         registry.removeTask(hyperGetTaskId)
@@ -146,10 +161,22 @@ class Aria2EngineAdapter private constructor(
             return
         }
 
-        // `remove` moves an active task to the stopped-result store. Purge it
-        // when aria2 has already completed that transition; code 1 here is a
-        // harmless asynchronous transition and must not resurrect the binding.
-        removeDownloadResultOrAcceptMissing(gid)
+        // `remove` is asynchronous. Do not forget the durable binding until
+        // aria2 proves the task reached its stopped-result store or disappeared.
+        repeat(REMOVAL_POLL_ATTEMPTS) {
+            val after = try {
+                rpc.tellStatus(gid).state
+            } catch (failure: Aria2RpcRemoteException) {
+                if (failure.code == 1) return
+                throw failure
+            }
+            if (after.isResultStoreState()) {
+                removeDownloadResultOrAcceptMissing(gid)
+                return
+            }
+            Thread.sleep(REMOVAL_POLL_MILLIS)
+        }
+        throw Aria2AdapterConsistencyException("aria2 did not finish removing the task before timeout.")
     }
 
     private fun removeDownloadResultOrAcceptMissing(gid: String) {
@@ -167,6 +194,7 @@ class Aria2EngineAdapter private constructor(
      */
     @Synchronized
     fun reconcileRestored(): List<Aria2TaskBinding> {
+        checkOpen()
         var changed = false
         registry.snapshot().forEach { binding ->
             try {
@@ -184,7 +212,14 @@ class Aria2EngineAdapter private constructor(
     }
 
     @Synchronized
-    fun bindings(): List<Aria2TaskBinding> = registry.snapshot()
+    internal fun bindings(): List<Aria2TaskBinding> = registry.snapshot()
+
+    @Synchronized
+    internal fun stopAcceptingCommands() {
+        acceptingCommands = false
+    }
+
+    private fun checkOpen() = check(acceptingCommands) { "aria2 adapter is stopping or closed." }
 
     private fun requireBinding(hyperGetTaskId: Long): Aria2TaskBinding =
         registry.bindingForTask(hyperGetTaskId)
@@ -208,7 +243,15 @@ class Aria2EngineAdapter private constructor(
         require(Files.notExists(normalized.resolve(fileName))) { "Destination file already exists." }
         return normalized
     }
+
+    private companion object {
+        const val REMOVAL_POLL_ATTEMPTS = 200
+        const val REMOVAL_POLL_MILLIS = 25L
+    }
 }
+
+class Aria2AdapterConsistencyException(message: String, cause: Throwable? = null) :
+    IllegalStateException(message, cause)
 
 private fun Aria2TransferState.isResultStoreState(): Boolean = when (this) {
     Aria2TransferState.COMPLETE,
@@ -259,7 +302,10 @@ data class StartedAria2Engine(
     val controller: Aria2ProcessController,
     val adapter: Aria2EngineAdapter,
 ) : AutoCloseable {
-    override fun close() = controller.shutdown()
+    override fun close() {
+        adapter.stopAcceptingCommands()
+        controller.shutdown()
+    }
 }
 
 /** Startup failure is an explicit fallback, never a production-engine outage. */
@@ -272,7 +318,9 @@ object Aria2EngineBootstrap {
         if (!featureFlag.isEnabled()) return null
         return try {
             val rpc = controller.start()
-            StartedAria2Engine(controller, Aria2EngineAdapter.restore(rpc, bindingStore))
+            val adapter = Aria2EngineAdapter.restore(rpc, bindingStore)
+            adapter.reconcileRestored()
+            StartedAria2Engine(controller, adapter)
         } catch (_: Throwable) {
             runCatching { controller.shutdown() }
             null

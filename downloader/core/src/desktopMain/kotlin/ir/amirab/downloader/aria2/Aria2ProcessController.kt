@@ -6,9 +6,14 @@ import java.net.URI
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.AclEntry
+import java.nio.file.attribute.AclEntryPermission
+import java.nio.file.attribute.AclEntryType
+import java.nio.file.attribute.AclFileAttributeView
 import java.nio.file.attribute.PosixFilePermission
 import java.nio.file.attribute.PosixFilePermissions
 import java.time.Duration
+import java.util.EnumSet
 
 private const val ARIA2_LOOPBACK_HOST = "127.0.0.1"
 
@@ -141,13 +146,17 @@ class Aria2ProcessController(
             rpc = client
             rpcEndpoint = endpoint
             awaitReadiness(ownedProcess, client)
+            // aria2 has parsed the config. Remove the only plaintext copy of
+            // the per-session RPC secret before exposing the ready adapter.
+            deleteSessionConfig(strict = true)
             lifecycleState = Aria2ProcessState.READY
             return client
         } catch (failure: Throwable) {
-            terminateOwnedProcess()
+            if (failure is InterruptedException) Thread.currentThread().interrupt()
+            val terminated = terminateOwnedProcess()
             deleteSessionConfig()
             rpc = null
-            process = null
+            if (terminated) process = null
             rpcEndpoint = null
             lifecycleState = Aria2ProcessState.CRASHED
             throw Aria2ProcessException("aria2 failed to reach RPC readiness on loopback.", failure)
@@ -159,24 +168,36 @@ class Aria2ProcessController(
         if (lifecycleState == Aria2ProcessState.STOPPED) return
         lifecycleState = Aria2ProcessState.STOPPING
         val ownedProcess = process
+        var terminated = ownedProcess?.isAlive() != true
         try {
             if (ownedProcess?.isAlive() == true) {
                 runCatching { rpc?.shutdown() }
-                if (!ownedProcess.waitFor(config.shutdownTimeout.toMillis())) {
+                terminated = ownedProcess.waitFor(config.shutdownTimeout.toMillis())
+                if (!terminated) {
                     ownedProcess.destroy()
-                    if (!ownedProcess.waitFor(config.shutdownTimeout.toMillis())) {
+                    terminated = ownedProcess.waitFor(config.shutdownTimeout.toMillis())
+                    if (!terminated) {
                         ownedProcess.destroyForcibly()
-                        ownedProcess.waitFor(config.shutdownTimeout.toMillis())
+                        terminated = ownedProcess.waitFor(config.shutdownTimeout.toMillis())
                     }
                 }
             }
         } finally {
             deleteSessionConfig()
+            restrictToOwnerWhenSupported(config.sessionStateFile)
             rpc = null
-            process = null
             rpcEndpoint = null
-            lifecycleState = Aria2ProcessState.STOPPED
+            if (terminated) {
+                process = null
+                lifecycleState = Aria2ProcessState.STOPPED
+            } else {
+                // Retain ownership so a later shutdown attempt can retry; never
+                // report STOPPED while the child is still alive.
+                process = ownedProcess
+                lifecycleState = Aria2ProcessState.CRASHED
+            }
         }
+        if (!terminated) throw Aria2ProcessException("aria2 child process remained alive after forced shutdown.")
     }
 
     override fun close() = shutdown()
@@ -186,6 +207,7 @@ class Aria2ProcessController(
         require(Files.isDirectory(config.workingDirectory)) { "aria2 working directory is missing." }
         Files.createDirectories(config.sessionDirectory)
         require(Files.isDirectory(config.sessionDirectory)) { "aria2 session directory is unavailable." }
+        restrictToOwnerWhenSupported(config.sessionDirectory, directory = true)
         val stateParent = config.sessionStateFile.toAbsolutePath().normalize().parent
         require(stateParent == config.sessionDirectory.toAbsolutePath().normalize()) {
             "aria2 session state must stay inside the application-owned session directory."
@@ -243,13 +265,33 @@ class Aria2ProcessController(
         }
     }
 
-    private fun restrictToOwnerWhenSupported(path: Path) {
-        runCatching {
+    private fun restrictToOwnerWhenSupported(path: Path, directory: Boolean = false) {
+        val posixApplied = runCatching {
+            val permissions = mutableSetOf(
+                PosixFilePermission.OWNER_READ,
+                PosixFilePermission.OWNER_WRITE,
+            )
+            if (directory) permissions += PosixFilePermission.OWNER_EXECUTE
             Files.setPosixFilePermissions(
                 path,
-                setOf(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE),
+                permissions,
             )
-        }
+        }.isSuccess
+        if (posixApplied) return
+
+        // Windows has no POSIX permission view. Replace inherited ACL entries
+        // with one full-control entry for the file owner (the application user).
+        runCatching {
+            val view = Files.getFileAttributeView(path, AclFileAttributeView::class.java)
+                ?: return@runCatching
+            val owner = Files.getOwner(path)
+            val entry = AclEntry.newBuilder()
+                .setType(AclEntryType.ALLOW)
+                .setPrincipal(owner)
+                .setPermissions(EnumSet.allOf(AclEntryPermission::class.java))
+                .build()
+            view.acl = listOf(entry)
+        }.getOrElse { throw Aria2ProcessException("Unable to restrict aria2 session file to its owner.", it) }
     }
 
     private fun awaitReadiness(ownedProcess: Aria2OwnedProcess, client: Aria2RpcApi) {
@@ -270,20 +312,32 @@ class Aria2ProcessController(
         throw Aria2ProcessException("aria2 RPC readiness timed out.", lastFailure)
     }
 
-    private fun terminateOwnedProcess() {
-        val ownedProcess = process ?: return
-        if (!ownedProcess.isAlive()) return
+    private fun terminateOwnedProcess(): Boolean {
+        val ownedProcess = process ?: return true
+        if (!ownedProcess.isAlive()) return true
         ownedProcess.destroy()
         if (!ownedProcess.waitFor(config.shutdownTimeout.toMillis())) {
             ownedProcess.destroyForcibly()
-            ownedProcess.waitFor(config.shutdownTimeout.toMillis())
+            return ownedProcess.waitFor(config.shutdownTimeout.toMillis())
         }
+        return true
     }
 
-    private fun deleteSessionConfig() {
+    private fun deleteSessionConfig(strict: Boolean = false) {
         val path = sessionConfigPath
         sessionConfigPath = null
-        if (path != null) runCatching { Files.deleteIfExists(path) }
+        if (path == null) return
+        try {
+            Files.deleteIfExists(path)
+            if (strict && Files.exists(path)) {
+                throw Aria2ProcessException("Unable to remove the aria2 RPC secret file after startup.")
+            }
+        } catch (failure: Throwable) {
+            if (strict) throw Aria2ProcessException(
+                "Unable to remove the aria2 RPC secret file after startup.",
+                failure,
+            )
+        }
     }
 
     private fun saturatingAdd(value: Long, increment: Long): Long =

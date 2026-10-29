@@ -1,6 +1,7 @@
 package ir.amirab.downloader.aria2
 
 import java.nio.file.Files
+import java.io.IOException
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -131,7 +132,7 @@ class Aria2EngineAdapterTest {
         val executor = Executors.newFixedThreadPool(8)
         try {
             val futures = (1..16).map {
-                executor.submit<Aria2TaskBinding> {
+                executor.submit<Long> {
                     start.await()
                     adapter.add(request)
                 }
@@ -173,6 +174,37 @@ class Aria2EngineAdapterTest {
         } finally {
             executor.shutdownNow()
         }
+    }
+
+    @Test
+    fun failedBindingWriteRemovesRemoteTaskBeforeReturningFailure() {
+        val root = Files.createTempDirectory("aria2-save-failure")
+        val rpc = FakeRpc()
+        val store = Aria2BindingStore(root.resolve("bindings.json")) { _, _ ->
+            throw IOException("injected durable write failure")
+        }
+        val adapter = Aria2EngineAdapter.restore(rpc, store)
+
+        assertFailsWith<IOException> {
+            adapter.add(Aria2AddRequest(14, "https://example.invalid/save", root, "save.bin"))
+        }
+        assertEquals(1, rpc.removeCalls)
+        assertEquals(1, rpc.removeResultCalls)
+        assertTrue(adapter.bindings().isEmpty())
+    }
+
+    @Test
+    fun stoppedAdapterRejectsEveryNewCommand() {
+        val root = Files.createTempDirectory("aria2-stop-gate")
+        val rpc = FakeRpc()
+        val adapter = Aria2EngineAdapter.restore(rpc, Aria2BindingStore(root.resolve("bindings.json")))
+        adapter.stopAcceptingCommands()
+
+        assertFailsWith<IllegalStateException> {
+            adapter.add(Aria2AddRequest(15, "https://example.invalid/stopped", root, "stopped.bin"))
+        }
+        assertFailsWith<IllegalStateException> { adapter.status(15) }
+        assertEquals(0, rpc.addCalls)
     }
 
     @Test
@@ -233,6 +265,7 @@ class Aria2EngineAdapterTest {
         override fun remove(gid: String): String {
             removeCalls++
             removeFailure?.let { throw it }
+            status = status.copy(state = Aria2TransferState.REMOVED, downloadSpeed = 0)
             return gid
         }
 

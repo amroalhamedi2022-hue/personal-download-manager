@@ -22,6 +22,7 @@ class Aria2ProcessControllerTest {
         val fixture = Fixture()
         val process = FakeProcess()
         lateinit var command: List<String>
+        lateinit var configContents: String
         var readinessAttempts = 0
         val rpc = FakeRpc(
             getVersion = {
@@ -37,7 +38,10 @@ class Aria2ProcessControllerTest {
             process = process,
             rpc = rpc,
             secret = secret,
-            onCommand = { command = it },
+            onCommand = {
+                command = it
+                configContents = it.configPath().readText()
+            },
             nanoTime = { now },
             sleep = { now += it * 1_000_000 },
         )
@@ -49,14 +53,13 @@ class Aria2ProcessControllerTest {
 
         val configPath = command.configPath()
         val rawSecret = secret.rpcToken().removePrefix("token:")
-        assertTrue(configPath.exists())
-        val contents = configPath.readText()
-        assertTrue(contents.contains("rpc-listen-all=false"))
-        assertTrue(contents.contains("disable-ipv6=true"))
-        assertTrue(contents.contains("rpc-secret=$rawSecret"))
-        assertTrue(contents.contains("save-session="))
-        assertTrue(contents.contains("input-file="))
-        assertTrue(contents.contains("save-session-interval=1"))
+        assertFalse(configPath.exists())
+        assertTrue(configContents.contains("rpc-listen-all=false"))
+        assertTrue(configContents.contains("disable-ipv6=true"))
+        assertTrue(configContents.contains("rpc-secret=$rawSecret"))
+        assertTrue(configContents.contains("save-session="))
+        assertTrue(configContents.contains("input-file="))
+        assertTrue(configContents.contains("save-session-interval=1"))
         assertTrue(command.none { it.contains(rawSecret) })
         assertFalse(controller.toString().contains(rawSecret))
 
@@ -105,7 +108,7 @@ class Aria2ProcessControllerTest {
             onCommand = { configPath = it.configPath() },
         )
         controller.start()
-        assertTrue(configPath.exists())
+        assertFalse(configPath.exists())
 
         process.alive = false
 
@@ -153,6 +156,22 @@ class Aria2ProcessControllerTest {
         assertTrue(process.destroyCalled)
         assertTrue(process.forceCalled)
         assertFalse(configPath.exists())
+        assertEquals(Aria2ProcessState.STOPPED, controller.state())
+    }
+
+    @Test
+    fun childThatSurvivesForcedShutdownRemainsOwnedAndIsNeverReportedStopped() {
+        val fixture = Fixture()
+        val process = FakeProcess(waitAfterDestroy = false, waitAfterForce = false)
+        val controller = fixture.controller(process = process, rpc = FakeRpc())
+        controller.start()
+
+        assertFailsWith<Aria2ProcessException> { controller.shutdown() }
+
+        assertEquals(Aria2ProcessState.CRASHED, controller.state())
+        assertTrue(process.alive)
+        process.alive = false
+        controller.shutdown()
         assertEquals(Aria2ProcessState.STOPPED, controller.state())
     }
 
