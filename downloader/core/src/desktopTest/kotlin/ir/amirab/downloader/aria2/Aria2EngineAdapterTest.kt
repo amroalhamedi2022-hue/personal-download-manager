@@ -96,6 +96,20 @@ class Aria2EngineAdapterTest {
     }
 
     @Test
+    fun removeAcceptsGidDisappearingAfterAria2AcknowledgesCancellation() {
+        val root = Files.createTempDirectory("aria2-remove-disappeared")
+        val rpc = FakeRpc().apply { missingAfterRemove = true }
+        val store = Aria2BindingStore(root.resolve("bindings.json"))
+        val adapter = Aria2EngineAdapter.restore(rpc, store)
+        adapter.add(Aria2AddRequest(23, "https://example.invalid/disappeared", root, "disappeared.bin"))
+
+        assertTrue(adapter.remove(23))
+        assertEquals(1, rpc.removeCalls)
+        assertEquals(0, rpc.removeResultCalls)
+        assertTrue(store.load().isEmpty())
+    }
+
+    @Test
     fun reconcileRemovesOnlyExplicitlyStaleMappings() {
         val root = Files.createTempDirectory("aria2-restore")
         val store = Aria2BindingStore(root.resolve("bindings.json"))
@@ -247,6 +261,7 @@ class Aria2EngineAdapterTest {
         var removeResultCalls = 0
         var removeFailure: Aria2RpcRemoteException? = null
         var tellFailure: Aria2RpcRemoteException? = null
+        var missingAfterRemove = false
         var status = Aria2Status(GID, Aria2TransferState.ACTIVE, 0, 0, 0, null, null)
 
         override fun getVersion() = Aria2Version("1.37.0", listOf("BitTorrent"))
@@ -257,6 +272,7 @@ class Aria2EngineAdapterTest {
 
         override fun tellStatus(gid: String): Aria2Status {
             tellFailure?.let { throw it }
+            if (missingAfterRemove && removeCalls > 0) throw Aria2RpcRemoteException(1)
             return status
         }
 

@@ -32,6 +32,9 @@ class Aria2EngineAdapter private constructor(
     private var acceptingCommands = true
 
     companion object {
+        private const val REMOVAL_POLL_ATTEMPTS = 200
+        private const val REMOVAL_POLL_MILLIS = 25L
+
         fun restore(rpc: Aria2RpcApi, bindingStore: Aria2BindingStore): Aria2EngineAdapter =
             Aria2EngineAdapter(rpc, bindingStore, Aria2TaskRegistry(bindingStore.load()))
     }
@@ -167,10 +170,7 @@ class Aria2EngineAdapter private constructor(
             val after = try {
                 rpc.tellStatus(gid).state
             } catch (failure: Aria2RpcRemoteException) {
-                if (failure.code == 1) {
-                    Thread.sleep(REMOVAL_POLL_MILLIS)
-                    return@repeat
-                }
+                if (failure.code == 1) return
                 throw failure
             }
             if (after.isResultStoreState()) {
@@ -258,11 +258,6 @@ class Aria2EngineAdapter private constructor(
         }
         require(Files.notExists(normalized.resolve(fileName))) { "Destination file already exists." }
         return normalized
-    }
-
-    private companion object {
-        const val REMOVAL_POLL_ATTEMPTS = 200
-        const val REMOVAL_POLL_MILLIS = 25L
     }
 }
 
