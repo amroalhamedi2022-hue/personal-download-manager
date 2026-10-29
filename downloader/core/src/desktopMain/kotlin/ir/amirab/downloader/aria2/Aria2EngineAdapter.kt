@@ -157,7 +157,7 @@ class Aria2EngineAdapter private constructor(
         } catch (failure: Aria2RpcRemoteException) {
             if (failure.code != 1) throw failure
             // The task may have completed after tellStatus.
-            removeDownloadResultOrAcceptMissing(gid)
+            awaitResultThenPurge(gid)
             return
         }
 
@@ -167,7 +167,10 @@ class Aria2EngineAdapter private constructor(
             val after = try {
                 rpc.tellStatus(gid).state
             } catch (failure: Aria2RpcRemoteException) {
-                if (failure.code == 1) return
+                if (failure.code == 1) {
+                    Thread.sleep(REMOVAL_POLL_MILLIS)
+                    return@repeat
+                }
                 throw failure
             }
             if (after.isResultStoreState()) {
@@ -177,6 +180,19 @@ class Aria2EngineAdapter private constructor(
             Thread.sleep(REMOVAL_POLL_MILLIS)
         }
         throw Aria2AdapterConsistencyException("aria2 did not finish removing the task before timeout.")
+    }
+
+    private fun awaitResultThenPurge(gid: String) {
+        repeat(REMOVAL_POLL_ATTEMPTS) {
+            try {
+                rpc.removeDownloadResult(gid)
+                return
+            } catch (failure: Aria2RpcRemoteException) {
+                if (failure.code != 1) throw failure
+            }
+            Thread.sleep(REMOVAL_POLL_MILLIS)
+        }
+        throw Aria2AdapterConsistencyException("aria2 result did not become removable before timeout.")
     }
 
     private fun removeDownloadResultOrAcceptMissing(gid: String) {
