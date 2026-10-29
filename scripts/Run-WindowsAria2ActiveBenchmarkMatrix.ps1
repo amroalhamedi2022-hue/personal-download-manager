@@ -308,6 +308,7 @@ try {
                 # The old blanket $incompleteDataRanges.Count -gt 0 check rejected
                 # this valid retry pattern even when the final file was byte-exact.
                 $unrecoveredDataRanges = [System.Collections.Generic.List[object]]::new()
+                $redundantCancelledTailCount = 0
                 for ($rangeIndex = 0; $rangeIndex -lt $ranges.Count; $rangeIndex++) {
                     $range = $ranges[$rangeIndex]
                     if (-not [bool]$range.range -or -not [bool]$range.data_transfer -or [bool]$range.completed) {
@@ -315,6 +316,18 @@ try {
                     }
                     if (-not [bool]$range.honored) {
                         $unrecoveredDataRanges.Add($range)
+                        continue
+                    }
+                    # A speculative tail may be cancelled because an independently
+                    # completed response already covers its entire requested range.
+                    # Handler arrival order does not establish completion order.
+                    $completedCover = @($completedDataRanges | Where-Object {
+                        [long]$_.start -lt [long]$range.start -and
+                        [long]$_.end -eq [long]$range.end -and
+                        [long]$_.socket_write_bytes -eq ([long]$_.end - [long]$_.start + 1)
+                    }).Count -gt 0
+                    if ($completedCover -and [long]$range.socket_write_bytes -ge 0 -and [long]$range.socket_write_bytes -le 65536) {
+                        if ([long]$range.socket_write_bytes -gt 0) { $redundantCancelledTailCount++ }
                         continue
                     }
                     $recoveredByTailRetry = $false
@@ -421,6 +434,9 @@ try {
                         }
                     }
                 }
+                # Each fully covered cancelled tail contributes at most one chunk.
+                # Interval accounting below independently verifies its attribution.
+                $tailRetryCount += $redundantCancelledTailCount
                 if ($tailRetryCount -gt ($incompleteDataRangeCount + 1)) {
                     Write-FailureDiagnostics -Scenario $scenario -Round $round -Stats $after -Tasks @($taskFiles) -Reason "Tail retry count $tailRetryCount exceeds incomplete data ranges $incompleteDataRangeCount plus one bounded completed-response retry."
                     throw "aria2 task $($task.Name) issued too many tail retries."

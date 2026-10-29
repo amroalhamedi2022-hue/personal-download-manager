@@ -49,6 +49,14 @@ def reconcile_fixture_response_ranges(responses, expected_bytes):
         for r in responses
     )
     tail_retry_count = 0
+    for response in responses:
+        if (response['range'] and response['honored'] and response['data_transfer']
+                and not response['completed'] and 0 < int(response['socket_write_bytes']) <= 65536):
+            if any(p['range'] and p['honored'] and p['completed'] and p['data_transfer']
+                   and int(p['start']) < int(response['start']) and int(p['end']) == int(response['end'])
+                   and int(p['socket_write_bytes']) == int(p['end']) - int(p['start']) + 1
+                   for p in responses):
+                tail_retry_count += 1
     for index, retry in enumerate(responses):
         if not (retry["range"] and retry["honored"] and retry["completed"] and retry["data_transfer"]):
             continue
@@ -126,6 +134,29 @@ def reconcile_fixture_response_ranges(responses, expected_bytes):
 
 
 class Aria2Stage2SourceContract(unittest.TestCase):
+    def test_cancelled_speculative_tail_with_complete_cover(self):
+        # Run 40745555279, task 10: the 8-12 MiB response completed;
+        # a speculative 11-12 MiB response was cancelled after one chunk.
+        mib = 1024 * 1024
+        responses = [dict(start=0, end=32*mib-1, range=False, honored=False,
+                          data_transfer=True, completed=False, socket_write_bytes=4*mib+65536)]
+        responses += [dict(start=i*mib, end=(i+4)*mib-1, range=True, honored=True,
+                           data_transfer=True, completed=True, socket_write_bytes=4*mib)
+                      for i in range(4, 32, 4)]
+        responses.append(dict(start=11*mib, end=12*mib-1, range=True, honored=True,
+                              data_transfer=True, completed=False, socket_write_bytes=65536))
+        for ordered in (responses, list(reversed(responses))):
+            self.assertEqual(reconcile_fixture_response_ranges(ordered, 32*mib),
+                             (32*mib+131072, 131072, 32*mib))
+        responses[-1]['socket_write_bytes'] = 131072
+        with self.assertRaises(AssertionError):
+            reconcile_fixture_response_ranges(responses, 32*mib)
+        responses[-1]['socket_write_bytes'] = 65536
+        responses[2]['socket_write_bytes'] -= 1
+        responses[2]['completed'] = False
+        with self.assertRaises(AssertionError):
+            reconcile_fixture_response_ranges(responses, 32*mib)
+
     def test_matrix_uses_exact_http_fixture_hashes_and_real_concurrency(self):
         self.assertIn("LocalHttpRangeFixture.py", ARIA2_MATRIX)
         self.assertIn("Get-FileHash -LiteralPath $task.Path -Algorithm SHA256", ARIA2_MATRIX)
