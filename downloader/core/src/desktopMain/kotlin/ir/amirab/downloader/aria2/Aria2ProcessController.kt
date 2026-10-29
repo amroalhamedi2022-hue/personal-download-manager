@@ -69,6 +69,7 @@ data class Aria2ProcessConfig(
     val executable: Path,
     val workingDirectory: Path,
     val sessionDirectory: Path,
+    val sessionStateFile: Path = sessionDirectory.resolve("aria2.session"),
     val startupTimeout: Duration = Duration.ofSeconds(15),
     val shutdownTimeout: Duration = Duration.ofSeconds(5),
     val readinessPollInterval: Duration = Duration.ofMillis(50),
@@ -185,6 +186,13 @@ class Aria2ProcessController(
         require(Files.isDirectory(config.workingDirectory)) { "aria2 working directory is missing." }
         Files.createDirectories(config.sessionDirectory)
         require(Files.isDirectory(config.sessionDirectory)) { "aria2 session directory is unavailable." }
+        val stateParent = config.sessionStateFile.toAbsolutePath().normalize().parent
+        require(stateParent == config.sessionDirectory.toAbsolutePath().normalize()) {
+            "aria2 session state must stay inside the application-owned session directory."
+        }
+        if (Files.notExists(config.sessionStateFile)) Files.createFile(config.sessionStateFile)
+        require(Files.isRegularFile(config.sessionStateFile)) { "aria2 session state is unavailable." }
+        restrictToOwnerWhenSupported(config.sessionStateFile)
     }
 
     private fun selectAvailablePort(): Int {
@@ -210,6 +218,7 @@ class Aria2ProcessController(
             Files.createTempFile(config.sessionDirectory, "aria2-rpc-", ".conf")
         }
         val rawSecret = secret.rpcToken().removePrefix("token:")
+        val durableSession = config.sessionStateFile.toAbsolutePath().normalize().toString().replace('\\', '/')
         val contents = buildString {
             appendLine("enable-rpc=true")
             appendLine("rpc-listen-all=false")
@@ -217,6 +226,12 @@ class Aria2ProcessController(
             appendLine("rpc-secret=$rawSecret")
             appendLine("disable-ipv6=true")
             appendLine("console-log-level=warn")
+            appendLine("input-file=$durableSession")
+            appendLine("save-session=$durableSession")
+            appendLine("save-session-interval=1")
+            appendLine("auto-save-interval=1")
+            appendLine("always-resume=true")
+            appendLine("force-save=true")
         }
         try {
             Files.writeString(path, contents, StandardCharsets.UTF_8)

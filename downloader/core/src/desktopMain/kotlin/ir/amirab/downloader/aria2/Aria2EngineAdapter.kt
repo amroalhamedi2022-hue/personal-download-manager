@@ -98,6 +98,10 @@ class Aria2EngineAdapter private constructor(
         rpc.unpause(binding.aria2Gid)
     }
 
+    /** aria2 cancellation is its remove operation; durable cleanup is identical. */
+    @Synchronized
+    fun cancel(hyperGetTaskId: Long): Boolean = remove(hyperGetTaskId)
+
     /** Removes the engine task before forgetting its durable association. */
     @Synchronized
     fun remove(hyperGetTaskId: Long): Boolean {

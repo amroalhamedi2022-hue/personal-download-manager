@@ -21,22 +21,25 @@ class Aria2RealRuntimeTest {
         val root = Files.createTempDirectory("hyperget-aria2-runtime-")
         val payload = ByteArray(8 * 1024 * 1024) { index -> ((index * 31 + 17) and 0xff).toByte() }
         val server = slowRangeServer(payload)
-        val controller = Aria2ProcessController(
-            config = Aria2ProcessConfig(
-                executable = Path.of(executable),
-                workingDirectory = root,
-                sessionDirectory = root.resolve("session"),
-                startupTimeout = Duration.ofSeconds(20),
-                shutdownTimeout = Duration.ofSeconds(10),
-            ),
+        val processConfig = Aria2ProcessConfig(
+            executable = Path.of(executable),
+            workingDirectory = root,
+            sessionDirectory = root.resolve("session"),
+            startupTimeout = Duration.ofSeconds(20),
+            shutdownTimeout = Duration.ofSeconds(10),
+        )
+        fun newController() = Aria2ProcessController(
+            config = processConfig,
             rpcFactory = { endpoint, secret ->
                 Aria2HttpRpcClient(endpoint, secret, timeout = Duration.ofSeconds(5))
             },
         )
+        var controller = newController()
         try {
             val rpc = controller.start()
             assertEquals("1.37.0", rpc.getVersion().version)
-            val adapter = Aria2EngineAdapter.restore(rpc, Aria2BindingStore(root.resolve("bindings.json")))
+            val bindingStore = Aria2BindingStore(root.resolve("bindings.json"))
+            var adapter = Aria2EngineAdapter.restore(rpc, bindingStore)
             adapter.add(
                 Aria2AddRequest(
                     hyperGetTaskId = 9001,
@@ -53,7 +56,18 @@ class Aria2RealRuntimeTest {
             Thread.sleep(300)
             assertEquals(pausedBytes, adapter.status(9001).progress.completedLength)
 
-            adapter.unpause(9001)
+            val durableBinding = adapter.bindings().single()
+            controller.shutdown()
+            assertEquals(Aria2ProcessState.STOPPED, controller.state())
+            assertTrue(Files.size(processConfig.sessionStateFile) > 0)
+
+            controller = newController()
+            val restartedRpc = controller.start()
+            adapter = Aria2EngineAdapter.restore(restartedRpc, bindingStore)
+            assertEquals(durableBinding, adapter.reconcileRestored().single())
+            if (adapter.status(9001).progress.state == Aria2TransferState.PAUSED) {
+                adapter.unpause(9001)
+            }
             await(Duration.ofSeconds(90)) { adapter.status(9001).progress.state == Aria2TransferState.COMPLETE }
             val output = root.resolve("result.bin")
             assertTrue(Files.isRegularFile(output))

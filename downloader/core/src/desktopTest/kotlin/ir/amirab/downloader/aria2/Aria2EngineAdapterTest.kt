@@ -1,6 +1,9 @@
 package ir.amirab.downloader.aria2
 
 import java.nio.file.Files
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -115,6 +118,61 @@ class Aria2EngineAdapterTest {
         }
         assertEquals(0, rpc.addCalls)
         assertEquals("user data", Files.readString(root.resolve("taken.bin")))
+    }
+
+    @Test
+    fun concurrentAddsCreateOneRemoteTaskAndOneDurableBinding() {
+        val root = Files.createTempDirectory("aria2-add-race")
+        val rpc = FakeRpc()
+        val store = Aria2BindingStore(root.resolve("bindings.json"))
+        val adapter = Aria2EngineAdapter.restore(rpc, store)
+        val request = Aria2AddRequest(12, "https://example.invalid/race", root, "race.bin")
+        val start = CountDownLatch(1)
+        val executor = Executors.newFixedThreadPool(8)
+        try {
+            val futures = (1..16).map {
+                executor.submit<Aria2TaskBinding> {
+                    start.await()
+                    adapter.add(request)
+                }
+            }
+            start.countDown()
+            val bindings = futures.map { it.get(5, TimeUnit.SECONDS) }
+            assertEquals(1, bindings.distinct().size)
+            assertEquals(1, rpc.addCalls)
+            assertEquals(listOf(12L), store.load().map { it.hyperGetTaskId })
+        } finally {
+            executor.shutdownNow()
+        }
+    }
+
+    @Test
+    fun pauseCancelRaceCannotResurrectOrDuplicateMapping() {
+        val root = Files.createTempDirectory("aria2-cancel-race")
+        val rpc = FakeRpc()
+        val store = Aria2BindingStore(root.resolve("bindings.json"))
+        val adapter = Aria2EngineAdapter.restore(rpc, store)
+        adapter.add(Aria2AddRequest(13, "https://example.invalid/cancel", root, "cancel.bin"))
+        val start = CountDownLatch(1)
+        val executor = Executors.newFixedThreadPool(2)
+        try {
+            val pause = executor.submit {
+                start.await()
+                runCatching { adapter.pause(13) }
+            }
+            val cancel = executor.submit<Boolean> {
+                start.await()
+                adapter.cancel(13)
+            }
+            start.countDown()
+            pause.get(5, TimeUnit.SECONDS)
+            assertTrue(cancel.get(5, TimeUnit.SECONDS))
+            assertTrue(adapter.bindings().isEmpty())
+            assertTrue(store.load().isEmpty())
+            assertEquals(1, rpc.addCalls)
+        } finally {
+            executor.shutdownNow()
+        }
     }
 
     @Test

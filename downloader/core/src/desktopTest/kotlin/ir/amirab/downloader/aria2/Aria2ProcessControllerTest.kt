@@ -54,6 +54,9 @@ class Aria2ProcessControllerTest {
         assertTrue(contents.contains("rpc-listen-all=false"))
         assertTrue(contents.contains("disable-ipv6=true"))
         assertTrue(contents.contains("rpc-secret=$rawSecret"))
+        assertTrue(contents.contains("save-session="))
+        assertTrue(contents.contains("input-file="))
+        assertTrue(contents.contains("save-session-interval=1"))
         assertTrue(command.none { it.contains(rawSecret) })
         assertFalse(controller.toString().contains(rawSecret))
 
@@ -61,6 +64,7 @@ class Aria2ProcessControllerTest {
 
         assertEquals(Aria2ProcessState.STOPPED, controller.state())
         assertFalse(configPath.exists())
+        assertTrue(fixture.sessionStateFile.exists())
         assertEquals(1, rpc.shutdownCalls)
         assertFalse(process.destroyCalled)
         assertFalse(process.forceCalled)
@@ -176,6 +180,7 @@ class Aria2ProcessControllerTest {
         private val executable = root.resolve("aria2c-test").createFile()
         private val work = root.resolve("work").createDirectories()
         private val session = root.resolve("session")
+        val sessionStateFile: Path = session.resolve("aria2.session")
 
         fun controller(
             process: FakeProcess,
