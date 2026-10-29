@@ -324,14 +324,13 @@ class Aria2ProcessController(
     }
 
     private fun deleteSessionConfig(strict: Boolean = false) {
-        val path = sessionConfigPath
-        sessionConfigPath = null
-        if (path == null) return
+        val path = sessionConfigPath ?: return
         try {
             Files.deleteIfExists(path)
             if (strict && Files.exists(path)) {
                 throw Aria2ProcessException("Unable to remove the aria2 RPC secret file after startup.")
             }
+            if (Files.notExists(path)) sessionConfigPath = null
         } catch (failure: Throwable) {
             if (strict) throw Aria2ProcessException(
                 "Unable to remove the aria2 RPC secret file after startup.",
