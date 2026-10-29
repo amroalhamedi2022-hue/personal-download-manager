@@ -98,14 +98,28 @@ class Aria2MonotonicProgress {
         val accepted = if (previous == null) {
             sample
         } else {
+            val terminalState = previous.state.takeIf { it.isTerminal() }
             sample.copy(
+                state = terminalState ?: sample.state,
                 completedLength = maxOf(previous.completedLength, sample.completedLength),
                 totalLength = listOfNotNull(previous.totalLength, sample.totalLength).maxOrNull(),
+                downloadSpeed = if (terminalState != null) 0 else sample.downloadSpeed,
             )
         }
         latest = accepted
         return accepted
     }
+}
+
+private fun Aria2TransferState.isTerminal(): Boolean = when (this) {
+    Aria2TransferState.COMPLETE,
+    Aria2TransferState.ERROR,
+    Aria2TransferState.REMOVED,
+    -> true
+    Aria2TransferState.WAITING,
+    Aria2TransferState.ACTIVE,
+    Aria2TransferState.PAUSED,
+    -> false
 }
 
 fun aria2TransferState(rawStatus: String): Aria2TransferState = when (rawStatus) {

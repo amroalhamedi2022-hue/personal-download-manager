@@ -68,6 +68,20 @@ class Aria2EnginePrototypeTest {
     }
 
     @Test
+    fun terminalProgressCannotBeReactivatedByALateRpcSample() {
+        val progress = Aria2MonotonicProgress()
+        progress.accept(Aria2ProgressSample(Aria2TransferState.COMPLETE, 1_000, 1_000, 0))
+
+        val accepted = progress.accept(
+            Aria2ProgressSample(Aria2TransferState.ACTIVE, 900, 1_000, 250)
+        )
+
+        assertEquals(Aria2TransferState.COMPLETE, accepted.state)
+        assertEquals(1_000, accepted.completedLength)
+        assertEquals(0, accepted.downloadSpeed)
+    }
+
+    @Test
     fun allDocumentedAria2StatusesMapExplicitly() {
         assertEquals(Aria2TransferState.WAITING, aria2TransferState("waiting"))
         assertEquals(Aria2TransferState.ACTIVE, aria2TransferState("active"))

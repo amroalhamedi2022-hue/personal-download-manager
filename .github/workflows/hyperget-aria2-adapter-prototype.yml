@@ -39,5 +39,46 @@ jobs:
         run: >-
           ./gradlew --no-daemon --stacktrace
           :downloader:core:desktopTest
-          --tests ir.amirab.downloader.aria2.Aria2EnginePrototypeTest
+          --tests 'ir.amirab.downloader.aria2.*'
+
+  windows-runtime:
+    name: Pinned aria2 1.37.0 real adapter lifecycle and transfer
+    runs-on: windows-2022
+    timeout-minutes: 30
+    env:
+      ARIA2_ARCHIVE_SHA256: 67d015301eef0b612191212d564c5bb0a14b5b9c4796b76454276a4d28d9b288
+    steps:
+      - name: Check out exact PR head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Set up JetBrains Runtime 25
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: jetbrains
+          java-package: jdk
+          java-version: "25"
+          cache: gradle
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Download and verify pinned upstream aria2 archive
+        shell: pwsh
+        run: |
+          $archive = Join-Path $env:RUNNER_TEMP 'aria2-1.37.0-win-64bit-build1.zip'
+          $extract = Join-Path $env:RUNNER_TEMP 'aria2-adapter-runtime'
+          Invoke-WebRequest -UseBasicParsing -Uri 'https://github.com/aria2/aria2/releases/download/release-1.37.0/aria2-1.37.0-win-64bit-build1.zip' -OutFile $archive
+          $actual = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $env:ARIA2_ARCHIVE_SHA256) { throw "Pinned aria2 archive hash mismatch: $actual" }
+          Expand-Archive -LiteralPath $archive -DestinationPath $extract
+          $exe = Get-ChildItem -LiteralPath $extract -Filter aria2c.exe -Recurse -File
+          if (@($exe).Count -ne 1) { throw 'Expected exactly one pinned aria2c.exe.' }
+          "ARIA2_EXE=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          $version = (& $exe.FullName --version 2>&1 | Out-String)
+          if ($LASTEXITCODE -ne 0 -or $version -notmatch 'aria2 version 1\.37\.0') { throw 'Pinned aria2 version check failed.' }
+      - name: Run real Windows adapter lifecycle and transfer
+        shell: pwsh
+        run: >-
+          & ./gradlew.bat --no-daemon --stacktrace --dependency-verification strict
+          :downloader:core:desktopTest
+          --tests ir.amirab.downloader.aria2.Aria2RealRuntimeTest
 
