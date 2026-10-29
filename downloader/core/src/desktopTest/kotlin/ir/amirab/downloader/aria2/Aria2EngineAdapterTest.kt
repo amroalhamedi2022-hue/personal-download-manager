@@ -178,9 +178,8 @@ class Aria2EngineAdapterTest {
             return gid
         }
 
-        override fun removeDownloadResult(gid: String): String {
+        override fun removeDownloadResult(gid: String) {
             removeResultCalls++
-            return gid
         }
 
         override fun shutdown() = Unit

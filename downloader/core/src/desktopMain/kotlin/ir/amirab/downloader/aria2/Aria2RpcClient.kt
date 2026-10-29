@@ -30,7 +30,7 @@ interface Aria2RpcApi {
     fun pause(gid: String): String
     fun unpause(gid: String): String
     fun remove(gid: String): String
-    fun removeDownloadResult(gid: String): String
+    fun removeDownloadResult(gid: String)
     fun shutdown()
 }
 
@@ -137,8 +137,14 @@ class Aria2HttpRpcClient(
 
     override fun remove(gid: String): String = gidCommand("aria2.remove", gid)
 
-    override fun removeDownloadResult(gid: String): String =
-        gidCommand("aria2.removeDownloadResult", gid)
+    override fun removeDownloadResult(gid: String) {
+        val normalizedGid = gid.requireGid()
+        val result = invoke("aria2.removeDownloadResult", listOf(JsonPrimitive(normalizedGid)))
+            .requiredStringValue("aria2.removeDownloadResult result")
+        if (result != "OK") {
+            throw Aria2RpcProtocolException("aria2 did not acknowledge result removal.")
+        }
+    }
 
     override fun shutdown() {
         val result = invoke("aria2.shutdown").requiredStringValue("aria2.shutdown result")

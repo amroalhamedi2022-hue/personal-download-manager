@@ -257,7 +257,7 @@ class Aria2ProcessControllerTest {
         override fun pause(gid: String): String = gid
         override fun unpause(gid: String): String = gid
         override fun remove(gid: String): String = gid
-        override fun removeDownloadResult(gid: String): String = gid
+        override fun removeDownloadResult(gid: String) = Unit
         override fun shutdown() {
             shutdownCalls++
             shutdown.invoke()
