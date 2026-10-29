@@ -59,7 +59,8 @@ class Aria2RpcClientTest {
                         "errorMessage" to JsonPrimitive("sensitive remote text"),
                     )
                 )
-                "aria2.pause", "aria2.unpause", "aria2.remove" -> JsonPrimitive("abcdef0123456789")
+                "aria2.pause", "aria2.unpause", "aria2.remove", "aria2.removeDownloadResult" ->
+                    JsonPrimitive("abcdef0123456789")
                 "aria2.shutdown" -> JsonPrimitive("OK")
                 else -> error("unexpected method")
             }
@@ -82,12 +83,14 @@ class Aria2RpcClientTest {
         assertEquals("abcdef0123456789", client.pause(status.gid))
         assertEquals("abcdef0123456789", client.unpause(status.gid))
         assertEquals("abcdef0123456789", client.remove(status.gid))
+        assertEquals("abcdef0123456789", client.removeDownloadResult(status.gid))
         client.shutdown()
 
         assertEquals(
             listOf(
                 "aria2.getVersion", "aria2.getVersion", "aria2.addUri", "aria2.tellStatus",
-                "aria2.pause", "aria2.unpause", "aria2.remove", "aria2.shutdown",
+                "aria2.pause", "aria2.unpause", "aria2.remove", "aria2.removeDownloadResult",
+                "aria2.shutdown",
             ),
             requests.map { it.getValue("method").jsonPrimitive.content },
         )

@@ -102,13 +102,7 @@ class Aria2EngineAdapter private constructor(
     @Synchronized
     fun remove(hyperGetTaskId: Long): Boolean {
         val binding = registry.bindingForTask(hyperGetTaskId) ?: return false
-        try {
-            rpc.remove(binding.aria2Gid)
-        } catch (failure: Aria2RpcRemoteException) {
-            if (failure.code != 1) throw failure
-            // aria2 code 1 is the normal stale/unknown GID outcome. The durable
-            // mapping must still be cleaned so restart cannot duplicate it.
-        }
+        removeEngineTask(binding.aria2Gid)
         registry.removeTask(hyperGetTaskId)
         try {
             bindingStore.save(registry.snapshot())
@@ -118,6 +112,48 @@ class Aria2EngineAdapter private constructor(
         }
         progressByTask.remove(hyperGetTaskId)
         return true
+    }
+
+    /**
+     * aria2 keeps completed/error/removed tasks in its result store, where
+     * `aria2.remove` is rejected. A task can also finish between tellStatus and
+     * remove, so code 1 on the active-task path gets one result-store cleanup
+     * attempt. A second code 1 means the GID is already absent and is success.
+     */
+    private fun removeEngineTask(gid: String) {
+        val state = try {
+            rpc.tellStatus(gid).state
+        } catch (failure: Aria2RpcRemoteException) {
+            if (failure.code == 1) return
+            throw failure
+        }
+
+        if (state.isResultStoreState()) {
+            removeDownloadResultOrAcceptMissing(gid)
+            return
+        }
+
+        try {
+            rpc.remove(gid)
+        } catch (failure: Aria2RpcRemoteException) {
+            if (failure.code != 1) throw failure
+            // The task may have completed after tellStatus.
+            removeDownloadResultOrAcceptMissing(gid)
+            return
+        }
+
+        // `remove` moves an active task to the stopped-result store. Purge it
+        // when aria2 has already completed that transition; code 1 here is a
+        // harmless asynchronous transition and must not resurrect the binding.
+        removeDownloadResultOrAcceptMissing(gid)
+    }
+
+    private fun removeDownloadResultOrAcceptMissing(gid: String) {
+        try {
+            rpc.removeDownloadResult(gid)
+        } catch (failure: Aria2RpcRemoteException) {
+            if (failure.code != 1) throw failure
+        }
     }
 
     /**
@@ -168,6 +204,17 @@ class Aria2EngineAdapter private constructor(
         require(Files.notExists(normalized.resolve(fileName))) { "Destination file already exists." }
         return normalized
     }
+}
+
+private fun Aria2TransferState.isResultStoreState(): Boolean = when (this) {
+    Aria2TransferState.COMPLETE,
+    Aria2TransferState.ERROR,
+    Aria2TransferState.REMOVED,
+    -> true
+    Aria2TransferState.WAITING,
+    Aria2TransferState.ACTIVE,
+    Aria2TransferState.PAUSED,
+    -> false
 }
 
 enum class Aria2Workload {

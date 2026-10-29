@@ -30,6 +30,7 @@ interface Aria2RpcApi {
     fun pause(gid: String): String
     fun unpause(gid: String): String
     fun remove(gid: String): String
+    fun removeDownloadResult(gid: String): String
     fun shutdown()
 }
 
@@ -135,6 +136,9 @@ class Aria2HttpRpcClient(
     override fun unpause(gid: String): String = gidCommand("aria2.unpause", gid)
 
     override fun remove(gid: String): String = gidCommand("aria2.remove", gid)
+
+    override fun removeDownloadResult(gid: String): String =
+        gidCommand("aria2.removeDownloadResult", gid)
 
     override fun shutdown() {
         val result = invoke("aria2.shutdown").requiredStringValue("aria2.shutdown result")

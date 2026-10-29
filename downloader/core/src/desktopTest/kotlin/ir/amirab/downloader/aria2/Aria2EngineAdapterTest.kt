@@ -64,6 +64,34 @@ class Aria2EngineAdapterTest {
     }
 
     @Test
+    fun removeUsesResultStoreForCompletedTask() {
+        val root = Files.createTempDirectory("aria2-complete")
+        val rpc = FakeRpc().apply {
+            status = status.copy(state = Aria2TransferState.COMPLETE)
+        }
+        val adapter = Aria2EngineAdapter.restore(rpc, Aria2BindingStore(root.resolve("bindings.json")))
+        adapter.add(Aria2AddRequest(21, "https://example.invalid/complete", root, "complete.bin"))
+
+        assertTrue(adapter.remove(21))
+        assertEquals(0, rpc.removeCalls)
+        assertEquals(1, rpc.removeResultCalls)
+        assertTrue(adapter.bindings().isEmpty())
+    }
+
+    @Test
+    fun removeHandlesCompletionRaceAfterActiveStatus() {
+        val root = Files.createTempDirectory("aria2-remove-race")
+        val rpc = FakeRpc().apply { removeFailure = Aria2RpcRemoteException(1) }
+        val adapter = Aria2EngineAdapter.restore(rpc, Aria2BindingStore(root.resolve("bindings.json")))
+        adapter.add(Aria2AddRequest(22, "https://example.invalid/race", root, "race.bin"))
+
+        assertTrue(adapter.remove(22))
+        assertEquals(1, rpc.removeCalls)
+        assertEquals(1, rpc.removeResultCalls)
+        assertTrue(adapter.bindings().isEmpty())
+    }
+
+    @Test
     fun reconcileRemovesOnlyExplicitlyStaleMappings() {
         val root = Files.createTempDirectory("aria2-restore")
         val store = Aria2BindingStore(root.resolve("bindings.json"))
@@ -125,6 +153,8 @@ class Aria2EngineAdapterTest {
 
     private class FakeRpc : Aria2RpcApi {
         var addCalls = 0
+        var removeCalls = 0
+        var removeResultCalls = 0
         var removeFailure: Aria2RpcRemoteException? = null
         var tellFailure: Aria2RpcRemoteException? = null
         var status = Aria2Status(GID, Aria2TransferState.ACTIVE, 0, 0, 0, null, null)
@@ -143,7 +173,13 @@ class Aria2EngineAdapterTest {
         override fun pause(gid: String) = gid
         override fun unpause(gid: String) = gid
         override fun remove(gid: String): String {
+            removeCalls++
             removeFailure?.let { throw it }
+            return gid
+        }
+
+        override fun removeDownloadResult(gid: String): String {
+            removeResultCalls++
             return gid
         }
 
