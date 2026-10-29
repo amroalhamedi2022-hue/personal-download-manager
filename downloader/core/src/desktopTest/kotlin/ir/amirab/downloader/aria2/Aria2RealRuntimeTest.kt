@@ -6,6 +6,7 @@ import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.AclFileAttributeView
 import java.security.MessageDigest
 import java.time.Duration
 import java.util.concurrent.Executors
@@ -28,16 +29,21 @@ class Aria2RealRuntimeTest {
             startupTimeout = Duration.ofSeconds(20),
             shutdownTimeout = Duration.ofSeconds(10),
         )
+        val sessionSecrets = mutableListOf<String>()
         fun newController() = Aria2ProcessController(
             config = processConfig,
             rpcFactory = { endpoint, secret ->
                 Aria2HttpRpcClient(endpoint, secret, timeout = Duration.ofSeconds(5))
+            },
+            secretFactory = {
+                Aria2SessionSecret.generate().also { sessionSecrets += it.rpcToken() }
             },
         )
         var controller = newController()
         try {
             val rpc = controller.start()
             assertEquals("1.37.0", rpc.getVersion().version)
+            assertFalse(hasRpcSecretConfig(processConfig.sessionDirectory))
             val bindingStore = Aria2BindingStore(root.resolve("bindings.json"))
             var adapter = Aria2EngineAdapter.restore(rpc, bindingStore)
             adapter.add(
@@ -63,6 +69,9 @@ class Aria2RealRuntimeTest {
 
             controller = newController()
             val restartedRpc = controller.start()
+            assertEquals(2, sessionSecrets.distinct().size)
+            assertFalse(hasRpcSecretConfig(processConfig.sessionDirectory))
+            assertOwnerOnlyAclWhenAvailable(processConfig.sessionStateFile)
             adapter = Aria2EngineAdapter.restore(restartedRpc, bindingStore)
             assertEquals(durableBinding, adapter.reconcileRestored().single())
             if (adapter.status(9001).progress.state == Aria2TransferState.PAUSED) {
@@ -135,4 +144,16 @@ class Aria2RealRuntimeTest {
     }
 
     private fun sha256(bytes: ByteArray): ByteArray = MessageDigest.getInstance("SHA-256").digest(bytes)
+
+    private fun hasRpcSecretConfig(directory: Path): Boolean =
+        Files.list(directory).use { entries ->
+            entries.anyMatch { it.fileName.toString().startsWith("aria2-rpc-") }
+        }
+
+    private fun assertOwnerOnlyAclWhenAvailable(path: Path) {
+        val view = Files.getFileAttributeView(path, AclFileAttributeView::class.java) ?: return
+        val owner = Files.getOwner(path)
+        assertTrue(view.acl.isNotEmpty())
+        assertTrue(view.acl.all { it.principal() == owner })
+    }
 }
