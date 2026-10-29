@@ -332,7 +332,7 @@ object Aria2EngineBootstrap {
             val adapter = Aria2EngineAdapter.restore(rpc, bindingStore)
             adapter.reconcileRestored()
             StartedAria2Engine(controller, adapter)
-        } catch (_: Throwable) {
+        } catch (_: Exception) {
             runCatching { controller.shutdown() }
             null
         }

@@ -255,6 +255,26 @@ class Aria2EngineAdapterTest {
         )
     }
 
+    @Test
+    fun bootstrapFallsBackWithoutBindingsWhenEnabledEngineCannotStart() {
+        val root = Files.createTempDirectory("aria2-bootstrap-fallback")
+        val storePath = root.resolve("bindings.json")
+        val controller = Aria2ProcessController(
+            Aria2ProcessConfig(root.resolve("missing-aria2c"), root, root.resolve("session")),
+            rpcFactory = { _, _ -> FakeRpc() },
+        )
+
+        assertNull(
+            Aria2EngineBootstrap.tryStart(
+                Aria2EngineFeatureFlag { "true" },
+                controller,
+                Aria2BindingStore(storePath),
+            )
+        )
+        assertEquals(Aria2ProcessState.STOPPED, controller.state())
+        assertFalse(Files.exists(storePath))
+    }
+
     private class FakeRpc : Aria2RpcApi {
         var addCalls = 0
         var removeCalls = 0

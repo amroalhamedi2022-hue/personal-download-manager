@@ -22,6 +22,8 @@ Base: `codex/repair-rf00-rf01`
 - `2d56883` — persistent session restore and concurrent cancellation/add coverage.
 - `2659c48`, `8172eb7`, `ae9345a`, `ddea0d1` — fail-closed shutdown/removal, orphan cleanup, immediate secret deletion, Windows ACL and per-session-secret assertions.
 - `7c40b01` — evidence-backed classification of all 81 tracked requirements.
+- `83c0aac`, `c5b1645` — checkpoint plus exact-head compilation repair and the
+  post-`remove` disappearing-GID race regression.
 
 ## Verified evidence
 
@@ -29,11 +31,20 @@ Base: `codex/repair-rf00-rf01`
 - The Windows runtime used the official archive SHA-256 `67d015301eef0b612191212d564c5bb0a14b5b9c4796b76454276a4d28d9b288` and exercised process start/readiness, authenticated RPC, add, progress, pause, resume, exact output size/SHA-256, removal and shutdown.
 - Full application regression/build passed on `dabad42` inside run `40966151890`; the later Stage 2 benchmark failed only at fixture overlap classification in active-16 round 2 after earlier exact outputs passed. Commit `3e817fe` adds the focused regression; its exact-head Stage 2 rerun remains the acceptance authority.
 - Local source suites after the repair: 33/33 PASS (`test_hyperget_aria2_comparison_source` plus `test_hyperget_active_benchmark_source`); `git diff --check` PASS.
+- Exact head `c5b16453b7379a74936a9db791416f0a9852f70c`: dedicated adapter run
+  `40972502773` PASS. Both the Ubuntu adapter-contract job and the pinned Windows
+  aria2 1.37.0 real lifecycle/transfer job succeeded after the compilation fix.
 
-## Pending exact-head proof
+## Remaining proof
 
-The security-hardening head `ddea0d1` has been pushed. Its dedicated adapter Windows runtime and the repaired Stage 2 run must complete before these later commits are marked accepted. A source-only pass is not a substitute for that runtime evidence.
+The Stage 3 adapter core now has exact-head Windows runtime proof. Desktop
+`DownloadJob`/UI integration behind the disabled-by-default flag is not yet
+implemented, and the repaired Stage 2 performance workflow remains a separate
+acceptance authority. A source-only pass is not a substitute for either runtime
+gate.
 
 ## Next
 
-Read the exact-head CI result once, repair only evidenced failures, then connect the accepted adapter to the desktop HTTP/HTTPS selection path behind the disabled-by-default flag while preserving the existing downloader as fallback and leaving specialized engines unchanged.
+Connect the accepted adapter to a dedicated desktop `DownloadJob` and progress
+state behind the disabled-by-default flag. Preserve the current downloader as
+fallback, keep Liquid Progress monotonic, and leave specialized engines unchanged.
