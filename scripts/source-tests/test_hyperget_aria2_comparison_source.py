@@ -101,14 +101,14 @@ def reconcile_fixture_response_ranges(responses, expected_bytes):
                 and p["requested_start"] < interval["requested_start"] and p["end"] >= start
                 for p in ordered
             )
-            if prior_unranged == prior_tail:
+            if not prior_unranged and not prior_tail:
                 raise AssertionError("unclassified overlap")
             overlap_count += 1
             duplicate_bytes += overlap
-            if prior_unranged:
-                unranged_overlap_count += 1
-            else:
+            if prior_tail:
                 tail_retry_overlap_count += 1
+            else:
+                unranged_overlap_count += 1
         if end > covered_end:
             new_start = max(start, covered_end + 1)
             covered_bytes += end - new_start + 1
@@ -134,6 +134,30 @@ def reconcile_fixture_response_ranges(responses, expected_bytes):
 
 
 class Aria2Stage2SourceContract(unittest.TestCase):
+    def test_tail_retry_inside_interrupted_initial_get_has_specific_attribution(self):
+        # Run 40966151890 reached active-16 round 2 before rejecting an
+        # overlap that was covered by both the interrupted initial GET and a
+        # same-end Range. It is one tail retry, not an unclassified overlap.
+        kib = 1024
+        mib = 1024 * kib
+        expected = 8 * mib
+        responses = [
+            dict(start=0, end=expected - 1, range=False, honored=False,
+                 data_transfer=True, completed=False, socket_write_bytes=4 * mib + 64 * kib),
+            dict(start=4 * mib, end=4 * mib + 64 * kib - 1, range=True, honored=True,
+                 data_transfer=True, completed=False, socket_write_bytes=64 * kib),
+            dict(start=4 * mib + 32 * kib, end=4 * mib + 64 * kib - 1,
+                 range=True, honored=True, data_transfer=True, completed=True,
+                 socket_write_bytes=32 * kib),
+            dict(start=4 * mib + 64 * kib, end=expected - 1, range=True, honored=True,
+                 data_transfer=True, completed=True,
+                 socket_write_bytes=expected - (4 * mib + 64 * kib)),
+        ]
+        self.assertEqual(
+            reconcile_fixture_response_ranges(responses, expected),
+            (expected + 96 * kib, 96 * kib, expected),
+        )
+
     def test_cancelled_speculative_tail_with_complete_cover(self):
         # Run 40745555279, task 10: the 8-12 MiB response completed;
         # a speculative 11-12 MiB response was cancelled after one chunk.

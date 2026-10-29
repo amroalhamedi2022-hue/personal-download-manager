@@ -477,13 +477,18 @@ try {
                             [long]$_.RequestedStart -lt [long]$interval.RequestedStart -and
                             [long]$_.End -ge [long]$interval.Start
                         }).Count -gt 0
-                        if ($priorUnranged -eq $priorTail) {
-                            Write-FailureDiagnostics -Scenario $scenario -Round $round -Stats $after -Tasks @($taskFiles) -Reason "An overlapping interval is not uniquely attributable to an interrupted un-ranged response or a same-end tail retry."
+                        if (-not $priorUnranged -and -not $priorTail) {
+                            Write-FailureDiagnostics -Scenario $scenario -Round $round -Stats $after -Tasks @($taskFiles) -Reason "An overlapping interval is not attributable to an interrupted un-ranged response or a same-end tail retry."
                             throw "aria2 task $($task.Name) has an unclassified HTTP range overlap."
                         }
                         $overlapCount++
                         $duplicateBytes += $overlap
-                        if ($priorUnranged) { $unrangedOverlapCount++ } else { $tailRetryOverlapCount++ }
+                        # A short same-end tail retry can fall inside the bytes of
+                        # both an interrupted initial GET and its earlier Range.
+                        # Attribute that overlap to the more specific tail retry;
+                        # the aggregate byte/count bounds below still prevent it
+                        # from being accepted twice or exceeding one chunk.
+                        if ($priorTail) { $tailRetryOverlapCount++ } else { $unrangedOverlapCount++ }
                     }
                     if ([long]$interval.End -gt $coveredEnd) {
                         $newStart = [Math]::Max([long]$interval.Start, $coveredEnd + 1)
