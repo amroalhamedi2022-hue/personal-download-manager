@@ -135,6 +135,14 @@ The evaluation workflow is triggered by every PR-head change targeting the exist
 
 **Current automation limitation (2026-10-28):** the Stage 1 Windows harness has passed HTTP redirect/status/ignored-Range cases. Artifact inspection proves the interrupted transfer resumed from an honored nonzero offset (2,310,144) and the restart actually served 14,532,608 bytes, but the gate falsely failed because it summed declared request lengths, including a preliminary GET aborted after about 64 KiB. The harness now gates on actual fixture bytes sent while retaining requested-byte telemetry as diagnostics; the exact-head rerun must pass before resume is accepted. FTP and RPC evidence remain pending. Stage 2 remains NOT STARTED: no paired 1/4/16 aria2-vs-HyperGet comparison, no validated custom no-BitTorrent build, and no adapter prototype exist yet. Migration remains **PENDING**, not GO. The stock upstream binary is evaluation-only because BitTorrent is enabled; no production switch or packaging is permitted.
 
+## 2026-10-29 — Stage 2 GO and Stage 3 prototype start
+
+- Exact HyperGet source `69d759771cbef27c706f136b2399ffdf7981200e`, run [40833072288](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40833072288), passed the corrected Windows Stage 2 gate.
+- All 63 outputs per engine matched the same 32 MiB fixture SHA-256. Median aria2 throughput deltas were +10.24% at one task, +9.48% at four tasks and +54.19% at sixteen tasks. The median gain across workloads was +10.24%; all predeclared throughput and memory gates passed.
+- The other 13 exact-head workflows also passed after the installed-GUI job succeeded on its second attempt. This includes installed HTTP/HTTPS/FTP, HLS, queue/lifecycle, Chrome/Firefox capture, memory, upgrade/rollback and GUI acceptance.
+- User decision on 2026-10-29 supersedes the earlier no-Torrent constraint: keep aria2's BitTorrent capability instead of producing a custom stripped build. Torrent support remains behind the same adapter and is not silently enabled in the HyperGet UI by this prototype.
+- Stage 3 starts behind an opt-in feature flag. HyperGet retains stable task IDs and existing-engine fallback; aria2 GIDs and RPC secrets must not leak to persisted UI identity or logs.
+
 
 ## 2026-10-28 — Exact-head smoke evidence and the no-Torrent gate
 
