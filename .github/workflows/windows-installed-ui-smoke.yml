@@ -34,7 +34,8 @@ on:
       - "scripts/audit_windows_icon_resources.py"
       - "scripts/source-tests/test_hyperget_icon_resource_audit.py"
   pull_request:
-    branches: [codex/repair-rf00-rf01]
+    # Isolated one-off visual-acceptance PR; existing production base remains unchanged.
+    branches: [codex/repair-rf00-rf01, experiment/jules-liquid-progress-20261030]
     paths:
       - ".github/workflows/windows-installed-ui-smoke.yml"
       - "desktop/app/build.gradle.kts"
