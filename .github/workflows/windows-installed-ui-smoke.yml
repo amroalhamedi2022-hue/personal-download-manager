@@ -11,6 +11,10 @@ on:
       - "desktop/app/icons/hyperget-icon.svg"
       - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/di/Di.kt"
       - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/singleInstance/EnsureAppIsAwake.kt"
+      - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/singleInstance/service/IDefaultAppIPCService.kt"
+      - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/singleInstance/service/DefaultAppIPCServiceImpl.kt"
+      - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/cli/download/Download.kt"
+      - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/cli/download/open/OpenDownload.kt"
       - "scripts/source-tests/test_hyperget_http_dispatcher_bound_source.py"
       - "desktop/app/resources/installer/nsis-script-template.nsi"
       - "scripts/Run-WindowsInstallerLifecycleE2E.ps1"
@@ -37,6 +41,10 @@ on:
       - "desktop/app/icons/hyperget-icon.svg"
       - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/di/Di.kt"
       - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/singleInstance/EnsureAppIsAwake.kt"
+      - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/singleInstance/service/IDefaultAppIPCService.kt"
+      - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/singleInstance/service/DefaultAppIPCServiceImpl.kt"
+      - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/cli/download/Download.kt"
+      - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/cli/download/open/OpenDownload.kt"
       - "scripts/source-tests/test_hyperget_http_dispatcher_bound_source.py"
       - "desktop/app/resources/installer/nsis-script-template.nsi"
       - "scripts/Run-WindowsInstallerLifecycleE2E.ps1"
@@ -104,7 +112,7 @@ jobs:
           run=false
           while IFS= read -r file; do
             case "$file" in
-              .github/workflows/windows-installed-ui-smoke.yml|desktop/app/resources/installer/nsis-script-template.nsi|desktop/app/build.gradle.kts|desktop/app/icons/icon.ico|desktop/app/icons/hyperget-icon.svg|scripts/Run-WindowsInstallerLifecycleE2E.ps1|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/TableDownloadItem.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/DownloadList.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/singleDownloadPage/ProgressDownloadPage.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/singleDownloadPage/ShowDownloadDialogs.kt|shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/ui/theme/DefaultThemes.kt|shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/storage/appsettings/DefaultAppSettings.kt|shared/app/src/desktopTest/kotlin/com/abdownloadmanager/shared/ui/theme/ModernThemePaletteContractTest.kt|scripts/Run-WindowsLiquidProgressVisualE2E.ps1|scripts/Wait-WindowsLoopbackHttpPort.ps1|scripts/source-tests/test_hyperget_liquid_progress_source.py|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/di/Di.kt|scripts/source-tests/test_hyperget_http_dispatcher_bound_source.py)
+              .github/workflows/windows-installed-ui-smoke.yml|desktop/app/resources/installer/nsis-script-template.nsi|desktop/app/build.gradle.kts|desktop/app/icons/icon.ico|desktop/app/icons/hyperget-icon.svg|scripts/Run-WindowsInstallerLifecycleE2E.ps1|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/TableDownloadItem.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/DownloadList.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/singleDownloadPage/ProgressDownloadPage.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/singleDownloadPage/ShowDownloadDialogs.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/singleInstance/service/IDefaultAppIPCService.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/singleInstance/service/DefaultAppIPCServiceImpl.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/cli/download/Download.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/cli/download/open/OpenDownload.kt|shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/ui/theme/DefaultThemes.kt|shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/storage/appsettings/DefaultAppSettings.kt|shared/app/src/desktopTest/kotlin/com/abdownloadmanager/shared/ui/theme/ModernThemePaletteContractTest.kt|scripts/Run-WindowsLiquidProgressVisualE2E.ps1|scripts/Wait-WindowsLoopbackHttpPort.ps1|scripts/source-tests/test_hyperget_liquid_progress_source.py|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/di/Di.kt|scripts/source-tests/test_hyperget_http_dispatcher_bound_source.py)
                 run=true ;;
             esac
           done <<< "$changed"

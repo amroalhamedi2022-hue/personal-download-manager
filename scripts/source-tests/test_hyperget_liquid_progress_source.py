@@ -9,6 +9,10 @@ LIST = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/
 SCRIPT = (ROOT / "scripts/Run-WindowsLiquidProgressVisualE2E.ps1").read_text(encoding="utf-8")
 UI_WORKFLOW = (ROOT / ".github/workflows/windows-installed-ui-smoke.yml").read_text(encoding="utf-8")
 SOURCE_WORKFLOW = (ROOT / ".github/workflows/hyperget-source-only.yml").read_text(encoding="utf-8")
+IPC_INTERFACE = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/singleInstance/service/IDefaultAppIPCService.kt").read_text(encoding="utf-8")
+IPC_IMPL = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/singleInstance/service/DefaultAppIPCServiceImpl.kt").read_text(encoding="utf-8")
+DOWNLOAD_COMMAND = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/cli/download/Download.kt").read_text(encoding="utf-8")
+OPEN_COMMAND = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/cli/download/open/OpenDownload.kt").read_text(encoding="utf-8")
 
 
 class LiquidProgressSourceContract(unittest.TestCase):
@@ -73,11 +77,22 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("IsWindowVisible", SCRIPT)
         self.assertIn("$fileName", SCRIPT)
         self.assertIn("$windowHandle = $detailWindowHandle", SCRIPT)
+        self.assertIn("download open $taskId", SCRIPT)
+        self.assertIn("Installed CLI could not open", SCRIPT)
         self.assertIn("refusing to accept a main-list screenshot", SCRIPT)
         self.assertLess(
             SCRIPT.index("$windowHandle = $detailWindowHandle"),
             SCRIPT.index("$windowRect = [HyperGetLiquidProgressNative+RECT]::new()"),
         )
+
+    def test_installed_cli_has_a_real_ipc_command_to_open_download_details(self):
+        self.assertIn("suspend fun openDownload(ids: List<Long>)", IPC_INTERFACE)
+        self.assertIn("override suspend fun openDownload(ids: List<Long>)", IPC_IMPL)
+        self.assertIn("downloadSystem.getDownloadItemById(id) != null", IPC_IMPL)
+        self.assertIn("appComponent.openDownloadDialog(id)", IPC_IMPL)
+        self.assertIn("OpenDownload()", DOWNLOAD_COMMAND)
+        self.assertIn('SuspendingCliktCommand("open")', OPEN_COMMAND)
+        self.assertIn("it.openDownload(ids)", OPEN_COMMAND)
 
     def test_download_add_runs_asynchronously_so_live_status_can_be_observed(self):
         self.assertIn("$addArguments = 'download add http --link", SCRIPT)

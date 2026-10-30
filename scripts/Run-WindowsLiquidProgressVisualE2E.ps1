@@ -366,6 +366,10 @@ public static class HyperGetLiquidProgressNative {
         throw 'Live transfer ended or stopped advancing before screenshot; sanitized diagnostics were saved.'
     }
     $captureStats = $preScreenshotStats
+    $openOutput = @(& $cliPath download open $taskId 2>&1)
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Installed CLI could not open the active HyperGet download-details window.'
+    }
     # Compose owns multiple top-level windows in one process. Process.MainWindowHandle
     # points at the download list, not necessarily the active progress dialog. Select
     # the visible task window by its non-secret fixture filename before acceptance.

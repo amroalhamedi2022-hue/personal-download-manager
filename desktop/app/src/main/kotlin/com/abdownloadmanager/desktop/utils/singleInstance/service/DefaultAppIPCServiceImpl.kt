@@ -65,6 +65,15 @@ class DefaultAppIPCServiceImpl : IDefaultAppIPCService, KoinComponent {
         downloadSystem.userManualResume(ids)
     }
 
+    override suspend fun openDownload(ids: List<Long>) {
+        awaitAppBoot()
+        ids.distinct().forEach { id ->
+            if (downloadSystem.getDownloadItemById(id) != null) {
+                appComponent.openDownloadDialog(id)
+            }
+        }
+    }
+
     override suspend fun getMaxConcurrentDownloads(): Int {
         awaitAppBoot()
         return appComponent.appSettings.maxConcurrentDownloads.value
