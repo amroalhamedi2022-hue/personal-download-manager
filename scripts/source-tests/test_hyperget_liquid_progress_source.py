@@ -66,6 +66,19 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("StatusAtCapture = $statusAtCapture", SCRIPT)
         self.assertIn("$actualSha -eq $expectedSha", SCRIPT)
 
+    def test_visual_gate_selects_the_download_details_window_not_the_main_list(self):
+        self.assertIn("FindVisibleWindow", SCRIPT)
+        self.assertIn("EnumWindows", SCRIPT)
+        self.assertIn("GetWindowThreadProcessId", SCRIPT)
+        self.assertIn("IsWindowVisible", SCRIPT)
+        self.assertIn("$fileName", SCRIPT)
+        self.assertIn("$windowHandle = $detailWindowHandle", SCRIPT)
+        self.assertIn("refusing to accept a main-list screenshot", SCRIPT)
+        self.assertLess(
+            SCRIPT.index("$windowHandle = $detailWindowHandle"),
+            SCRIPT.index("$windowRect = [HyperGetLiquidProgressNative+RECT]::new()"),
+        )
+
     def test_download_add_runs_asynchronously_so_live_status_can_be_observed(self):
         self.assertIn("$addArguments = 'download add http --link", SCRIPT)
         self.assertIn("$addProcess = Start-Process -FilePath $cliPath -ArgumentList $addArguments", SCRIPT)
@@ -193,6 +206,14 @@ class LiquidProgressSourceContract(unittest.TestCase):
         scope = UI_WORKFLOW.split('case "$file" in', 1)[1].split("esac", 1)[0]
         self.assertIn("scripts/source-tests/test_hyperget_liquid_progress_source.py", scope)
         self.assertIn("liquid-progress-active.png", SCRIPT)
+        for visual_path in (
+            "ProgressDownloadPage.kt",
+            "ShowDownloadDialogs.kt",
+            "DefaultThemes.kt",
+            "DefaultAppSettings.kt",
+            "ModernThemePaletteContractTest.kt",
+        ):
+            self.assertIn(visual_path, UI_WORKFLOW)
 
     def test_lifecycle_proof_records_exact_checked_out_pr_head(self):
         lifecycle_step = UI_WORKFLOW.split(

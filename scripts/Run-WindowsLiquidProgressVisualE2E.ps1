@@ -163,7 +163,9 @@ try {
     Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
+using System.Text;
 public static class HyperGetLiquidProgressNative {
+    public delegate bool EnumWindowsProc(IntPtr handle, IntPtr parameter);
     [StructLayout(LayoutKind.Sequential)]
     public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
     [DllImport("user32.dll")]
@@ -178,6 +180,33 @@ public static class HyperGetLiquidProgressNative {
     public static extern bool GetWindowRect(IntPtr handle, out RECT rect);
     [DllImport("user32.dll")]
     public static extern bool SetWindowPos(IntPtr handle, IntPtr insertAfter, int x, int y, int cx, int cy, uint flags);
+    [DllImport("user32.dll")]
+    public static extern bool EnumWindows(EnumWindowsProc callback, IntPtr parameter);
+    [DllImport("user32.dll")]
+    public static extern uint GetWindowThreadProcessId(IntPtr handle, out uint processId);
+    [DllImport("user32.dll")]
+    public static extern bool IsWindowVisible(IntPtr handle);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    public static extern int GetWindowTextLength(IntPtr handle);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    public static extern int GetWindowText(IntPtr handle, StringBuilder text, int count);
+
+    public static IntPtr FindVisibleWindow(uint processId, string titleFragment) {
+        IntPtr match = IntPtr.Zero;
+        EnumWindows(delegate(IntPtr handle, IntPtr parameter) {
+            uint owner;
+            GetWindowThreadProcessId(handle, out owner);
+            if (owner != processId || !IsWindowVisible(handle)) return true;
+            int length = GetWindowTextLength(handle);
+            if (length <= 0) return true;
+            StringBuilder title = new StringBuilder(length + 1);
+            GetWindowText(handle, title, title.Capacity);
+            if (title.ToString().IndexOf(titleFragment, StringComparison.OrdinalIgnoreCase) < 0) return true;
+            match = handle;
+            return false;
+        }, IntPtr.Zero);
+        return match;
+    }
 }
 '@
     $window = $visible | Select-Object -First 1
@@ -337,7 +366,23 @@ public static class HyperGetLiquidProgressNative {
         throw 'Live transfer ended or stopped advancing before screenshot; sanitized diagnostics were saved.'
     }
     $captureStats = $preScreenshotStats
-    # Re-assert foreground immediately before capture; crop to the actual app window.
+    # Compose owns multiple top-level windows in one process. Process.MainWindowHandle
+    # points at the download list, not necessarily the active progress dialog. Select
+    # the visible task window by its non-secret fixture filename before acceptance.
+    $detailWindowHandle = [IntPtr]::Zero
+    for ($attempt = 0; $attempt -lt 40; $attempt++) {
+        $detailWindowHandle = [HyperGetLiquidProgressNative]::FindVisibleWindow(
+            [uint32]$started.Id,
+            $fileName
+        )
+        if ($detailWindowHandle -ne [IntPtr]::Zero) { break }
+        Start-Sleep -Milliseconds 250
+    }
+    if ($detailWindowHandle -eq [IntPtr]::Zero) {
+        throw 'The active HyperGet download-details window was not visible; refusing to accept a main-list screenshot as Liquid Progress proof.'
+    }
+    $windowHandle = $detailWindowHandle
+    # Re-assert foreground immediately before capture; crop to the real details window.
     [HyperGetLiquidProgressNative]::ShowWindow($windowHandle, 3) | Out-Null
     [HyperGetLiquidProgressNative]::SetWindowPos($windowHandle, [IntPtr](-1), 0, 0, 0, 0, [uint32](0x0001 -bor 0x0002 -bor 0x0040)) | Out-Null
     [HyperGetLiquidProgressNative]::BringWindowToTop($windowHandle) | Out-Null
