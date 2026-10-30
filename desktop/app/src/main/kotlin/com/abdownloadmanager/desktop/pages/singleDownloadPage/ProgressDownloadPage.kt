@@ -13,11 +13,17 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.RoundRect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withStyle
@@ -82,6 +88,12 @@ private val tabs = entries.toList()
 // Read the State in the Canvas draw phase to avoid recomposing the entire page
 // at the animation frame rate.
 private val LocalLiquidAnimationPhase = compositionLocalOf<State<Float>> { mutableFloatStateOf(0f) }
+
+// The reference is an electric-blue-to-cyan glass liquid, not a flat theme gradient.
+// Non-downloading statuses still keep their semantic colors below.
+private val referenceLiquidColors = listOf(
+    Color(0xFF3829F4), Color(0xFF0865FF), Color(0xFF00E7F5),
+)
 
 @Composable
 fun ProgressDownloadPage(
@@ -410,12 +422,14 @@ private fun RenderProgressBar(itemState: IDownloadItemState) {
 
     LiquidProgressTrack(
         progress = progress,
-        colors = liquidColors,
+        colors = if (status == DownloadJobStatus.Downloading ||
+            status == DownloadJobStatus.Resuming || status is DownloadJobStatus.PreparingFile
+        ) referenceLiquidColors else liquidColors,
         // A retry timer owns no network transfer and must not animate like one.
         active = status == DownloadJobStatus.Downloading ||
             status == DownloadJobStatus.Resuming ||
             status is DownloadJobStatus.PreparingFile,
-        modifier = Modifier.fillMaxWidth().height(22.dp),
+        modifier = Modifier.fillMaxWidth().height(42.dp),
         bubbleCount = 12,
         showCompletionIcon = true,
     )
@@ -436,116 +450,145 @@ private fun LiquidProgressTrack(
     bubbleCount: Int,
     showCompletionIcon: Boolean = false,
 ) {
+    // Downloaded bytes, not the animation phase, determine the filled width.
     val animatedProgress = animateFloatAsState(
         targetValue = progress?.coerceIn(0f, 1f) ?: 0f,
         animationSpec = tween(180, easing = LinearEasing),
     )
-    // Read the shared phase only inside Canvas. An idle track stays static;
-    // the sole infinite transition is disposed when no track is active.
     val sharedPhase = LocalLiquidAnimationPhase.current
-    val shape = myShapes.defaultRounded
 
     Box(
         modifier
-            .clip(shape)
-            .background(myColors.onBackground / 15)
-            .border(1.dp, myColors.onBackground / 10, shape)
+            .clip(CircleShape)
+            .background(myColors.onBackground / 12)
+            .border(1.dp, myColors.onBackground / 12, CircleShape)
     ) {
-        Canvas(Modifier.fillMaxSize()) {
-            if (progress == null && !active) return@Canvas
-            val phase = if (active) sharedPhase.value else 0f
-            val currentProgress = animatedProgress.value
-
-            val isIndeterminate = progress == null
-            val nominalEnd = if (isIndeterminate) {
-                size.width * (phase * 1.45f)
-            } else {
-                size.width * currentProgress
-            }
-            val startX = if (isIndeterminate) {
-                (nominalEnd - size.width * 0.38f).coerceAtLeast(0f)
-            } else {
-                0f
-            }
-            val endX = nominalEnd.coerceIn(0f, size.width)
-            if (endX <= startX) return@Canvas
-
-            val amplitude = if (!isIndeterminate && currentProgress >= 0.995f) {
-                0f
-            } else {
-                size.height * 0.16f
-            }
-            val liquidPath = Path().apply {
-                moveTo(startX, 0f)
-                lineTo(endX, 0f)
-                val steps = 14
-                for (step in 0..steps) {
-                    val y = size.height * step / steps
-                    val angle = (step.toFloat() / steps * PI * 2.0) + (phase * PI * 2.0)
-                    val waveX = (endX + sin(angle).toFloat() * amplitude)
-                        .coerceIn(startX, size.width)
-                    lineTo(waveX, y)
-                }
-                lineTo(startX, size.height)
-                close()
-            }
-            drawPath(
-                path = liquidPath,
-                brush = Brush.linearGradient(
+        Spacer(
+            Modifier.fillMaxSize().drawWithCache {
+                // All brushes and mutable paths are created on cache invalidation,
+                // not on each phase tick. All tracks share the outer animation clock.
+                val liquidBrush = Brush.horizontalGradient(
                     colors = colors,
-                    start = Offset(startX, 0f),
-                    end = Offset(endX.coerceAtLeast(startX + 1f), size.height),
+                    startX = 0f,
+                    endX = size.width.coerceAtLeast(1f),
                 )
-            )
-
-            // Top specular gloss highlight for 3D liquid reflection
-            if (endX - startX > 4.dp.toPx()) {
-                val glossHeight = (size.height * 0.28f).coerceAtLeast(1.5f)
-                drawRoundRect(
-                    brush = Brush.verticalGradient(
-                        colors = listOf(
-                            Color.White.copy(alpha = 0.45f),
-                            Color.White.copy(alpha = 0.05f)
-                        ),
-                        startY = 0f,
-                        endY = glossHeight
+                val glassTop = Brush.verticalGradient(
+                    colors = listOf(
+                        Color.White.copy(alpha = 0.48f),
+                        Color.White.copy(alpha = 0.11f),
+                        Color.Transparent,
                     ),
-                    topLeft = Offset(startX + 2.dp.toPx(), 1.dp.toPx()),
-                    size = androidx.compose.ui.geometry.Size(
-                        (endX - startX - 4.dp.toPx()).coerceAtLeast(0f),
-                        glossHeight
-                    ),
-                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(glossHeight / 2f)
+                    startY = 0f,
+                    endY = size.height * 0.55f,
                 )
-            }
+                val glassDepth = Brush.verticalGradient(
+                    colors = listOf(Color.Transparent, Color(0xFF06265C).copy(alpha = 0.24f)),
+                    startY = size.height * 0.4f,
+                    endY = size.height,
+                )
+                val fillClip = Path()
+                val surfaceWave = Path()
+                val secondaryWave = Path()
 
-            val liquidWidth = (endX - startX).coerceAtLeast(1f)
-            repeat(bubbleCount) { index ->
-                val speed = 0.28f + (index % 4) * 0.07f
-                val xRatio = ((index * 0.173f) + phase * speed) % 1f
-                val yRatio = ((index * 0.317f) + phase * (0.35f + index % 3 * 0.08f)) % 1f
-                val radius = size.height * (0.09f + (index % 3) * 0.04f)
-                val center = Offset(
-                    x = startX + liquidWidth * xRatio,
-                    y = size.height * (0.18f + yRatio * 0.64f),
-                )
-                if (center.x + radius < endX + amplitude) {
-                    // Bubble rim stroke
-                    drawCircle(
-                        color = Color.White.copy(alpha = 0.38f),
-                        radius = radius,
-                        center = center,
-                        style = Stroke(width = (radius * 0.35f).coerceAtLeast(0.8f)),
+                onDrawBehind {
+                    if (size.width <= 0f || size.height <= 0f || (progress == null && !active)) {
+                        return@onDrawBehind
+                    }
+                    val phase = if (active) sharedPhase.value else 0f
+                    val fraction = if (progress == null) {
+                        // An unknown-size transfer uses a traveling capsule.
+                        // Known-size transfers never use this animation for progress.
+                        0.32f
+                    } else animatedProgress.value.coerceIn(0f, 1f)
+                    val fillWidth = size.width * fraction
+                    if (fillWidth <= 0f) return@onDrawBehind
+
+                    val radius = (size.height / 2f).coerceAtMost(fillWidth / 2f)
+                    val startX = if (progress == null) {
+                        (size.width - fillWidth) * phase.coerceIn(0f, 1f)
+                    } else 0f
+                    val finishX = startX + fillWidth
+                    fillClip.reset()
+                    fillClip.addRoundRect(
+                        RoundRect(startX, 0f, finishX, size.height, CornerRadius(radius))
                     )
-                    // Inner soft bubble highlight dot for 3D depth
-                    drawCircle(
-                        color = Color.White.copy(alpha = 0.55f),
-                        radius = (radius * 0.32f).coerceAtLeast(0.5f),
-                        center = Offset(center.x - radius * 0.3f, center.y - radius * 0.3f),
+                    clipPath(fillClip) {
+                        // Scale a stable cached horizontal shader so cyan appears
+                        // at the actual fluid front even at low completion percentages.
+                        withTransform({
+                            translate(left = startX, top = 0f)
+                            scale(scaleX = fraction, scaleY = 1f, pivot = Offset.Zero)
+                        }) {
+                            drawRect(brush = liquidBrush, size = Size(size.width, size.height))
+                        }
+                        drawRect(brush = glassDepth)
+                        drawRect(brush = glassTop)
+
+                        // Two traveling crests inside the fluid, matching the
+                        // brighter rolling surface visible in the approved image.
+                        // The geometry is clipped to the real downloaded fraction.
+                        surfaceWave.reset()
+                        surfaceWave.moveTo(startX, 0f)
+                        surfaceWave.lineTo(finishX, 0f)
+                        for (step in 24 downTo 0) {
+                            val x = startX + fillWidth * step / 24f
+                            val angle = (step / 24f * PI * 3.5 + phase * PI * 2.0)
+                            val y = size.height * (0.19f + sin(angle).toFloat() * 0.09f)
+                            surfaceWave.lineTo(x, y)
+                        }
+                        surfaceWave.close()
+                        drawPath(surfaceWave, color = Color.White.copy(alpha = 0.21f))
+
+                        secondaryWave.reset()
+                        secondaryWave.moveTo(startX, 0f)
+                        secondaryWave.lineTo(finishX, 0f)
+                        for (step in 24 downTo 0) {
+                            val x = startX + fillWidth * step / 24f
+                            val angle = (step / 24f * PI * 4.0 - phase * PI * 2.0)
+                            val y = size.height * (0.27f + sin(angle).toFloat() * 0.08f)
+                            secondaryWave.lineTo(x, y)
+                        }
+                        secondaryWave.close()
+                        drawPath(secondaryWave, color = Color(0xFFB3FFFF).copy(alpha = 0.13f))
+
+                        // Glass bubbles have translucent cores, crisp illuminated
+                        // rims and individual specular dots, not flat white circles.
+                        if (fillWidth > size.height * 1.1f) {
+                            repeat(bubbleCount) { index ->
+                                val drift = (index * 0.187f + phase * (0.13f + index % 4 * 0.025f)) % 1f
+                                val lift = (index * 0.337f + phase * (0.12f + index % 3 * 0.025f)) % 1f
+                                val bubbleRadius = size.height * (0.058f + (index % 4) * 0.017f)
+                                val center = Offset(
+                                    x = startX + fillWidth * (0.06f + drift * 0.88f),
+                                    y = size.height * (0.26f + lift * 0.55f),
+                                )
+                                drawCircle(Color.White.copy(alpha = 0.09f), bubbleRadius * 1.4f, center)
+                                drawCircle(Color.White.copy(alpha = 0.15f), bubbleRadius * 0.74f, center)
+                                drawCircle(
+                                    color = Color.White.copy(alpha = 0.68f),
+                                    radius = bubbleRadius,
+                                    center = center,
+                                    style = Stroke(width = (bubbleRadius * 0.23f).coerceAtLeast(0.8f)),
+                                )
+                                drawCircle(
+                                    color = Color.White.copy(alpha = 0.86f),
+                                    radius = bubbleRadius * 0.19f,
+                                    center = Offset(center.x - bubbleRadius * 0.31f, center.y - bubbleRadius * 0.33f),
+                                )
+                            }
+                        }
+                    }
+                    // A thin glass edge helps the fluid stand out on light backgrounds.
+                    drawRoundRect(
+                        color = Color.White.copy(alpha = 0.48f),
+                        topLeft = Offset(startX, 0f),
+                        size = Size(fillWidth, size.height),
+                        cornerRadius = CornerRadius(radius),
+                        style = Stroke(width = 1.dp.toPx()),
                     )
                 }
             }
-        }
+        )
 
         if (showCompletionIcon && progress != null && progress >= 1f) {
             MyIcon(
@@ -603,8 +646,8 @@ private fun RenderPartInfo(
                 itemState.parts,
                 Modifier
                     .padding(horizontal = horizontalPadding)
-                    .height(10.dp)
-                    .clip(myShapes.defaultRounded)
+                    .height(30.dp)
+                    .clip(CircleShape)
                     .background(myColors.onBackground / 15)
             )
             Box(
@@ -1058,8 +1101,8 @@ private fun RenderPart(part: UiPart, modifier: Modifier) {
         is PartDownloadStatus.Canceled -> listOf(myColors.error, myColors.warning)
         PartDownloadStatus.Completed -> myColors.primaryGradientColors
         PartDownloadStatus.IDLE -> myColors.primaryGradientColors
-        PartDownloadStatus.ReceivingData -> myColors.primaryGradientColors
-        PartDownloadStatus.Connecting -> listOf(myColors.info, myColors.secondary)
+        PartDownloadStatus.ReceivingData -> referenceLiquidColors
+        PartDownloadStatus.Connecting -> referenceLiquidColors
     }
     LiquidProgressTrack(
         progress = partProgress,
@@ -1070,3 +1113,4 @@ private fun RenderPart(part: UiPart, modifier: Modifier) {
         bubbleCount = 2,
     )
 }
+

@@ -299,11 +299,23 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertNotIn("rememberInfiniteTransition", progress)
 
     def test_single_download_page_liquid_track_height_and_specular_gloss(self):
-        self.assertIn(".height(22.dp)", PAGE)
-        self.assertIn("Top specular gloss highlight for 3D liquid reflection", PAGE)
-        self.assertIn("Color.White.copy(alpha = 0.45f)", PAGE)
-        self.assertIn("Color.White.copy(alpha = 0.55f)", PAGE)
-        self.assertIn("Inner soft bubble highlight dot for 3D depth", PAGE)
+        self.assertIn(".height(42.dp)", PAGE)
+        self.assertIn("val glassTop = Brush.verticalGradient(", PAGE)
+        self.assertIn("Color.White.copy(alpha = 0.48f)", PAGE)
+        self.assertIn("Color.White.copy(alpha = 0.86f)", PAGE)
+        self.assertIn("// Glass bubbles have translucent cores", PAGE)
+
+    def test_reference_liquid_draws_real_crests_and_keeps_shared_animation(self):
+        track = PAGE.split("private fun LiquidProgressTrack(", 1)[1].split("private fun RenderPartInfo(", 1)[0]
+        self.assertIn(".drawWithCache {", track)
+        self.assertIn("clipPath(fillClip)", track)
+        self.assertIn("surfaceWave.lineTo(x, y)", track)
+        self.assertIn("secondaryWave.lineTo(x, y)", track)
+        self.assertIn("referenceLiquidColors", PAGE)
+        self.assertIn(".height(30.dp)", PAGE)
+        self.assertIn("val fillWidth = size.width * fraction", track)
+        self.assertIn("val phase = if (active) sharedPhase.value else 0f", track)
+        self.assertNotIn("rememberInfiniteTransition", track)
 
     def test_contrast_values_meet_visual_minimums_without_new_animation_loops(self):
         # Numeric bounds complement the rendering E2E: string-presence checks
@@ -345,3 +357,4 @@ class LiquidProgressSourceContract(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
