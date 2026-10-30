@@ -9,6 +9,7 @@ LIST = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/
 SCRIPT = (ROOT / "scripts/Run-WindowsLiquidProgressVisualE2E.ps1").read_text(encoding="utf-8")
 UI_WORKFLOW = (ROOT / ".github/workflows/windows-installed-ui-smoke.yml").read_text(encoding="utf-8")
 SOURCE_WORKFLOW = (ROOT / ".github/workflows/hyperget-source-only.yml").read_text(encoding="utf-8")
+PAGE = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/singleDownloadPage/ProgressDownloadPage.kt").read_text(encoding="utf-8")
 IPC_INTERFACE = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/singleInstance/service/IDefaultAppIPCService.kt").read_text(encoding="utf-8")
 IPC_IMPL = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/singleInstance/service/DefaultAppIPCServiceImpl.kt").read_text(encoding="utf-8")
 DOWNLOAD_COMMAND = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/cli/download/Download.kt").read_text(encoding="utf-8")
@@ -296,6 +297,13 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("drawCircle(", draw_body)
         self.assertIn("drawWithCache", progress)
         self.assertNotIn("rememberInfiniteTransition", progress)
+
+    def test_single_download_page_liquid_track_height_and_specular_gloss(self):
+        self.assertIn(".height(22.dp)", PAGE)
+        self.assertIn("Top specular gloss highlight for 3D liquid reflection", PAGE)
+        self.assertIn("Color.White.copy(alpha = 0.45f)", PAGE)
+        self.assertIn("Color.White.copy(alpha = 0.55f)", PAGE)
+        self.assertIn("Inner soft bubble highlight dot for 3D depth", PAGE)
 
     def test_contrast_values_meet_visual_minimums_without_new_animation_loops(self):
         # Numeric bounds complement the rendering E2E: string-presence checks

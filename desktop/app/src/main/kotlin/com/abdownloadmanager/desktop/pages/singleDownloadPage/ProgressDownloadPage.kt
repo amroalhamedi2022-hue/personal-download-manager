@@ -415,7 +415,7 @@ private fun RenderProgressBar(itemState: IDownloadItemState) {
         active = status == DownloadJobStatus.Downloading ||
             status == DownloadJobStatus.Resuming ||
             status is DownloadJobStatus.PreparingFile,
-        modifier = Modifier.fillMaxWidth().height(18.dp),
+        modifier = Modifier.fillMaxWidth().height(22.dp),
         bubbleCount = 12,
         showCompletionIcon = true,
     )
@@ -425,6 +425,7 @@ private fun RenderProgressBar(itemState: IDownloadItemState) {
  * Theme-aware liquid progress used by both progress lines in the download
  * window. The wave and bubbles are clipped to the downloaded portion and the
  * palette changes immediately when the application theme changes.
+ * Visual specification target: file-download-window-approved-2026-10-17.webp.
  */
 @Composable
 private fun LiquidProgressTrack(
@@ -497,22 +498,50 @@ private fun LiquidProgressTrack(
                 )
             )
 
+            // Top specular gloss highlight for 3D liquid reflection
+            if (endX - startX > 4.dp.toPx()) {
+                val glossHeight = (size.height * 0.28f).coerceAtLeast(1.5f)
+                drawRoundRect(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(
+                            Color.White.copy(alpha = 0.45f),
+                            Color.White.copy(alpha = 0.05f)
+                        ),
+                        startY = 0f,
+                        endY = glossHeight
+                    ),
+                    topLeft = Offset(startX + 2.dp.toPx(), 1.dp.toPx()),
+                    size = androidx.compose.ui.geometry.Size(
+                        (endX - startX - 4.dp.toPx()).coerceAtLeast(0f),
+                        glossHeight
+                    ),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(glossHeight / 2f)
+                )
+            }
+
             val liquidWidth = (endX - startX).coerceAtLeast(1f)
             repeat(bubbleCount) { index ->
                 val speed = 0.28f + (index % 4) * 0.07f
                 val xRatio = ((index * 0.173f) + phase * speed) % 1f
                 val yRatio = ((index * 0.317f) + phase * (0.35f + index % 3 * 0.08f)) % 1f
-                val radius = size.height * (0.08f + (index % 3) * 0.035f)
+                val radius = size.height * (0.09f + (index % 3) * 0.04f)
                 val center = Offset(
                     x = startX + liquidWidth * xRatio,
                     y = size.height * (0.18f + yRatio * 0.64f),
                 )
                 if (center.x + radius < endX + amplitude) {
+                    // Bubble rim stroke
                     drawCircle(
-                        color = Color.White.copy(alpha = 0.28f),
+                        color = Color.White.copy(alpha = 0.38f),
                         radius = radius,
                         center = center,
-                        style = Stroke(width = (radius * 0.38f).coerceAtLeast(0.7f)),
+                        style = Stroke(width = (radius * 0.35f).coerceAtLeast(0.8f)),
+                    )
+                    // Inner soft bubble highlight dot for 3D depth
+                    drawCircle(
+                        color = Color.White.copy(alpha = 0.55f),
+                        radius = (radius * 0.32f).coerceAtLeast(0.5f),
+                        center = Offset(center.x - radius * 0.3f, center.y - radius * 0.3f),
                     )
                 }
             }
