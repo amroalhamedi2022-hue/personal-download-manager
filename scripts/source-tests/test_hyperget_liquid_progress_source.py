@@ -13,6 +13,7 @@ IPC_INTERFACE = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/deskt
 IPC_IMPL = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/singleInstance/service/DefaultAppIPCServiceImpl.kt").read_text(encoding="utf-8")
 DOWNLOAD_COMMAND = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/cli/download/Download.kt").read_text(encoding="utf-8")
 OPEN_COMMAND = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/cli/download/open/OpenDownload.kt").read_text(encoding="utf-8")
+DOWNLOAD_WINDOW_STATE = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/singleDownloadPage/SingleDownloadPageStateToPersist.kt").read_text(encoding="utf-8")
 
 
 class LiquidProgressSourceContract(unittest.TestCase):
@@ -84,6 +85,9 @@ class LiquidProgressSourceContract(unittest.TestCase):
             SCRIPT.index("$windowHandle = $detailWindowHandle"),
             SCRIPT.index("$windowRect = [HyperGetLiquidProgressNative+RECT]::new()"),
         )
+
+    def test_fresh_download_window_shows_connection_details_by_default(self):
+        self.assertIn("val showPartInfo: Boolean = true", DOWNLOAD_WINDOW_STATE)
 
     def test_installed_cli_has_a_real_ipc_command_to_open_download_details(self):
         self.assertIn("suspend fun openDownload(ids: List<Long>)", IPC_INTERFACE)
@@ -224,6 +228,7 @@ class LiquidProgressSourceContract(unittest.TestCase):
         for visual_path in (
             "ProgressDownloadPage.kt",
             "ShowDownloadDialogs.kt",
+            "SingleDownloadPageStateToPersist.kt",
             "DefaultThemes.kt",
             "DefaultAppSettings.kt",
             "ModernThemePaletteContractTest.kt",

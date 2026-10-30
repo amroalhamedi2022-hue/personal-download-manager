@@ -10,7 +10,9 @@ interface SingleDownloadPageStateStorage {
 @optics
 @Serializable
 data class SingleDownloadPageStateToPersist(
-    val showPartInfo: Boolean = false,
+    // Show HyperGet's connection strip and part table for a fresh profile.
+    // An explicit user collapse remains persisted by the existing storage.
+    val showPartInfo: Boolean = true,
 ) {
     companion object
 }
