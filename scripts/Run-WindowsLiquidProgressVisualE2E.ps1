@@ -207,6 +207,20 @@ public static class HyperGetLiquidProgressNative {
         }, IntPtr.Zero);
         return match;
     }
+
+    public static IntPtr FindVisibleWindowExcluding(uint processId, IntPtr excludedHandle) {
+        IntPtr match = IntPtr.Zero;
+        EnumWindows(delegate(IntPtr handle, IntPtr parameter) {
+            uint owner;
+            GetWindowThreadProcessId(handle, out owner);
+            if (owner != processId || handle == excludedHandle || !IsWindowVisible(handle)) return true;
+            int length = GetWindowTextLength(handle);
+            if (length <= 0) return true;
+            match = handle;
+            return false;
+        }, IntPtr.Zero);
+        return match;
+    }
 }
 '@
     $window = $visible | Select-Object -First 1
@@ -376,9 +390,18 @@ public static class HyperGetLiquidProgressNative {
     $detailWindowHandle = [IntPtr]::Zero
     for ($attempt = 0; $attempt -lt 40; $attempt++) {
         $detailWindowHandle = [HyperGetLiquidProgressNative]::FindVisibleWindow(
-            [uint32]$started.Id,
+            [uint32]$window.Id,
             $fileName
         )
+        # Compose may use a localized/status-only native title. In the isolated
+        # process the explicit IPC open must create a second visible top-level
+        # window, so accept that window only after excluding the proven main one.
+        if ($detailWindowHandle -eq [IntPtr]::Zero) {
+            $detailWindowHandle = [HyperGetLiquidProgressNative]::FindVisibleWindowExcluding(
+                [uint32]$window.Id,
+                $windowHandle
+            )
+        }
         if ($detailWindowHandle -ne [IntPtr]::Zero) { break }
         Start-Sleep -Milliseconds 250
     }

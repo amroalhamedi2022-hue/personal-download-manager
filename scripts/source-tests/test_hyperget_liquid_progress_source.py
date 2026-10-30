@@ -73,11 +73,14 @@ class LiquidProgressSourceContract(unittest.TestCase):
 
     def test_visual_gate_selects_the_download_details_window_not_the_main_list(self):
         self.assertIn("FindVisibleWindow", SCRIPT)
+        self.assertIn("FindVisibleWindowExcluding", SCRIPT)
         self.assertIn("EnumWindows", SCRIPT)
         self.assertIn("GetWindowThreadProcessId", SCRIPT)
         self.assertIn("IsWindowVisible", SCRIPT)
         self.assertIn("$fileName", SCRIPT)
         self.assertIn("$windowHandle = $detailWindowHandle", SCRIPT)
+        self.assertIn("[uint32]$window.Id", SCRIPT)
+        self.assertIn("$windowHandle", SCRIPT)
         self.assertIn("download open $taskId", SCRIPT)
         self.assertIn("Installed CLI could not open", SCRIPT)
         self.assertIn("refusing to accept a main-list screenshot", SCRIPT)
