@@ -235,12 +235,20 @@ class HttpDownloadJob(
                 onDownloadResumed()
             } catch (e: Exception) {
                 e.printStackIfNOtUsual()
+                if (!isDownloadActive.value) {
+                    return@launch
+                }
                 val shouldStop = when {
                     ExceptionUtils.isNormalCancellation(e) -> true
                     e is DownloadValidationException -> e.isCritical()
                     else -> false
                 }
                 if (shouldStop) {
+                    if (ExceptionUtils.isNormalCancellation(e)) {
+                        // Cancellation of activeDownloadScope while job remains active is caused
+                        // by launchExclusiveRetry replacing the scope for retry/restart.
+                        return@launch
+                    }
                     // Stop All owns cancellation once its gate is raised; do not race it with
                     // a second asynchronous pause command from the resuming job.
                     if (!downloadManager.isStopAllInProgress()) {
@@ -503,28 +511,16 @@ class HttpDownloadJob(
         if (!isDownloadActive.value) {
             return
         }
-        var paused = false
-        if (throwable is DownloadValidationException) {
-            if (throwable.isCritical()) {
-                //stop the whole job! as we have big problem here
-                paused = true
-                scope.launch {
-                    pause(throwable)
-                }
+        if (throwable is DownloadValidationException && throwable.isCritical()) {
+            scope.launch {
+                pause(throwable)
             }
+            return
         }
-        val allHaveError = partDownloaderList.values
-            .filter { it.active }
-            .all {
-                it.injured()
-            }
-        if (allHaveError && !paused) {
-//            println("all have error!")
-            downloadFailedRetryOrPause(
-                e = throwable,
-                isInFirstResume = false,
-            )
-        }
+        downloadFailedRetryOrPause(
+            e = throwable,
+            isInFirstResume = false,
+        )
     }
 
     // for this download job only, it has higher priority than download manager settings
@@ -535,43 +531,67 @@ class HttpDownloadJob(
 
     var failedDownloadTries = 0
     private var downloadedSizeBeforeRetry = 0L
+    private val failureHandlingMutex = Mutex()
 
     private fun downloadFailedRetryOrPause(
         e: Throwable,
         isInFirstResume: Boolean,
     ) {
-        //moving to the main scope and request to cancel activeDownload scope!
         scope.launch {
-            // can't proceed
-            if (e is DownloadValidationException && e.isCritical()) {
-                pause(e)
-                return@launch
-            }
-            if (!e.isRetryableDownloadFailure() && e !is DownloadValidationException) {
-                pause(e)
-                return@launch
-            }
-            val downloadedSize = getDownloadedSize()
-            if (downloadedSize > downloadedSizeBeforeRetry) {
-                // Real byte progress starts a fresh budget, and the failure that ended this
-                // progressed attempt is the first failed attempt in that new budget.
-                failedDownloadTries = 0
-            }
-            failedDownloadTries++
-            downloadedSizeBeforeRetry = downloadedSize
+            failureHandlingMutex.withLock {
+                if (!isDownloadActive.value) {
+                    return@withLock
+                }
+                if (e is DownloadValidationException && e.isCritical()) {
+                    pause(e)
+                    return@withLock
+                }
+                if (!e.isRetryableDownloadFailure() && e !is DownloadValidationException) {
+                    pause(e)
+                    return@withLock
+                }
 
-            // we always have one try (the initial resume action), after that others are retries!
-            val retriedCount = (failedDownloadTries - 1).coerceAtLeast(0)
-            if (retriedCount < getMaxAllowedRetries()) {
-                retry(
-                    isInFirstResume = isInFirstResume,
-                    delayMillis = calculateRetryDelayMillis(
+                val downloadedSize = getDownloadedSize()
+                if (downloadedSize > downloadedSizeBeforeRetry) {
+                    // Real byte progress starts a fresh budget.
+                    failedDownloadTries = 0
+                }
+                val candidateAttempt = failedDownloadTries + 1
+                downloadedSizeBeforeRetry = downloadedSize
+
+                val retriedCount = (candidateAttempt - 1).coerceAtLeast(0)
+                if (retriedCount < getMaxAllowedRetries()) {
+                    val delayMillis = calculateRetryDelayMillis(
                         retryIndex = retriedCount,
                         retryAfterHeader = e.retryAfterHeaderOrNull(),
-                    ),
-                )
-            } else {
-                pause(TooManyErrorException(e))
+                    )
+                    val scheduledRetryAt = calculateRetryAtMillis(delayMillis)
+                    val accepted = launchExclusiveRetry(
+                        onAccepted = {
+                            failedDownloadTries = candidateAttempt
+                            downloadItem.retryAttempt = failedDownloadTries
+                            downloadItem.retryAt = scheduledRetryAt
+                            markDownloadActive()
+                            _status.value = DownloadJobStatus.Retrying(delayMillis)
+                        },
+                    ) {
+                        saveState()
+                        cancelDownloadScope()
+                        stopAllParts()
+                        delay(delayMillis.milliseconds)
+                        ensureActive()
+                        resumeWithNewScope(
+                            newActiveScope = createAndInitializeDownloadScope(),
+                            isInFirstResume = isInFirstResume,
+                        )
+                    }
+                    if (!accepted) {
+                        // A retry is already scheduled for this failure event; do not duplicate.
+                    }
+                } else {
+                    failedDownloadTries = candidateAttempt
+                    pause(TooManyErrorException(e))
+                }
             }
         }
     }

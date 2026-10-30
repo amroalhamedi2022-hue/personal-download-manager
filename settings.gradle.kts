@@ -7,6 +7,7 @@ plugins{
 
 dependencyResolutionManagement {
     repositories {
+        maven("https://maven-central.storage-download.googleapis.com/maven2/")
         mavenCentral()
         google()
         maven("https://maven.pkg.jetbrains.space/public/p/compose/dev")

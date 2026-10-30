@@ -2,6 +2,7 @@ plugins{
     kotlin("multiplatform")
 }
 repositories{
+    maven("https://maven-central.storage-download.googleapis.com/maven2/")
     mavenCentral()
 }
 kotlin {

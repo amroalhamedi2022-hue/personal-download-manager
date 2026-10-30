@@ -235,7 +235,7 @@ abstract class PartDownloader<
 
     private fun canRetry(e: Throwable): CanRetryResult {
         return when {
-            ExceptionUtils.isNormalCancellation(e) -> {
+            stop || ExceptionUtils.isNormalCancellation(e) -> {
                 CanRetryResult.No
             }
 
