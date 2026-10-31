@@ -163,7 +163,7 @@ class PartDownloaderIoLifecycleTest {
 
 
     @Test
-    fun primaryRangesCannotBeStarvedByEarlierMultiPartDownloads() = runBlocking {
+    fun primaryRangesCannotBeStarvedByEarlierMultiPartDownloads() = runBlocking<Unit> {
         assertEquals(16, PART_PRIMARY_COPY_RESERVE)
         val secondaryCapacity = PART_BODY_COPY_PARALLELISM - PART_PRIMARY_COPY_RESERVE
         val secondaryEntered = CountDownLatch(secondaryCapacity)
