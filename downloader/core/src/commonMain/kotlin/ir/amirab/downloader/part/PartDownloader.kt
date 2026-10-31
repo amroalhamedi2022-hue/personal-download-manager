@@ -277,6 +277,16 @@ abstract class PartDownloader<
 
     private suspend fun download() {
         onNewStatus(PartDownloadStatus.Connecting)
+        // Reserve a body-copy slot BEFORE opening a network connection. Previously all
+        // pending parts could connect first, leaving hundreds of idle HTTP responses
+        // (and their socket/Okio buffers) resident while only 60 parts could copy.
+        // The permit covers both the response-header wait and the body lifecycle.
+        withPartBodyCopyPermit {
+            downloadWithReservedConnectionSlot()
+        }
+    }
+
+    private suspend fun downloadWithReservedConnectionSlot() {
         val conn = awaitPartResponseWithDeadline(PART_RESPONSE_DEADLINE_MILLIS) {
             connectAndVerify()
         }
@@ -298,15 +308,12 @@ abstract class PartDownloader<
         }
 
         try {
-            // Bound blocking body copies separately from task admission and OkHttp requests.
-            // Keep the connection in use() while waiting for a permit so cancellation closes
-            // the response even if this part never enters the blocking copy section.
+            // The shared permit is already held while the connection is opened.
+            // Keep the connection in use() so cancellation closes its response.
             conn.use { connection ->
-                withPartBodyCopyPermit {
-                    withContext(Dispatchers.IO) {
-                        getDestWriter().use { writer ->
-                            copyDataSync(connection.source, writer)
-                        }
+                withContext(Dispatchers.IO) {
+                    getDestWriter().use { writer ->
+                        copyDataSync(connection.source, writer)
                     }
                 }
             }
