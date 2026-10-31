@@ -72,13 +72,23 @@ class PartDownloaderIoLifecycleContract(unittest.TestCase):
         self.assertIn("the 61st body copy must remain suspended", self.test)
         self.assertIn("bodyCopyPermitIsReleasedAfterCopyFailure", self.test)
 
-    def test_body_copy_permit_wraps_io_dispatch_and_connection_lifetime(self):
+    def test_permit_is_acquired_before_network_connection_and_held_through_copy(self):
         download = self.part.split("private suspend fun download()", 1)[1].split("protected open fun onCanceled", 1)[0]
         self.assertRegex(
             download,
-            r"conn\.use\s*\{\s*connection\s*->\s*withPartBodyCopyPermit\s*\{\s*withContext\(Dispatchers\.IO\)",
+            r"withPartBodyCopyPermit\s*\{\s*downloadWithReservedConnectionSlot\(\)",
+        )
+        self.assertLess(
+            download.index("withPartBodyCopyPermit {"),
+            download.index("val conn = awaitPartResponseWithDeadline"),
+        )
+        self.assertRegex(
+            download,
+            r"conn\.use\s*\{\s*connection\s*->\s*withContext\(Dispatchers\.IO\)",
         )
         self.assertIn("copyDataSync(connection.source, writer)", download)
+        self.assertIn("connectionAdmissionWaitsForSharedPermit", self.test)
+        self.assertIn("a waiting part must not open an HTTP socket", self.test)
 
     def test_runtime_regression_uses_source_that_ignores_thread_interrupts(self):
         self.assertIn("class PartDownloaderIoLifecycleTest", self.test)
