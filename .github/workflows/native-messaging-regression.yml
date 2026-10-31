@@ -1,0 +1,42 @@
+name: HyperGet native messaging regression (source-only)
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/native-messaging-regression.yml"
+      - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/nativemessaging/host/**"
+      - "scripts/tests/HyperGetNativeMessaging*Smoke.kt"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-messaging-regression-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-protocol:
+    name: Framing, privacy, atomic writes and broken-pipe checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Run isolated Kotlin regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v kotlinc
+          kotlinc -version
+          BASE=desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/nativemessaging/host
+          STDIO="$BASE/stdio/NativeMessagingFinished.kt $BASE/stdio/StdioProtocol.kt"
+          for name in Framing Outbound Concurrent BrokenPipe; do
+            kotlinc $STDIO "scripts/tests/HyperGetNativeMessaging${name}Smoke.kt" \
+              -include-runtime -d "$RUNNER_TEMP/native-${name}.jar"
+            java -jar "$RUNNER_TEMP/native-${name}.jar"
+          done
+          kotlinc "$BASE/NativeMessagingErrorPolicy.kt" \
+            scripts/tests/HyperGetNativeMessagingErrorPrivacySmoke.kt \
+            -include-runtime -d "$RUNNER_TEMP/native-privacy.jar"
+          java -jar "$RUNNER_TEMP/native-privacy.jar"
