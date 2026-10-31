@@ -731,9 +731,30 @@ private fun RenderPartInfo(
                     .padding(horizontal = horizontalPadding)
                     .height(30.dp)
             )
-            Box(
+            BoxWithConstraints(
                 Modifier.weight(1f)
             ) {
+                // Table columns must fit the visible download-details width.
+                // Their old 58+310+350+300dp defaults overflowed a 1024px
+                // display, hiding the Total column and horizontal scrollbar.
+                // Keep the existing resizable Table and status rendering.
+                val usableWidth = (maxWidth - horizontalPadding * 2 - 24.dp)
+                    .coerceAtLeast(608.dp)
+                val resizeWidth = usableWidth - 58.dp
+                val statusWidth = (resizeWidth * 0.35f).coerceIn(190.dp, 440.dp)
+                val downloadedWidth = (resizeWidth * 0.35f).coerceIn(190.dp, 450.dp)
+                val totalWidth = (resizeWidth - statusWidth - downloadedWidth)
+                    .coerceIn(170.dp, 410.dp)
+                val fittedTableState = remember(usableWidth) {
+                    TableState<IndexedValue<UiPart>, PartInfoCells>(
+                        cells = PartInfoCells.all(),
+                        initialCustomSizes = mapOf(
+                            PartInfoCells.Status to statusWidth,
+                            PartInfoCells.Downloaded to downloadedWidth,
+                            PartInfoCells.Total to totalWidth,
+                        ),
+                    )
+                }
                 val listToShow = remember(itemState.parts, onlyActiveParts) {
                     selectVisibleDownloadParts(itemState.parts, onlyActiveParts)
                 }
@@ -760,11 +781,7 @@ private fun RenderPartInfo(
                             }
                         }
                     },
-                    tableState = remember {
-                        TableState(
-                            cells = PartInfoCells.all()
-                        )
-                    },
+                    tableState = fittedTableState,
                     wrapItem = { index, _, content ->
                         WithContentAlpha(1f) {
                             val interactionSource = remember { MutableInteractionSource() }

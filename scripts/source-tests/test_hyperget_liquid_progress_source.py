@@ -360,6 +360,21 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("Color.White.copy(alpha = 0.86f)", PAGE)
         self.assertIn("// Glass bubbles have translucent cores", PAGE)
 
+    def test_parts_table_fits_visible_width_without_losing_resizable_columns(self):
+        section = PAGE.split("private fun RenderPartInfo(", 1)[1].split("private fun prettifyStatus(", 1)[0]
+        self.assertIn("BoxWithConstraints(", section)
+        self.assertIn("val usableWidth = (maxWidth - horizontalPadding * 2 - 24.dp)", section)
+        self.assertIn("val resizeWidth = usableWidth - 58.dp", section)
+        self.assertIn("val totalWidth = (resizeWidth - statusWidth - downloadedWidth)", section)
+        self.assertIn("remember(usableWidth)", section)
+        self.assertIn("initialCustomSizes = mapOf(", section)
+        self.assertIn("PartInfoCells.Status to statusWidth", section)
+        self.assertIn("PartInfoCells.Downloaded to downloadedWidth", section)
+        self.assertIn("PartInfoCells.Total to totalWidth", section)
+        self.assertIn("tableState = fittedTableState", section)
+        self.assertIn("CellSize.Resizeable", PAGE)
+        self.assertIn("selectVisibleDownloadParts(itemState.parts, onlyActiveParts)", section)
+
     def test_refined_liquid_density_and_graph_controls(self):
         track = PAGE.split("private fun LiquidProgressTrack(", 1)[1].split("private fun RenderPartInfo(", 1)[0]
         self.assertIn("if (active && fillWidth > size.height * 1.1f)", track)
