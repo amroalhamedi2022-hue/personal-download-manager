@@ -72,6 +72,22 @@ jobs:
           --dependency-verification strict
           createReleaseFolderForCi
 
+      - name: Validate real silent NSIS install and user-safe uninstall
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & ./scripts/Run-WindowsSafeUninstallE2E.ps1 -InstallerExecutable 'desktop/app/build/custom-installer/DownloadManager.exe' -ProofFile 'build/ci-release/windows-safe-uninstall-proof.txt'
+          if ($LASTEXITCODE -ne 0) { throw "NSIS safety acceptance failed: $LASTEXITCODE" }
+
+      - name: Upload safe-uninstall acceptance proof
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: hyperget-windows-uninstall-safety-proof
+          path: build/ci-release/windows-safe-uninstall-proof.txt
+          if-no-files-found: warn
+          retention-days: 7
+
       - name: Upload Windows package
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
