@@ -424,29 +424,41 @@ public static class HyperGetLiquidProgressNative {
     }
     $windowWidth = $windowRect.Right - $windowRect.Left
     $windowHeight = $windowRect.Bottom - $windowRect.Top
-    # A partially off-screen screenshot cannot be accepted as visual evidence.
+    # Maximized Windows windows include an invisible 8px resize frame
+    # outside the display bounds. That frame is NOT clipped app content.
+    # Reject larger overflow, and crop only the non-visible OS frame.
     Add-Type -AssemblyName System.Windows.Forms
     $displayBounds = [System.Windows.Forms.Screen]::FromHandle($windowHandle).Bounds
-    if ($windowRect.Left -lt $displayBounds.Left -or
-        $windowRect.Top -lt $displayBounds.Top -or
-        $windowRect.Right -gt $displayBounds.Right -or
-        $windowRect.Bottom -gt $displayBounds.Bottom) {
+    $maxInvisibleFrame = 12
+    $outsideLeft = [Math]::Max(0, $displayBounds.Left - $windowRect.Left)
+    $outsideTop = [Math]::Max(0, $displayBounds.Top - $windowRect.Top)
+    $outsideRight = [Math]::Max(0, $windowRect.Right - $displayBounds.Right)
+    $outsideBottom = [Math]::Max(0, $windowRect.Bottom - $displayBounds.Bottom)
+    if (($windowRect.Right -gt $displayBounds.Right -and $outsideRight -gt $maxInvisibleFrame) -or
+        ($windowRect.Bottom -gt $displayBounds.Bottom -and $outsideBottom -gt $maxInvisibleFrame) -or
+        $outsideLeft -gt $maxInvisibleFrame -or $outsideTop -gt $maxInvisibleFrame) {
         throw ("Installed download window is outside display bounds: window=({0},{1})-({2},{3}), display=({4},{5})-({6},{7})." -f
             $windowRect.Left, $windowRect.Top, $windowRect.Right, $windowRect.Bottom,
             $displayBounds.Left, $displayBounds.Top, $displayBounds.Right, $displayBounds.Bottom)
     }
-    if ($windowWidth -lt 200 -or $windowHeight -lt 150) {
-        throw 'Installed HyperGet window bounds are too small for visual acceptance.'
+    $captureLeft = [Math]::Max($windowRect.Left, $displayBounds.Left)
+    $captureTop = [Math]::Max($windowRect.Top, $displayBounds.Top)
+    $captureRight = [Math]::Min($windowRect.Right, $displayBounds.Right)
+    $captureBottom = [Math]::Min($windowRect.Bottom, $displayBounds.Bottom)
+    $captureWidth = $captureRight - $captureLeft
+    $captureHeight = $captureBottom - $captureTop
+    if ($captureWidth -lt 200 -or $captureHeight -lt 150) {
+        throw 'Visible HyperGet window bounds are too small for visual acceptance.'
     }
     Add-Type -AssemblyName System.Drawing
-    $bitmap = [System.Drawing.Bitmap]::new($windowWidth, $windowHeight)
+    $bitmap = [System.Drawing.Bitmap]::new($captureWidth, $captureHeight)
     $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
     $screenshot = Join-Path $root 'liquid-progress-active.png'
     try {
         $graphics.CopyFromScreen(
-            [System.Drawing.Point]::new($windowRect.Left, $windowRect.Top),
+            [System.Drawing.Point]::new($captureLeft, $captureTop),
             [System.Drawing.Point]::Empty,
-            [System.Drawing.Size]::new($windowWidth, $windowHeight)
+            [System.Drawing.Size]::new($captureWidth, $captureHeight)
         )
         $bitmap.Save($screenshot, [System.Drawing.Imaging.ImageFormat]::Png)
     } finally {

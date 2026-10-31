@@ -79,6 +79,11 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("$windowRect.Right -gt $displayBounds.Right", SCRIPT)
         self.assertIn("$windowRect.Bottom -gt $displayBounds.Bottom", SCRIPT)
         self.assertIn("outside display bounds", SCRIPT)
+        self.assertIn("$maxInvisibleFrame = 12", SCRIPT)
+        self.assertIn("$outsideRight -gt $maxInvisibleFrame", SCRIPT)
+        self.assertIn("$captureWidth = $captureRight - $captureLeft", SCRIPT)
+        self.assertIn("$captureHeight = $captureBottom - $captureTop", SCRIPT)
+        self.assertIn("[System.Drawing.Bitmap]::new($captureWidth, $captureHeight)", SCRIPT)
         self.assertLess(
             SCRIPT.index("outside display bounds"),
             SCRIPT.index("$bitmap = [System.Drawing.Bitmap]::new"),
