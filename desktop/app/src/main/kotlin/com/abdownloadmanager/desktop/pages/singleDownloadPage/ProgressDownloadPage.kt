@@ -1024,6 +1024,7 @@ private fun SingleDownloadPageButton(
 ) {
     ActionButton(
         text = text,
+        modifier = Modifier.widthIn(min = if (primary) 156.dp else 136.dp),
         start = {
             icon?.let {
                 Row {

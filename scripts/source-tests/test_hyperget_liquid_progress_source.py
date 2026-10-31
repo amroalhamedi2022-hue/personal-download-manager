@@ -73,6 +73,17 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("StatusAtCapture = $statusAtCapture", SCRIPT)
         self.assertIn("$actualSha -eq $expectedSha", SCRIPT)
 
+    def test_windows_visual_capture_rejects_off_screen_clipping(self):
+        self.assertIn("System.Windows.Forms.Screen", SCRIPT)
+        self.assertIn("FromHandle($windowHandle).Bounds", SCRIPT)
+        self.assertIn("$windowRect.Right -gt $displayBounds.Right", SCRIPT)
+        self.assertIn("$windowRect.Bottom -gt $displayBounds.Bottom", SCRIPT)
+        self.assertIn("outside display bounds", SCRIPT)
+        self.assertLess(
+            SCRIPT.index("outside display bounds"),
+            SCRIPT.index("$bitmap = [System.Drawing.Bitmap]::new"),
+        )
+
     def test_visual_gate_selects_the_download_details_window_not_the_main_list(self):
         self.assertIn("FindVisibleWindow", SCRIPT)
         self.assertIn("FindVisibleWindowExcluding", SCRIPT)
@@ -310,6 +321,12 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("LocalMyColors provides DefaultThemes.hyperGetLight", window)
         self.assertIn("val defaultWidth = 1120f", window)
         self.assertIn("val defaultHeight = 465f", window)
+        self.assertIn("val safeWidth = (workArea.width / density - 32f)", window)
+        self.assertIn("val safeHeight = (workArea.height / density - 48f)", window)
+        self.assertIn("val w = defaultWidth.coerceAtMost(safeWidth)", window)
+        self.assertIn("val h = requestedHeight.coerceAtMost(safeHeight)", window)
+        self.assertIn("resizable = true", window)
+        self.assertNotIn("onRequestToggleMaximize = null,", window.split("private fun ProgressWindow(", 1)[1].split("private fun UpdateTaskBar(", 1)[0])
         self.assertIn('append(" — HyperGet")', window)
         self.assertIn("val showSpeedGraph by singleDownloadComponent.showSpeedGraph.collectAsState()", PAGE)
         self.assertIn('"Hide graph"', PAGE)

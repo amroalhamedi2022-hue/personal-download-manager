@@ -424,6 +424,17 @@ public static class HyperGetLiquidProgressNative {
     }
     $windowWidth = $windowRect.Right - $windowRect.Left
     $windowHeight = $windowRect.Bottom - $windowRect.Top
+    # A partially off-screen screenshot cannot be accepted as visual evidence.
+    Add-Type -AssemblyName System.Windows.Forms
+    $displayBounds = [System.Windows.Forms.Screen]::FromHandle($windowHandle).Bounds
+    if ($windowRect.Left -lt $displayBounds.Left -or
+        $windowRect.Top -lt $displayBounds.Top -or
+        $windowRect.Right -gt $displayBounds.Right -or
+        $windowRect.Bottom -gt $displayBounds.Bottom) {
+        throw ("Installed download window is outside display bounds: window=({0},{1})-({2},{3}), display=({4},{5})-({6},{7})." -f
+            $windowRect.Left, $windowRect.Top, $windowRect.Right, $windowRect.Bottom,
+            $displayBounds.Left, $displayBounds.Top, $displayBounds.Right, $displayBounds.Bottom)
+    }
     if ($windowWidth -lt 200 -or $windowHeight -lt 150) {
         throw 'Installed HyperGet window bounds are too small for visual acceptance.'
     }
