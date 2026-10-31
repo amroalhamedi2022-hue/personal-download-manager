@@ -389,6 +389,20 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn('text = "Hide graph"', PAGE)
         self.assertIn("maxSpeed.toDouble() * tick / 4.0", PAGE)
 
+    def test_reference_partial_fill_has_visible_main_and_connection_bubbles(self):
+        track = PAGE.split("private fun LiquidProgressTrack(", 1)[1].split("private fun RenderPartInfo(", 1)[0]
+        # A 37% fill in a 1024px screenshot must not collapse to just seven
+        # bubbles, and a 35%-filled 120px connection must show more than one.
+        self.assertIn("if (compact) 0.50f else 0.60f", track)
+        self.assertEqual(min(14, int((1024 * 0.37) / (42 * 0.60))), 14)
+        self.assertGreaterEqual(min(5, int((120 * 0.35) / (30 * 0.50))), 2)
+        self.assertIn("val bubbleRadius = size.height * (0.058f + (index % 4) * 0.026f)", track)
+        self.assertIn("if (index % 3 == 0) 0.66f else 0.43f", track)
+        self.assertIn("drawPath(surfaceWave, color = Color.White.copy(alpha = 0.20f))", track)
+        self.assertIn("drawPath(secondaryWave, color = Color(0xFFB3FFFF).copy(alpha = 0.15f))", track)
+        self.assertNotIn("rememberInfiniteTransition", track)
+
+
     def test_reference_liquid_draws_real_crests_and_keeps_shared_animation(self):
         track = PAGE.split("private fun LiquidProgressTrack(", 1)[1].split("private fun RenderPartInfo(", 1)[0]
         self.assertIn(".drawWithCache {", track)

@@ -604,7 +604,7 @@ private fun LiquidProgressTrack(
                             surfaceWave.lineTo(x, y)
                         }
                         surfaceWave.close()
-                        drawPath(surfaceWave, color = Color.White.copy(alpha = 0.12f))
+                        drawPath(surfaceWave, color = Color.White.copy(alpha = 0.20f))
 
                         secondaryWave.reset()
                         secondaryWave.moveTo(startX, 0f)
@@ -616,14 +616,14 @@ private fun LiquidProgressTrack(
                             secondaryWave.lineTo(x, y)
                         }
                         secondaryWave.close()
-                        drawPath(secondaryWave, color = Color(0xFFB3FFFF).copy(alpha = 0.08f))
+                        drawPath(secondaryWave, color = Color(0xFFB3FFFF).copy(alpha = 0.15f))
 
                         // Keep completed/paused parts still and uncluttered. Bubble
                         // density follows the actual filled width, so a narrow part
                         // never receives the same number as the full-size track.
                         if (active && fillWidth > size.height * 1.1f) {
                             val visibleBubbleCount = bubbleCount.coerceAtMost(
-                                (fillWidth / (size.height * if (compact) 1.9f else 1.15f))
+                                (fillWidth / (size.height * if (compact) 0.50f else 0.60f))
                                     .toInt().coerceAtLeast(0)
                             )
                             repeat(visibleBubbleCount) { index ->
@@ -634,15 +634,15 @@ private fun LiquidProgressTrack(
                                         sin(phase.toDouble() * PI * 2.0 + index).toFloat() * 0.018f
                                 ) % 1f
                                 val lift = (index * 0.371f + phase * (0.58f + index % 3 * 0.13f)) % 1f
-                                val bubbleRadius = size.height * (0.048f + (index % 4) * 0.018f)
+                                val bubbleRadius = size.height * (0.058f + (index % 4) * 0.026f)
                                 val center = Offset(
                                     x = startX + fillWidth * (0.08f + drift * 0.84f),
                                     y = size.height * (0.88f - lift * 0.74f),
                                 )
-                                drawCircle(Color.White.copy(alpha = 0.055f), bubbleRadius * 1.5f, center)
-                                drawCircle(Color(0xFFB1F9FF).copy(alpha = 0.12f), bubbleRadius * 0.78f, center)
+                                drawCircle(Color.White.copy(alpha = 0.11f), bubbleRadius * 1.6f, center)
+                                drawCircle(Color(0xFFB1F9FF).copy(alpha = 0.12f), bubbleRadius * 0.95f, center)
                                 drawCircle(
-                                    color = Color.White.copy(alpha = if (index % 3 == 0) 0.44f else 0.30f),
+                                    color = Color.White.copy(alpha = if (index % 3 == 0) 0.66f else 0.43f),
                                     radius = bubbleRadius,
                                     center = center,
                                     style = Stroke(width = (bubbleRadius * 0.13f).coerceAtLeast(0.6f)),
