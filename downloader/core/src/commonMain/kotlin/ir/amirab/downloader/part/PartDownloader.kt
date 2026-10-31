@@ -209,11 +209,6 @@ abstract class PartDownloader<
                 }
             }
 
-            active = false
-            if (!part.isCompleted) {
-                part.statusFlow.value = PartDownloadStatus.IDLE
-            }
-
             result.onFailure {
                 if (it is ShouldNotHappened) {
                     throw it
@@ -222,6 +217,17 @@ abstract class PartDownloader<
         }
         this.workerJob = workerJob
         workerJob.invokeOnCompletion {
+            // The coroutine body may never run if stop() cancels the worker before
+            // its first dispatch. Always clear active, including that early-cancel path.
+            // Keep cleanup associated with this exact run, not a subsequent restart.
+            synchronized(this) {
+                if (this.workerJob === workerJob) {
+                    active = false
+                    if (!part.isCompleted) {
+                        part.statusFlow.value = PartDownloadStatus.IDLE
+                    }
+                }
+            }
             // A SupervisorJob does not complete merely because its child completed.
             // Close the per-run scope so it cannot remain active after the part is done.
             scope.coroutineContext.job.cancel()

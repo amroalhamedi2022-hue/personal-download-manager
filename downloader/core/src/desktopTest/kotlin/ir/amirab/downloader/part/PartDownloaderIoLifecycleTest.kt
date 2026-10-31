@@ -364,6 +364,42 @@ class PartDownloaderIoLifecycleTest {
     }
 
     @Test
+    fun immediatelyCancelledWorkersReleaseActiveFlagAndAllowRestart() = runBlocking {
+        val part = TestPart()
+        val downloader = object : PartDownloader<TestPart>(
+            part = part,
+            getDestWriter = { error("no output is expected during an immediate stop") },
+        ) {
+            override fun howMuchCanRead(maxAllowed: Long): Long = maxAllowed
+
+            override suspend fun connectAndVerify(): Connection<*> {
+                awaitCancellation()
+            }
+        }
+        downloader.onTooManyErrors = { throw it }
+
+        try {
+            // Exercise cancellation both before the worker is scheduled and
+            // during connection. Every iteration must admit the next start.
+            repeat(64) {
+                downloader.start()
+                downloader.stop()
+                withTimeout(2_000L) {
+                    downloader.join()
+                    while (downloader.active) {
+                        kotlinx.coroutines.delay(1L)
+                    }
+                }
+                assertFalse(downloader.active, "immediately cancelled worker must release its active flag")
+                assertEquals(PartDownloadStatus.IDLE, part.statusFlow.value)
+            }
+        } finally {
+            downloader.stop()
+            withTimeout(2_000L) { downloader.join() }
+        }
+    }
+
+    @Test
     fun stopClosesBlockingSourceAndJoinsWorker() = runBlocking {
         val file = Files.createTempFile("hyperget-part-io-", ".bin").toFile()
         val fileHandle = FileSystem.SYSTEM.openReadWrite(file.toOkioPath())
