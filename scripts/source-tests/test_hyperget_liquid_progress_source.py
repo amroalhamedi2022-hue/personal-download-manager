@@ -416,6 +416,17 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn(".height(42.dp)", PAGE)
         self.assertIn("bubbleCount = 3", PAGE)
 
+    def test_windows_completion_dialog_override_is_written_and_restored_without_shutdown(self):
+        self.assertIn("$completionPreferenceDiskTested = $false", SCRIPT)
+        self.assertIn("$tab.Name -eq 'on-completion'", SCRIPT)
+        self.assertIn("GetPixel(175, 61)", SCRIPT)
+        self.assertIn("GetPixel(($preview.Width - 55), 150)", SCRIPT)
+        self.assertIn("extra_download_settings", SCRIPT)
+        self.assertIn("showCompletionDialogOverride", SCRIPT)
+        self.assertIn("foreach ($expected in @((-not $initialEnabled), $initialEnabled))", SCRIPT)
+        self.assertIn("CompletionPreferenceDiskTested = $completionPreferenceDiskTested", SCRIPT)
+        self.assertIn("Never click the shutdown-on-completion control", SCRIPT)
+
     def test_installed_windows_captures_other_idm_tabs_without_claiming_false_parity(self):
         self.assertIn("liquid-progress-tab-{0}.png", SCRIPT)
         self.assertIn("@{ Name = 'speed'; OffsetX = 81 }", SCRIPT)

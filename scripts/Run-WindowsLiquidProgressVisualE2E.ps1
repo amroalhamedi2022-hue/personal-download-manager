@@ -623,6 +623,8 @@ public static class HyperGetLiquidProgressNative {
     # never click at guessed coordinates on other display layouts/DPI.
     $tabCaptureResult = 'not captured (different window size or foreground)'
     $tabCaptureFiles = @()
+    $completionPreferenceDiskTested = $false
+    $completionPreferenceDiskResult = 'not attempted'
     if ($captureWidth -ge 980 -and $captureWidth -le 1080 -and
         $captureHeight -ge 680 -and $captureHeight -le 770 -and
         [HyperGetLiquidProgressNative]::GetForegroundWindow() -eq $windowHandle) {
@@ -663,6 +665,69 @@ public static class HyperGetLiquidProgressNative {
                 $tabImage = Join-Path $root ("liquid-progress-tab-{0}.png" -f $tab.Name)
                 Save-TabCapture -Destination $tabImage
                 $tabCaptureFiles += [IO.Path]::GetFileName($tabImage)
+
+                if ($tab.Name -eq 'on-completion') {
+                    # Only the non-destructive completion-dialog switch is
+                    # touched. Never click the shutdown-on-completion control.
+                    # Verify real screen pixels before any coordinate click.
+                    $preview = [System.Drawing.Bitmap]::FromFile($tabImage)
+                    $safeToProbe = $false
+                    $initialEnabled = $false
+                    try {
+                        $selectedLine = $preview.GetPixel(175, 61)
+                        $toggleSample = $preview.GetPixel(($preview.Width - 55), 150)
+                        $tabIsSelected = ($selectedLine.B -gt ($selectedLine.R + 90))
+                        $toggleIsBlue = ($toggleSample.B -gt ($toggleSample.R + 45))
+                        $toggleIsGray = ([Math]::Abs([int]$toggleSample.B - [int]$toggleSample.R) -le 16)
+                        if ($tabIsSelected -and ($toggleIsBlue -or $toggleIsGray)) {
+                            $safeToProbe = $true
+                            $initialEnabled = $toggleIsBlue
+                        }
+                    } finally {
+                        $preview.Dispose()
+                    }
+                    if ($safeToProbe) {
+                        $settingFile = Join-Path $env:USERPROFILE (
+                            ".personal-download-manager\config\download_db\extra_download_settings\{0}.json" -f $taskId
+                        )
+                        $allPersisted = $true
+                        $clickX = $captureRight - 55
+                        $clickY = $captureTop + 150
+                        # The second click restores the original selection.
+                        foreach ($expected in @((-not $initialEnabled), $initialEnabled)) {
+                            if (-not [HyperGetLiquidProgressNative]::SetCursorPos($clickX, $clickY)) {
+                                throw 'Could not position mouse for completion preference test.'
+                            }
+                            [HyperGetLiquidProgressNative]::mouse_event([uint32]0x0002, 0, 0, 0, [UIntPtr]::Zero)
+                            [HyperGetLiquidProgressNative]::mouse_event([uint32]0x0004, 0, 0, 0, [UIntPtr]::Zero)
+                            $matched = $false
+                            for ($attempt = 0; $attempt -lt 30; $attempt++) {
+                                Start-Sleep -Milliseconds 200
+                                if (Test-Path -LiteralPath $settingFile -PathType Leaf) {
+                                    try {
+                                        $stored = Get-Content -LiteralPath $settingFile -Raw | ConvertFrom-Json
+                                        if (($stored.PSObject.Properties.Name -contains 'showCompletionDialogOverride') -and
+                                            ([bool]$stored.showCompletionDialogOverride -eq [bool]$expected)) {
+                                            $matched = $true
+                                            break
+                                        }
+                                    } catch {
+                                        # A transactional file rename may still be in progress.
+                                    }
+                                }
+                            }
+                            if (-not $matched) { $allPersisted = $false }
+                        }
+                        $completionPreferenceDiskTested = $allPersisted
+                        $completionPreferenceDiskResult = if ($allPersisted) {
+                            'Windows mouse toggle off/on persisted both values to per-download JSON'
+                        } else {
+                            'per-download completion preference disk roundtrip not confirmed'
+                        }
+                    } else {
+                        $completionPreferenceDiskResult = 'switch or selected tab pixel confirmation unavailable'
+                    }
+                }
             }
             $tabCaptureResult = 'real Windows click screenshots recorded for human IDM tab review'
         } catch {
@@ -781,6 +846,8 @@ public static class HyperGetLiquidProgressNative {
         GraphRestoredScreenshot = if ($graphRestoredScreenshot) { [IO.Path]::GetFileName($graphRestoredScreenshot) } else { $null }
         TabCaptureResult = $tabCaptureResult
         TabScreenshotFiles = @($tabCaptureFiles)
+        CompletionPreferenceDiskTested = $completionPreferenceDiskTested
+        CompletionPreferenceDiskResult = $completionPreferenceDiskResult
         FinalStatus = $finalStatus
         Verified = $true
     } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $root 'liquid-progress-report.json') -Encoding utf8
