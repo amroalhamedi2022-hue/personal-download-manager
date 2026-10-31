@@ -510,6 +510,7 @@ class HLSDownloadJob(
             return partDownloaderList.getOrPut(part.getID()) {
                 HLSPartDownloader(
                     baseURL = segmentBaseUrl,
+                    playlistCredentials = downloadItem,
                     part = part,
                     getDestWriter = {
                         destination.getWriterFor(part)
@@ -594,8 +595,8 @@ class HLSDownloadJob(
     }
 
     private suspend fun initialParts(): HLSResponseInfo {
-        val response = client.connect(
-            downloadItem, null, null
+        val response = client.connectHlsWithOriginGuard(
+            credentialsForHlsPlaylist(downloadItem)
         ).use {
             HLSResponseInfo.fromConnection(it)
         }

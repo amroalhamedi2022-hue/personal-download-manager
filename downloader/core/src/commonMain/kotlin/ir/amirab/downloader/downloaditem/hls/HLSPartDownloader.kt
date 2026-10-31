@@ -5,7 +5,6 @@ import ir.amirab.downloader.connection.HttpDownloaderClient
 import ir.amirab.downloader.connection.response.HttpResponseInfo
 import ir.amirab.downloader.connection.response.expectSuccess
 import ir.amirab.downloader.destination.DestWriter
-import ir.amirab.downloader.downloaditem.http.HttpDownloadCredentials
 import ir.amirab.downloader.part.MediaSegment
 import ir.amirab.downloader.part.PartDownloader
 import ir.amirab.util.HttpUrlUtils
@@ -19,6 +18,7 @@ class HLSPartDownloader(
     part: MediaSegment,
     getDestWriter: () -> DestWriter,
     private val baseURL: String,
+    private val playlistCredentials: IHLSCredentials,
     private val client: HttpDownloaderClient,
     private val speedLimiters: List<SpeedLimiter>,
     private val hostLimitRegistry: HostLimitRegistry? = null,
@@ -44,9 +44,8 @@ class HLSPartDownloader(
         val hostPermit = hostLimitRegistry?.acquireForUrl(url)
         var openedConnection: Connection<HttpResponseInfo>? = null
         try {
-            val connect = client.connect(
-                HttpDownloadCredentials(url),
-                null, null,
+            val connect = client.connectHlsWithOriginGuard(
+                credentialsForHlsSegment(playlistCredentials, baseURL, url)
             )
             openedConnection = connect
             if (stop || !currentCoroutineContext().isActive) {

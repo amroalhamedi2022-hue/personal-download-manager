@@ -6,6 +6,7 @@ import ir.amirab.downloader.downloaditem.IDownloadCredentials
 import ir.amirab.util.HttpUrlUtils
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 
 @Serializable
 @SerialName("http")
@@ -16,6 +17,8 @@ data class HttpDownloadCredentials(
     override val password: String? = null,
     override val downloadPage: String? = null,
     override val userAgent: String? = null,
+    // Request-local policy: never persist redirect permissions in download JSON.
+    @Transient val followRedirects: Boolean = true,
 ) : IHttpDownloadCredentials {
     override fun validateCredentials() {
         validate(this)

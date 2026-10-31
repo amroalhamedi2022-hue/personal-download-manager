@@ -4,6 +4,7 @@ import ir.amirab.downloader.connection.proxy.*
 import ir.amirab.downloader.connection.response.HttpResponseInfo
 import ir.amirab.downloader.downloaditem.http.IHttpBasedDownloadCredentials
 import ir.amirab.downloader.downloaditem.http.IHttpDownloadCredentials
+import ir.amirab.downloader.downloaditem.http.HttpDownloadCredentials
 import ir.amirab.downloader.utils.await
 import okhttp3.*
 import java.net.InetSocketAddress
@@ -17,6 +18,14 @@ class OkHttpHttpDownloaderClient(
     private val systemProxySelectorProvider: SystemProxySelectorProvider,
     private val autoConfigurableProxyProvider: AutoConfigurableProxyProvider,
 ) : HttpDownloaderClient() {
+    // Cookie-bearing/authenticated HLS requests must never redirect with
+    // caller-supplied credentials or inherited ambient cookies.
+    private val noRedirectClient = okHttpClient.newBuilder()
+        .cookieJar(CookieJar.NO_COOKIES)
+        .followRedirects(false)
+        .followSslRedirects(false)
+        .build()
+
     private fun newCall(
         downloadCredentials: IHttpBasedDownloadCredentials,
         start: Long?,
@@ -26,7 +35,10 @@ class OkHttpHttpDownloaderClient(
         val rangeHeader = start?.let {
             createRangeHeader(start, end)
         }
-        return okHttpClient
+        val requestClient = if (
+            downloadCredentials is HttpDownloadCredentials && !downloadCredentials.followRedirects
+        ) noRedirectClient else okHttpClient
+        return requestClient
             .applyProxy(downloadCredentials)
             .newCall(
                 Request.Builder()
