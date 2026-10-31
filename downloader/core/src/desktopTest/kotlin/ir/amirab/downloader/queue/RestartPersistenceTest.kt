@@ -138,6 +138,38 @@ class RestartPersistenceTest {
     }
 
     @Test
+    fun staleDeletedQueueReferenceCannotDeleteReplacementWithReusedId() = runBlocking {
+        val folder = Files.createTempDirectory("download-queue-stale-reference-").toFile()
+        val database = DownloadQueueFileStorageDatabase(
+            fileSaver = TransactionalFileSaver(Json),
+            queueFolder = folder,
+        )
+        val manager = QueueManager(database, InactiveDownloads())
+        try {
+            manager.boot()
+            manager.addQueue("Old queue")
+            val oldQueue = manager.getAll().first { it.id != DefaultQueueInfo.ID }
+
+            manager.deleteQueue(oldQueue)
+            manager.addQueue("New queue")
+            val replacement = manager.getAll().first { it.id != DefaultQueueInfo.ID }
+            assertEquals(oldQueue.id, replacement.id, "replacing a deleted queue may reuse its ID")
+
+            // A delayed UI callback may still hold the old DownloadQueue object.
+            manager.deleteQueue(oldQueue)
+
+            assertEquals(2, manager.getAll().size)
+            assertEquals(replacement, manager.getQueue(replacement.id))
+            assertEquals("New queue", database.getQueue(replacement.id).name)
+            manager.flush()
+            assertEquals("New queue", database.getQueue(replacement.id).name)
+        } finally {
+            manager.getAll().forEach(DownloadQueue::dispose)
+            folder.deleteRecursively()
+        }
+    }
+
+    @Test
     fun concurrentQueueCreationAndMovesDoNotDuplicateIdsOrMembership() = runBlocking {
         val folder = Files.createTempDirectory("download-queue-concurrent-").toFile()
         val database = DownloadQueueFileStorageDatabase(

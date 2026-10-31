@@ -84,27 +84,27 @@ class QueueManager(
         }
     }
 
-    suspend fun deleteQueue(
-        queue: DownloadQueue
-    ) {
-        if (queue.isMainQueue()) {
+    private suspend fun deleteQueueUnderLock(queue: DownloadQueue) {
+        if (queue.isMainQueue() || queues.value.none { it === queue }) {
+            // A stale reference must never delete a newer queue that reused this ID.
             return
         }
         queue.dispose()
         queueDb.deleteQueue(queue.id)
-        queues.update {
-            it.filter {
-                it.id != queue.id
-            }
+        queues.update { existing -> existing.filterNot { it === queue } }
+    }
+
+    suspend fun deleteQueue(queue: DownloadQueue) {
+        queueMutationMutex.withLock {
+            deleteQueueUnderLock(queue)
         }
     }
 
-    suspend fun deleteQueue(
-        id: Long,
-    ) {
-        val foundQueue = queues.value.find { it.id == id }
-        foundQueue?.let {
-            deleteQueue(foundQueue)
+    suspend fun deleteQueue(id: Long) {
+        queueMutationMutex.withLock {
+            queues.value.firstOrNull { it.id == id }?.let {
+                deleteQueueUnderLock(it)
+            }
         }
     }
 
