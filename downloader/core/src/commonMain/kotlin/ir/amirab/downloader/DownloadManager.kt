@@ -43,6 +43,16 @@ internal fun pendingDownloadsToBoot(
     .distinctBy { it.id }
     .toList()
 
+/**
+ * Stop All must include pending retries and every active lifecycle phase, rather
+ * than only the Downloading status. A persisted retry clock also counts even
+ * when the in-memory status has not yet transitioned after startup.
+ */
+internal fun shouldStopOnStopAll(
+    status: DownloadJobStatus,
+    retryAt: Long?,
+): Boolean = status is DownloadJobStatus.IsActive || retryAt != null
+
 class DownloadManager(
     val dlListDb: IDownloadListDb,
     val partListDb: IDownloadPartListDb,
@@ -337,7 +347,7 @@ class DownloadManager(
         context: DownloadItemContext = EmptyContext,
     ) {
         downloadJobs.filter {
-            it.status.value == DownloadJobStatus.Downloading
+            shouldStopOnStopAll(it.status.value, it.downloadItem.retryAt)
         }.map {
             scope.async {
                 pause(it.id, context)
