@@ -35,6 +35,8 @@ on:
       - "scripts/Run-WindowsInstallerLifecycleE2E.ps1"
       - "scripts/Run-WindowsInstalledNativeHostE2E.ps1"
       - "scripts/source-tests/test_hyperget_uninstaller_cleanup_order.py"
+      - "scripts/Run-WindowsControlledBenchmarkComparison.ps1"
+      - "scripts/source-tests/test_hyperget_uninstall_settle_source.py"
       - "scripts/Run-WindowsActiveBenchmarkMatrix.ps1"
       - "scripts/Run-WindowsAria2Viability.ps1"
       - "scripts/LocalHttpRangeFixture.py"
@@ -181,6 +183,8 @@ jobs:
         run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_http_part_deadline_source.py -v
       - name: Verify shared-I/O part streaming and cancellation lifecycle
         run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_part_downloader_io_lifecycle_source.py -v
+      - name: Verify NSIS uninstall cleanup settles before residue audit
+        run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_uninstall_settle_source.py -v
       - name: Verify installed HTTP 1/4/16 benchmark source contract (no app build)
         run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_active_benchmark_source.py -v
       - name: Verify all Windows installed acceptance harnesses follow HyperGet executable identity

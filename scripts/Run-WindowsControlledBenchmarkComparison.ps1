@@ -336,6 +336,25 @@ try {
         $fileCount = $files.Count
         Write-Warning "$Variant round $Round uninstaller left $fileCount install file(s) (or an empty install directory); inventory recorded before test-owned cleanup. This is not uninstall acceptance PASS."
     }
+    function Wait-ForUninstallerToSettle {
+        param([ValidateRange(1, 60)][int] $TimeoutSeconds = 20)
+        # NSIS can return from its launcher before its temporary cleanup child
+        # finishes. Do not record transient registry/shortcut/file residue as
+        # a permanent uninstall defect. The existing ownership-gated audit
+        # remains mandatory after timeout; no failures are suppressed.
+        $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+        do {
+            $registryPresent = @($uninstallKeys | Where-Object { Test-Path -LiteralPath $_ }).Count -gt 0
+            $shortcutPresent = @($shortcuts | Where-Object { Test-Path -LiteralPath $_ }).Count -gt 0
+            $installPresent = Test-Path -LiteralPath $installDir
+            if (-not $registryPresent -and -not $shortcutPresent -and -not $installPresent) {
+                return
+            }
+            Start-Sleep -Milliseconds 250
+        } while ([DateTime]::UtcNow -lt $deadline)
+        Write-Warning 'NSIS uninstall did not fully settle within 20 seconds; auditing remaining owned residue without suppressing defects.'
+    }
+
     function Assert-NoProductResidue {
         param([ValidateSet('baseline','candidate')][string] $Variant, [int] $Round)
         Clear-OwnedRegistryResidue -Variant $Variant -Round $Round
@@ -540,6 +559,7 @@ try {
             throw "$Variant silent uninstall timed out."
         }
         if ($remove.ExitCode -ne 0) { throw "$Variant silent uninstall exit code $($remove.ExitCode)." }
+        Wait-ForUninstallerToSettle -TimeoutSeconds 20
         Assert-NoProductResidue -Variant $Variant -Round $Round
         Remove-OwnedData -ExpectedToken $token
         $script:ActiveInstallDir = $null
