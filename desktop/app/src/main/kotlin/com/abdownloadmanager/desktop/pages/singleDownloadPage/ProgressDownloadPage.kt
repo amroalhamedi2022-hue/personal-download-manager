@@ -29,10 +29,13 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
 import com.abdownloadmanager.desktop.pages.singleDownloadPage.SingleDownloadPageSections.*
 import com.abdownloadmanager.resources.Res
@@ -53,6 +56,7 @@ import com.abdownloadmanager.shared.util.ui.icon.MyIcons
 import com.abdownloadmanager.shared.util.ui.theme.myShapes
 import com.abdownloadmanager.shared.util.ui.theme.mySpacings
 import com.abdownloadmanager.shared.util.ui.theme.myTextSizes
+import com.abdownloadmanager.shared.util.ui.theme.LocalTextSizes
 import com.abdownloadmanager.shared.util.ui.widget.MyIcon
 import ir.amirab.downloader.downloaditem.DownloadJobStatus
 import ir.amirab.downloader.monitor.*
@@ -111,6 +115,11 @@ fun ProgressDownloadPage(
     val downloadHasError by singleDownloadComponent.lastError.collectAsState()
     val resizingState = LocalSingleDownloadPageSizing.current
     val horizontalPadding = 16.dp
+    // Refined Windows type scale for the approved file-download dialog.
+    // Stay within this window: users' global font/scale settings still apply.
+    val downloadTextSizes = myTextSizes.copy(
+        sm = 12.sp, base = 14.sp, lg = 16.sp, xl = 18.sp,
+    )
 
     // Only sample actual monitor speeds while this window is composed.
     // Bounded at 90 seconds, including zero during pause/retry.
@@ -163,7 +172,14 @@ fun ProgressDownloadPage(
             setShowPartInfo(false)
         }
     }
-    CompositionLocalProvider(LocalLiquidAnimationPhase provides liquidPhaseState) {
+    CompositionLocalProvider(
+        LocalLiquidAnimationPhase provides liquidPhaseState,
+        LocalTextSizes provides downloadTextSizes,
+        LocalTextStyle provides LocalTextStyle.current.copy(
+            fontSize = downloadTextSizes.base,
+            lineHeight = 18.sp,
+        ),
+    ) {
     Column(Modifier.fillMaxSize().background(Color(0xFFF4F7FB))) {
         // Tabs outside the bordered information panel, like the approved design.
         MyTabRow {
@@ -282,7 +298,13 @@ private fun RenderTransferSummary(
     // Reference: byte summary on the left, buttons centered, ETA and speed on the right.
     Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
         Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-            Text("${downloaded} of ${total}", fontSize = myTextSizes.base, maxLines = 1)
+            Text(
+                "${downloaded} of ${total}",
+                fontSize = myTextSizes.base,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
             Spacer(Modifier.width(5.dp))
             PartInfoButton(showingPartInfo, onRequestShowPartInfo)
             downloadErrorReason?.let {
@@ -309,7 +331,9 @@ private fun RenderTransferSummary(
             modifier = Modifier.weight(1f),
             textAlign = TextAlign.End,
             fontSize = myTextSizes.base,
+            fontWeight = FontWeight.Medium,
             maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }
@@ -357,9 +381,19 @@ private fun RealSpeedHistoryChart(
     val peakText = convertPositiveSizeToHumanReadable(observedMaxSpeed, speedUnit).rememberString()
     Column(modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("Transfer rate", fontSize = myTextSizes.base, color = myColors.onBackground)
+            Text(
+                "Transfer rate",
+                fontSize = myTextSizes.base,
+                fontWeight = FontWeight.SemiBold,
+                color = myColors.onBackground,
+            )
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("$currentText/s", fontSize = myTextSizes.base, color = myColors.onBackground)
+                Text(
+                    "$currentText/s",
+                    fontSize = myTextSizes.base,
+                    fontWeight = FontWeight.Medium,
+                    color = myColors.onBackground,
+                )
                 Spacer(Modifier.width(8.dp))
                 ActionButton(
                     text = "Hide graph",
@@ -377,8 +411,8 @@ private fun RealSpeedHistoryChart(
                 for (tick in 4 downTo 0) {
                     Text(
                         convertPositiveSizeToHumanReadable((maxSpeed.toDouble() * tick / 4.0).toLong(), speedUnit).rememberString(),
-                        fontSize = myTextSizes.base,
-                        color = myColors.onBackground / 0.62f,
+                        fontSize = myTextSizes.sm,
+                        color = myColors.onBackground / 0.70f,
                         maxLines = 1,
                     )
                 }
@@ -429,7 +463,13 @@ private fun RealSpeedHistoryChart(
             }
         }
         Spacer(Modifier.height(3.dp))
-        Text("Peak: $peakText/s  •  Last 90 seconds", fontSize = myTextSizes.base, color = myColors.onBackground / 0.7f)
+        Text(
+            "Peak: $peakText/s  •  Last 90 seconds",
+            fontSize = myTextSizes.sm,
+            color = myColors.onBackground / 0.76f,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
@@ -704,14 +744,22 @@ private fun RenderPartInfo(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("Connections and downloaded parts", fontSize = myTextSizes.base)
+            Text(
+                "Connections and downloaded parts",
+                fontSize = myTextSizes.base,
+                fontWeight = FontWeight.SemiBold,
+            )
             val connected = itemState.parts.count { it.status == PartDownloadStatus.ReceivingData }
-            Text("${itemState.parts.size} parts • $connected connected", fontSize = myTextSizes.base)
+            Text(
+                "${itemState.parts.size} parts • $connected connected",
+                fontSize = myTextSizes.sm,
+                color = myColors.onBackground / 0.78f,
+            )
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.onClick { onlyActiveParts = !onlyActiveParts },
             ) {
-                Text("Only active", fontSize = myTextSizes.base)
+                Text("Only active", fontSize = myTextSizes.sm)
                 Spacer(Modifier.width(4.dp))
                 CheckBox(onlyActiveParts, { onlyActiveParts = it })
             }
@@ -768,7 +816,14 @@ private fun RenderPartInfo(
                         .clip(RoundedCornerShape(5.dp))
                         .border(1.dp, Color(0xFFD7E0EB), RoundedCornerShape(5.dp)),
                     wrapHeader = {
-                        WithContentAlpha(0.75f) {
+                        WithContentAlpha(0.85f) {
+                            CompositionLocalProvider(
+                                LocalTextStyle provides LocalTextStyle.current.copy(
+                                    fontSize = myTextSizes.sm,
+                                    fontWeight = FontWeight.SemiBold,
+                                    lineHeight = 16.sp,
+                                ),
+                            ) {
                             Box(
                                 Modifier
                                     .fillMaxWidth()
@@ -778,6 +833,7 @@ private fun RenderPartInfo(
                                     .padding(vertical = 4.dp)
                             ) {
                                 it()
+                            }
                             }
                         }
                     },
@@ -790,7 +846,7 @@ private fun RenderPartInfo(
                                 Modifier
                                     .padding(horizontal = horizontalPadding)
                                     .hoverable(interactionSource)
-                                    .heightIn(min = 29.dp)
+                                    .heightIn(min = 32.dp)
                                     .background(
                                         if (isHovered) Color(0xFFE0EFFF)
                                         else if (index % 2 == 0) Color.White else Color(0xFFF6F9FD)
@@ -813,7 +869,11 @@ private fun RenderPartInfo(
                                 is PartDownloadStatus.Canceled -> myColors.error
                                 PartDownloadStatus.IDLE -> myColors.onBackground / 0.68f
                             }
-                            SimpleCellText(prettifyStatus(it.value.status).rememberString(), stateColor)
+                            SimpleCellText(
+                                prettifyStatus(it.value.status).rememberString(),
+                                stateColor,
+                                fontWeight = FontWeight.Medium,
+                            )
                         }
 
                         PartInfoCells.Downloaded -> {
@@ -857,8 +917,20 @@ private fun prettifyStatus(status: PartDownloadStatus): StringSource {
 }
 
 @Composable
-private fun SimpleCellText(text: String, color: Color = LocalContentColor.current) {
-    Text(text, fontSize = myTextSizes.base, maxLines = 1, color = color)
+private fun SimpleCellText(
+    text: String,
+    color: Color = LocalContentColor.current,
+    fontWeight: FontWeight = FontWeight.Normal,
+) {
+    Text(
+        text,
+        fontSize = myTextSizes.base,
+        fontWeight = fontWeight,
+        lineHeight = 18.sp,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        color = color,
+    )
 }
 
 sealed class PartInfoCells : TableCell<IndexedValue<UiPart>> {
@@ -912,7 +984,10 @@ private fun RenderPropertyItem(propertyItem: SingleDownloadPagePropertyItem, hig
                 text = "${title.rememberString()}:",
                 modifier = Modifier.weight(0.3f),
                 maxLines = 1,
-                fontSize = myTextSizes.base
+                overflow = TextOverflow.Ellipsis,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Normal,
+                lineHeight = 18.sp,
             )
         }
         WithContentAlpha(1f) {
@@ -924,7 +999,10 @@ private fun RenderPropertyItem(propertyItem: SingleDownloadPagePropertyItem, hig
                     )
                     .weight(0.7f),
                 maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
                 fontSize = myTextSizes.base,
+                fontWeight = FontWeight.Medium,
+                lineHeight = 18.sp,
                 color = when {
                     highlightStatus -> Color(0xFF0065DB)
                     propertyItem.valueState == SingleDownloadPagePropertyItem.ValueType.Normal -> LocalContentColor.current
@@ -1039,6 +1117,9 @@ private fun SingleDownloadPageButton(
     icon: IconSource? = null,
     primary: Boolean = false,
 ) {
+    CompositionLocalProvider(
+        LocalTextStyle provides LocalTextStyle.current.copy(fontWeight = FontWeight.SemiBold),
+    ) {
     ActionButton(
         text = text,
         modifier = Modifier.widthIn(min = if (primary) 156.dp else 136.dp),
@@ -1058,6 +1139,7 @@ private fun SingleDownloadPageButton(
         contentColor = if (primary) Color.White else color,
         onClick = onClick,
     )
+    }
 }
 
 @Composable

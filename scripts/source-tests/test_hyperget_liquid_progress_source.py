@@ -16,9 +16,35 @@ DOWNLOAD_COMMAND = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/de
 OPEN_COMMAND = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/cli/download/open/OpenDownload.kt").read_text(encoding="utf-8")
 DOWNLOAD_WINDOW_STATE = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/singleDownloadPage/SingleDownloadPageStateToPersist.kt").read_text(encoding="utf-8")
 DOWNLOAD_WINDOW_COMPONENT = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/singleDownloadPage/DesktopSingleDownloadPageComponent.kt").read_text(encoding="utf-8")
+THEME_MANAGER = (ROOT / "shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/ui/theme/ThemeManager.kt").read_text(encoding="utf-8")
+THEME_RENDERER = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/ui/configurable/comon/renderer/ThemeConfigurableRenderer.kt").read_text(encoding="utf-8")
+FONT_MANAGER = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/settings/FontManager.kt").read_text(encoding="utf-8")
 
 
 class LiquidProgressSourceContract(unittest.TestCase):
+    def test_dialog_typography_hierarchy_uses_selected_font_and_scoped_scale(self):
+        self.assertIn("LocalTextSizes provides downloadTextSizes", PAGE)
+        self.assertIn("sm = 12.sp, base = 14.sp, lg = 16.sp, xl = 18.sp", PAGE)
+        self.assertIn("LocalTextStyle provides LocalTextStyle.current.copy(", PAGE)
+        self.assertIn("fontWeight = FontWeight.SemiBold", PAGE)
+        self.assertIn("fontWeight = FontWeight.Medium", PAGE)
+        self.assertIn("overflow = TextOverflow.Ellipsis", PAGE)
+        self.assertIn(".heightIn(min = 32.dp)", PAGE)
+        self.assertIn("FontFamily(\"Segoe UI\")", FONT_MANAGER)
+        self.assertIn("it.equals(\"Segoe UI\", ignoreCase = true)", FONT_MANAGER)
+
+    def test_theme_selector_shows_candidate_palette_and_preserves_modes(self):
+        self.assertIn("val backgroundColor: Color = color", THEME_MANAGER)
+        self.assertIn("val accentColor: Color = color", THEME_MANAGER)
+        self.assertIn("backgroundColor = background", THEME_MANAGER)
+        self.assertIn("accentColor = primary", THEME_MANAGER)
+        self.assertIn("getThemeById(themeId)?.takeUnless { it.isLight }", THEME_MANAGER)
+        self.assertIn("getThemeById(themeId)?.takeIf { it.isLight }", THEME_MANAGER)
+        self.assertIn(".background(it.backgroundColor)", THEME_RENDERER)
+        self.assertIn(".background(it.accentColor)", THEME_RENDERER)
+        self.assertIn(".background(it.color)", THEME_RENDERER)
+        self.assertNotIn("Brush.verticalGradient(myColors.primaryGradientColors)", THEME_RENDERER)
+
     def test_one_shared_clock_is_created_only_when_a_download_is_active(self):
         self.assertIn("hasActiveDownload = downloadList.any", LIST)
         self.assertIn("rememberInfiniteTransition()", LIST)
