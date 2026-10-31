@@ -481,6 +481,60 @@ public static class HyperGetLiquidProgressNative {
         $bitmap.Dispose()
     }
 
+    # Exercise the real graph visibility control through native Windows UI
+    # Automation when Compose exposes the button accessibility semantics.
+    # Do not infer a successful click from source contracts or screenshots alone.
+    # On runners without an accessible InvokePattern, preserve the transfer
+    # acceptance result and report this separate interaction as untested.
+    $graphToggleTested = $false
+    $graphToggleResult = 'not exposed to Windows UI Automation'
+    try {
+        Add-Type -AssemblyName UIAutomationClient -ErrorAction Stop
+        Add-Type -AssemblyName UIAutomationTypes -ErrorAction Stop
+        $automationRoot = [System.Windows.Automation.AutomationElement]::FromHandle($windowHandle)
+        $hideCondition = [System.Windows.Automation.PropertyCondition]::new(
+            [System.Windows.Automation.AutomationElement]::NameProperty, 'Hide graph'
+        )
+        $showCondition = [System.Windows.Automation.PropertyCondition]::new(
+            [System.Windows.Automation.AutomationElement]::NameProperty, 'Show graph'
+        )
+        $hideButton = $automationRoot.FindFirst(
+            [System.Windows.Automation.TreeScope]::Descendants, $hideCondition
+        )
+        if ($null -ne $hideButton) {
+            $hideInvoke = $hideButton.GetCurrentPattern(
+                [System.Windows.Automation.InvokePattern]::Pattern
+            )
+            $hideInvoke.Invoke()
+            Start-Sleep -Milliseconds 350
+            $showButton = $automationRoot.FindFirst(
+                [System.Windows.Automation.TreeScope]::Descendants, $showCondition
+            )
+            if ($null -ne $showButton) {
+                $showInvoke = $showButton.GetCurrentPattern(
+                    [System.Windows.Automation.InvokePattern]::Pattern
+                )
+                $showInvoke.Invoke()
+                Start-Sleep -Milliseconds 350
+                $restoredHideButton = $automationRoot.FindFirst(
+                    [System.Windows.Automation.TreeScope]::Descendants, $hideCondition
+                )
+                if ($null -ne $restoredHideButton) {
+                    $graphToggleTested = $true
+                    $graphToggleResult = 'hide and show controls invoked; original state restored'
+                } else {
+                    $graphToggleResult = 'show invoked, but restored hide control was not exposed'
+                }
+            } else {
+                $graphToggleResult = 'hide invoked, but show control was not exposed'
+            }
+        }
+    } catch {
+        # Avoid storing arbitrary exception messages or private UI text in artifacts.
+        $graphToggleResult = 'Windows UI Automation could not invoke both graph controls'
+    }
+    Write-Host "Graph toggle interaction: $graphToggleResult"
+
     $completed = $false
     $finalStats = $null
     $actualSha = ''
@@ -583,6 +637,8 @@ public static class HyperGetLiquidProgressNative {
         ExpectedSHA256 = $expectedSha
         ActualSHA256 = $actualSha
         Screenshot = [IO.Path]::GetFileName($screenshot)
+        GraphToggleTested = $graphToggleTested
+        GraphToggleResult = $graphToggleResult
         FinalStatus = $finalStatus
         Verified = $true
     } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $root 'liquid-progress-report.json') -Encoding utf8
