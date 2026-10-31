@@ -22,10 +22,12 @@ import okio.Timeout
 import okio.Path.Companion.toOkioPath
 import java.io.File
 import java.io.IOException
+import java.io.EOFException
 import java.nio.file.Files
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.test.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertEquals
@@ -297,6 +299,51 @@ class PartDownloaderIoLifecycleTest {
             withTimeout(1_000L) { withPartBodyCopyPermit { true } },
             "a cancelled body copy must release its shared permit",
         )
+    }
+
+
+    @Test
+    fun prematureEofInKnownLengthRangeIsFailureAndKeepsResumeOffset() = runBlocking {
+        val file = Files.createTempFile("hyperget-truncated-range-", ".bin").toFile()
+        val fileHandle = FileSystem.SYSTEM.openReadWrite(file.toOkioPath())
+        val part = RangedPart(from = 0L, to = 255L)
+        val error = AtomicReference<Throwable?>(null)
+        val completed = AtomicInteger(0)
+        val downloader = object : PartDownloader<RangedPart>(
+            part = part,
+            getDestWriter = { DestWriter(part.getID(), file, part.current, fileHandle) },
+            allowInternalRetries = false,
+        ) {
+            override fun howMuchCanRead(maxAllowed: Long): Long =
+                minOf(maxAllowed, (part.to!! - part.current + 1).coerceAtLeast(0L))
+
+            override suspend fun connectAndVerify(): Connection<TestResponseInfo> =
+                Connection(Buffer().write(ByteArray(64)), 64L, TestResponseInfo)
+
+            override fun onCanceled(e: Throwable) {
+                error.set(e)
+                super.onCanceled(e)
+            }
+
+            override fun onFinish() {
+                completed.incrementAndGet()
+                super.onFinish()
+            }
+        }
+        downloader.onTooManyErrors = { /* expected non-retryable test failure */ }
+        try {
+            downloader.start()
+            withTimeout(3_000L) { downloader.join() }
+
+            assertTrue(error.get() is EOFException, "short HTTP range must be retryable EOF, not completion")
+            assertEquals(64L, part.current, "downloaded bytes stay available for a later Range resume")
+            assertFalse(part.isCompleted)
+            assertEquals(0, completed.get(), "short response must not publish completed status")
+        } finally {
+            downloader.stop()
+            fileHandle.close()
+            file.delete()
+        }
     }
 
     @Test

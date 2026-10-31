@@ -97,6 +97,11 @@ class PartDownloaderIoLifecycleContract(unittest.TestCase):
         self.assertIn('primaryRangesCannotBeStarvedByEarlierMultiPartDownloads', self.test)
         self.assertIn('all 16 first ranges must start', self.test)
 
+    def test_truncated_known_length_http_range_cannot_complete(self):
+        self.assertIn('part is RangedPart && part.to != null && !part.isCompleted', self.part)
+        self.assertIn('onCanceled(java.io.EOFException(', self.part)
+        self.assertIn('prematureEofInKnownLengthRangeIsFailureAndKeepsResumeOffset', self.test)
+
     def test_runtime_regression_uses_source_that_ignores_thread_interrupts(self):
         self.assertIn("class PartDownloaderIoLifecycleTest", self.test)
         self.assertIn("while (!closed)", self.test)

@@ -405,7 +405,14 @@ abstract class PartDownloader<
 //                "read count $readCount is bigger than homMuchReadFromBuffer $homMuchReadFromBuffer"
 //            }
             if (readCount == -1L) {
-                onFinish()
+                // A socket can end before its advertised range is complete. Never
+                // persist a truncated known-length range as successfully finished;
+                // retry from part.current instead of corrupting the final file.
+                if (part is RangedPart && part.to != null && !part.isCompleted) {
+                    onCanceled(java.io.EOFException("HTTP range ended at byte ${part.current} before the expected end ${part.to}"))
+                } else {
+                    onFinish()
+                }
                 break
             }
             destWriter.write(buffer, readCount)
