@@ -76,8 +76,10 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          # The PowerShell script is terminating-error based and already throws
+          # on all failed checks. Do not compare nullable $LASTEXITCODE to zero:
+          # PowerShell can evaluate $null -ne 0 as true after successful scripts.
           & ./scripts/Run-WindowsSafeUninstallE2E.ps1 -InstallerExecutable 'desktop/app/build/custom-installer/DownloadManager.exe' -ProofFile 'build/ci-release/windows-safe-uninstall-proof.txt'
-          if ($LASTEXITCODE -ne 0) { throw "NSIS safety acceptance failed: $LASTEXITCODE" }
 
       - name: Upload safe-uninstall acceptance proof
         if: always()
