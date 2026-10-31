@@ -49,18 +49,14 @@ def reconcile_fixture_response_ranges(responses, expected_bytes):
         for r in responses
     )
     tail_retry_count = 0
-    for response in responses:
-        if (response['range'] and response['honored'] and response['data_transfer']
-                and not response['completed'] and 0 < int(response['socket_write_bytes']) <= 65536):
-            if any(p['range'] and p['honored'] and p['completed'] and p['data_transfer']
-                   and int(p['start']) < int(response['start']) and int(p['end']) == int(response['end'])
-                   and int(p['socket_write_bytes']) == int(p['end']) - int(p['start']) + 1
-                   for p in responses):
-                tail_retry_count += 1
     for index, retry in enumerate(responses):
-        if not (retry["range"] and retry["honored"] and retry["completed"] and retry["data_transfer"]):
+        if not (retry["range"] and retry["honored"] and retry["data_transfer"]
+                and int(retry["socket_write_bytes"]) > 0):
             continue
-        # Fixture records concurrent handlers by arrival time, not byte offset.
+        retry_served_end = int(retry["start"]) + int(retry["socket_write_bytes"]) - 1
+        # Intermediate retries may be interrupted; both they and completed
+        # retries count if their *actual served bytes* overlap one earlier
+        # same-end Range by at most one 64-KiB chunk.
         for prior_index, prior in enumerate(responses):
             if prior_index == index:
                 continue
@@ -68,7 +64,7 @@ def reconcile_fixture_response_ranges(responses, expected_bytes):
                 continue
             prior_served_end = int(prior["start"]) + int(prior["socket_write_bytes"]) - 1
             if int(prior["end"]) == int(retry["end"]) and int(prior["start"]) < int(retry["start"]) <= prior_served_end:
-                retry_overlap = prior_served_end - int(retry["start"]) + 1
+                retry_overlap = min(prior_served_end, retry_served_end) - int(retry["start"]) + 1
                 if 0 < retry_overlap <= 65536:
                     tail_retry_count += 1
                     break
@@ -180,6 +176,43 @@ class Aria2Stage2SourceContract(unittest.TestCase):
         responses[2]['completed'] = False
         with self.assertRaises(AssertionError):
             reconcile_fixture_response_ranges(responses, 32*mib)
+
+    def test_chained_short_retries_are_counted_per_actual_served_chunk(self):
+        # Captured Windows Stage 2 run 41183213231, round 2, 16 jobs:
+        # the first 20-24 MiB segment and its speculative tail both ended
+        # early. A final completed tail recovered all bytes, with three
+        # independently attributable 64-KiB socket overlaps (incl. initial GET).
+        mib = 1024 * 1024
+        kib = 1024
+        expected = 32 * mib
+        initial = dict(start=0, end=expected-1, range=False, honored=False,
+                       data_transfer=True, completed=False,
+                       socket_write_bytes=4*mib+64*kib)
+        full = [dict(start=i*mib, end=(i+4)*mib-1, range=True,
+                     honored=True, data_transfer=True, completed=True,
+                     socket_write_bytes=4*mib)
+                for i in (4, 8, 12, 16, 24, 28)]
+        partial = dict(start=20*mib, end=24*mib-1, range=True,
+                       honored=True, data_transfer=True, completed=False,
+                       socket_write_bytes=49*65536)
+        intermediate = dict(start=20*mib+48*65536, end=24*mib-1,
+                            range=True, honored=True, data_transfer=True,
+                            completed=False, socket_write_bytes=6*65536)
+        completed = dict(start=20*mib+53*65536, end=24*mib-1,
+                         range=True, honored=True, data_transfer=True,
+                         completed=True, socket_write_bytes=11*65536)
+        responses = [initial, *full, partial, intermediate, completed]
+        for ordering in (responses, list(reversed(responses))):
+            self.assertEqual(
+                reconcile_fixture_response_ranges(ordering, expected),
+                (expected+3*65536, 3*65536, expected),
+            )
+        # Keep strict rejection if any served overlap exceeds 64 KiB.
+        too_wide = [dict(r) for r in responses]
+        too_wide[-1]['start'] -= 65536
+        too_wide[-1]['socket_write_bytes'] += 65536
+        with self.assertRaises(AssertionError):
+            reconcile_fixture_response_ranges(too_wide, expected)
 
     def test_matrix_uses_exact_http_fixture_hashes_and_real_concurrency(self):
         self.assertIn("LocalHttpRangeFixture.py", ARIA2_MATRIX)

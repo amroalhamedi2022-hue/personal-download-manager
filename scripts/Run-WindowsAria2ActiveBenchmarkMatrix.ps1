@@ -410,23 +410,25 @@ try {
                 $tailRetryCount = 0
                 for ($retryIndex = 0; $retryIndex -lt $ranges.Count; $retryIndex++) {
                     $retry = $ranges[$retryIndex]
-                    if (-not [bool]$retry.range -or -not [bool]$retry.honored -or -not [bool]$retry.completed -or -not [bool]$retry.data_transfer) {
+                    # aria2 may retry the same tail more than once. An intermediate
+                    # short retry can itself be interrupted before the final retry
+                    # completes; count each *served* overlap exactly once.
+                    if (-not [bool]$retry.range -or -not [bool]$retry.honored -or -not [bool]$retry.data_transfer -or [long]$retry.socket_write_bytes -le 0) {
                         continue
                     }
+                    $retryServedEnd = [long]$retry.start + [long]$retry.socket_write_bytes - 1
                     for ($priorIndex = 0; $priorIndex -lt $ranges.Count; $priorIndex++) {
-                        # Fixture handlers record concurrent GETs in arrival order, not byte-offset order.
-                        # Classify same-end tail overlaps independently of that nondeterministic order.
+                        # Handler arrival order differs from byte-offset order.
                         if ($priorIndex -eq $retryIndex) { continue }
                         $prior = $ranges[$priorIndex]
                         if (-not [bool]$prior.range -or -not [bool]$prior.honored -or -not [bool]$prior.data_transfer) {
                             continue
                         }
-                        # A partial response's declared Range end is not the end actually
-                        # accepted by the socket writer. Use served bytes when classifying a
-                        # same-end retry, otherwise a valid 64-KiB tail overlap is miscounted.
                         $priorServedEnd = [long]$prior.start + [long]$prior.socket_write_bytes - 1
                         if ([long]$prior.end -eq [long]$retry.end -and [long]$retry.start -gt [long]$prior.start -and [long]$retry.start -le $priorServedEnd) {
-                            $retryOverlap = $priorServedEnd - [long]$retry.start + 1
+                            # Compare the bytes actually written by BOTH handlers.
+                            # Requested Range ends are not evidence of socket writes.
+                            $retryOverlap = [Math]::Min($priorServedEnd, $retryServedEnd) - [long]$retry.start + 1
                             if ($retryOverlap -gt 0 -and $retryOverlap -le 65536) {
                                 $tailRetryCount++
                                 break
@@ -434,9 +436,9 @@ try {
                         }
                     }
                 }
-                # Each fully covered cancelled tail contributes at most one chunk.
-                # Interval accounting below independently verifies its attribution.
-                $tailRetryCount += $redundantCancelledTailCount
+                # This also accounts for a fully covered cancelled speculative
+                # tail; do not double-count it via redundantCancelledTailCount.
+                # Full interval reconciliation below retains the 64-KiB cap.
                 if ($tailRetryCount -gt ($incompleteDataRangeCount + 1)) {
                     Write-FailureDiagnostics -Scenario $scenario -Round $round -Stats $after -Tasks @($taskFiles) -Reason "Tail retry count $tailRetryCount exceeds incomplete data ranges $incompleteDataRangeCount plus one bounded completed-response retry."
                     throw "aria2 task $($task.Name) issued too many tail retries."
