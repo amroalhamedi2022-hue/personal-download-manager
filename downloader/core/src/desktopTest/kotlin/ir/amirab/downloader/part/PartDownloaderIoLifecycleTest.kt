@@ -14,6 +14,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import okio.Buffer
 import okio.FileSystem
 import okio.Source
@@ -156,6 +157,58 @@ class PartDownloaderIoLifecycleTest {
 
         assertEquals(0, active.get())
         assertEquals(PART_BODY_COPY_PARALLELISM, peak.get())
+    }
+
+    @Test
+    fun connectionAdmissionWaitsForSharedPermit() = runBlocking {
+        val releaseHolders = CompletableDeferred<Unit>()
+        val allHoldersEntered = CountDownLatch(PART_BODY_COPY_PARALLELISM)
+        val connected = CompletableDeferred<Unit>()
+        val connectionCalls = AtomicInteger(0)
+        val holders = List(PART_BODY_COPY_PARALLELISM) {
+            launch(Dispatchers.Default) {
+                withPartBodyCopyPermit {
+                    allHoldersEntered.countDown()
+                    releaseHolders.await()
+                }
+            }
+        }
+        val downloader = object : PartDownloader<TestPart>(
+            TestPart(),
+            { error("no destination writer should open in this test") },
+        ) {
+            override fun howMuchCanRead(maxAllowed: Long): Long = maxAllowed
+            override suspend fun connectAndVerify(): Connection<*> {
+                connectionCalls.incrementAndGet()
+                connected.complete(Unit)
+                awaitCancellation()
+            }
+        }
+        downloader.onTooManyErrors = { throw it }
+
+        try {
+            assertTrue(allHoldersEntered.await(5, TimeUnit.SECONDS))
+            downloader.start()
+            withTimeout(2_000L) {
+                downloader.statusFlow.first { it == PartDownloadStatus.Connecting }
+            }
+            assertFalse(
+                withTimeoutOrNull(300L) { connected.await(); true } ?: false,
+                "a waiting part must not open an HTTP socket before a copy slot is free",
+            )
+            assertEquals(0, connectionCalls.get())
+
+            releaseHolders.complete(Unit)
+            holders.joinAll()
+            withTimeout(2_000L) { connected.await() }
+            assertEquals(1, connectionCalls.get(), "admission must resume when a slot is released")
+        } finally {
+            releaseHolders.complete(Unit)
+            holders.forEach { it.cancel() }
+            holders.joinAll()
+            downloader.stop()
+            withTimeout(2_000L) { downloader.join() }
+        }
     }
 
     @Test
