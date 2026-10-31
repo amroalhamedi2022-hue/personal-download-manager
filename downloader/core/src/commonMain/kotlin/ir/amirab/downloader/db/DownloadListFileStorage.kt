@@ -21,17 +21,24 @@ class DownloadListFileStorage(
 
     override suspend fun getAll(): List<IDownloadItem> {
         return withContext(Dispatchers.IO) {
-            val jsonExtension = ".json"
-            downloadListFolder.listFiles()
-                ?.mapNotNull { file ->
-                    file.name
-                        .takeIf { it.endsWith(jsonExtension) }
-                        ?.removeSuffix(jsonExtension)
-                        ?.toLongOrNull()
-                        ?.let { get(file, it) }
-                }.orEmpty()
+            getPersistedDownloadIds().mapNotNull { id ->
+                get(getDownloadItemFile(id), id)
+            }
         }
     }
+
+    private fun getPersistedDownloadIds(): List<Long> = downloadListFolder
+        .listFiles()
+        .orEmpty()
+        .mapNotNull { file ->
+            when {
+                file.name.endsWith(".json") -> file.name.removeSuffix(".json")
+                file.name.endsWith(".json.bak") -> file.name.removeSuffix(".json.bak")
+                else -> null
+            }?.toLongOrNull()
+        }
+        .distinct()
+        .sorted()
 
     private suspend fun get(file: File, id: Long): IDownloadItem? {
         return fileLocks.withLock(id) {
@@ -70,7 +77,7 @@ class DownloadListFileStorage(
     }
 
     override suspend fun removeById(itemId: Long) {
-        getDownloadItemFile(itemId).delete()
+        fileSaver.delete(getDownloadItemFile(itemId))
     }
 
     override suspend fun remove(item: IDownloadItem) {
@@ -95,12 +102,6 @@ class DownloadListFileStorage(
     }
 
     private fun getLastIdFromFiles(): Long {
-        return downloadListFolder.listFiles()!!.filter {
-            it.name.endsWith(".json") && it.isFile
-        }.maxOfOrNull {
-            it.name
-                .substring(0, it.name.length - ".json".length)
-                .toLong()
-        } ?: -1L
+        return getPersistedDownloadIds().maxOrNull() ?: -1L
     }
 }

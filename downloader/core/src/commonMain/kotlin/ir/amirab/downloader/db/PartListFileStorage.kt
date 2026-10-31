@@ -28,7 +28,7 @@ class PartListFileStorage(
     }
 
     override suspend fun removeParts(id: Long) {
-        getFileForId(id).delete()
+        fileSaver.delete(getFileForId(id))
     }
 
     override suspend fun clear() {

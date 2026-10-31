@@ -21,21 +21,25 @@ class DownloadQueueFileStorageDatabase(
         return queueFolder.resolve("$id.json")
     }
 
-    private fun getQueueFiles(): List<File> {
-        return queueFolder.listFiles()
-            .filter {
-                it.isFile && it.extension == queueExtension
-            }
-    }
+    private fun getPersistedQueueIds(): List<Long> = queueFolder
+        .listFiles()
+        .orEmpty()
+        .mapNotNull { file ->
+            when {
+                file.name.endsWith(".$queueExtension") ->
+                    file.name.removeSuffix(".$queueExtension")
+                file.name.endsWith(".$queueExtension.bak") ->
+                    file.name.removeSuffix(".$queueExtension.bak")
+                else -> null
+            }?.toLongOrNull()
+        }
+        .distinct()
+        .sorted()
 
 
     override suspend fun getAllQueueIds(): List<Long> {
         return withContext(Dispatchers.IO) {
-            getQueueFiles().map {
-                it.name.substring(0,it.name.length-".$queueExtension".length)
-            }.mapNotNull {
-                it.toLongOrNull()
-            }.sorted()
+            getPersistedQueueIds()
         }
     }
 
@@ -51,17 +55,13 @@ class DownloadQueueFileStorageDatabase(
     }
 
     override suspend fun getAllQueues(): List<QueueModel> {
-        return getAllQueueIds().mapNotNull {
-            kotlin.runCatching {
-                getQueue(it)
-            }.getOrNull()
-        }
+        // A corrupt persisted queue must be surfaced for recovery. Silently filtering it out can
+        // make an existing queue appear deleted and later overwrite the only evidence of failure.
+        return getAllQueueIds().map { getQueue(it) }
     }
 
     override suspend fun deleteAllQueues() {
-        getQueueFiles().forEach {
-            it.delete()
-        }
+        getPersistedQueueIds().forEach { fileSaver.delete(getFileOfQueue(it)) }
     }
 
     override suspend fun setAllQueues(queues: List<QueueModel>) {
@@ -73,7 +73,7 @@ class DownloadQueueFileStorageDatabase(
 
     override suspend fun deleteQueue(queueId: Long) {
         lock.withLock {
-            getFileOfQueue(queueId).delete()
+            fileSaver.delete(getFileOfQueue(queueId))
         }
     }
 
