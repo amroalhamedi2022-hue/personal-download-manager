@@ -35,9 +35,10 @@ private fun getDownloadTitle(itemState: IDownloadItemState): String {
     return buildString {
         if (itemState is ProcessingDownloadItemState && itemState.percent != null) {
             append("${itemState.percent}%")
-            append(" ")
+            append(" — ")
         }
         append(itemState.name)
+        append(" — HyperGet")
     }
 }
 
@@ -171,8 +172,8 @@ private fun ProgressWindow(
     }
     val uiScale = LocalUiScale.current
     // Match the approved wide Windows layout; only the progress dialog is light.
-    val defaultHeight = 420f.applyUiScale(uiScale)
-    val defaultWidth = 925f.applyUiScale(uiScale)
+    val defaultHeight = 465f.applyUiScale(uiScale)
+    val defaultWidth = 1120f.applyUiScale(uiScale)
 
     val showPartInfo by singleDownloadComponent.showPartInfo.collectAsState()
     val singleDownloadPageSizing = remember(showPartInfo) { SingleProgressDownloadPageSizing() }
