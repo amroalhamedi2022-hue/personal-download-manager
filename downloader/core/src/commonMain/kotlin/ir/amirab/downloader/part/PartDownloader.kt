@@ -45,6 +45,8 @@ abstract class PartDownloader<
     val getDestWriter: () -> DestWriter
 ) {
     private var thread: Thread? = null
+    private val connectionLock = Any()
+    private var activeConnection: Connection<*>? = null
     private var scope: CoroutineScope? = null
     private var workerJob: Job? = null
     private val _statusFlow = part.statusFlow
@@ -163,7 +165,12 @@ abstract class PartDownloader<
     @Volatile
     var stop = false
     fun stop() {
-        stop = true
+        val connectionToClose = synchronized(connectionLock) {
+            stop = true
+            activeConnection
+        }
+        // Closing the real transport releases blocked reads, not just the coroutine.
+        runCatching { connectionToClose?.close() }
         thread?.interrupt()
         scope?.coroutineContext?.job?.cancel()
     }
@@ -221,26 +228,45 @@ abstract class PartDownloader<
     private suspend fun download() {
         onNewStatus(PartDownloadStatus.Connecting)
         val conn = connectAndVerify()
-        thread = thread {
-            if (stop || Thread.currentThread().isInterrupted) {
+        synchronized(connectionLock) {
+            if (stop) {
                 conn.close()
                 onCanceled(kotlinx.coroutines.CancellationException())
-                return@thread
+                return
             }
-//            thisLogger().info("going to copy data to destination $conn")
-            try {
-                conn.use {
-                    // connection automatically closes the source
-                    val connectionStream = it.source
-                    getDestWriter().use { writer ->
-                        copyDataSync(connectionStream, writer)
+            activeConnection = conn
+        }
+        try {
+            thread = thread {
+                if (stop || Thread.currentThread().isInterrupted) {
+                    conn.close()
+                    onCanceled(kotlinx.coroutines.CancellationException())
+                    synchronized(connectionLock) {
+                        if (activeConnection === conn) activeConnection = null
                     }
+                    return@thread
                 }
-            } catch (e: Exception) {
-                onCanceled(e)
-            } finally {
-                thread = null
+                try {
+                    conn.use {
+                        getDestWriter().use { writer ->
+                            copyDataSync(it.source, writer)
+                        }
+                    }
+                } catch (e: Exception) {
+                    onCanceled(e)
+                } finally {
+                    synchronized(connectionLock) {
+                        if (activeConnection === conn) activeConnection = null
+                    }
+                    thread = null
+                }
             }
+        } catch (e: Exception) {
+            synchronized(connectionLock) {
+                if (activeConnection === conn) activeConnection = null
+            }
+            conn.close()
+            throw e
         }
     }
 
