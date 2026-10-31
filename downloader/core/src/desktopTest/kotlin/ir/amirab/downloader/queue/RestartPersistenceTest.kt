@@ -6,6 +6,10 @@ import ir.amirab.downloader.db.DownloadQueueFileStorageDatabase
 import ir.amirab.downloader.db.QueueModel
 import ir.amirab.downloader.db.TransactionalFileSaver
 import ir.amirab.downloader.downloaditem.DownloadItemContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -20,6 +24,30 @@ import kotlin.test.assertEquals
 import kotlin.time.Duration.Companion.seconds
 
 class RestartPersistenceTest {
+    @Test
+    fun explicitFlushPersistsQueueChangeWithoutWaitingForCollector() = runBlocking {
+        val folder = Files.createTempDirectory("download-queue-flush-").toFile()
+        val database = DownloadQueueFileStorageDatabase(
+            fileSaver = TransactionalFileSaver(Json),
+            queueFolder = folder,
+        )
+        try {
+            database.addQueue(QueueModel(id = DefaultQueueInfo.ID, name = DefaultQueueInfo.NAME))
+            val manager = QueueManager(database, InactiveDownloads())
+            try {
+                manager.boot()
+                manager.getMainQueue().setName("Saved immediately")
+                manager.flush()
+
+                assertEquals("Saved immediately", database.getQueue(DefaultQueueInfo.ID).name)
+            } finally {
+                manager.getAll().forEach(DownloadQueue::dispose)
+            }
+        } finally {
+            folder.deleteRecursively()
+        }
+    }
+
     @Test
     fun restartRestoresQueueSettingsAndRepairsDuplicateMemberships() = runBlocking {
         val folder = Files.createTempDirectory("download-queue-restart-").toFile()
@@ -105,6 +133,87 @@ class RestartPersistenceTest {
                 restartedManager.getAll().forEach(DownloadQueue::dispose)
             }
         } finally {
+            folder.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun staleDeletedQueueReferenceCannotDeleteReplacementWithReusedId() = runBlocking {
+        val folder = Files.createTempDirectory("download-queue-stale-reference-").toFile()
+        val database = DownloadQueueFileStorageDatabase(
+            fileSaver = TransactionalFileSaver(Json),
+            queueFolder = folder,
+        )
+        val manager = QueueManager(database, InactiveDownloads())
+        try {
+            manager.boot()
+            manager.addQueue("Old queue")
+            val oldQueue = manager.getAll().first { it.id != DefaultQueueInfo.ID }
+
+            manager.deleteQueue(oldQueue)
+            manager.addQueue("New queue")
+            val replacement = manager.getAll().first { it.id != DefaultQueueInfo.ID }
+            assertEquals(oldQueue.id, replacement.id, "replacing a deleted queue may reuse its ID")
+
+            // A delayed UI callback may still hold the old DownloadQueue object.
+            manager.deleteQueue(oldQueue)
+
+            assertEquals(2, manager.getAll().size)
+            assertEquals(replacement, manager.getQueue(replacement.id))
+            assertEquals("New queue", database.getQueue(replacement.id).name)
+            manager.flush()
+            assertEquals("New queue", database.getQueue(replacement.id).name)
+        } finally {
+            manager.getAll().forEach(DownloadQueue::dispose)
+            folder.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun concurrentQueueCreationAndMovesDoNotDuplicateIdsOrMembership() = runBlocking {
+        val folder = Files.createTempDirectory("download-queue-concurrent-").toFile()
+        val database = DownloadQueueFileStorageDatabase(
+            fileSaver = TransactionalFileSaver(Json),
+            queueFolder = folder,
+        )
+        val manager = QueueManager(database, InactiveDownloads())
+        try {
+            manager.boot()
+            // Multiple CLI/UI commands may arrive together. Queue IDs must be
+            // reserved atomically rather than reusing the same database maximum.
+            coroutineScope {
+                (1..12).map { index ->
+                    async(Dispatchers.Default) { manager.addQueue("Parallel $index") }
+                }.awaitAll()
+            }
+            val ids = manager.getAll().map { it.id }
+            assertEquals(13, ids.size)
+            assertEquals(ids.size, ids.toSet().size, "Concurrent creation reused a queue ID")
+            assertEquals(ids.toSet(), database.getAllQueueIds().toSet())
+
+            // Simultaneous moves of one download must leave exactly one owner.
+            coroutineScope {
+                ids.filter { it != DefaultQueueInfo.ID }.map { queueId ->
+                    async(Dispatchers.Default) { manager.addToQueue(queueId, 444L) }
+                }.awaitAll()
+            }
+            assertEquals(
+                1,
+                manager.getAll().sumOf { queue ->
+                    queue.getQueueModel().queueItems.count { it == 444L }
+                },
+                "Concurrent cross-queue moves duplicated a download",
+            )
+            manager.flush()
+            assertEquals(
+                1,
+                database.getAllQueues().sumOf { queue ->
+                    queue.queueItems.count { it == 444L }
+                },
+                "The persisted queue membership must also be unique",
+            )
+        } finally {
+            manager.getAll().forEach(DownloadQueue::dispose)
             folder.deleteRecursively()
         }
     }

@@ -462,6 +462,11 @@ class DownloadQueue(
         persistedData.setModel(queue)
     }
 
+    /** Persist this queue immediately for orderly shutdown and deterministic tests. */
+    suspend fun flush() {
+        persist()
+    }
+
     //    suspend fun swapQueueItemToEnd(item: Long){
 //        val currentIndex = queue.indexOf(item).takeIf { it > 0 } ?: return
 //        queue.removeAt(currentIndex)
