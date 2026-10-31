@@ -16,8 +16,12 @@ class CategoryFileStorage(
         }
     }
 
-    override suspend fun getCategories(): List<Category> {
-        return fileSaver.readObject(file) ?: emptyList()
+    override suspend fun getCategories(): List<Category> = lock.withLock {
+        // On Windows, a concurrent read can hold the destination open while
+        // writeObject atomically moves its .tmp file into place. Serialize
+        // reads with writes so the auto-save collector never dies from an
+        // AccessDeniedException caused by our own category readers.
+        fileSaver.readObject(file) ?: emptyList()
     }
 
     override suspend fun isCategoriesSet(): Boolean {

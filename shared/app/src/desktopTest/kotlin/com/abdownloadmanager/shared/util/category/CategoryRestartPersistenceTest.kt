@@ -5,6 +5,9 @@ import ir.amirab.downloader.db.TransactionalFileSaver
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
@@ -14,9 +17,46 @@ import java.lang.reflect.Proxy
 import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
 
 class CategoryRestartPersistenceTest {
+    @Test
+    fun parallelCategoryReadsAndWritesKeepAtomicSaveAccessibleOnWindows() = runBlocking<Unit> {
+        val folder = Files.createTempDirectory("category-concurrent-file-access-").toFile()
+        val storage = CategoryFileStorage(
+            file = folder.resolve("categories.json"),
+            fileSaver = TransactionalFileSaver(Json),
+        )
+        val first = listOf(category(id = 1, name = "First", items = listOf(1, 2)))
+        val second = listOf(category(id = 1, name = "Second", items = listOf(3, 4)))
+        try {
+            storage.setCategories(first)
+            coroutineScope {
+                val writer = async(Dispatchers.IO) {
+                    repeat(64) { index ->
+                        storage.setCategories(if (index % 2 == 0) second else first)
+                    }
+                }
+                val readers = List(3) {
+                    async(Dispatchers.IO) {
+                        repeat(96) {
+                            val observed = storage.getCategories()
+                            assertTrue(
+                                observed == first || observed == second,
+                                "atomic category reads must always see one fully saved snapshot",
+                            )
+                        }
+                    }
+                }
+                (readers + writer).awaitAll()
+            }
+            assertEquals(first, storage.getCategories())
+        } finally {
+            folder.deleteRecursively()
+        }
+    }
+
     @Test
     fun restartRestoresCategoriesAndRepairsDuplicateMemberships() = runBlocking {
         val folder = Files.createTempDirectory("download-category-restart-").toFile()
