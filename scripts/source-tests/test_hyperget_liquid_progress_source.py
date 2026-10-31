@@ -435,7 +435,7 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("if (compact) 0.50f else 0.60f", track)
         self.assertEqual(min(18, int((1024 * 0.37) / (42 * 0.60))), 15)
         self.assertIn("bubbleCount = 18", PAGE)
-        self.assertGreaterEqual(min(5, int((120 * 0.35) / (30 * 0.50))), 2)
+        self.assertGreaterEqual(min(3, int((120 * 0.35) / (14 * 0.50))), 2)
         self.assertIn("val bubbleRadius = size.height * (0.058f + (index % 4) * 0.026f)", track)
         self.assertIn("if (index % 3 == 0) 0.66f else 0.43f", track)
         self.assertIn("drawPath(surfaceWave, color = Color.White.copy(alpha = 0.20f))", track)
@@ -450,7 +450,8 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("surfaceWave.lineTo(x, y)", track)
         self.assertIn("secondaryWave.lineTo(x, y)", track)
         self.assertIn("referenceLiquidColors", PAGE)
-        self.assertIn(".height(30.dp)", PAGE)
+        self.assertIn(".height(20.dp)", PAGE)
+        self.assertIn(".height(14.dp)", PAGE)
         self.assertIn("val fillWidth = size.width * fraction", track)
         self.assertIn("val phase = if (active) sharedPhase.value else 0f", track)
         self.assertNotIn("rememberInfiniteTransition", track)
@@ -492,6 +493,22 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("drawWithCache", progress)
         self.assertNotIn("rememberInfiniteTransition", progress)
 
+
+
+    def test_compact_connection_tracks_are_thin_independent_and_stateful(self):
+        section = PAGE.split("private fun RenderParts(", 1)[1]
+        track = PAGE.split("private fun LiquidProgressTrack(", 1)[1].split("private fun RenderPartInfo(", 1)[0]
+        self.assertIn("verticalAlignment = Alignment.CenterVertically", section)
+        self.assertIn(".height(14.dp)", section)
+        self.assertIn(".padding(horizontal = 2.dp)", section)
+        self.assertIn("bubbleCount = 3", section)
+        self.assertIn("PartDownloadStatus.Completed -> referenceLiquidColors", section)
+        self.assertIn("PartDownloadStatus.IDLE -> listOf(Color(0xFF8197B5), Color(0xFFB8C8DC))", section)
+        self.assertIn("is PartDownloadStatus.Canceled -> listOf(myColors.error, myColors.warning)", section)
+        self.assertIn("active = part.status == PartDownloadStatus.ReceivingData", section)
+        self.assertIn(".border(if (compact) 0.75.dp else 1.dp", track)
+        self.assertIn("val sharedPhase = LocalLiquidAnimationPhase.current", track)
+        self.assertNotIn("rememberInfiniteTransition", track)
 
 if __name__ == "__main__":
     unittest.main()

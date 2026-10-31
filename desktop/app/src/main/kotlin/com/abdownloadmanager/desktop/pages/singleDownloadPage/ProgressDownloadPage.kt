@@ -570,7 +570,7 @@ private fun LiquidProgressTrack(
         modifier
             .clip(trackShape)
             .background(Brush.horizontalGradient(listOf(Color(0xFFEAF0F7), Color(0xFFDDE5F0))))
-            .border(1.dp, Color(0xFFBFCAD9), trackShape)
+            .border(if (compact) 0.75.dp else 1.dp, Color(0xFFBFCAD9), trackShape)
     ) {
         Spacer(
             Modifier.fillMaxSize().drawWithCache {
@@ -784,7 +784,7 @@ private fun RenderPartInfo(
                 visibleParts.map { it.value },
                 Modifier
                     .padding(horizontal = horizontalPadding)
-                    .height(30.dp)
+                    .height(20.dp)
             )
             BoxWithConstraints(
                 Modifier.weight(1f)
@@ -1260,9 +1260,11 @@ private fun ToggleButton(
 
 @Composable
 private fun RenderParts(parts: List<UiPart>, modifier: Modifier) {
+    // Keep every part in its own narrow rectangular track, vertically centered
+    // in a small touch-safe strip instead of stretching it to the full 30dp.
     Row(
-        modifier
-            .fillMaxWidth()
+        modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         if (parts.isNotEmpty()) {
             val sortedParts = remember(parts) { parts.sortedBy { it.id } }
@@ -1275,7 +1277,7 @@ private fun RenderParts(parts: List<UiPart>, modifier: Modifier) {
                         p,
                         Modifier
                             .weight(partSpace)
-                            .fillMaxHeight()
+                            .height(14.dp)
                             .padding(horizontal = 2.dp)
                     )
                 }
@@ -1293,7 +1295,9 @@ private fun RenderPart(part: UiPart, modifier: Modifier) {
     val liquidColors = when (part.status) {
         is PartDownloadStatus.Canceled -> listOf(myColors.error, myColors.warning)
         PartDownloadStatus.Completed -> referenceLiquidColors
-        PartDownloadStatus.IDLE -> myColors.primaryGradientColors
+        // Waiting or paused segments remain still and visually distinct
+        // from the bright blue-cyan actively receiving connections.
+        PartDownloadStatus.IDLE -> listOf(Color(0xFF8197B5), Color(0xFFB8C8DC))
         PartDownloadStatus.ReceivingData -> referenceLiquidColors
         PartDownloadStatus.Connecting -> referenceLiquidColors
     }
@@ -1303,7 +1307,8 @@ private fun RenderPart(part: UiPart, modifier: Modifier) {
         active = part.status == PartDownloadStatus.ReceivingData ||
             part.status == PartDownloadStatus.Connecting,
         modifier = modifier,
-        bubbleCount = 5,
+        // Three subtle bubbles are enough for a 14dp-high connection line.
+        bubbleCount = 3,
         compact = true,
     )
 }
