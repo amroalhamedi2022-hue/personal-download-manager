@@ -17,6 +17,7 @@ import ir.amirab.downloader.utils.OnDuplicateStrategy.*
 import ir.amirab.util.FileNameValidator
 import ir.amirab.util.PathValidator
 import ir.amirab.util.suspendGuardedEntry
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
@@ -183,26 +184,32 @@ class DownloadManager(
     }
 
     private val jobModificationLock = Any()
-    private fun createJob(downloadItem: IDownloadItem): DownloadJob {
-        val job = downloaderRegistry.createJob(
-            downloadItem,
-            this,
-        )
-//        thisLogger().info("download job for $id created")
-        downloadJobs = downloadJobs + job
-        return job
+    private val jobLifecycleLocks = mutableMapOf<Long, Mutex>()
+    private fun jobLifecycleLock(id: Long): Mutex = synchronized(jobModificationLock) {
+        jobLifecycleLocks.getOrPut(id) { Mutex() }
     }
+
+    private suspend fun <T> withJobLifecycleLock(id: Long, block: suspend () -> T): T =
+        jobLifecycleLock(id).withLock { block() }
+
+    // Job lookup+creation must be atomic across concurrent Resume/Reset calls.
+    private fun createJob(downloadItem: IDownloadItem): DownloadJob =
+        synchronized(jobModificationLock) {
+            downloadJobs.find { it.id == downloadItem.id }
+                ?: downloaderRegistry.createJob(downloadItem, this).also { job ->
+                    downloadJobs = downloadJobs + job
+                }
+        }
 
     suspend fun deleteDownload(
         id: Long,
         alsoRemoveFile: (IDownloadItem) -> Boolean,
         context: DownloadItemContext = EmptyContext,
-    ) {
-        kotlin.runCatching { pause(id) }
-        val itemToDelete = dlListDb.getById(id) ?: return
-        val job = getDownloadJob(id) ?: run {
-            createJob(itemToDelete).apply { boot() }
-        }
+    ) = withJobLifecycleLock(id) {
+        val itemToDelete = dlListDb.getById(id) ?: return@withJobLifecycleLock
+        val job = getDownloadJob(id) ?: createJob(itemToDelete).apply { boot() }
+        // Do not call manager.pause() here: it would re-acquire this item's lock.
+        kotlin.runCatching { job.pause() }
         // at this point: job will be created (and booted) if it was not created before
         contextContainer.updateContext(id) { it + context }
         job.downloadRemoved(
@@ -236,39 +243,44 @@ class DownloadManager(
     }
 
     suspend fun pause(id: Long, context: DownloadItemContext = EmptyContext) {
-        val job = getDownloadJob(id) ?: return
-        contextContainer.updateContext(id) { contextForLifecyclePause(it, context) }
-        job.pause()
+        withJobLifecycleLock(id) {
+            val job = getDownloadJob(id) ?: return@withJobLifecycleLock
+            contextContainer.updateContext(id) { contextForLifecyclePause(it, context) }
+            job.pause()
+        }
     }
 
     suspend fun resume(id: Long, context: DownloadItemContext = EmptyContext) {
-        val job = getDownloadJob(id) ?: run {
-            dlListDb.getById(id)?.let {
-                createJob(it)
+        if (!beginStartCommand()) return
+        try {
+            withJobLifecycleLock(id) {
+                val job = getDownloadJob(id) ?: dlListDb.getById(id)?.let { createJob(it) }
+                job?.let {
+                    contextContainer.updateContext(id) { contextForLifecycleResume(it, context) }
+                    // A persisted retry should use its original countdown, not start a new job.
+                    if (it.downloadItem.retryAt != null) it.restoreInterruptedRetry()
+                    else it.resume()
+                }
             }
-        }
-        job?.let {
-            contextContainer.updateContext(id) { contextForLifecycleResume(it, context) }
-            it.resume()
+        } finally {
+            endStartCommand()
         }
     }
 
     suspend fun reset(id: Long, context: DownloadItemContext = EmptyContext) {
-        val job = getDownloadJob(id) ?: run {
-            dlListDb.getById(id)?.let {
-                createJob(it)
+        withJobLifecycleLock(id) {
+            val job = getDownloadJob(id) ?: dlListDb.getById(id)?.let { createJob(it) }
+            job?.let {
+                contextContainer.updateContext(id) { it + context }
+                it.reset()
             }
-        }
-        job?.let {
-            contextContainer.updateContext(id) { it + context }
-            it.reset()
         }
     }
 
     private fun getDownloadJob(id: Long): DownloadJob? {
 //        thisLogger().info("finding job for $id")
-        return downloadJobs.find {
-            it.id == id
+        return synchronized(jobModificationLock) {
+            downloadJobs.find { it.id == id }
         }.also {
             if (it == null) {
 //                thisLogger().info("there is no job for dl_$id")
@@ -320,7 +332,8 @@ class DownloadManager(
 
     fun onDownloadFinished(downloadItem: IDownloadItem) {
         scope.launch {
-            listOfJobsEvents.tryEmit(
+            // Completion must not disappear if the event buffer is temporarily full.
+            listOfJobsEvents.emit(
                 DownloadManagerEvents.OnJobCompleted(
                     downloadItem,
                     contextContainer.getContext(downloadItem.id)
@@ -356,16 +369,47 @@ class DownloadManager(
         return status is DownloadJobStatus.CanBeResumed
     }
 
+    private val startAdmissionLock = Mutex()
+    private val stopAllLock = Mutex()
+    @Volatile private var stopAllInProgress = false
+    private var startsInFlight = 0
+    private var startsDrained = CompletableDeferred(Unit).apply { complete(Unit) }
+
+    private suspend fun beginStartCommand(): Boolean = startAdmissionLock.withLock {
+        if (stopAllInProgress) return@withLock false
+        if (startsInFlight == 0) startsDrained = CompletableDeferred()
+        startsInFlight++
+        true
+    }
+
+    private suspend fun endStartCommand() {
+        startAdmissionLock.withLock {
+            startsInFlight--
+            check(startsInFlight >= 0) { "Negative active start command count" }
+            if (startsInFlight == 0) startsDrained.complete(Unit)
+        }
+    }
+
     suspend fun stopAll(
         context: DownloadItemContext = EmptyContext,
-    ) {
-        downloadJobs.filter {
-            shouldStopOnStopAll(it.status.value, it.downloadItem.retryAt)
-        }.map {
-            scope.async {
-                pause(it.id, context)
-            }
-        }.awaitAll()
+    ) = stopAllLock.withLock {
+        val pendingStarts = startAdmissionLock.withLock {
+            stopAllInProgress = true
+            startsDrained.takeIf { startsInFlight > 0 }
+        }
+        try {
+            // Wait outside the admission lock; no new starts can enter meantime.
+            pendingStarts?.await()
+            synchronized(jobModificationLock) {
+                downloadJobs.filter {
+                    shouldStopOnStopAll(it.status.value, it.downloadItem.retryAt)
+                }
+            }.map { job ->
+                scope.async { pause(job.id, context) }
+            }.awaitAll()
+        } finally {
+            startAdmissionLock.withLock { stopAllInProgress = false }
+        }
     }
 
     fun getActiveCount(): Int {
@@ -423,18 +467,14 @@ class DownloadManager(
         id: Long,
         downloadJobExtraConfig: DownloadJobExtraConfig?,
         updater: (IDownloadItem) -> Unit,
-    ) {
+    ) = withJobLifecycleLock(id) {
         var wasCreated = false
-        val job = getDownloadJob(id) ?: run {
-            dlListDb.getById(id)?.let {
-                wasCreated = true
-                createJob(it)
-            }
-        } ?: return
+        val job = getDownloadJob(id) ?: dlListDb.getById(id)?.let {
+            wasCreated = true
+            createJob(it)
+        } ?: return@withJobLifecycleLock
         val updated = job.changeConfig(updater, downloadJobExtraConfig)
-        if (wasCreated && updated.status == DownloadStatus.Completed) {
-            deleteJob(job.id)
-        }
+        if (wasCreated && updated.status == DownloadStatus.Completed) deleteJob(job.id)
         onDownloadItemChange(updated)
     }
 
