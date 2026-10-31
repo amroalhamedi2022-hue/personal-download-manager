@@ -105,7 +105,7 @@ fun ProgressDownloadPage(
     itemState: ProcessingDownloadItemState
 ) {
     var selectedTab by remember { mutableStateOf(Info) }
-    var showSpeedGraph by rememberSaveable(itemState.id) { mutableStateOf(true) }
+    val showSpeedGraph by singleDownloadComponent.showSpeedGraph.collectAsState()
     val showPartInfo by singleDownloadComponent.showPartInfo.collectAsState()
     val setShowPartInfo = singleDownloadComponent::setShowPartInfo
     val downloadHasError by singleDownloadComponent.lastError.collectAsState()
@@ -199,7 +199,7 @@ fun ProgressDownloadPage(
                         speedHistory = speedHistory,
                         itemState = itemState,
                         showGraph = showSpeedGraph,
-                        onToggleGraph = { showSpeedGraph = !showSpeedGraph },
+                        onToggleGraph = { singleDownloadComponent.setShowSpeedGraph(!showSpeedGraph) },
                     )
                     Settings -> RenderSettings(
                         modifier = Modifier.padding(end = 12.dp),

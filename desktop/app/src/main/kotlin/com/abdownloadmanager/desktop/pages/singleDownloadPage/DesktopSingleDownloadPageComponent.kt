@@ -15,6 +15,7 @@ import com.arkivanov.decompose.ComponentContext
 import ir.amirab.util.compose.asStringSource
 import ir.amirab.util.desktop.poweraction.PowerActionConfig
 import ir.amirab.util.flow.mapTwoWayStateFlow
+import ir.amirab.util.flow.mapStateFlow
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.update
 import org.koin.core.component.get
@@ -49,6 +50,13 @@ class DesktopSingleDownloadComponent(
         get<PageStatesStorage>().singleDownloadPageState
     }
     override val defaultShowPartInfo: Boolean = singleDownloadPageStateToPersist.value.showPartInfo
+
+    // Global per-window preference: retain the user's graph choice across downloads and restarts.
+    val showSpeedGraph by lazy { singleDownloadPageStateToPersist.mapStateFlow { it.showSpeedGraph } }
+
+    fun setShowSpeedGraph(visible: Boolean) {
+        singleDownloadPageStateToPersist.update { it.copy(showSpeedGraph = visible) }
+    }
 
     override fun setShowPartInfo(value: Boolean) {
         super.setShowPartInfo(value)

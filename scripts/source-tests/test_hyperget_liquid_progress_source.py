@@ -15,6 +15,7 @@ IPC_IMPL = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/ut
 DOWNLOAD_COMMAND = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/cli/download/Download.kt").read_text(encoding="utf-8")
 OPEN_COMMAND = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/cli/download/open/OpenDownload.kt").read_text(encoding="utf-8")
 DOWNLOAD_WINDOW_STATE = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/singleDownloadPage/SingleDownloadPageStateToPersist.kt").read_text(encoding="utf-8")
+DOWNLOAD_WINDOW_COMPONENT = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/singleDownloadPage/DesktopSingleDownloadPageComponent.kt").read_text(encoding="utf-8")
 
 
 class LiquidProgressSourceContract(unittest.TestCase):
@@ -89,6 +90,12 @@ class LiquidProgressSourceContract(unittest.TestCase):
             SCRIPT.index("$windowHandle = $detailWindowHandle"),
             SCRIPT.index("$windowRect = [HyperGetLiquidProgressNative+RECT]::new()"),
         )
+
+    def test_graph_visibility_is_persisted_and_user_controlled(self):
+        self.assertIn("val showSpeedGraph: Boolean = true", DOWNLOAD_WINDOW_STATE)
+        self.assertIn("mapStateFlow { it.showSpeedGraph }", DOWNLOAD_WINDOW_COMPONENT)
+        self.assertIn("fun setShowSpeedGraph(visible: Boolean)", DOWNLOAD_WINDOW_COMPONENT)
+        self.assertIn("setShowSpeedGraph(!showSpeedGraph)", PAGE)
 
     def test_fresh_download_window_shows_connection_details_by_default(self):
         self.assertIn("val showPartInfo: Boolean = true", DOWNLOAD_WINDOW_STATE)
@@ -304,7 +311,7 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("val defaultWidth = 1120f", window)
         self.assertIn("val defaultHeight = 465f", window)
         self.assertIn('append(" — HyperGet")', window)
-        self.assertIn("var showSpeedGraph by rememberSaveable(itemState.id)", PAGE)
+        self.assertIn("val showSpeedGraph by singleDownloadComponent.showSpeedGraph.collectAsState()", PAGE)
         self.assertIn('"Hide graph"', PAGE)
         self.assertIn('text = "Show graph"', PAGE)
         self.assertIn("RoundedCornerShape(4.dp)", PAGE)
