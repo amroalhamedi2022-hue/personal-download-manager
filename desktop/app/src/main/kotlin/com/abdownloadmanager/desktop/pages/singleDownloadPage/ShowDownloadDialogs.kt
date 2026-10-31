@@ -17,6 +17,8 @@ import androidx.compose.ui.window.v2.WindowSizeProvider
 import androidx.compose.ui.window.v2.rememberWindowState
 import com.abdownloadmanager.shared.singledownloadpage.BaseSingleDownloadComponent
 import com.abdownloadmanager.shared.util.ui.theme.LocalUiScale
+import com.abdownloadmanager.shared.ui.theme.DefaultThemes
+import com.abdownloadmanager.shared.util.ui.LocalMyColors
 import ir.amirab.downloader.downloaditem.DownloadJobStatus
 import ir.amirab.downloader.monitor.CompletedDownloadItemState
 import ir.amirab.downloader.monitor.IDownloadItemState
@@ -168,8 +170,9 @@ private fun ProgressWindow(
         singleDownloadComponent.close()
     }
     val uiScale = LocalUiScale.current
-    val defaultHeight = 410f.applyUiScale(uiScale)
-    val defaultWidth = 760f.applyUiScale(uiScale)
+    // Match the approved wide Windows layout; only the progress dialog is light.
+    val defaultHeight = 420f.applyUiScale(uiScale)
+    val defaultWidth = 925f.applyUiScale(uiScale)
 
     val showPartInfo by singleDownloadComponent.showPartInfo.collectAsState()
     val singleDownloadPageSizing = remember(showPartInfo) { SingleProgressDownloadPageSizing() }
@@ -188,6 +191,7 @@ private fun ProgressWindow(
             positionProvider = WindowPositionProvider.CenteredOnScreen
         )
     )
+    CompositionLocalProvider(LocalMyColors provides DefaultThemes.hyperGetLight) {
     CustomWindow(
         state = state,
         onRequestToggleMaximize = null,
@@ -219,6 +223,7 @@ private fun ProgressWindow(
                 itemState,
             )
         }
+    }
     }
 }
 

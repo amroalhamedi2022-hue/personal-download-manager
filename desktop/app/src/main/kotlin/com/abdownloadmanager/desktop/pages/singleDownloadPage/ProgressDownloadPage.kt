@@ -8,6 +8,7 @@ import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -92,7 +93,8 @@ private val LocalLiquidAnimationPhase = compositionLocalOf<State<Float>> { mutab
 // The reference is an electric-blue-to-cyan glass liquid, not a flat theme gradient.
 // Non-downloading statuses still keep their semantic colors below.
 private val referenceLiquidColors = listOf(
-    Color(0xFF3829F4), Color(0xFF0865FF), Color(0xFF00E7F5),
+    Color(0xFF2815F1), Color(0xFF123AF9), Color(0xFF006EFF),
+    Color(0xFF06B6F2), Color(0xFF00E8EA),
 )
 
 @Composable
@@ -101,6 +103,7 @@ fun ProgressDownloadPage(
     itemState: ProcessingDownloadItemState
 ) {
     var selectedTab by remember { mutableStateOf(Info) }
+    var showSpeedGraph by rememberSaveable(itemState.id) { mutableStateOf(true) }
     val showPartInfo by singleDownloadComponent.showPartInfo.collectAsState()
     val setShowPartInfo = singleDownloadComponent::setShowPartInfo
     val downloadHasError by singleDownloadComponent.lastError.collectAsState()
@@ -160,11 +163,14 @@ fun ProgressDownloadPage(
     }
     CompositionLocalProvider(LocalLiquidAnimationPhase provides liquidPhaseState) {
     Column(
-        Modifier.fillMaxSize()
+        Modifier.fillMaxSize().background(myColors.background)
     ) {
         Column(
             Modifier
+                .padding(horizontal = 10.dp, vertical = 4.dp)
                 .clip(myShapes.defaultRounded)
+                .border(1.dp, Color(0xFFD8E0EB), myShapes.defaultRounded)
+                .background(Color.White)
                 .padding(1.dp),
         ) {
             //tabs
@@ -187,8 +193,8 @@ fun ProgressDownloadPage(
             Spacer(Modifier.fillMaxWidth().height(1.dp).background(myColors.surface))
             Box(
                 Modifier
-                    .height(220.dp)
-                    .background(myColors.background)
+                    .height(232.dp)
+                    .background(Color.White)
                     .verticalScroll(scrollState)
             ) {
                 when (selectedTab) {
@@ -197,6 +203,8 @@ fun ProgressDownloadPage(
                         horizontalPadding,
                         singleDownloadComponent,
                         speedHistory,
+                        showSpeedGraph,
+                        onToggleGraph = { showSpeedGraph = !showSpeedGraph },
                     )
 
                     Settings -> RenderSettings(
@@ -226,7 +234,7 @@ fun ProgressDownloadPage(
         Column(
             Modifier
                 .weight(1f)
-                .background(myColors.surface / 0.5f)
+                .background(if (myColors.isLight) Color(0xFFF5F8FC) else myColors.surface / 0.5f)
         ) {
             Column(
                 Modifier
@@ -310,22 +318,33 @@ private fun RenderSettings(
  * No simulated waveform or unbounded per-download samples.
  */
 @Composable
-private fun RealSpeedHistoryChart(history: List<Long>, modifier: Modifier = Modifier) {
+private fun RealSpeedHistoryChart(
+    history: List<Long>, modifier: Modifier = Modifier,
+    onHideGraph: () -> Unit,
+) {
     // Actual monitor byte deltas; sampled once per second with a hard 90-s cap.
     val samples = history.toList()
     val observedMaxSpeed = samples.maxOrNull() ?: 0L
     val maxSpeed = observedMaxSpeed.coerceAtLeast(1L)
     val currentSpeed = samples.lastOrNull() ?: 0L
     val speedUnit = LocalSizeUnit.current
-    val lineColor = myColors.primary
-    val fillColor = myColors.primary.copy(alpha = 0.27f)
+    val lineColor = Color(0xFF11B9E8)
+    val fillColor = Color(0xFF1D9DEE).copy(alpha = 0.30f)
     val gridColor = myColors.onBackground / 10
     val currentText = convertPositiveSizeToHumanReadable(currentSpeed, speedUnit).rememberString()
     val peakText = convertPositiveSizeToHumanReadable(observedMaxSpeed, speedUnit).rememberString()
     Column(modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text("Transfer rate", fontSize = myTextSizes.base, color = myColors.onBackground)
-            Text("$currentText/s", fontSize = myTextSizes.base, color = myColors.onBackground)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("$currentText/s", fontSize = myTextSizes.base, color = myColors.onBackground)
+                Spacer(Modifier.width(8.dp))
+                ActionButton(
+                    text = "Hide graph",
+                    onClick = onHideGraph,
+                    contentPadding = PaddingValues(vertical = 3.dp, horizontal = 8.dp),
+                )
+            }
         }
         Text("Peak: $peakText/s  •  Last 90 seconds", fontSize = myTextSizes.base, color = myColors.onBackground / 0.7f)
         Spacer(Modifier.height(4.dp))
@@ -448,6 +467,7 @@ private fun LiquidProgressTrack(
     active: Boolean,
     modifier: Modifier,
     bubbleCount: Int,
+    compact: Boolean = false,
     showCompletionIcon: Boolean = false,
 ) {
     // Downloaded bytes, not the animation phase, determine the filled width.
@@ -456,12 +476,13 @@ private fun LiquidProgressTrack(
         animationSpec = tween(180, easing = LinearEasing),
     )
     val sharedPhase = LocalLiquidAnimationPhase.current
+    val trackShape = if (compact) RoundedCornerShape(4.dp) else CircleShape
 
     Box(
         modifier
-            .clip(CircleShape)
+            .clip(trackShape)
             .background(myColors.onBackground / 12)
-            .border(1.dp, myColors.onBackground / 12, CircleShape)
+            .border(1.dp, myColors.onBackground / 12, trackShape)
     ) {
         Spacer(
             Modifier.fillMaxSize().drawWithCache {
@@ -479,7 +500,7 @@ private fun LiquidProgressTrack(
                         Color.Transparent,
                     ),
                     startY = 0f,
-                    endY = size.height * 0.55f,
+                    endY = size.height * 0.34f,
                 )
                 val glassDepth = Brush.verticalGradient(
                     colors = listOf(Color.Transparent, Color(0xFF06265C).copy(alpha = 0.24f)),
@@ -503,7 +524,8 @@ private fun LiquidProgressTrack(
                     val fillWidth = size.width * fraction
                     if (fillWidth <= 0f) return@onDrawBehind
 
-                    val radius = (size.height / 2f).coerceAtMost(fillWidth / 2f)
+                    val radius = (if (compact) 4.dp.toPx() else size.height / 2f)
+                        .coerceAtMost(fillWidth / 2f)
                     val startX = if (progress == null) {
                         (size.width - fillWidth) * phase.coerceIn(0f, 1f)
                     } else 0f
@@ -537,7 +559,7 @@ private fun LiquidProgressTrack(
                             surfaceWave.lineTo(x, y)
                         }
                         surfaceWave.close()
-                        drawPath(surfaceWave, color = Color.White.copy(alpha = 0.21f))
+                        drawPath(surfaceWave, color = Color.White.copy(alpha = 0.12f))
 
                         secondaryWave.reset()
                         secondaryWave.moveTo(startX, 0f)
@@ -549,30 +571,30 @@ private fun LiquidProgressTrack(
                             secondaryWave.lineTo(x, y)
                         }
                         secondaryWave.close()
-                        drawPath(secondaryWave, color = Color(0xFFB3FFFF).copy(alpha = 0.13f))
+                        drawPath(secondaryWave, color = Color(0xFFB3FFFF).copy(alpha = 0.08f))
 
                         // Glass bubbles have translucent cores, crisp illuminated
                         // rims and individual specular dots, not flat white circles.
                         if (fillWidth > size.height * 1.1f) {
                             repeat(bubbleCount) { index ->
-                                val drift = (index * 0.187f + phase * (0.13f + index % 4 * 0.025f)) % 1f
-                                val lift = (index * 0.337f + phase * (0.12f + index % 3 * 0.025f)) % 1f
-                                val bubbleRadius = size.height * (0.058f + (index % 4) * 0.017f)
+                                val drift = (index * 0.173f + phase * (0.115f + index % 4 * 0.021f)) % 1f
+                                val lift = (index * 0.313f + phase * (0.10f + index % 3 * 0.019f)) % 1f
+                                val bubbleRadius = size.height * (0.045f + (index % 4) * 0.018f)
                                 val center = Offset(
                                     x = startX + fillWidth * (0.06f + drift * 0.88f),
                                     y = size.height * (0.26f + lift * 0.55f),
                                 )
-                                drawCircle(Color.White.copy(alpha = 0.09f), bubbleRadius * 1.4f, center)
-                                drawCircle(Color.White.copy(alpha = 0.15f), bubbleRadius * 0.74f, center)
+                                drawCircle(Color.White.copy(alpha = 0.06f), bubbleRadius * 1.6f, center)
+                                drawCircle(Color(0xFFB1F9FF).copy(alpha = 0.14f), bubbleRadius * 0.79f, center)
                                 drawCircle(
-                                    color = Color.White.copy(alpha = 0.68f),
+                                    color = Color.White.copy(alpha = if (index % 3 == 0) 0.48f else 0.29f),
                                     radius = bubbleRadius,
                                     center = center,
-                                    style = Stroke(width = (bubbleRadius * 0.23f).coerceAtLeast(0.8f)),
+                                    style = Stroke(width = (bubbleRadius * 0.12f).coerceAtLeast(0.6f)),
                                 )
                                 drawCircle(
                                     color = Color.White.copy(alpha = 0.86f),
-                                    radius = bubbleRadius * 0.19f,
+                                    radius = bubbleRadius * 0.10f,
                                     center = Offset(center.x - bubbleRadius * 0.31f, center.y - bubbleRadius * 0.33f),
                                 )
                             }
@@ -647,8 +669,6 @@ private fun RenderPartInfo(
                 Modifier
                     .padding(horizontal = horizontalPadding)
                     .height(30.dp)
-                    .clip(CircleShape)
-                    .background(myColors.onBackground / 15)
             )
             Box(
                 Modifier.weight(1f)
@@ -689,8 +709,8 @@ private fun RenderPartInfo(
                                     .padding(horizontal = horizontalPadding)
                                     .hoverable(interactionSource)
                                     .background(
-                                        if (isHovered) myColors.onSurface / 10
-                                        else Color.Transparent
+                                        if (isHovered) Color(0xFFE7F1FF)
+                                        else Color.White
                                     )
                             ) {
                                 content()
@@ -704,7 +724,13 @@ private fun RenderPartInfo(
                         }
 
                         PartInfoCells.Status -> {
-                            SimpleCellText(prettifyStatus(it.value.status).rememberString())
+                            val stateColor = when (it.value.status) {
+                                PartDownloadStatus.ReceivingData, PartDownloadStatus.Connecting -> Color(0xFF0067DD)
+                                PartDownloadStatus.Completed -> myColors.success
+                                is PartDownloadStatus.Canceled -> myColors.error
+                                PartDownloadStatus.IDLE -> myColors.onBackground / 0.68f
+                            }
+                            SimpleCellText(prettifyStatus(it.value.status).rememberString(), stateColor)
                         }
 
                         PartInfoCells.Downloaded -> {
@@ -748,8 +774,8 @@ private fun prettifyStatus(status: PartDownloadStatus): StringSource {
 }
 
 @Composable
-private fun SimpleCellText(text: String) {
-    Text(text, fontSize = myTextSizes.base, maxLines = 1)
+private fun SimpleCellText(text: String, color: Color = LocalContentColor.current) {
+    Text(text, fontSize = myTextSizes.base, maxLines = 1, color = color)
 }
 
 sealed class PartInfoCells : TableCell<IndexedValue<UiPart>> {
@@ -832,6 +858,8 @@ private fun RenderInfo(
     horizontalPadding: Dp,
     singleDownloadComponent: DesktopSingleDownloadComponent,
     speedHistory: List<Long>,
+    showGraph: Boolean,
+    onToggleGraph: () -> Unit,
 ) {
     // Approved Liquid window: file details on the left and a real chart on
     // the right, without hiding the transfer rate behind the Settings tab.
@@ -839,14 +867,22 @@ private fun RenderInfo(
         modifier.padding(horizontal = horizontalPadding).padding(top = 8.dp),
         verticalAlignment = Alignment.Top,
     ) {
-        Column(Modifier.weight(0.59f)) {
+        Column(Modifier.weight(if (showGraph) 0.59f else 1f)) {
             for (propertyItem in singleDownloadComponent.extraDownloadProgressInfo.collectAsState().value) {
                 Spacer(Modifier.height(2.dp))
                 RenderPropertyItem(propertyItem)
             }
         }
         Spacer(Modifier.width(12.dp))
-        RealSpeedHistoryChart(speedHistory, Modifier.weight(0.41f))
+        if (showGraph) {
+            RealSpeedHistoryChart(speedHistory, Modifier.weight(0.41f), onHideGraph = onToggleGraph)
+        } else {
+            ActionButton(
+                text = "Show graph",
+                onClick = onToggleGraph,
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+            )
+        }
     }
 }
 
@@ -946,7 +982,7 @@ private fun SingleDownloadPageButton(
                 }
             }
         },
-        contentPadding = PaddingValues(vertical = 6.dp, horizontal = 12.dp),
+        contentPadding = PaddingValues(vertical = 9.dp, horizontal = 24.dp),
         contentColor = color,
         onClick = onClick,
     )
@@ -1082,8 +1118,9 @@ private fun RenderParts(parts: List<UiPart>, modifier: Modifier) {
                     RenderPart(
                         p,
                         Modifier
-                            .fillMaxHeight()
                             .weight(partSpace)
+                            .fillMaxHeight()
+                            .padding(horizontal = 2.dp)
                     )
                 }
             }
@@ -1109,8 +1146,9 @@ private fun RenderPart(part: UiPart, modifier: Modifier) {
         colors = liquidColors,
         active = part.status == PartDownloadStatus.ReceivingData ||
             part.status == PartDownloadStatus.Connecting,
-        modifier = modifier.padding(end = 1.dp),
-        bubbleCount = 2,
+        modifier = modifier,
+        bubbleCount = 5,
+        compact = true,
     )
 }
 

@@ -298,6 +298,17 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("drawWithCache", progress)
         self.assertNotIn("rememberInfiniteTransition", progress)
 
+    def test_reference_visual_parity_light_window_parts_and_graph_toggle(self):
+        window = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/singleDownloadPage/ShowDownloadDialogs.kt").read_text(encoding="utf-8")
+        self.assertIn("LocalMyColors provides DefaultThemes.hyperGetLight", window)
+        self.assertIn("val defaultWidth = 925f", window)
+        self.assertIn("var showSpeedGraph by rememberSaveable(itemState.id)", PAGE)
+        self.assertIn('text = "Hide graph"', PAGE)
+        self.assertIn('text = "Show graph"', PAGE)
+        self.assertIn("RoundedCornerShape(4.dp)", PAGE)
+        self.assertIn("compact = true", PAGE)
+        self.assertIn(".padding(horizontal = 2.dp)", PAGE)
+
     def test_single_download_page_liquid_track_height_and_specular_gloss(self):
         self.assertIn(".height(42.dp)", PAGE)
         self.assertIn("val glassTop = Brush.verticalGradient(", PAGE)
