@@ -189,10 +189,15 @@ fun ProgressDownloadPage(
                     onClick = { selectedTab = tab },
                     icon = tab.icon,
                     title = tab.title,
+                    // The approved IDM-style layout uses clean text-only tabs.
+                    showIcon = false,
+                    showSelectionUnderline = true,
                 )
             }
         }
         val scrollState = rememberScrollState()
+        // The information panel always starts at its own top when changing tabs.
+        LaunchedEffect(selectedTab) { scrollState.scrollTo(0) }
         val panelShape = RoundedCornerShape(10.dp)
         // A hidden graph should give the reclaimed height back to the parts table.
         // Keep full height on the settings and completion tabs for their controls.
@@ -1278,7 +1283,9 @@ private fun RenderParts(parts: List<UiPart>, modifier: Modifier) {
                         Modifier
                             .weight(partSpace)
                             .height(14.dp)
-                            .padding(horizontal = 2.dp)
+                            // Wider separation makes each connection a clearly
+                            // independent, slim rectangle rather than one long line.
+                            .padding(horizontal = 4.dp)
                     )
                 }
             }

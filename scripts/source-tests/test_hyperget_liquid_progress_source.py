@@ -16,6 +16,7 @@ DOWNLOAD_COMMAND = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/de
 OPEN_COMMAND = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/cli/download/open/OpenDownload.kt").read_text(encoding="utf-8")
 DOWNLOAD_WINDOW_STATE = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/singleDownloadPage/SingleDownloadPageStateToPersist.kt").read_text(encoding="utf-8")
 DOWNLOAD_WINDOW_COMPONENT = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/singleDownloadPage/DesktopSingleDownloadPageComponent.kt").read_text(encoding="utf-8")
+TABS_WIDGET = (ROOT / "shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/ui/widget/Tabs.kt").read_text(encoding="utf-8")
 THEME_MANAGER = (ROOT / "shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/ui/theme/ThemeManager.kt").read_text(encoding="utf-8")
 THEME_RENDERER = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/ui/configurable/comon/renderer/ThemeConfigurableRenderer.kt").read_text(encoding="utf-8")
 FONT_MANAGER = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/settings/FontManager.kt").read_text(encoding="utf-8")
@@ -367,7 +368,7 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn('text = "Show graph"', PAGE)
         self.assertIn("RoundedCornerShape(4.dp)", PAGE)
         self.assertIn("compact = true", PAGE)
-        self.assertIn(".padding(horizontal = 2.dp)", PAGE)
+        self.assertIn(".padding(horizontal = 4.dp)", PAGE)
         self.assertIn("Tabs outside the bordered information panel", PAGE)
         self.assertIn("URL", PAGE)
         self.assertIn("itemState.downloadLink.asStringSource()", PAGE)
@@ -404,6 +405,27 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("tableState = fittedTableState", section)
         self.assertIn("CellSize.Resizeable", PAGE)
         self.assertIn("selectVisibleDownloadParts(itemState.parts, onlyActiveParts)", section)
+
+    def test_independent_compact_parts_keep_the_new_slim_height_and_readable_gaps(self):
+        parts = PAGE.split("private fun RenderParts(", 1)[1].split("private fun RenderPart(", 1)[0]
+        self.assertIn(".height(20.dp)", PAGE)
+        self.assertIn(".height(14.dp)", parts)
+        self.assertIn(".padding(horizontal = 4.dp)", parts)
+        self.assertNotIn(".padding(horizontal = 2.dp)", parts)
+        self.assertIn(".height(42.dp)", PAGE)
+        self.assertIn("bubbleCount = 3", PAGE)
+
+    def test_idm_tabs_are_text_only_selected_and_reset_their_scroll(self):
+        self.assertIn("showIcon = false", PAGE)
+        self.assertIn("showSelectionUnderline = true", PAGE)
+        self.assertIn("LaunchedEffect(selectedTab) { scrollState.scrollTo(0) }", PAGE)
+        self.assertIn("Info -> RenderInfo(", PAGE)
+        self.assertIn("Settings -> RenderSettings(", PAGE)
+        self.assertIn("OnCompletion -> RenderOnCompletion(", PAGE)
+        self.assertIn("showIcon: Boolean = true", TABS_WIDGET)
+        self.assertIn("showSelectionUnderline: Boolean = false", TABS_WIDGET)
+        self.assertIn("if (showIcon)", TABS_WIDGET)
+        self.assertIn("if (selected && showSelectionUnderline)", TABS_WIDGET)
 
     def test_only_active_filter_keeps_segmented_bars_and_table_consistent(self):
         section = PAGE.split("private fun RenderPartInfo(", 1)[1].split("private fun prettifyStatus(", 1)[0]
@@ -500,7 +522,7 @@ class LiquidProgressSourceContract(unittest.TestCase):
         track = PAGE.split("private fun LiquidProgressTrack(", 1)[1].split("private fun RenderPartInfo(", 1)[0]
         self.assertIn("verticalAlignment = Alignment.CenterVertically", section)
         self.assertIn(".height(14.dp)", section)
-        self.assertIn(".padding(horizontal = 2.dp)", section)
+        self.assertIn(".padding(horizontal = 4.dp)", section)
         self.assertIn("bubbleCount = 3", section)
         self.assertIn("PartDownloadStatus.Completed -> referenceLiquidColors", section)
         self.assertIn("PartDownloadStatus.IDLE -> listOf(Color(0xFF8197B5), Color(0xFFB8C8DC))", section)

@@ -8,6 +8,8 @@ import com.abdownloadmanager.shared.util.ui.WithContentAlpha
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -36,7 +38,10 @@ fun MyTab(
     icon: IconSource,
     title: StringSource,
     selectionBackground: Color = myColors.surface,
+    showIcon: Boolean = true,
+    showSelectionUnderline: Boolean = false,
 ) {
+    val indicatorColor = myColors.primary
     WithContentAlpha(
         if (selected) 1f else 0.75f
     ) {
@@ -46,14 +51,23 @@ fun MyTab(
                 .ifThen(selected) {
                     background(selectionBackground)
                 }
+                .drawBehind {
+                    if (selected && showSelectionUnderline) {
+                        val stroke = 2.dp.toPx()
+                        val y = size.height - stroke / 2f
+                        drawLine(indicatorColor, Offset(0f, y), Offset(size.width, y), stroke)
+                    }
+                }
                 .clickable { onClick() }
                 .heightIn(mySpacings.thumbSize)
                 .padding(horizontal = 12.dp)
                 .padding(vertical = 6.dp)
 
         ) {
-            MyIcon(icon, null, Modifier.size(16.dp))
-            Spacer(Modifier.width(4.dp))
+            if (showIcon) {
+                MyIcon(icon, null, Modifier.size(16.dp))
+                Spacer(Modifier.width(4.dp))
+            }
             Text(
                 title.rememberString(),
                 maxLines = 1,
