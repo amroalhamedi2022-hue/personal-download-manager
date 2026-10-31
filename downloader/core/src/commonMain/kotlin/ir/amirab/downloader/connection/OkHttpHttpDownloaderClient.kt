@@ -11,6 +11,9 @@ import java.net.InetSocketAddress
 import java.net.Proxy
 import java.net.ProxySelector
 
+private const val ORIGINAL_RETRY_AFTER_HEADER =
+    "X-Personal-Download-Manager-Original-Retry-After"
+
 class OkHttpHttpDownloaderClient(
     private val okHttpClient: OkHttpClient,
     private val customUserAgentProvider: UserAgentProvider,
@@ -18,9 +21,24 @@ class OkHttpHttpDownloaderClient(
     private val systemProxySelectorProvider: SystemProxySelectorProvider,
     private val autoConfigurableProxyProvider: AutoConfigurableProxyProvider,
 ) : HttpDownloaderClient() {
+    // Job retry persistence is authoritative: an invisible OkHttp network retry
+    // must not consume more requests than the user-visible retry budget tracks.
+    private val singleAttemptClient = okHttpClient.newBuilder()
+        .retryOnConnectionFailure(false)
+        .addNetworkInterceptor { chain ->
+            val response = chain.proceed(chain.request())
+            if (response.code == 503 && response.header("Retry-After")?.trim() == "0") {
+                response.newBuilder()
+                    .header(ORIGINAL_RETRY_AFTER_HEADER, "0")
+                    .header("Retry-After", "1")
+                    .build()
+            } else response
+        }
+        .build()
+
     // Cookie-bearing/authenticated HLS requests must never redirect with
     // caller-supplied credentials or inherited ambient cookies.
-    private val noRedirectClient = okHttpClient.newBuilder()
+    private val noRedirectClient = singleAttemptClient.newBuilder()
         .cookieJar(CookieJar.NO_COOKIES)
         .followRedirects(false)
         .followSslRedirects(false)
@@ -37,7 +55,7 @@ class OkHttpHttpDownloaderClient(
         }
         val requestClient = if (
             downloadCredentials is HttpDownloadCredentials && !downloadCredentials.followRedirects
-        ) noRedirectClient else okHttpClient
+        ) noRedirectClient else singleAttemptClient
         return requestClient
             .applyProxy(downloadCredentials)
             .newCall(
@@ -163,6 +181,12 @@ class OkHttpHttpDownloaderClient(
     }
 
     private fun createFileInfo(response: Response): HttpResponseInfo {
+        val responseHeaders = response.headers.associate { (key, value) ->
+            key.lowercase() to value
+        }.toMutableMap()
+        responseHeaders.remove(ORIGINAL_RETRY_AFTER_HEADER.lowercase())?.let {
+            responseHeaders["retry-after"] = it
+        }
         return HttpResponseInfo(
             statusCode = response.code,
             message = response.message,
@@ -170,9 +194,7 @@ class OkHttpHttpDownloaderClient(
             requestHeaders = response.request.headers.associate { (key, value) ->
                 key.lowercase() to value
             },
-            responseHeaders = response.headers.associate { (key, value) ->
-                key.lowercase() to value
-            },
+            responseHeaders = responseHeaders,
         )
     }
 
