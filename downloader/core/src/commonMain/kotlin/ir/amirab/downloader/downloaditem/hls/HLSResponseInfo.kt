@@ -39,7 +39,7 @@ data class HLSResponseInfo(
     companion object {
         fun fromConnection(connection: Connection<HttpResponseInfo>): HLSResponseInfo {
             expectSuccess(connection)
-            val data = connection.source.buffer().use { it.readUtf8() }
+            val data = connection.source.buffer().use { readBoundedHlsPlaylist(it.inputStream()) }
             val playlist = try {
                 parseHLSAsMediaPlaylist(data)
             } catch (e: Exception) {
@@ -78,24 +78,22 @@ data class HLSResponseInfo(
             return playlistParser.readPlaylist(data)
         }
 
-        private val HALS_POSSIBLE_HEADERS = listOf(
-            "application/x-mpegurl",
-            "application/vnd.apple.mpegurl",
-        )
-
         /**
          * if no hls content-size received we check this
          */
-        private const val MAXIMUM_ALLOWED_SIZE = 2 * 1024 * 1024 // 2MiB
         private fun expectSuccess(connection: Connection<HttpResponseInfo>) {
             connection.responseInfo.expectSuccess()
-            val hlsPossibleHeaders = HALS_POSSIBLE_HEADERS
+            // Header Content-Length and actual streamed bytes share the same hard cap.
+            val declaredLength = connection.responseInfo.contentLength
+            if (declaredLength != null && declaredLength > MAX_HLS_PLAYLIST_BYTES) {
+                throw BadHLSResponseException("HLS playlist content length exceeds maximum allowed size")
+            }
             val contentType = connection.responseInfo.responseHeaders["content-type"]
             var error: String? = null
             if (contentType == null) {
                 error = "no content type is provided"
             } else {
-                val isHLSContentType = hlsPossibleHeaders.any { it.startsWith(contentType, ignoreCase = true) }
+                val isHLSContentType = isHlsPlaylistContentType(contentType)
                 if (!isHLSContentType) {
                     error = "content type is not hls compatible: $contentType"
                 }
@@ -105,7 +103,7 @@ data class HLSResponseInfo(
                 if (contentLength == null) {
                     error += ", and content length is unknown"
                 } else {
-                    if (contentLength > MAXIMUM_ALLOWED_SIZE) {
+                    if (contentLength > MAX_HLS_PLAYLIST_BYTES) {
                         error += ", and returned content length is too big for hls playlist"
                     } else {
                         error = null

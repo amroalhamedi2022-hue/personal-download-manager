@@ -3,6 +3,7 @@ package ir.amirab.downloader.downloaditem.hls
 import ir.amirab.downloader.connection.Connection
 import ir.amirab.downloader.connection.HttpDownloaderClient
 import ir.amirab.downloader.connection.response.HttpResponseInfo
+import ir.amirab.downloader.connection.response.expectSuccess
 import ir.amirab.downloader.destination.DestWriter
 import ir.amirab.downloader.downloaditem.http.HttpDownloadCredentials
 import ir.amirab.downloader.part.MediaSegment
@@ -54,8 +55,10 @@ class HLSPartDownloader(
             }
             if (!connect.responseInfo.isSuccessFul) {
                 connect.close()
-                throw CancellationException()
+                connect.responseInfo.expectSuccess()
             }
+            // A 206 body represents only a fragment, not an entire HLS media segment.
+            requireCompleteHlsSegmentResponse(connect.responseInfo.statusCode)
             part.length = connect.responseInfo.contentLength
             val limiters = buildList {
                 addAll(speedLimiters)
@@ -84,6 +87,13 @@ class HLSPartDownloader(
     }
 
     override fun onFinish() {
+        // EOF can be premature: compare against declared Content-Length before publishing.
+        try {
+            requireCompleteHlsSegmentBytes(part.length, part.current)
+        } catch (failure: java.io.IOException) {
+            onCanceled(failure)
+            return
+        }
         part.isCompleted = true
         super.onFinish()
     }
