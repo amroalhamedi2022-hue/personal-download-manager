@@ -99,8 +99,8 @@ private val LocalLiquidAnimationPhase = compositionLocalOf<State<Float>> { mutab
 // The reference is an electric-blue-to-cyan glass liquid, not a flat theme gradient.
 // Non-downloading statuses still keep their semantic colors below.
 private val referenceLiquidColors = listOf(
-    Color(0xFF3013ED), Color(0xFF1924F5), Color(0xFF085AFB),
-    Color(0xFF0089FB), Color(0xFF03D6F4), Color(0xFF05E6E7),
+    Color(0xFF122AEF), Color(0xFF143CF5), Color(0xFF0766FC),
+    Color(0xFF0795FB), Color(0xFF00C5F5), Color(0xFF00DFEB),
 )
 
 @Composable
@@ -194,6 +194,9 @@ fun ProgressDownloadPage(
         }
         val scrollState = rememberScrollState()
         val panelShape = RoundedCornerShape(10.dp)
+        // A hidden graph should give the reclaimed height back to the parts table.
+        // Keep full height on the settings and completion tabs for their controls.
+        val panelHeight = if (selectedTab == Info && !showSpeedGraph) 196.dp else 232.dp
         Column(
             Modifier
                 .padding(horizontal = 12.dp, vertical = 4.dp)
@@ -204,7 +207,7 @@ fun ProgressDownloadPage(
             Box(
                 Modifier
                     .fillMaxWidth()
-                    .height(232.dp)
+                    .height(panelHeight)
                     .verticalScroll(scrollState)
             ) {
                 when (selectedTab) {
@@ -534,7 +537,7 @@ private fun RenderProgressBar(itemState: IDownloadItemState) {
             status == DownloadJobStatus.Resuming ||
             status is DownloadJobStatus.PreparingFile,
         modifier = Modifier.fillMaxWidth().height(42.dp),
-        bubbleCount = 14,
+        bubbleCount = 18,
         showCompletionIcon = true,
     )
 }
@@ -764,6 +767,10 @@ private fun RenderPartInfo(
                 CheckBox(onlyActiveParts, { onlyActiveParts = it })
             }
         }
+        // Keep the segmented bars and table in sync when Only active is selected.
+        val visibleParts = remember(itemState.parts, onlyActiveParts) {
+            selectVisibleDownloadParts(itemState.parts, onlyActiveParts)
+        }
         val singleDownloadPageSizing = LocalSingleDownloadPageSizing.current
         val mutableInteractionSource = remember { MutableInteractionSource() }
         val isDraggingHandle by mutableInteractionSource.collectIsDraggedAsState()
@@ -774,7 +781,7 @@ private fun RenderPartInfo(
             Modifier.weight(1f)
         ) {
             RenderParts(
-                itemState.parts,
+                visibleParts.map { it.value },
                 Modifier
                     .padding(horizontal = horizontalPadding)
                     .height(30.dp)
@@ -803,11 +810,8 @@ private fun RenderPartInfo(
                         ),
                     )
                 }
-                val listToShow = remember(itemState.parts, onlyActiveParts) {
-                    selectVisibleDownloadParts(itemState.parts, onlyActiveParts)
-                }
                 Table(
-                    list = listToShow,
+                    list = visibleParts,
                     key = {
                         it.value.id
                     },

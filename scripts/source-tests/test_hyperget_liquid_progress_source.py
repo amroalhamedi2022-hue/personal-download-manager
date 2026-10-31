@@ -405,6 +405,19 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("CellSize.Resizeable", PAGE)
         self.assertIn("selectVisibleDownloadParts(itemState.parts, onlyActiveParts)", section)
 
+    def test_only_active_filter_keeps_segmented_bars_and_table_consistent(self):
+        section = PAGE.split("private fun RenderPartInfo(", 1)[1].split("private fun prettifyStatus(", 1)[0]
+        self.assertIn("val visibleParts = remember(itemState.parts, onlyActiveParts)", section)
+        self.assertIn("visibleParts.map { it.value }", section)
+        self.assertIn("list = visibleParts,", section)
+        self.assertNotIn("list = listToShow,", section)
+
+    def test_graph_hide_reclaims_height_without_clipping_settings(self):
+        self.assertIn("val panelHeight = if (selectedTab == Info && !showSpeedGraph) 196.dp else 232.dp", PAGE)
+        self.assertIn(".height(panelHeight)", PAGE)
+        self.assertIn("Color(0xFF122AEF)", PAGE)
+        self.assertIn("Color(0xFF00DFEB)", PAGE)
+
     def test_refined_liquid_density_and_graph_controls(self):
         track = PAGE.split("private fun LiquidProgressTrack(", 1)[1].split("private fun RenderPartInfo(", 1)[0]
         self.assertIn("if (active && fillWidth > size.height * 1.1f)", track)
@@ -420,7 +433,8 @@ class LiquidProgressSourceContract(unittest.TestCase):
         # A 37% fill in a 1024px screenshot must not collapse to just seven
         # bubbles, and a 35%-filled 120px connection must show more than one.
         self.assertIn("if (compact) 0.50f else 0.60f", track)
-        self.assertEqual(min(14, int((1024 * 0.37) / (42 * 0.60))), 14)
+        self.assertEqual(min(18, int((1024 * 0.37) / (42 * 0.60))), 15)
+        self.assertIn("bubbleCount = 18", PAGE)
         self.assertGreaterEqual(min(5, int((120 * 0.35) / (30 * 0.50))), 2)
         self.assertIn("val bubbleRadius = size.height * (0.058f + (index % 4) * 0.026f)", track)
         self.assertIn("if (index % 3 == 0) 0.66f else 0.43f", track)
