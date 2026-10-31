@@ -141,8 +141,9 @@ class HttpPartDownloader(
                     }
                 }
             } else {
-                // just download it we don't want to validate anything here
-                throwServerPartIsNotTheSameAsWeExpectException = true
+                // Blind/non-resumable HTML bodies may advertise Content-Length
+                // despite the absence of an expected range length.
+                throwServerPartIsNotTheSameAsWeExpectException = false
             }
             val serverPartIsNotTheSameAsWeExpectException = ServerPartIsNotTheSameAsWeExpectException(
                 start = partCopy.current,
@@ -153,7 +154,7 @@ class HttpPartDownloader(
             if (throwServerPartIsNotTheSameAsWeExpectException) {
                 conn.close()
                 throw serverPartIsNotTheSameAsWeExpectException
-            } else {
+            } else if (strictMode) {
                 println("WARNING: ${serverPartIsNotTheSameAsWeExpectException.message}")
             }
         }
