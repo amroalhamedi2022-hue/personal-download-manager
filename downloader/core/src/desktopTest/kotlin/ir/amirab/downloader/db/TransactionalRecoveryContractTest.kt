@@ -103,7 +103,7 @@ class TransactionalRecoveryContractTest {
         }
     }
 
-    @Test fun queueEnumerationIncludesRecoverableBackupButNeverHidesCorruption() = runBlocking {
+    @Test fun queueEnumerationIncludesRecoverableBackupButNeverHidesCorruption() = runBlocking<Unit> {
         val dir = Files.createTempDirectory("hyperget-queues-recovery-").toFile()
         try {
             val saver = TransactionalFileSaver(Json)
