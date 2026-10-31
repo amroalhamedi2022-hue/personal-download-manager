@@ -667,7 +667,7 @@ class DownloadCoreBaselineTest {
     }
 
     @Test
-    fun nonStrictBlindWebPageAcceptsKnownContentLengthWithoutFakeRangeFailure() = runBlocking {
+    fun nonStrictBlindWebPageAcceptsKnownContentLengthWithoutFakeRangeFailure() = runBlocking<Unit> {
         val url = "https://example.test/page.html"
         val response = HttpResponseInfo(
             statusCode = 200,
