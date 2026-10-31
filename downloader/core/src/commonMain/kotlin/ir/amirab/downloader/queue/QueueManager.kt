@@ -25,6 +25,10 @@ class QueueManager(
         const val RESERVED_UNTIL_QUEUE_ID = 10L
     }
 
+    // Serialize queue creation and cross-queue moves: both are read-modify-write
+    // operations that otherwise race under concurrent CLI/UI commands.
+    private val queueMutationMutex = Mutex()
+
     val queues = MutableStateFlow(
         emptyList<DownloadQueue>()
     )
@@ -60,23 +64,24 @@ class QueueManager(
     suspend fun addQueue(
         name: String,
     ) {
-        val maxId = queueDb
-            .getAllQueueIds()
-            .maxOrNull()
-            ?.coerceAtLeast(RESERVED_UNTIL_QUEUE_ID) ?: RESERVED_UNTIL_QUEUE_ID
-        // this is reserved id
-        val queueModel = QueueModel(
-            id = maxId + 1,
-            name = name,
-        )
-        queueDb.addQueue(
-            queueModel
-        )
-        val queue = createQueue(queueModel)
-        queues.update {
-            it.plus(queue)
+        queueMutationMutex.lock()
+        try {
+            val maxId = queueDb
+                .getAllQueueIds()
+                .maxOrNull()
+                ?.coerceAtLeast(RESERVED_UNTIL_QUEUE_ID) ?: RESERVED_UNTIL_QUEUE_ID
+            // Reserve and persist the new ID before another caller can allocate it.
+            val queueModel = QueueModel(
+                id = maxId + 1,
+                name = name,
+            )
+            queueDb.addQueue(queueModel)
+            val queue = createQueue(queueModel)
+            queues.update { it.plus(queue) }
+            queue.boot()
+        } finally {
+            queueMutationMutex.unlock()
         }
-        queue.boot()
     }
 
     suspend fun deleteQueue(
@@ -222,15 +227,20 @@ class QueueManager(
         queueId: Long,
         downloadId: Long,
     ) {
-        val foundInQueue = findItemInQueue(downloadId = downloadId)
-        if (foundInQueue == queueId) {
-            //already in same queue
-            return
+        queueMutationMutex.lock()
+        try {
+            // Moving an item must be atomic across the two queue models.
+            // Otherwise simultaneous moves can leave it in multiple queues.
+            val target = getQueue(queueId)
+            val foundInQueue = findItemInQueue(downloadId = downloadId)
+            if (foundInQueue == queueId) return
+            if (foundInQueue != null) {
+                getQueue(foundInQueue).removeFromQueue(downloadId)
+            }
+            target.addToQueue(downloadId)
+        } finally {
+            queueMutationMutex.unlock()
         }
-        if (foundInQueue != null) {
-            getQueue(foundInQueue).removeFromQueue(downloadId)
-        }
-        getQueue(queueId).addToQueue(downloadId)
     }
 
     suspend fun addToQueue(queueId: Long, downloadIds: List<Long>) {
