@@ -27,4 +27,6 @@ ordered = [
 locations = [uninstall.find(item) for item in ordered]
 assert all(p >= 0 for p in locations), f"Missing uninstall step(s): {locations}"
 assert locations == sorted(locations), "Uninstaller must be removed last"
-print("PASS: per-user context, targeted shortcut cleanup, and uninstall ordering")
+assert "Function .onInstSuccess" not in text, "Silent install must not force-open GUI"
+assert "!define MUI_FINISHPAGE_RUN_FUNCTION RunMainBinary" in text, "Keep interactive Run option"
+print("PASS: safe per-user uninstall and unattended setup without GUI launch")

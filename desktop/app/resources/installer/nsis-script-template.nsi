@@ -173,13 +173,8 @@ FunctionEnd
 	Delete "$DESKTOP\${APP_DISPLAY_NAME}.lnk"
 !macroend
 
-Function .onInstSuccess
-    ; Check if the installer is running in silent mode
-    ${If} ${Silent}
-        ; In silent mode, always run the app
-        Call RunMainBinary
-    ${Endif}
-FunctionEnd
+; Unattended /S installs must not launch a GUI. Interactive finishes
+; retain the optional MUI finish-page Run command.
 
 Section "${APP_DISPLAY_NAME}"
     SectionInstType RO
