@@ -309,6 +309,7 @@ try {
                 # this valid retry pattern even when the final file was byte-exact.
                 $unrecoveredDataRanges = [System.Collections.Generic.List[object]]::new()
                 $redundantCancelledTailCount = 0
+                $redundantUnrangedTailCount = 0
                 for ($rangeIndex = 0; $rangeIndex -lt $ranges.Count; $rangeIndex++) {
                     $range = $ranges[$rangeIndex]
                     if (-not [bool]$range.range -or -not [bool]$range.data_transfer -or [bool]$range.completed) {
@@ -326,8 +327,17 @@ try {
                         [long]$_.end -eq [long]$range.end -and
                         [long]$_.socket_write_bytes -eq ([long]$_.end - [long]$_.start + 1)
                     }).Count -gt 0
-                    if ($completedCover -and [long]$range.socket_write_bytes -ge 0 -and [long]$range.socket_write_bytes -le 65536) {
-                        if ([long]$range.socket_write_bytes -gt 0) { $redundantCancelledTailCount++ }
+                    # A short speculative Range may be redundant when the
+                    # interrupted initial GET already served its ENTIRE requested range.
+                    $unrangedCover = @($ranges | Where-Object {
+                        -not [bool]$_.range -and -not [bool]$_.completed -and [bool]$_.data_transfer -and
+                        [long]$range.start -ge 0 -and [long]$range.end -lt [long]$_.socket_write_bytes
+                    }).Count -gt 0
+                    if (($completedCover -or $unrangedCover) -and [long]$range.socket_write_bytes -ge 0 -and [long]$range.socket_write_bytes -le 65536) {
+                        if ([long]$range.socket_write_bytes -gt 0) {
+                            if ($completedCover) { $redundantCancelledTailCount++ }
+                            else { $redundantUnrangedTailCount++ }
+                        }
                         continue
                     }
                     $recoveredByTailRetry = $false
@@ -436,9 +446,31 @@ try {
                         }
                     }
                 }
-                # This also accounts for a fully covered cancelled speculative
-                # tail; do not double-count it via redundantCancelledTailCount.
-                # Full interval reconciliation below retains the 64-KiB cap.
+                # Re-read of at most one chunk may be enclosed in a previous
+                # Range's actually served bytes despite a DIFFERENT declared end.
+                # Bound these checkpoint replays by incomplete Range count.
+                $shortReplayCount = 0
+                for ($ri = 0; $ri -lt $ranges.Count; $ri++) {
+                    $replay = $ranges[$ri]
+                    $n = [long]$replay.socket_write_bytes
+                    if (-not [bool]$replay.range -or -not [bool]$replay.honored -or -not [bool]$replay.data_transfer -or $n -le 0 -or $n -gt 65536) { continue }
+                    $servedEnd = [long]$replay.start + $n - 1
+                    for ($pi = 0; $pi -lt $ranges.Count; $pi++) {
+                        if ($pi -eq $ri) { continue }
+                        $prior = $ranges[$pi]
+                        if (-not [bool]$prior.range -or -not [bool]$prior.honored -or -not [bool]$prior.data_transfer) { continue }
+                        $priorEnd = [long]$prior.start + [long]$prior.socket_write_bytes - 1
+                        if ([long]$prior.start -lt [long]$replay.start -and $priorEnd -ge $servedEnd -and [long]$prior.end -ne [long]$replay.end) {
+                            $shortReplayCount++
+                            break
+                        }
+                    }
+                }
+                if ($shortReplayCount -gt $incompleteDataRangeCount) {
+                    Write-FailureDiagnostics -Scenario $scenario -Round $round -Stats $after -Tasks @($taskFiles) -Reason "Checkpoint replays $shortReplayCount exceed incomplete Range count $incompleteDataRangeCount."
+                    throw "aria2 task $($task.Name) issued too many short checkpoint replays."
+                }
+                # All individual served overlaps still have a 64-KiB maximum.
                 if ($tailRetryCount -gt ($incompleteDataRangeCount + 1)) {
                     Write-FailureDiagnostics -Scenario $scenario -Round $round -Stats $after -Tasks @($taskFiles) -Reason "Tail retry count $tailRetryCount exceeds incomplete data ranges $incompleteDataRangeCount plus one bounded completed-response retry."
                     throw "aria2 task $($task.Name) issued too many tail retries."
@@ -451,6 +483,7 @@ try {
                 $overlapCount = 0
                 $unrangedOverlapCount = 0
                 $tailRetryOverlapCount = 0
+                $shortReplayOverlapCount = 0
                 foreach ($interval in $orderedIntervals) {
                     if ([long]$interval.Start -gt ($coveredEnd + 1)) {
                         Write-FailureDiagnostics -Scenario $scenario -Round $round -Stats $after -Tasks @($taskFiles) -Reason "Served HTTP byte intervals leave a gap before offset $($interval.Start)."
@@ -479,18 +512,20 @@ try {
                             [long]$_.RequestedStart -lt [long]$interval.RequestedStart -and
                             [long]$_.End -ge [long]$interval.Start
                         }).Count -gt 0
-                        if (-not $priorUnranged -and -not $priorTail) {
-                            Write-FailureDiagnostics -Scenario $scenario -Round $round -Stats $after -Tasks @($taskFiles) -Reason "An overlapping interval is not attributable to an interrupted un-ranged response or a same-end tail retry."
+                        $priorShortReplay = @($orderedIntervals | Where-Object {
+                            $_.IsRange -and [long]$_.Start -lt [long]$interval.Start -and
+                            [long]$_.End -ge [long]$interval.End -and
+                            ([long]$interval.End - [long]$interval.Start + 1) -le 65536
+                        }).Count -gt 0
+                        if (-not $priorUnranged -and -not $priorTail -and -not $priorShortReplay) {
+                            Write-FailureDiagnostics -Scenario $scenario -Round $round -Stats $after -Tasks @($taskFiles) -Reason "Unclassified served interval overlap."
                             throw "aria2 task $($task.Name) has an unclassified HTTP range overlap."
                         }
                         $overlapCount++
                         $duplicateBytes += $overlap
-                        # A short same-end tail retry can fall inside the bytes of
-                        # both an interrupted initial GET and its earlier Range.
-                        # Attribute that overlap to the more specific tail retry;
-                        # the aggregate byte/count bounds below still prevent it
-                        # from being accepted twice or exceeding one chunk.
-                        if ($priorTail) { $tailRetryOverlapCount++ } else { $unrangedOverlapCount++ }
+                        if ($priorTail) { $tailRetryOverlapCount++ }
+                        elseif ($priorUnranged) { $unrangedOverlapCount++ }
+                        else { $shortReplayOverlapCount++ }
                     }
                     if ([long]$interval.End -gt $coveredEnd) {
                         $newStart = [Math]::Max([long]$interval.Start, $coveredEnd + 1)
@@ -505,11 +540,13 @@ try {
                 $unrangedInterruptedCount = @($ranges | Where-Object {
                     -not [bool]$_.range -and -not [bool]$_.completed -and [bool]$_.data_transfer -and [long]$_.socket_write_bytes -gt 0
                 }).Count
-                $maxDuplicateBytes = [long]65536 * [long]($unrangedInterruptedCount + $tailRetryCount)
+                if ($redundantUnrangedTailCount -gt $unrangedInterruptedCount) { throw 'Excess speculative initial GET tails.' }
+                $maxDuplicateBytes = [long]65536 * [long]($unrangedInterruptedCount + $redundantUnrangedTailCount + $tailRetryCount + $shortReplayCount)
                 if (
-                    $unrangedOverlapCount -gt $unrangedInterruptedCount -or
+                    $unrangedOverlapCount -gt ($unrangedInterruptedCount + $redundantUnrangedTailCount) -or
                     $tailRetryOverlapCount -gt $tailRetryCount -or
-                    $overlapCount -gt ($unrangedInterruptedCount + $tailRetryCount) -or
+                    $shortReplayOverlapCount -gt $shortReplayCount -or
+                    $overlapCount -gt ($unrangedInterruptedCount + $redundantUnrangedTailCount + $tailRetryCount + $shortReplayCount) -or
                     $duplicateBytes -gt $maxDuplicateBytes
                 ) {
                     Write-FailureDiagnostics -Scenario $scenario -Round $round -Stats $after -Tasks @($taskFiles) -Reason "Duplicate bytes $duplicateBytes across $overlapCount overlap(s) exceed bounded interrupted-response/tail-retry accounting $maxDuplicateBytes."

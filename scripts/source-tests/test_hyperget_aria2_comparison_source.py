@@ -48,6 +48,17 @@ def reconcile_fixture_response_ranges(responses, expected_bytes):
         bool(r["range"] and r["honored"] and r["data_transfer"] and not r["completed"])
         for r in responses
     )
+    redundant_unranged = sum(
+        bool(r['range'] and r['honored'] and r['data_transfer'] and not r['completed']
+             and 0 < int(r['socket_write_bytes']) <= 65536)
+        and any(not p['range'] and not p['completed'] and p['data_transfer']
+                and int(r['end']) < int(p['socket_write_bytes']) for p in responses)
+        for r in responses
+    )
+    unrange_count = sum(not r['range'] and not r['completed'] and r['data_transfer']
+                        and int(r['socket_write_bytes']) > 0 for r in responses)
+    if redundant_unranged > unrange_count:
+        raise AssertionError("excess speculative initial GET tails")
     tail_retry_count = 0
     for index, retry in enumerate(responses):
         if not (retry["range"] and retry["honored"] and retry["data_transfer"]
@@ -68,6 +79,21 @@ def reconcile_fixture_response_ranges(responses, expected_bytes):
                 if 0 < retry_overlap <= 65536:
                     tail_retry_count += 1
                     break
+    short_replay_count = 0
+    for index, replay in enumerate(responses):
+        n = int(replay['socket_write_bytes'])
+        if not(replay['range'] and replay['honored'] and replay['data_transfer'] and 0 < n <= 65536):
+            continue
+        end = int(replay['start']) + n - 1
+        for pi, prior in enumerate(responses):
+            if pi == index or not(prior['range'] and prior['honored'] and prior['data_transfer']):
+                continue
+            pe = int(prior['start']) + int(prior['socket_write_bytes']) - 1
+            if int(prior['start']) < int(replay['start']) and pe >= end and int(prior['end']) != int(replay['end']):
+                short_replay_count += 1
+                break
+    if short_replay_count > incomplete_data_range_count:
+        raise AssertionError("excess short checkpoint replays")
     if tail_retry_count > incomplete_data_range_count + 1:
         raise AssertionError("too many tail retries")
 
@@ -78,6 +104,7 @@ def reconcile_fixture_response_ranges(responses, expected_bytes):
     overlap_count = 0
     unranged_overlap_count = 0
     tail_retry_overlap_count = 0
+    short_replay_overlap_count = 0
     for interval in ordered:
         start, end = interval["start"], interval["end"]
         if start > covered_end + 1:
@@ -97,14 +124,20 @@ def reconcile_fixture_response_ranges(responses, expected_bytes):
                 and p["requested_start"] < interval["requested_start"] and p["end"] >= start
                 for p in ordered
             )
-            if not prior_unranged and not prior_tail:
+            prior_short_replay = any(
+                p['is_range'] and p['start'] < start and p['end'] >= end
+                and end - start + 1 <= 65536 for p in ordered
+            )
+            if not prior_unranged and not prior_tail and not prior_short_replay:
                 raise AssertionError("unclassified overlap")
             overlap_count += 1
             duplicate_bytes += overlap
             if prior_tail:
                 tail_retry_overlap_count += 1
-            else:
+            elif prior_unranged:
                 unranged_overlap_count += 1
+            else:
+                short_replay_overlap_count += 1
         if end > covered_end:
             new_start = max(start, covered_end + 1)
             covered_bytes += end - new_start + 1
@@ -116,11 +149,12 @@ def reconcile_fixture_response_ranges(responses, expected_bytes):
         (not r["range"] and not r["completed"] and r["data_transfer"] and int(r["socket_write_bytes"]) > 0)
         for r in responses
     )
-    max_duplicate_bytes = 65536 * (unranged_interrupted_count + tail_retry_count)
+    max_duplicate_bytes = 65536 * (unranged_interrupted_count + redundant_unranged + tail_retry_count + short_replay_count)
     if (
-        unranged_overlap_count > unranged_interrupted_count
+        unranged_overlap_count > unranged_interrupted_count + redundant_unranged
         or tail_retry_overlap_count > tail_retry_count
-        or overlap_count > unranged_interrupted_count + tail_retry_count
+        or short_replay_overlap_count > short_replay_count
+        or overlap_count > unranged_interrupted_count + redundant_unranged + tail_retry_count + short_replay_count
         or duplicate_bytes > max_duplicate_bytes
     ):
         raise AssertionError("unexplained duplicate bytes")
@@ -213,6 +247,42 @@ class Aria2Stage2SourceContract(unittest.TestCase):
         too_wide[-1]['socket_write_bytes'] += 65536
         with self.assertRaises(AssertionError):
             reconcile_fixture_response_ranges(too_wide, expected)
+
+    def test_windows_bounded_initial_and_checkpoint_replays(self):
+        # Captured Stage 2 run 41185667556. Reject a gap/large overlap
+        # while accepting fully covered 64-KiB speculative/checkpoint data.
+        mib = 1024 * 1024
+        expected = 32 * mib
+        base = [dict(start=0, end=expected-1, range=False, honored=False,
+                     data_transfer=True, completed=False, socket_write_bytes=4*mib+65536)]
+        full = [dict(start=i*mib, end=(i+4)*mib-1, range=True, honored=True,
+                     data_transfer=True, completed=True, socket_write_bytes=4*mib)
+                for i in (4, 8, 12, 16, 24, 28)]
+        # A 20-24 MiB Range stopped at 23 MiB and was resumed.
+        checkpoint = base + full + [
+            dict(start=20*mib, end=24*mib-1, range=True, honored=True,
+                 data_transfer=True, completed=False, socket_write_bytes=3*mib),
+            dict(start=23*mib, end=24*mib-1, range=True, honored=True,
+                 data_transfer=True, completed=True, socket_write_bytes=mib),
+            dict(start=23*mib-65536, end=23*mib-1, range=True, honored=True,
+                 data_transfer=True, completed=True, socket_write_bytes=65536),
+        ]
+        self.assertEqual(reconcile_fixture_response_ranges(checkpoint, expected),
+                         (expected+2*65536, 2*65536, expected))
+        initial_extra = base + [dict(start=i*mib, end=(i+4)*mib-1,
+                           range=True, honored=True, data_transfer=True,
+                           completed=True, socket_write_bytes=4*mib)
+                          for i in (4, 8, 12, 16, 20, 24, 28)]
+        initial_extra.append(dict(start=3*mib, end=4*mib-1, range=True,
+                                  honored=True, data_transfer=True,
+                                  completed=False, socket_write_bytes=65536))
+        self.assertEqual(reconcile_fixture_response_ranges(initial_extra, expected),
+                         (expected+2*65536, 2*65536, expected))
+        oversized = [dict(x) for x in checkpoint]
+        oversized[-1]['start'] -= 65536
+        oversized[-1]['socket_write_bytes'] += 65536
+        with self.assertRaises(AssertionError):
+            reconcile_fixture_response_ranges(oversized, expected)
 
     def test_matrix_uses_exact_http_fixture_hashes_and_real_concurrency(self):
         self.assertIn("LocalHttpRangeFixture.py", ARIA2_MATRIX)
