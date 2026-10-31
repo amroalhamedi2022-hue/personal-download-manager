@@ -51,6 +51,10 @@ jobs:
         shell: bash
         run: ./gradlew --no-daemon --version
 
+      - name: Guard non-destructive Windows uninstall
+        shell: pwsh
+        run: python scripts/source-tests/test_uninstall_shortcut_safety.py
+
       - name: Run downloader tests and compile desktop app
         shell: bash
         run: >-

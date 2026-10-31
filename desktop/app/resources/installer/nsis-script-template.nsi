@@ -66,6 +66,8 @@ InstallDir "$LOCALAPPDATA\${APP_NAME}"
 
 !define INSTALL_DIR `$INSTDIR`
 Function .onInit
+    ; Per-user installation and shell shortcuts.
+    SetShellVarContext current
 
     ; Call RestorePreviousInstallLocation
 
@@ -153,7 +155,9 @@ FunctionEnd
 !macroend
 
 !macro RemoveStartMenu
-	RmDir /r "$SMPROGRAMS\${APP_DISPLAY_NAME}"
+    ; Preserve unrelated files in the user's Start Menu folder.
+    Delete "$SMPROGRAMS\${APP_DISPLAY_NAME}\${APP_DISPLAY_NAME}.lnk"
+    RMDir "$SMPROGRAMS\${APP_DISPLAY_NAME}"
 !macroend
 
 !macro RemoveUserData
@@ -222,10 +226,11 @@ SectionEnd
 
 Section "Uninstall"
     SectionInstType RO
+    SetShellVarContext current
 
     !insertmacro closeApp
-    !insertmacro clearFiles
 
+    ; Clean up registrations before deleting the uninstaller itself.
     !insertmacro RemoveStartMenu
     !insertmacro RemoveDesktopShortCut
 
@@ -234,4 +239,6 @@ Section "Uninstall"
 
     ; remove auto start on boot registry
     DeleteRegValue SHCTX "${REG_RUN_KEY}" "${APP_NAME}"
+
+    !insertmacro clearFiles
 SectionEnd
