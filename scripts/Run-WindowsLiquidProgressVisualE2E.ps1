@@ -189,6 +189,10 @@ public static class HyperGetLiquidProgressNative {
     [DllImport("user32.dll")]
     public static extern uint GetWindowThreadProcessId(IntPtr handle, out uint processId);
     [DllImport("user32.dll")]
+    public static extern bool SetCursorPos(int x, int y);
+    [DllImport("user32.dll")]
+    public static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extraInfo);
+    [DllImport("user32.dll")]
     public static extern bool IsWindowVisible(IntPtr handle);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     public static extern int GetWindowTextLength(IntPtr handle);
@@ -533,6 +537,83 @@ public static class HyperGetLiquidProgressNative {
         # Avoid storing arbitrary exception messages or private UI text in artifacts.
         $graphToggleResult = 'Windows UI Automation could not invoke both graph controls'
     }
+    # Compose Desktop may not expose its button semantics through Windows UIA.
+    # In that case use the actual on-screen Hide/Show buttons, then prove the
+    # chart area disappeared and returned from real Windows pixel captures.
+    $graphHiddenScreenshot = $null
+    $graphRestoredScreenshot = $null
+    if (-not $graphToggleTested -and $captureWidth -ge 800 -and $captureHeight -ge 600) {
+        function Save-GraphInteractionCapture {
+            param([string]$Destination)
+            $shot = [System.Drawing.Bitmap]::new($captureWidth, $captureHeight)
+            $g = [System.Drawing.Graphics]::FromImage($shot)
+            try {
+                $g.CopyFromScreen(
+                    [System.Drawing.Point]::new($captureLeft, $captureTop),
+                    [System.Drawing.Point]::Empty,
+                    [System.Drawing.Size]::new($captureWidth, $captureHeight)
+                )
+                $shot.Save($Destination, [System.Drawing.Imaging.ImageFormat]::Png)
+            } finally {
+                $g.Dispose()
+                $shot.Dispose()
+            }
+        }
+        function Get-GraphBlueSampleCount {
+            param([string]$Path)
+            $shot = [System.Drawing.Bitmap]::FromFile($Path)
+            try {
+                $count = 0
+                # Stable center of the transfer chart, excluding the blue
+                # action button and all file-details text.
+                $left = [int]($shot.Width * 0.69)
+                $right = [int]($shot.Width * 0.95)
+                $top = [int]($shot.Height * 0.19)
+                $bottom = [int]($shot.Height * 0.34)
+                for ($y = $top; $y -lt $bottom; $y += 3) {
+                    for ($x = $left; $x -lt $right; $x += 3) {
+                        $pixel = $shot.GetPixel($x, $y)
+                        if (($pixel.B - $pixel.R) -gt 12 -and
+                            ($pixel.B - $pixel.G) -gt 5 -and $pixel.G -gt 180) {
+                            $count++
+                        }
+                    }
+                }
+                return $count
+            } finally {
+                $shot.Dispose()
+            }
+        }
+        $originalBlueCount = Get-GraphBlueSampleCount -Path $screenshot
+        if ($originalBlueCount -gt 1000 -and
+            [HyperGetLiquidProgressNative]::GetForegroundWindow() -eq $windowHandle) {
+            $clickX = $captureRight - [int][Math]::Round($captureWidth * 0.06)
+            $clickY = $captureTop + [int][Math]::Round($captureHeight * 0.12)
+            $graphHiddenScreenshot = Join-Path $root 'liquid-progress-graph-hidden.png'
+            $graphRestoredScreenshot = Join-Path $root 'liquid-progress-graph-restored.png'
+            foreach ($target in @($graphHiddenScreenshot, $graphRestoredScreenshot)) {
+                if (-not [HyperGetLiquidProgressNative]::SetCursorPos($clickX, $clickY)) {
+                    throw 'Could not position the mouse for the real graph toggle test.'
+                }
+                [HyperGetLiquidProgressNative]::mouse_event([uint32]0x0002, 0, 0, 0, [UIntPtr]::Zero)
+                [HyperGetLiquidProgressNative]::mouse_event([uint32]0x0004, 0, 0, 0, [UIntPtr]::Zero)
+                Start-Sleep -Milliseconds 350
+                Save-GraphInteractionCapture -Destination $target
+            }
+            $hiddenBlueCount = Get-GraphBlueSampleCount -Path $graphHiddenScreenshot
+            $restoredBlueCount = Get-GraphBlueSampleCount -Path $graphRestoredScreenshot
+            if ($hiddenBlueCount -lt $originalBlueCount * 0.25 -and
+                $restoredBlueCount -gt $originalBlueCount * 0.5) {
+                $graphToggleTested = $true
+                $graphToggleResult = 'real mouse clicks hid and restored the chart; Windows pixel evidence verified'
+            } else {
+                throw ("Graph hide/show failed real Windows pixel verification: original={0}, hidden={1}, restored={2}." -f
+                    $originalBlueCount, $hiddenBlueCount, $restoredBlueCount)
+            }
+        } else {
+            $graphToggleResult = 'Windows graph pixel probe unavailable (small window or no foreground chart)'
+        }
+    }
     Write-Host "Graph toggle interaction: $graphToggleResult"
 
     $completed = $false
@@ -639,6 +720,8 @@ public static class HyperGetLiquidProgressNative {
         Screenshot = [IO.Path]::GetFileName($screenshot)
         GraphToggleTested = $graphToggleTested
         GraphToggleResult = $graphToggleResult
+        GraphHiddenScreenshot = if ($graphHiddenScreenshot) { [IO.Path]::GetFileName($graphHiddenScreenshot) } else { $null }
+        GraphRestoredScreenshot = if ($graphRestoredScreenshot) { [IO.Path]::GetFileName($graphRestoredScreenshot) } else { $null }
         FinalStatus = $finalStatus
         Verified = $true
     } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $root 'liquid-progress-report.json') -Encoding utf8
