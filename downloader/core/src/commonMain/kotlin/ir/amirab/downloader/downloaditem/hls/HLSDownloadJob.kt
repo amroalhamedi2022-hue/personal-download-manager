@@ -238,13 +238,12 @@ class HLSDownloadJob(
         speedLimiter.bytesPerSecond(bytesPerSecond = downloadItem.speedLimit)
     }
 
-    fun onLinkChanged() {
-        scope.launch {
-            if (activeDownloadScope?.isActive == true) {
-                pause()
-                resume()
-            }
-
+    suspend fun onLinkChanged() {
+        if (activeDownloadScope?.isActive == true) {
+            // Link mutation should finish its stop/restart before the next
+            // lifecycle command for this item is allowed to enter.
+            pause()
+            resume()
         }
     }
 
