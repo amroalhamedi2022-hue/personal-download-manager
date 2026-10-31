@@ -361,13 +361,10 @@ private fun RealSpeedHistoryChart(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("$currentText/s", fontSize = myTextSizes.base, color = myColors.onBackground)
                 Spacer(Modifier.width(8.dp))
-                Text(
-                    "Hide graph",
-                    modifier = Modifier
-                        .onClick { onHideGraph() }
-                        .padding(horizontal = 4.dp, vertical = 4.dp),
-                    fontSize = myTextSizes.base,
-                    color = Color(0xFF1459C7),
+                ActionButton(
+                    text = "Hide graph",
+                    onClick = onHideGraph,
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 5.dp),
                 )
             }
         }
@@ -379,7 +376,7 @@ private fun RealSpeedHistoryChart(
             ) {
                 for (tick in 4 downTo 0) {
                     Text(
-                        convertPositiveSizeToHumanReadable((maxSpeed / 4L) * tick, speedUnit).rememberString(),
+                        convertPositiveSizeToHumanReadable((maxSpeed.toDouble() * tick / 4.0).toLong(), speedUnit).rememberString(),
                         fontSize = myTextSizes.base,
                         color = myColors.onBackground / 0.62f,
                         maxLines = 1,
@@ -497,7 +494,7 @@ private fun RenderProgressBar(itemState: IDownloadItemState) {
             status == DownloadJobStatus.Resuming ||
             status is DownloadJobStatus.PreparingFile,
         modifier = Modifier.fillMaxWidth().height(42.dp),
-        bubbleCount = 16,
+        bubbleCount = 14,
         showCompletionIcon = true,
     )
 }
@@ -621,30 +618,38 @@ private fun LiquidProgressTrack(
                         secondaryWave.close()
                         drawPath(secondaryWave, color = Color(0xFFB3FFFF).copy(alpha = 0.08f))
 
-                        // Glass bubbles have translucent cores, crisp illuminated
-                        // rims and individual specular dots, not flat white circles.
-                        if (fillWidth > size.height * 1.1f) {
-                            repeat(bubbleCount) { index ->
-                                // Individual bubbles rise through the fluid at slightly
-                                // different speeds; horizontal motion stays gentle.
-                                val drift = (index * 0.173f + phase * (0.055f + index % 4 * 0.016f)) % 1f
-                                val lift = (index * 0.213f + phase * (0.85f + index % 3 * 0.12f)) % 1f
-                                val bubbleRadius = size.height * (0.047f + (index % 5) * 0.019f)
+                        // Keep completed/paused parts still and uncluttered. Bubble
+                        // density follows the actual filled width, so a narrow part
+                        // never receives the same number as the full-size track.
+                        if (active && fillWidth > size.height * 1.1f) {
+                            val visibleBubbleCount = bubbleCount.coerceAtMost(
+                                (fillWidth / (size.height * if (compact) 1.9f else 1.15f))
+                                    .toInt().coerceAtLeast(0)
+                            )
+                            repeat(visibleBubbleCount) { index ->
+                                // Golden-ratio spacing avoids obvious rows or clumps.
+                                // The small sinusoidal drift is continuous at phase wrap.
+                                val drift = (
+                                    index * 0.618034f + 0.13f +
+                                        sin(phase.toDouble() * PI * 2.0 + index).toFloat() * 0.018f
+                                ) % 1f
+                                val lift = (index * 0.371f + phase * (0.58f + index % 3 * 0.13f)) % 1f
+                                val bubbleRadius = size.height * (0.048f + (index % 4) * 0.018f)
                                 val center = Offset(
-                                    x = startX + fillWidth * (0.06f + drift * 0.88f),
-                                    y = size.height * (0.87f - lift * 0.72f),
+                                    x = startX + fillWidth * (0.08f + drift * 0.84f),
+                                    y = size.height * (0.88f - lift * 0.74f),
                                 )
-                                drawCircle(Color.White.copy(alpha = 0.06f), bubbleRadius * 1.6f, center)
-                                drawCircle(Color(0xFFB1F9FF).copy(alpha = 0.14f), bubbleRadius * 0.79f, center)
+                                drawCircle(Color.White.copy(alpha = 0.055f), bubbleRadius * 1.5f, center)
+                                drawCircle(Color(0xFFB1F9FF).copy(alpha = 0.12f), bubbleRadius * 0.78f, center)
                                 drawCircle(
-                                    color = Color.White.copy(alpha = if (index % 3 == 0) 0.48f else 0.29f),
+                                    color = Color.White.copy(alpha = if (index % 3 == 0) 0.44f else 0.30f),
                                     radius = bubbleRadius,
                                     center = center,
-                                    style = Stroke(width = (bubbleRadius * 0.12f).coerceAtLeast(0.6f)),
+                                    style = Stroke(width = (bubbleRadius * 0.13f).coerceAtLeast(0.6f)),
                                 )
                                 drawCircle(
                                     color = Color.White.copy(alpha = 0.86f),
-                                    radius = bubbleRadius * 0.10f,
+                                    radius = bubbleRadius * 0.11f,
                                     center = Offset(center.x - bubbleRadius * 0.31f, center.y - bubbleRadius * 0.33f),
                                 )
                             }
@@ -1158,7 +1163,7 @@ private fun RenderParts(parts: List<UiPart>, modifier: Modifier) {
         if (parts.isNotEmpty()) {
             val sortedParts = remember(parts) { parts.sortedBy { it.id } }
             // Unknown-size parts still need visible connection tracks.
-            val useEqualWeights = sortedParts.any { it.partSpace <= 0f }
+            val useEqualWeights = sortedParts.any { !it.partSpace.isFinite() || it.partSpace <= 0f }
             for (p in sortedParts) {
                 val partSpace = if (useEqualWeights) 1f else p.partSpace
                 key(p.id) {
@@ -1194,7 +1199,7 @@ private fun RenderPart(part: UiPart, modifier: Modifier) {
         active = part.status == PartDownloadStatus.ReceivingData ||
             part.status == PartDownloadStatus.Connecting,
         modifier = modifier,
-        bubbleCount = 7,
+        bubbleCount = 5,
         compact = true,
     )
 }

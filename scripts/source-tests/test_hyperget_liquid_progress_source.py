@@ -338,6 +338,16 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("Color.White.copy(alpha = 0.86f)", PAGE)
         self.assertIn("// Glass bubbles have translucent cores", PAGE)
 
+    def test_refined_liquid_density_and_graph_controls(self):
+        track = PAGE.split("private fun LiquidProgressTrack(", 1)[1].split("private fun RenderPartInfo(", 1)[0]
+        self.assertIn("if (active && fillWidth > size.height * 1.1f)", track)
+        self.assertIn("val visibleBubbleCount = bubbleCount.coerceAtMost(", track)
+        self.assertIn("repeat(visibleBubbleCount)", track)
+        self.assertIn("index * 0.618034f", track)
+        self.assertIn("!it.partSpace.isFinite()", PAGE)
+        self.assertIn('text = "Hide graph"', PAGE)
+        self.assertIn("maxSpeed.toDouble() * tick / 4.0", PAGE)
+
     def test_reference_liquid_draws_real_crests_and_keeps_shared_animation(self):
         track = PAGE.split("private fun LiquidProgressTrack(", 1)[1].split("private fun RenderPartInfo(", 1)[0]
         self.assertIn(".drawWithCache {", track)
