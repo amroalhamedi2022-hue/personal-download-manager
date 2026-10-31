@@ -6,6 +6,10 @@ import ir.amirab.downloader.db.DownloadQueueFileStorageDatabase
 import ir.amirab.downloader.db.QueueModel
 import ir.amirab.downloader.db.TransactionalFileSaver
 import ir.amirab.downloader.downloaditem.DownloadItemContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -129,6 +133,55 @@ class RestartPersistenceTest {
                 restartedManager.getAll().forEach(DownloadQueue::dispose)
             }
         } finally {
+            folder.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun concurrentQueueCreationAndMovesDoNotDuplicateIdsOrMembership() = runBlocking {
+        val folder = Files.createTempDirectory("download-queue-concurrent-").toFile()
+        val database = DownloadQueueFileStorageDatabase(
+            fileSaver = TransactionalFileSaver(Json),
+            queueFolder = folder,
+        )
+        val manager = QueueManager(database, InactiveDownloads())
+        try {
+            manager.boot()
+            // Multiple CLI/UI commands may arrive together. Queue IDs must be
+            // reserved atomically rather than reusing the same database maximum.
+            coroutineScope {
+                (1..12).map { index ->
+                    async(Dispatchers.Default) { manager.addQueue("Parallel $index") }
+                }.awaitAll()
+            }
+            val ids = manager.getAll().map { it.id }
+            assertEquals(13, ids.size)
+            assertEquals(ids.size, ids.toSet().size, "Concurrent creation reused a queue ID")
+            assertEquals(ids.toSet(), database.getAllQueueIds().toSet())
+
+            // Simultaneous moves of one download must leave exactly one owner.
+            coroutineScope {
+                ids.filter { it != DefaultQueueInfo.ID }.map { queueId ->
+                    async(Dispatchers.Default) { manager.addToQueue(queueId, 444L) }
+                }.awaitAll()
+            }
+            assertEquals(
+                1,
+                manager.getAll().sumOf { queue ->
+                    queue.getQueueModel().queueItems.count { it == 444L }
+                },
+                "Concurrent cross-queue moves duplicated a download",
+            )
+            manager.flush()
+            assertEquals(
+                1,
+                database.getAllQueues().sumOf { queue ->
+                    queue.queueItems.count { it == 444L }
+                },
+                "The persisted queue membership must also be unique",
+            )
+        } finally {
+            manager.getAll().forEach(DownloadQueue::dispose)
             folder.deleteRecursively()
         }
     }
