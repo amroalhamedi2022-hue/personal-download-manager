@@ -28,6 +28,7 @@ class FontManager(
 ) {
     companion object {
         private const val DEFAULT_FONT_ID = "default"
+        @OptIn(ExperimentalTextApi::class)
         val defaultFontInfo = FontInfo(
             id = DEFAULT_FONT_ID,
             uri = "",
