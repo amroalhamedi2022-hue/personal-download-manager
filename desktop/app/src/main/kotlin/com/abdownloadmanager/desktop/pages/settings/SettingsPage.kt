@@ -77,7 +77,11 @@ private fun SideBarItem(icon: IconSource, name: String, isSelected: Boolean, onC
         Modifier
             .height(IntrinsicSize.Max)
             .ifThen(isSelected) {
-                background(myColors.onBackground / 0.05f)
+                // Keep navigation visibly selected across both light and dark
+                // HyperGet palettes and the user-selectable color families.
+                background(
+                    myColors.primary.copy(alpha = if (myColors.isLight) 0.12f else 0.22f)
+                )
             }
             .selectable(
                 selected = isSelected,

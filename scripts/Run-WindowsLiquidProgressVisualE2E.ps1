@@ -178,12 +178,20 @@ public static class HyperGetLiquidProgressNative {
     public static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")]
     public static extern bool GetWindowRect(IntPtr handle, out RECT rect);
+    // GetWindowRect includes the invisible resize border of a maximized
+    // window. DWM exposes the actual visible frame for screenshot cropping.
+    [DllImport("dwmapi.dll")]
+    public static extern int DwmGetWindowAttribute(IntPtr handle, int attribute, out RECT rect, int rectSize);
     [DllImport("user32.dll")]
     public static extern bool SetWindowPos(IntPtr handle, IntPtr insertAfter, int x, int y, int cx, int cy, uint flags);
     [DllImport("user32.dll")]
     public static extern bool EnumWindows(EnumWindowsProc callback, IntPtr parameter);
     [DllImport("user32.dll")]
     public static extern uint GetWindowThreadProcessId(IntPtr handle, out uint processId);
+    [DllImport("user32.dll")]
+    public static extern bool SetCursorPos(int x, int y);
+    [DllImport("user32.dll")]
+    public static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extraInfo);
     [DllImport("user32.dll")]
     public static extern bool IsWindowVisible(IntPtr handle);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
@@ -422,26 +430,316 @@ public static class HyperGetLiquidProgressNative {
     if (-not [HyperGetLiquidProgressNative]::GetWindowRect($windowHandle, [ref]$windowRect)) {
         throw 'Could not obtain installed HyperGet window bounds.'
     }
+    # DWM's extended frame bounds omit invisible maximized-window borders.
+    # Keep the GetWindowRect fallback if the DWM attribute is unavailable.
+    $dwmVisibleWindowRect = [HyperGetLiquidProgressNative+RECT]::new()
+    $dwmResult = [HyperGetLiquidProgressNative]::DwmGetWindowAttribute(
+        $windowHandle, 9, [ref]$dwmVisibleWindowRect, 16
+    )
+    if ($dwmResult -eq 0 -and
+        $dwmVisibleWindowRect.Right -gt $dwmVisibleWindowRect.Left -and
+        $dwmVisibleWindowRect.Bottom -gt $dwmVisibleWindowRect.Top) {
+        $windowRect = $dwmVisibleWindowRect
+    }
     $windowWidth = $windowRect.Right - $windowRect.Left
     $windowHeight = $windowRect.Bottom - $windowRect.Top
-    if ($windowWidth -lt 200 -or $windowHeight -lt 150) {
-        throw 'Installed HyperGet window bounds are too small for visual acceptance.'
+    # Maximized Windows windows include an invisible 8px resize frame
+    # outside the display bounds. That frame is NOT clipped app content.
+    # Reject larger overflow, and crop only the non-visible OS frame.
+    Add-Type -AssemblyName System.Windows.Forms
+    $displayBounds = [System.Windows.Forms.Screen]::FromHandle($windowHandle).Bounds
+    $maxInvisibleFrame = 12
+    $outsideLeft = [Math]::Max(0, $displayBounds.Left - $windowRect.Left)
+    $outsideTop = [Math]::Max(0, $displayBounds.Top - $windowRect.Top)
+    $outsideRight = [Math]::Max(0, $windowRect.Right - $displayBounds.Right)
+    $outsideBottom = [Math]::Max(0, $windowRect.Bottom - $displayBounds.Bottom)
+    if (($windowRect.Right -gt $displayBounds.Right -and $outsideRight -gt $maxInvisibleFrame) -or
+        ($windowRect.Bottom -gt $displayBounds.Bottom -and $outsideBottom -gt $maxInvisibleFrame) -or
+        $outsideLeft -gt $maxInvisibleFrame -or $outsideTop -gt $maxInvisibleFrame) {
+        throw ("Installed download window is outside display bounds: window=({0},{1})-({2},{3}), display=({4},{5})-({6},{7})." -f
+            $windowRect.Left, $windowRect.Top, $windowRect.Right, $windowRect.Bottom,
+            $displayBounds.Left, $displayBounds.Top, $displayBounds.Right, $displayBounds.Bottom)
+    }
+    $captureLeft = [Math]::Max($windowRect.Left, $displayBounds.Left)
+    $captureTop = [Math]::Max($windowRect.Top, $displayBounds.Top)
+    $captureRight = [Math]::Min($windowRect.Right, $displayBounds.Right)
+    $captureBottom = [Math]::Min($windowRect.Bottom, $displayBounds.Bottom)
+    $captureWidth = $captureRight - $captureLeft
+    $captureHeight = $captureBottom - $captureTop
+    if ($captureWidth -lt 200 -or $captureHeight -lt 150) {
+        throw 'Visible HyperGet window bounds are too small for visual acceptance.'
     }
     Add-Type -AssemblyName System.Drawing
-    $bitmap = [System.Drawing.Bitmap]::new($windowWidth, $windowHeight)
+    $bitmap = [System.Drawing.Bitmap]::new($captureWidth, $captureHeight)
     $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
     $screenshot = Join-Path $root 'liquid-progress-active.png'
     try {
         $graphics.CopyFromScreen(
-            [System.Drawing.Point]::new($windowRect.Left, $windowRect.Top),
+            [System.Drawing.Point]::new($captureLeft, $captureTop),
             [System.Drawing.Point]::Empty,
-            [System.Drawing.Size]::new($windowWidth, $windowHeight)
+            [System.Drawing.Size]::new($captureWidth, $captureHeight)
         )
         $bitmap.Save($screenshot, [System.Drawing.Imaging.ImageFormat]::Png)
     } finally {
         $graphics.Dispose()
         $bitmap.Dispose()
     }
+
+    # Exercise the real graph visibility control through native Windows UI
+    # Automation when Compose exposes the button accessibility semantics.
+    # Do not infer a successful click from source contracts or screenshots alone.
+    # On runners without an accessible InvokePattern, preserve the transfer
+    # acceptance result and report this separate interaction as untested.
+    $graphToggleTested = $false
+    $graphToggleResult = 'not exposed to Windows UI Automation'
+    try {
+        Add-Type -AssemblyName UIAutomationClient -ErrorAction Stop
+        Add-Type -AssemblyName UIAutomationTypes -ErrorAction Stop
+        $automationRoot = [System.Windows.Automation.AutomationElement]::FromHandle($windowHandle)
+        $hideCondition = [System.Windows.Automation.PropertyCondition]::new(
+            [System.Windows.Automation.AutomationElement]::NameProperty, 'Hide graph'
+        )
+        $showCondition = [System.Windows.Automation.PropertyCondition]::new(
+            [System.Windows.Automation.AutomationElement]::NameProperty, 'Show graph'
+        )
+        $hideButton = $automationRoot.FindFirst(
+            [System.Windows.Automation.TreeScope]::Descendants, $hideCondition
+        )
+        if ($null -ne $hideButton) {
+            $hideInvoke = $hideButton.GetCurrentPattern(
+                [System.Windows.Automation.InvokePattern]::Pattern
+            )
+            $hideInvoke.Invoke()
+            Start-Sleep -Milliseconds 350
+            $showButton = $automationRoot.FindFirst(
+                [System.Windows.Automation.TreeScope]::Descendants, $showCondition
+            )
+            if ($null -ne $showButton) {
+                $showInvoke = $showButton.GetCurrentPattern(
+                    [System.Windows.Automation.InvokePattern]::Pattern
+                )
+                $showInvoke.Invoke()
+                Start-Sleep -Milliseconds 350
+                $restoredHideButton = $automationRoot.FindFirst(
+                    [System.Windows.Automation.TreeScope]::Descendants, $hideCondition
+                )
+                if ($null -ne $restoredHideButton) {
+                    $graphToggleTested = $true
+                    $graphToggleResult = 'hide and show controls invoked; original state restored'
+                } else {
+                    $graphToggleResult = 'show invoked, but restored hide control was not exposed'
+                }
+            } else {
+                $graphToggleResult = 'hide invoked, but show control was not exposed'
+            }
+        }
+    } catch {
+        # Avoid storing arbitrary exception messages or private UI text in artifacts.
+        $graphToggleResult = 'Windows UI Automation could not invoke both graph controls'
+    }
+    # Compose Desktop may not expose its button semantics through Windows UIA.
+    # In that case use the actual on-screen Hide/Show buttons, then prove the
+    # chart area disappeared and returned from real Windows pixel captures.
+    $graphHiddenScreenshot = $null
+    $graphRestoredScreenshot = $null
+    if (-not $graphToggleTested -and $captureWidth -ge 800 -and $captureHeight -ge 600) {
+        function Save-GraphInteractionCapture {
+            param([string]$Destination)
+            $shot = [System.Drawing.Bitmap]::new($captureWidth, $captureHeight)
+            $g = [System.Drawing.Graphics]::FromImage($shot)
+            try {
+                $g.CopyFromScreen(
+                    [System.Drawing.Point]::new($captureLeft, $captureTop),
+                    [System.Drawing.Point]::Empty,
+                    [System.Drawing.Size]::new($captureWidth, $captureHeight)
+                )
+                $shot.Save($Destination, [System.Drawing.Imaging.ImageFormat]::Png)
+            } finally {
+                $g.Dispose()
+                $shot.Dispose()
+            }
+        }
+        function Get-GraphBlueSampleCount {
+            param([string]$Path)
+            $shot = [System.Drawing.Bitmap]::FromFile($Path)
+            try {
+                $count = 0
+                # Stable center of the transfer chart, excluding the blue
+                # action button and all file-details text.
+                $left = [int]($shot.Width * 0.69)
+                $right = [int]($shot.Width * 0.95)
+                $top = [int]($shot.Height * 0.19)
+                $bottom = [int]($shot.Height * 0.34)
+                for ($y = $top; $y -lt $bottom; $y += 3) {
+                    for ($x = $left; $x -lt $right; $x += 3) {
+                        $pixel = $shot.GetPixel($x, $y)
+                        if (($pixel.B - $pixel.R) -gt 12 -and
+                            ($pixel.B - $pixel.G) -gt 5 -and $pixel.G -gt 180) {
+                            $count++
+                        }
+                    }
+                }
+                return $count
+            } finally {
+                $shot.Dispose()
+            }
+        }
+        $originalBlueCount = Get-GraphBlueSampleCount -Path $screenshot
+        if ($originalBlueCount -gt 1000 -and
+            [HyperGetLiquidProgressNative]::GetForegroundWindow() -eq $windowHandle) {
+            $clickX = $captureRight - [int][Math]::Round($captureWidth * 0.06)
+            $clickY = $captureTop + [int][Math]::Round($captureHeight * 0.12)
+            $graphHiddenScreenshot = Join-Path $root 'liquid-progress-graph-hidden.png'
+            $graphRestoredScreenshot = Join-Path $root 'liquid-progress-graph-restored.png'
+            foreach ($target in @($graphHiddenScreenshot, $graphRestoredScreenshot)) {
+                if (-not [HyperGetLiquidProgressNative]::SetCursorPos($clickX, $clickY)) {
+                    throw 'Could not position the mouse for the real graph toggle test.'
+                }
+                [HyperGetLiquidProgressNative]::mouse_event([uint32]0x0002, 0, 0, 0, [UIntPtr]::Zero)
+                [HyperGetLiquidProgressNative]::mouse_event([uint32]0x0004, 0, 0, 0, [UIntPtr]::Zero)
+                Start-Sleep -Milliseconds 350
+                Save-GraphInteractionCapture -Destination $target
+            }
+            $hiddenBlueCount = Get-GraphBlueSampleCount -Path $graphHiddenScreenshot
+            $restoredBlueCount = Get-GraphBlueSampleCount -Path $graphRestoredScreenshot
+            if ($hiddenBlueCount -lt $originalBlueCount * 0.25 -and
+                $restoredBlueCount -gt $originalBlueCount * 0.5) {
+                $graphToggleTested = $true
+                $graphToggleResult = 'real mouse clicks hid and restored the chart; Windows pixel evidence verified'
+            } else {
+                throw ("Graph hide/show failed real Windows pixel verification: original={0}, hidden={1}, restored={2}." -f
+                    $originalBlueCount, $hiddenBlueCount, $restoredBlueCount)
+            }
+        } else {
+            $graphToggleResult = 'Windows graph pixel probe unavailable (small window or no foreground chart)'
+        }
+    }
+    Write-Host "Graph toggle interaction: $graphToggleResult"
+
+    # Capture the two other REAL IDM-style tabs for later visual comparison.
+    # This deliberately records evidence rather than claiming pixel-perfect
+    # parity with historical IDM screenshots that are not in this repository.
+    # Positions are restricted to the known 1024x728 Windows CI fixture;
+    # never click at guessed coordinates on other display layouts/DPI.
+    $tabCaptureResult = 'not captured (different window size or foreground)'
+    $tabCaptureFiles = @()
+    $completionPreferenceDiskTested = $false
+    $completionPreferenceDiskResult = 'not attempted'
+    if ($captureWidth -ge 980 -and $captureWidth -le 1080 -and
+        $captureHeight -ge 680 -and $captureHeight -le 770 -and
+        [HyperGetLiquidProgressNative]::GetForegroundWindow() -eq $windowHandle) {
+        function Save-TabCapture {
+            param([string]$Destination)
+            $shot = [System.Drawing.Bitmap]::new($captureWidth, $captureHeight)
+            $g = [System.Drawing.Graphics]::FromImage($shot)
+            try {
+                $g.CopyFromScreen(
+                    [System.Drawing.Point]::new($captureLeft, $captureTop),
+                    [System.Drawing.Point]::Empty,
+                    [System.Drawing.Size]::new($captureWidth, $captureHeight)
+                )
+                $shot.Save($Destination, [System.Drawing.Imaging.ImageFormat]::Png)
+            } finally {
+                $g.Dispose()
+                $shot.Dispose()
+            }
+        }
+        try {
+            $tabClickY = $captureTop + 47
+            $tabClicks = @(
+                @{ Name = 'speed'; OffsetX = 81 },
+                @{ Name = 'on-completion'; OffsetX = 174 },
+                @{ Name = 'info-restored'; OffsetX = 28 }
+            )
+            foreach ($tab in $tabClicks) {
+                if ([HyperGetLiquidProgressNative]::GetForegroundWindow() -ne $windowHandle) {
+                    throw 'Details window lost foreground during tab screenshot capture.'
+                }
+                $tabClickX = $captureLeft + [int]$tab.OffsetX
+                if (-not [HyperGetLiquidProgressNative]::SetCursorPos($tabClickX, $tabClickY)) {
+                    throw 'Could not position mouse to capture a download details tab.'
+                }
+                [HyperGetLiquidProgressNative]::mouse_event([uint32]0x0002, 0, 0, 0, [UIntPtr]::Zero)
+                [HyperGetLiquidProgressNative]::mouse_event([uint32]0x0004, 0, 0, 0, [UIntPtr]::Zero)
+                Start-Sleep -Milliseconds 450
+                $tabImage = Join-Path $root ("liquid-progress-tab-{0}.png" -f $tab.Name)
+                Save-TabCapture -Destination $tabImage
+                $tabCaptureFiles += [IO.Path]::GetFileName($tabImage)
+
+                if ($tab.Name -eq 'on-completion') {
+                    # Only the non-destructive completion-dialog switch is
+                    # touched. Never click the shutdown-on-completion control.
+                    # Verify real screen pixels before any coordinate click.
+                    $preview = [System.Drawing.Bitmap]::FromFile($tabImage)
+                    $safeToProbe = $false
+                    $initialEnabled = $false
+                    try {
+                        $selectedLine = $preview.GetPixel(175, 61)
+                        $toggleSample = $preview.GetPixel(($preview.Width - 55), 150)
+                        $tabIsSelected = ($selectedLine.B -gt ($selectedLine.R + 90))
+                        $toggleIsBlue = ($toggleSample.B -gt ($toggleSample.R + 45))
+                        $toggleIsGray = (
+                            [Math]::Abs([int]$toggleSample.B - [int]$toggleSample.R) -le 16 -and
+                            [int]$toggleSample.R -ge 60 -and [int]$toggleSample.R -le 225
+                        )
+                        if ($tabIsSelected -and ($toggleIsBlue -or $toggleIsGray)) {
+                            $safeToProbe = $true
+                            $initialEnabled = $toggleIsBlue
+                        }
+                    } finally {
+                        $preview.Dispose()
+                    }
+                    if ($safeToProbe) {
+                        $settingFile = Join-Path $env:USERPROFILE (
+                            ".personal-download-manager\config\download_db\extra_download_settings\{0}.json" -f $taskId
+                        )
+                        $allPersisted = $true
+                        $clickX = $captureRight - 55
+                        $clickY = $captureTop + 150
+                        # The second click restores the original selection.
+                        foreach ($expected in @((-not $initialEnabled), $initialEnabled)) {
+                            if (-not [HyperGetLiquidProgressNative]::SetCursorPos($clickX, $clickY)) {
+                                throw 'Could not position mouse for completion preference test.'
+                            }
+                            [HyperGetLiquidProgressNative]::mouse_event([uint32]0x0002, 0, 0, 0, [UIntPtr]::Zero)
+                            [HyperGetLiquidProgressNative]::mouse_event([uint32]0x0004, 0, 0, 0, [UIntPtr]::Zero)
+                            $matched = $false
+                            for ($attempt = 0; $attempt -lt 30; $attempt++) {
+                                Start-Sleep -Milliseconds 200
+                                if (Test-Path -LiteralPath $settingFile -PathType Leaf) {
+                                    try {
+                                        $stored = Get-Content -LiteralPath $settingFile -Raw | ConvertFrom-Json
+                                        if (($stored.PSObject.Properties.Name -contains 'showCompletionDialogOverride') -and
+                                            ([bool]$stored.showCompletionDialogOverride -eq [bool]$expected)) {
+                                            $matched = $true
+                                            break
+                                        }
+                                    } catch {
+                                        # A transactional file rename may still be in progress.
+                                    }
+                                }
+                            }
+                            if (-not $matched) { $allPersisted = $false }
+                        }
+                        $completionPreferenceDiskTested = $allPersisted
+                        $completionPreferenceDiskResult = if ($allPersisted) {
+                            'Windows mouse toggle off/on persisted both values to per-download JSON'
+                        } else {
+                            'per-download completion preference disk roundtrip not confirmed'
+                        }
+                    } else {
+                        $completionPreferenceDiskResult = 'switch or selected tab pixel confirmation unavailable'
+                    }
+                }
+            }
+            $tabCaptureResult = 'real Windows click screenshots recorded for human IDM tab review'
+        } catch {
+            # Screenshots are evidence for review, not an acceptance test that
+            # could mask or invalidate the already verified data transfer.
+            $tabCaptureResult = 'tab screenshot probe failed (not visually accepted)'
+        }
+    }
+    Write-Host "IDM tab screenshot capture: $tabCaptureResult"
 
     $completed = $false
     $finalStats = $null
@@ -545,6 +843,14 @@ public static class HyperGetLiquidProgressNative {
         ExpectedSHA256 = $expectedSha
         ActualSHA256 = $actualSha
         Screenshot = [IO.Path]::GetFileName($screenshot)
+        GraphToggleTested = $graphToggleTested
+        GraphToggleResult = $graphToggleResult
+        GraphHiddenScreenshot = if ($graphHiddenScreenshot) { [IO.Path]::GetFileName($graphHiddenScreenshot) } else { $null }
+        GraphRestoredScreenshot = if ($graphRestoredScreenshot) { [IO.Path]::GetFileName($graphRestoredScreenshot) } else { $null }
+        TabCaptureResult = $tabCaptureResult
+        TabScreenshotFiles = @($tabCaptureFiles)
+        CompletionPreferenceDiskTested = $completionPreferenceDiskTested
+        CompletionPreferenceDiskResult = $completionPreferenceDiskResult
         FinalStatus = $finalStatus
         Verified = $true
     } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $root 'liquid-progress-report.json') -Encoding utf8

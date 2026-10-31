@@ -28,11 +28,18 @@ class FontManager(
 ) {
     companion object {
         private const val DEFAULT_FONT_ID = "default"
+        @OptIn(ExperimentalTextApi::class)
         val defaultFontInfo = FontInfo(
             id = DEFAULT_FONT_ID,
             uri = "",
             name = Res.string.default.asStringSource(),
-            fontFamily = FontFamily.Default,
+            // Native Windows typography when available; an explicit user
+            // font selection still takes precedence through currentFontInfo.
+            fontFamily = if (
+                System.getProperty("os.name").orEmpty().startsWith("Windows", ignoreCase = true) &&
+                GraphicsEnvironment.getLocalGraphicsEnvironment().availableFontFamilyNames
+                    .any { it.equals("Segoe UI", ignoreCase = true) }
+            ) FontFamily("Segoe UI") else FontFamily.Default,
         )
 
         fun getUsableFontFamilyNamesOfSystem(): List<String> {

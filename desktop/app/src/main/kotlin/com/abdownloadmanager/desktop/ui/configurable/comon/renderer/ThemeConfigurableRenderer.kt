@@ -2,13 +2,14 @@ package com.abdownloadmanager.desktop.ui.configurable.comon.renderer
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -16,7 +17,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.unit.dp
 import com.abdownloadmanager.desktop.ui.configurable.ConfigTemplate
 import com.abdownloadmanager.shared.ui.configurable.ConfigurableRenderer
@@ -61,21 +61,33 @@ object ThemeConfigurableRenderer : ConfigurableRenderer<ThemeConfigurable> {
                                 alpha(0.5f)
                             }
                         ) {
-                            Spacer(
+                            // True candidate preview: background, panel and accent.
+                            val swatchShape = RoundedCornerShape(5.dp)
+                            Box(
                                 Modifier
-                                    .clip(CircleShape)
-                                    .border(
-                                        1.dp,
-                                        Brush.verticalGradient(myColors.primaryGradientColors),
-                                        CircleShape
-                                    )
-                                    .padding(1.dp)
-                                    .background(
-                                        it.color,
-                                    )
-                                    .size(16.dp)
-                            )
-                            Spacer(Modifier.width(16.dp))
+                                    .size(width = 42.dp, height = 24.dp)
+                                    .clip(swatchShape)
+                                    .background(it.backgroundColor)
+                                    .border(1.dp, myColors.onBackground.copy(alpha = 0.25f), swatchShape)
+                            ) {
+                                Spacer(
+                                    Modifier
+                                        .align(Alignment.CenterStart)
+                                        .padding(start = 4.dp)
+                                        .size(width = 21.dp, height = 15.dp)
+                                        .clip(RoundedCornerShape(3.dp))
+                                        .background(it.color)
+                                )
+                                Spacer(
+                                    Modifier
+                                        .align(Alignment.BottomEnd)
+                                        .padding(end = 4.dp, bottom = 4.dp)
+                                        .size(width = 14.dp, height = 6.dp)
+                                        .clip(RoundedCornerShape(3.dp))
+                                        .background(it.accentColor)
+                                )
+                            }
+                            Spacer(Modifier.width(10.dp))
                             Text(cfg.describe(it).rememberString(), fontSize = myTextSizes.lg)
                         }
                     })

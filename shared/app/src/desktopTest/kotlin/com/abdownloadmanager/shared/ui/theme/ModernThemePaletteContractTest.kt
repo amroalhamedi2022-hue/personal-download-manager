@@ -75,6 +75,21 @@ class ModernThemePaletteContractTest {
     }
 
     @Test
+    fun themeSelectorSwatchesReflectEachCandidateRatherThanTheActiveTheme() {
+        DefaultThemes.getAll().forEach { theme ->
+            val preview = theme.toThemeInfo()
+            assertEquals(theme.id, preview.id)
+            assertEquals(theme.surface, preview.color)
+            assertEquals(theme.background, preview.backgroundColor)
+            assertEquals(theme.primary, preview.accentColor)
+        }
+        val dark = DefaultThemes.hyperGetDark.toThemeInfo()
+        val light = DefaultThemes.hyperGetLight.toThemeInfo()
+        assertTrue(dark.backgroundColor != light.backgroundColor)
+        assertTrue(dark.accentColor != dark.color)
+    }
+
+    @Test
     fun modernAccentButtonsMeetMinimumFourPointFiveToOneContrast() {
         DefaultThemes.getAll()
             .filter { theme -> families.any { theme.id.startsWith("${it}_") } }

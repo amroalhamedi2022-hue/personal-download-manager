@@ -8,22 +8,34 @@ import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.RoundRect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
 import com.abdownloadmanager.desktop.pages.singleDownloadPage.SingleDownloadPageSections.*
 import com.abdownloadmanager.resources.Res
@@ -44,6 +56,7 @@ import com.abdownloadmanager.shared.util.ui.icon.MyIcons
 import com.abdownloadmanager.shared.util.ui.theme.myShapes
 import com.abdownloadmanager.shared.util.ui.theme.mySpacings
 import com.abdownloadmanager.shared.util.ui.theme.myTextSizes
+import com.abdownloadmanager.shared.util.ui.theme.LocalTextSizes
 import com.abdownloadmanager.shared.util.ui.widget.MyIcon
 import ir.amirab.downloader.downloaditem.DownloadJobStatus
 import ir.amirab.downloader.monitor.*
@@ -83,17 +96,30 @@ private val tabs = entries.toList()
 // at the animation frame rate.
 private val LocalLiquidAnimationPhase = compositionLocalOf<State<Float>> { mutableFloatStateOf(0f) }
 
+// The reference is an electric-blue-to-cyan glass liquid, not a flat theme gradient.
+// Non-downloading statuses still keep their semantic colors below.
+private val referenceLiquidColors = listOf(
+    Color(0xFF122AEF), Color(0xFF143CF5), Color(0xFF0766FC),
+    Color(0xFF0795FB), Color(0xFF00C5F5), Color(0xFF00DFEB),
+)
+
 @Composable
 fun ProgressDownloadPage(
     singleDownloadComponent: DesktopSingleDownloadComponent,
     itemState: ProcessingDownloadItemState
 ) {
     var selectedTab by remember { mutableStateOf(Info) }
+    val showSpeedGraph by singleDownloadComponent.showSpeedGraph.collectAsState()
     val showPartInfo by singleDownloadComponent.showPartInfo.collectAsState()
     val setShowPartInfo = singleDownloadComponent::setShowPartInfo
     val downloadHasError by singleDownloadComponent.lastError.collectAsState()
     val resizingState = LocalSingleDownloadPageSizing.current
     val horizontalPadding = 16.dp
+    // Refined Windows type scale for the approved file-download dialog.
+    // Stay within this window: users' global font/scale settings still apply.
+    val downloadTextSizes = myTextSizes.copy(
+        sm = 12.sp, base = 14.sp, lg = 16.sp, xl = 18.sp,
+    )
 
     // Only sample actual monitor speeds while this window is composed.
     // Bounded at 90 seconds, including zero during pause/retry.
@@ -146,55 +172,70 @@ fun ProgressDownloadPage(
             setShowPartInfo(false)
         }
     }
-    CompositionLocalProvider(LocalLiquidAnimationPhase provides liquidPhaseState) {
-    Column(
-        Modifier.fillMaxSize()
+    CompositionLocalProvider(
+        LocalLiquidAnimationPhase provides liquidPhaseState,
+        LocalTextSizes provides downloadTextSizes,
+        LocalTextStyle provides LocalTextStyle.current.copy(
+            fontSize = downloadTextSizes.base,
+            lineHeight = 18.sp,
+        ),
     ) {
+    Column(Modifier.fillMaxSize().background(Color(0xFFF4F7FB))) {
+        // Tabs outside the bordered information panel, like the approved design.
+        MyTabRow {
+            for (tab in tabs) {
+                MyTab(
+                    selected = tab == selectedTab,
+                    onClick = { selectedTab = tab },
+                    icon = tab.icon,
+                    title = tab.title,
+                    // The approved IDM-style layout uses clean text-only tabs.
+                    showIcon = false,
+                    showSelectionUnderline = true,
+                )
+            }
+        }
+        val scrollState = rememberScrollState()
+        // The information panel always starts at its own top when changing tabs.
+        LaunchedEffect(selectedTab) { scrollState.scrollTo(0) }
+        val panelShape = RoundedCornerShape(10.dp)
+        // Info keeps room for the live chart. Speed and On Completion have only
+        // two controls each; reclaim their unused space for the parts table.
+        // The scrolling content still protects long labels and higher DPI.
+        val panelHeight = when (selectedTab) {
+            Info -> if (showSpeedGraph) 232.dp else 196.dp
+            Settings, OnCompletion -> 144.dp
+        }
         Column(
             Modifier
-                .clip(myShapes.defaultRounded)
-                .padding(1.dp),
+                .padding(horizontal = 12.dp, vertical = 4.dp)
+                .clip(panelShape)
+                .border(1.dp, Color(0xFFD7E0EB), panelShape)
+                .background(Color.White)
         ) {
-            //tabs
-            MyTabRow {
-                for (tab in tabs) {
-                    MyTab(
-                        selected = tab == selectedTab,
-                        onClick = {
-                            selectedTab = tab
-                        },
-                        icon = tab.icon,
-                        title = tab.title,
-                    )
-                }
-            }
-            val scrollState = rememberScrollState()
-            //info / settings ...
-            val tabContentModifier = Modifier
-
-            Spacer(Modifier.fillMaxWidth().height(1.dp).background(myColors.surface))
             Box(
                 Modifier
-                    .height(220.dp)
-                    .background(myColors.background)
+                    .fillMaxWidth()
+                    .height(panelHeight)
                     .verticalScroll(scrollState)
             ) {
                 when (selectedTab) {
                     Info -> RenderInfo(
-                        tabContentModifier,
-                        horizontalPadding,
-                        singleDownloadComponent,
-                        speedHistory,
+                        modifier = Modifier,
+                        horizontalPadding = horizontalPadding,
+                        singleDownloadComponent = singleDownloadComponent,
+                        speedHistory = speedHistory,
+                        itemState = itemState,
+                        showGraph = showSpeedGraph,
+                        onToggleGraph = { singleDownloadComponent.setShowSpeedGraph(!showSpeedGraph) },
                     )
-
                     Settings -> RenderSettings(
-                        modifier = tabContentModifier.padding(end = 12.dp),
+                        modifier = Modifier.padding(end = 12.dp),
                         horizontalPadding = horizontalPadding,
                         singleDownloadComponent = singleDownloadComponent,
                     )
-
                     OnCompletion -> RenderOnCompletion(
-                        modifier = tabContentModifier.padding(end = 12.dp),
+                        modifier = Modifier.padding(end = 12.dp),
                         horizontalPadding = horizontalPadding,
                         singleDownloadComponent = singleDownloadComponent,
                     )
@@ -212,28 +253,21 @@ fun ProgressDownloadPage(
                 .background(myColors.onBackground / 0.15f)
         )
         Column(
-            Modifier
-                .weight(1f)
-                .background(myColors.surface / 0.5f)
+            Modifier.weight(1f).background(Color(0xFFF4F7FB))
         ) {
-            Column(
-                Modifier
-                    .padding(horizontal = horizontalPadding)
-            ) {
-                Spacer(Modifier.size(8.dp))
+            Column(Modifier.padding(horizontal = horizontalPadding)) {
+                Spacer(Modifier.height(9.dp))
                 RenderProgressBar(itemState)
-                Spacer(Modifier.size(8.dp))
-                RenderTransferSummary(itemState)
-                Spacer(Modifier.size(8.dp))
-                RenderActions(
+                Spacer(Modifier.height(8.dp))
+                RenderTransferSummary(
                     itemState = itemState,
                     singleDownloadComponent = singleDownloadComponent,
                     showingPartInfo = showPartInfo,
                     onRequestShowPartInfo = setShowPartInfo,
                     downloadErrorReason = downloadHasError,
-                    onRequestShowDownloadError = singleDownloadComponent::openDownloadErrorPage
+                    onRequestShowDownloadError = singleDownloadComponent::openDownloadErrorPage,
                 )
-                Spacer(Modifier.size(8.dp))
+                Spacer(Modifier.height(7.dp))
             }
             if (showPartInfo) {
                 RenderPartInfo(
@@ -252,7 +286,14 @@ fun ProgressDownloadPage(
  * Match the approved transfer strip; percentage is in the native title only.
  */
 @Composable
-private fun RenderTransferSummary(itemState: ProcessingDownloadItemState) {
+private fun RenderTransferSummary(
+    itemState: ProcessingDownloadItemState,
+    singleDownloadComponent: DesktopSingleDownloadComponent,
+    showingPartInfo: Boolean,
+    onRequestShowPartInfo: (Boolean) -> Unit,
+    downloadErrorReason: DownloadErrorReason?,
+    onRequestShowDownloadError: () -> Unit,
+) {
     val units = LocalSizeUnit.current
     val downloaded = convertPositiveSizeToHumanReadable(itemState.progress.coerceAtLeast(0L), units).rememberString()
     val total = itemState.contentLength.takeIf { it > 0L }?.let {
@@ -266,9 +307,46 @@ private fun RenderTransferSummary(itemState: ProcessingDownloadItemState) {
         val secs = (seconds % 60).toString().padStart(2, '0')
         if (hours > 0) "${hours}:${mins}:${secs}" else "${mins}:${secs}"
     } ?: "—"
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        Text("${downloaded} of ${total}", fontSize = myTextSizes.base)
-        Text("${remaining} remaining (${speed}/s)", fontSize = myTextSizes.base)
+    // Reference: byte summary on the left, buttons centered, ETA and speed on the right.
+    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "${downloaded} of ${total}",
+                fontSize = myTextSizes.base,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.width(5.dp))
+            PartInfoButton(showingPartInfo, onRequestShowPartInfo)
+            downloadErrorReason?.let {
+                Spacer(Modifier.width(4.dp))
+                DownloadErrorInfoButton(it, onRequestShowDownloadError)
+            }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            ToggleButton(
+                itemState = itemState,
+                toggle = singleDownloadComponent::toggle,
+                pause = singleDownloadComponent::pause,
+            )
+            Spacer(Modifier.width(10.dp))
+            CancelButton(
+                cancel = singleDownloadComponent::cancel,
+                icon = if (singleDownloadComponent.deletePartialFileOnDownloadCancellation.collectAsState().value) {
+                    MyIcons.stop
+                } else null,
+            )
+        }
+        Text(
+            "${remaining} remaining  (${speed}/s)",
+            modifier = Modifier.weight(1f),
+            textAlign = TextAlign.End,
+            fontSize = myTextSizes.base,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
@@ -298,26 +376,67 @@ private fun RenderSettings(
  * No simulated waveform or unbounded per-download samples.
  */
 @Composable
-private fun RealSpeedHistoryChart(history: List<Long>, modifier: Modifier = Modifier) {
+private fun RealSpeedHistoryChart(
+    history: List<Long>, modifier: Modifier = Modifier,
+    onHideGraph: () -> Unit,
+) {
     // Actual monitor byte deltas; sampled once per second with a hard 90-s cap.
     val samples = history.toList()
     val observedMaxSpeed = samples.maxOrNull() ?: 0L
     val maxSpeed = observedMaxSpeed.coerceAtLeast(1L)
     val currentSpeed = samples.lastOrNull() ?: 0L
     val speedUnit = LocalSizeUnit.current
-    val lineColor = myColors.primary
-    val fillColor = myColors.primary.copy(alpha = 0.27f)
+    val lineColor = Color(0xFF11B9E8)
+    val fillColor = Color(0xFF1D9DEE).copy(alpha = 0.30f)
     val gridColor = myColors.onBackground / 10
     val currentText = convertPositiveSizeToHumanReadable(currentSpeed, speedUnit).rememberString()
     val peakText = convertPositiveSizeToHumanReadable(observedMaxSpeed, speedUnit).rememberString()
     Column(modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("Transfer rate", fontSize = myTextSizes.base, color = myColors.onBackground)
-            Text("$currentText/s", fontSize = myTextSizes.base, color = myColors.onBackground)
+            Text(
+                "Transfer rate",
+                fontSize = myTextSizes.base,
+                fontWeight = FontWeight.SemiBold,
+                color = myColors.onBackground,
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "$currentText/s",
+                    fontSize = myTextSizes.base,
+                    fontWeight = FontWeight.Medium,
+                    color = myColors.onBackground,
+                )
+                Spacer(Modifier.width(8.dp))
+                ActionButton(
+                    text = "Hide graph",
+                    onClick = onHideGraph,
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 5.dp),
+                )
+            }
         }
-        Text("Peak: $peakText/s  •  Last 90 seconds", fontSize = myTextSizes.base, color = myColors.onBackground / 0.7f)
-        Spacer(Modifier.height(4.dp))
-        Canvas(Modifier.fillMaxWidth().height(132.dp).clip(myShapes.defaultRounded).background(myColors.surface)) {
+        Spacer(Modifier.height(6.dp))
+        Row(Modifier.fillMaxWidth().height(154.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(
+                Modifier.width(58.dp).fillMaxHeight(),
+                verticalArrangement = Arrangement.SpaceBetween,
+            ) {
+                for (tick in 4 downTo 0) {
+                    Text(
+                        convertPositiveSizeToHumanReadable((maxSpeed.toDouble() * tick / 4.0).toLong(), speedUnit).rememberString(),
+                        fontSize = myTextSizes.sm,
+                        color = myColors.onBackground / 0.70f,
+                        maxLines = 1,
+                    )
+                }
+            }
+            Spacer(Modifier.width(4.dp))
+            Canvas(
+                Modifier.weight(1f).fillMaxHeight()
+                    .clip(myShapes.defaultRounded)
+                    .background(Brush.verticalGradient(
+                        listOf(Color(0xFFF7FBFF), Color(0xFFEAF5FF))
+                    ))
+            ) {
             repeat(4) { index ->
                 val y = size.height * (index + 1) / 5f
                 val x = size.width * (index + 1) / 5f
@@ -353,7 +472,16 @@ private fun RealSpeedHistoryChart(history: List<Long>, modifier: Modifier = Modi
             }
             drawPath(area, brush = Brush.verticalGradient(listOf(fillColor, Color.Transparent), startY = top, endY = bottom))
             drawPath(curve, color = lineColor, style = Stroke(width = 2.dp.toPx()))
+            }
         }
+        Spacer(Modifier.height(3.dp))
+        Text(
+            "Peak: $peakText/s  •  Last 90 seconds",
+            fontSize = myTextSizes.sm,
+            color = myColors.onBackground / 0.76f,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
@@ -410,13 +538,15 @@ private fun RenderProgressBar(itemState: IDownloadItemState) {
 
     LiquidProgressTrack(
         progress = progress,
-        colors = liquidColors,
+        colors = if (status == DownloadJobStatus.Downloading ||
+            status == DownloadJobStatus.Resuming || status is DownloadJobStatus.PreparingFile
+        ) referenceLiquidColors else liquidColors,
         // A retry timer owns no network transfer and must not animate like one.
         active = status == DownloadJobStatus.Downloading ||
             status == DownloadJobStatus.Resuming ||
             status is DownloadJobStatus.PreparingFile,
-        modifier = Modifier.fillMaxWidth().height(22.dp),
-        bubbleCount = 12,
+        modifier = Modifier.fillMaxWidth().height(42.dp),
+        bubbleCount = 18,
         showCompletionIcon = true,
     )
 }
@@ -434,118 +564,160 @@ private fun LiquidProgressTrack(
     active: Boolean,
     modifier: Modifier,
     bubbleCount: Int,
+    compact: Boolean = false,
     showCompletionIcon: Boolean = false,
 ) {
+    // Downloaded bytes, not the animation phase, determine the filled width.
     val animatedProgress = animateFloatAsState(
         targetValue = progress?.coerceIn(0f, 1f) ?: 0f,
         animationSpec = tween(180, easing = LinearEasing),
     )
-    // Read the shared phase only inside Canvas. An idle track stays static;
-    // the sole infinite transition is disposed when no track is active.
     val sharedPhase = LocalLiquidAnimationPhase.current
-    val shape = myShapes.defaultRounded
+    val trackShape = if (compact) RoundedCornerShape(4.dp) else CircleShape
 
     Box(
         modifier
-            .clip(shape)
-            .background(myColors.onBackground / 15)
-            .border(1.dp, myColors.onBackground / 10, shape)
+            .clip(trackShape)
+            .background(Brush.horizontalGradient(listOf(Color(0xFFEAF0F7), Color(0xFFDDE5F0))))
+            .border(if (compact) 0.75.dp else 1.dp, Color(0xFFBFCAD9), trackShape)
     ) {
-        Canvas(Modifier.fillMaxSize()) {
-            if (progress == null && !active) return@Canvas
-            val phase = if (active) sharedPhase.value else 0f
-            val currentProgress = animatedProgress.value
-
-            val isIndeterminate = progress == null
-            val nominalEnd = if (isIndeterminate) {
-                size.width * (phase * 1.45f)
-            } else {
-                size.width * currentProgress
-            }
-            val startX = if (isIndeterminate) {
-                (nominalEnd - size.width * 0.38f).coerceAtLeast(0f)
-            } else {
-                0f
-            }
-            val endX = nominalEnd.coerceIn(0f, size.width)
-            if (endX <= startX) return@Canvas
-
-            val amplitude = if (!isIndeterminate && currentProgress >= 0.995f) {
-                0f
-            } else {
-                size.height * 0.16f
-            }
-            val liquidPath = Path().apply {
-                moveTo(startX, 0f)
-                lineTo(endX, 0f)
-                val steps = 14
-                for (step in 0..steps) {
-                    val y = size.height * step / steps
-                    val angle = (step.toFloat() / steps * PI * 2.0) + (phase * PI * 2.0)
-                    val waveX = (endX + sin(angle).toFloat() * amplitude)
-                        .coerceIn(startX, size.width)
-                    lineTo(waveX, y)
-                }
-                lineTo(startX, size.height)
-                close()
-            }
-            drawPath(
-                path = liquidPath,
-                brush = Brush.linearGradient(
+        Spacer(
+            Modifier.fillMaxSize().drawWithCache {
+                // All brushes and mutable paths are created on cache invalidation,
+                // not on each phase tick. All tracks share the outer animation clock.
+                val liquidBrush = Brush.horizontalGradient(
                     colors = colors,
-                    start = Offset(startX, 0f),
-                    end = Offset(endX.coerceAtLeast(startX + 1f), size.height),
+                    startX = 0f,
+                    endX = size.width.coerceAtLeast(1f),
                 )
-            )
-
-            // Top specular gloss highlight for 3D liquid reflection
-            if (endX - startX > 4.dp.toPx()) {
-                val glossHeight = (size.height * 0.28f).coerceAtLeast(1.5f)
-                drawRoundRect(
-                    brush = Brush.verticalGradient(
-                        colors = listOf(
-                            Color.White.copy(alpha = 0.45f),
-                            Color.White.copy(alpha = 0.05f)
-                        ),
-                        startY = 0f,
-                        endY = glossHeight
+                val glassTop = Brush.verticalGradient(
+                    colors = listOf(
+                        Color.White.copy(alpha = 0.48f),
+                        Color.White.copy(alpha = 0.11f),
+                        Color.Transparent,
                     ),
-                    topLeft = Offset(startX + 2.dp.toPx(), 1.dp.toPx()),
-                    size = androidx.compose.ui.geometry.Size(
-                        (endX - startX - 4.dp.toPx()).coerceAtLeast(0f),
-                        glossHeight
-                    ),
-                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(glossHeight / 2f)
+                    startY = 0f,
+                    endY = size.height * 0.34f,
                 )
-            }
+                val glassDepth = Brush.verticalGradient(
+                    colors = listOf(Color.Transparent, Color(0xFF06265C).copy(alpha = 0.24f)),
+                    startY = size.height * 0.4f,
+                    endY = size.height,
+                )
+                val fillClip = Path()
+                val surfaceWave = Path()
+                val secondaryWave = Path()
 
-            val liquidWidth = (endX - startX).coerceAtLeast(1f)
-            repeat(bubbleCount) { index ->
-                val speed = 0.28f + (index % 4) * 0.07f
-                val xRatio = ((index * 0.173f) + phase * speed) % 1f
-                val yRatio = ((index * 0.317f) + phase * (0.35f + index % 3 * 0.08f)) % 1f
-                val radius = size.height * (0.09f + (index % 3) * 0.04f)
-                val center = Offset(
-                    x = startX + liquidWidth * xRatio,
-                    y = size.height * (0.18f + yRatio * 0.64f),
-                )
-                if (center.x + radius < endX + amplitude) {
-                    // Bubble rim stroke
-                    drawCircle(
-                        color = Color.White.copy(alpha = 0.38f),
-                        radius = radius,
-                        center = center,
-                        style = Stroke(width = (radius * 0.35f).coerceAtLeast(0.8f)),
+                onDrawBehind {
+                    if (size.width <= 0f || size.height <= 0f || (progress == null && !active)) {
+                        return@onDrawBehind
+                    }
+                    val phase = if (active) sharedPhase.value else 0f
+                    val fraction = if (progress == null) {
+                        // An unknown-size transfer uses a traveling capsule.
+                        // Known-size transfers never use this animation for progress.
+                        0.32f
+                    } else animatedProgress.value.coerceIn(0f, 1f)
+                    val fillWidth = size.width * fraction
+                    if (fillWidth <= 0f) return@onDrawBehind
+
+                    val radius = (if (compact) 4.dp.toPx() else size.height / 2f)
+                        .coerceAtMost(fillWidth / 2f)
+                    val startX = if (progress == null) {
+                        (size.width - fillWidth) * phase.coerceIn(0f, 1f)
+                    } else 0f
+                    val finishX = startX + fillWidth
+                    fillClip.reset()
+                    fillClip.addRoundRect(
+                        RoundRect(startX, 0f, finishX, size.height, CornerRadius(radius))
                     )
-                    // Inner soft bubble highlight dot for 3D depth
-                    drawCircle(
-                        color = Color.White.copy(alpha = 0.55f),
-                        radius = (radius * 0.32f).coerceAtLeast(0.5f),
-                        center = Offset(center.x - radius * 0.3f, center.y - radius * 0.3f),
+                    clipPath(fillClip) {
+                        // Scale a stable cached horizontal shader so cyan appears
+                        // at the actual fluid front even at low completion percentages.
+                        withTransform({
+                            translate(left = startX, top = 0f)
+                            scale(scaleX = fraction, scaleY = 1f, pivot = Offset.Zero)
+                        }) {
+                            drawRect(brush = liquidBrush, size = Size(size.width, size.height))
+                        }
+                        drawRect(brush = glassDepth)
+                        drawRect(brush = glassTop)
+
+                        // Two traveling crests inside the fluid, matching the
+                        // brighter rolling surface visible in the approved image.
+                        // The geometry is clipped to the real downloaded fraction.
+                        surfaceWave.reset()
+                        surfaceWave.moveTo(startX, 0f)
+                        surfaceWave.lineTo(finishX, 0f)
+                        for (step in 24 downTo 0) {
+                            val x = startX + fillWidth * step / 24f
+                            val angle = (step / 24f * PI * 3.5 + phase * PI * 2.0)
+                            val y = size.height * (0.19f + sin(angle).toFloat() * 0.09f)
+                            surfaceWave.lineTo(x, y)
+                        }
+                        surfaceWave.close()
+                        drawPath(surfaceWave, color = Color.White.copy(alpha = 0.20f))
+
+                        secondaryWave.reset()
+                        secondaryWave.moveTo(startX, 0f)
+                        secondaryWave.lineTo(finishX, 0f)
+                        for (step in 24 downTo 0) {
+                            val x = startX + fillWidth * step / 24f
+                            val angle = (step / 24f * PI * 4.0 - phase * PI * 2.0)
+                            val y = size.height * (0.27f + sin(angle).toFloat() * 0.08f)
+                            secondaryWave.lineTo(x, y)
+                        }
+                        secondaryWave.close()
+                        drawPath(secondaryWave, color = Color(0xFFB3FFFF).copy(alpha = 0.15f))
+
+                        // Keep completed/paused parts still and uncluttered. Bubble
+                        // density follows the actual filled width, so a narrow part
+                        // never receives the same number as the full-size track.
+                        if (active && fillWidth > size.height * 1.1f) {
+                            val visibleBubbleCount = bubbleCount.coerceAtMost(
+                                (fillWidth / (size.height * if (compact) 0.50f else 0.60f))
+                                    .toInt().coerceAtLeast(0)
+                            )
+                            repeat(visibleBubbleCount) { index ->
+                                // Golden-ratio spacing avoids obvious rows or clumps.
+                                // The small sinusoidal drift is continuous at phase wrap.
+                                val drift = (
+                                    index * 0.618034f + 0.13f +
+                                        sin(phase.toDouble() * PI * 2.0 + index).toFloat() * 0.018f
+                                ) % 1f
+                                val lift = (index * 0.371f + phase * (0.58f + index % 3 * 0.13f)) % 1f
+                                val bubbleRadius = size.height * (0.058f + (index % 4) * 0.026f)
+                                val center = Offset(
+                                    x = startX + fillWidth * (0.08f + drift * 0.84f),
+                                    y = size.height * (0.88f - lift * 0.74f),
+                                )
+                                drawCircle(Color.White.copy(alpha = 0.11f), bubbleRadius * 1.6f, center)
+                                drawCircle(Color(0xFFB1F9FF).copy(alpha = 0.12f), bubbleRadius * 0.95f, center)
+                                drawCircle(
+                                    color = Color.White.copy(alpha = if (index % 3 == 0) 0.66f else 0.43f),
+                                    radius = bubbleRadius,
+                                    center = center,
+                                    style = Stroke(width = (bubbleRadius * 0.13f).coerceAtLeast(0.6f)),
+                                )
+                                drawCircle(
+                                    color = Color.White.copy(alpha = 0.86f),
+                                    radius = bubbleRadius * 0.11f,
+                                    center = Offset(center.x - bubbleRadius * 0.31f, center.y - bubbleRadius * 0.33f),
+                                )
+                            }
+                        }
+                    }
+                    // A thin glass edge helps the fluid stand out on light backgrounds.
+                    drawRoundRect(
+                        color = Color.White.copy(alpha = 0.48f),
+                        topLeft = Offset(startX, 0f),
+                        size = Size(fillWidth, size.height),
+                        cornerRadius = CornerRadius(radius),
+                        style = Stroke(width = 1.dp.toPx()),
                     )
                 }
             }
-        }
+        )
 
         if (showCompletionIcon && progress != null && progress >= 1f) {
             MyIcon(
@@ -570,7 +742,13 @@ private fun RenderPartInfo(
     itemState: ProcessingDownloadItemState,
     horizontalPadding: Dp,
 ) {
-    Column(modifier) {
+    Column(
+        modifier
+            .padding(horizontal = 10.dp, vertical = 4.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .border(1.dp, Color(0xFFD7E0EB), RoundedCornerShape(8.dp))
+            .background(Color.White)
+    ) {
         // The approved reference displays completed and waiting parts by default.
         var onlyActiveParts by rememberSaveable(itemState.id) { mutableStateOf(false) }
         Row(
@@ -578,17 +756,29 @@ private fun RenderPartInfo(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("Connections and downloaded parts", fontSize = myTextSizes.base)
+            Text(
+                "Connections and downloaded parts",
+                fontSize = myTextSizes.base,
+                fontWeight = FontWeight.SemiBold,
+            )
             val connected = itemState.parts.count { it.status == PartDownloadStatus.ReceivingData }
-            Text("${itemState.parts.size} parts • $connected connected", fontSize = myTextSizes.base)
+            Text(
+                "${itemState.parts.size} parts • $connected connected",
+                fontSize = myTextSizes.sm,
+                color = myColors.onBackground / 0.78f,
+            )
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.onClick { onlyActiveParts = !onlyActiveParts },
             ) {
-                Text("Only active", fontSize = myTextSizes.base)
+                Text("Only active", fontSize = myTextSizes.sm)
                 Spacer(Modifier.width(4.dp))
                 CheckBox(onlyActiveParts, { onlyActiveParts = it })
             }
+        }
+        // Keep the segmented bars and table in sync when Only active is selected.
+        val visibleParts = remember(itemState.parts, onlyActiveParts) {
+            selectVisibleDownloadParts(itemState.parts, onlyActiveParts)
         }
         val singleDownloadPageSizing = LocalSingleDownloadPageSizing.current
         val mutableInteractionSource = remember { MutableInteractionSource() }
@@ -600,44 +790,68 @@ private fun RenderPartInfo(
             Modifier.weight(1f)
         ) {
             RenderParts(
-                itemState.parts,
+                visibleParts.map { it.value },
                 Modifier
                     .padding(horizontal = horizontalPadding)
-                    .height(10.dp)
-                    .clip(myShapes.defaultRounded)
-                    .background(myColors.onBackground / 15)
+                    .height(20.dp)
             )
-            Box(
+            BoxWithConstraints(
                 Modifier.weight(1f)
             ) {
-                val listToShow = remember(itemState.parts, onlyActiveParts) {
-                    selectVisibleDownloadParts(itemState.parts, onlyActiveParts)
+                // Table columns must fit the visible download-details width.
+                // Their old 58+310+350+300dp defaults overflowed a 1024px
+                // display, hiding the Total column and horizontal scrollbar.
+                // Keep the existing resizable Table and status rendering.
+                val usableWidth = (maxWidth - horizontalPadding * 2 - 24.dp)
+                    .coerceAtLeast(608.dp)
+                val resizeWidth = usableWidth - 58.dp
+                val statusWidth = (resizeWidth * 0.35f).coerceIn(190.dp, 440.dp)
+                val downloadedWidth = (resizeWidth * 0.35f).coerceIn(190.dp, 450.dp)
+                val totalWidth = (resizeWidth - statusWidth - downloadedWidth)
+                    .coerceIn(170.dp, 410.dp)
+                val fittedTableState = remember(usableWidth) {
+                    TableState<IndexedValue<UiPart>, PartInfoCells>(
+                        cells = PartInfoCells.all(),
+                        initialCustomSizes = mapOf(
+                            PartInfoCells.Status to statusWidth,
+                            PartInfoCells.Downloaded to downloadedWidth,
+                            PartInfoCells.Total to totalWidth,
+                        ),
+                    )
                 }
                 Table(
-                    list = listToShow,
+                    list = visibleParts,
                     key = {
                         it.value.id
                     },
                     modifier = Modifier
-                        .fillMaxSize(),
+                        .fillMaxSize()
+                        .clip(RoundedCornerShape(5.dp))
+                        .border(1.dp, Color(0xFFD7E0EB), RoundedCornerShape(5.dp)),
                     wrapHeader = {
-                        WithContentAlpha(0.75f) {
+                        WithContentAlpha(0.85f) {
+                            CompositionLocalProvider(
+                                LocalTextStyle provides LocalTextStyle.current.copy(
+                                    fontSize = myTextSizes.sm,
+                                    fontWeight = FontWeight.SemiBold,
+                                    lineHeight = 16.sp,
+                                ),
+                            ) {
                             Box(
                                 Modifier
                                     .fillMaxWidth()
                                     .padding(horizontal = horizontalPadding)
+                                    .background(Color(0xFFF0F5FB))
+                                    .heightIn(min = 30.dp)
                                     .padding(vertical = 4.dp)
                             ) {
                                 it()
                             }
+                            }
                         }
                     },
-                    tableState = remember {
-                        TableState(
-                            cells = PartInfoCells.all()
-                        )
-                    },
-                    wrapItem = { _, _, content ->
+                    tableState = fittedTableState,
+                    wrapItem = { index, _, content ->
                         WithContentAlpha(1f) {
                             val interactionSource = remember { MutableInteractionSource() }
                             val isHovered by interactionSource.collectIsHoveredAsState()
@@ -645,9 +859,10 @@ private fun RenderPartInfo(
                                 Modifier
                                     .padding(horizontal = horizontalPadding)
                                     .hoverable(interactionSource)
+                                    .heightIn(min = 32.dp)
                                     .background(
-                                        if (isHovered) myColors.onSurface / 10
-                                        else Color.Transparent
+                                        if (isHovered) Color(0xFFE0EFFF)
+                                        else if (index % 2 == 0) Color.White else Color(0xFFF6F9FD)
                                     )
                             ) {
                                 content()
@@ -661,7 +876,17 @@ private fun RenderPartInfo(
                         }
 
                         PartInfoCells.Status -> {
-                            SimpleCellText(prettifyStatus(it.value.status).rememberString())
+                            val stateColor = when (it.value.status) {
+                                PartDownloadStatus.ReceivingData, PartDownloadStatus.Connecting -> Color(0xFF0067DD)
+                                PartDownloadStatus.Completed -> myColors.success
+                                is PartDownloadStatus.Canceled -> myColors.error
+                                PartDownloadStatus.IDLE -> myColors.onBackground / 0.68f
+                            }
+                            SimpleCellText(
+                                prettifyStatus(it.value.status).rememberString(),
+                                stateColor,
+                                fontWeight = FontWeight.Medium,
+                            )
                         }
 
                         PartInfoCells.Downloaded -> {
@@ -705,33 +930,45 @@ private fun prettifyStatus(status: PartDownloadStatus): StringSource {
 }
 
 @Composable
-private fun SimpleCellText(text: String) {
-    Text(text, fontSize = myTextSizes.base, maxLines = 1)
+private fun SimpleCellText(
+    text: String,
+    color: Color = LocalContentColor.current,
+    fontWeight: FontWeight = FontWeight.Normal,
+) {
+    Text(
+        text,
+        fontSize = myTextSizes.base,
+        fontWeight = fontWeight,
+        lineHeight = 18.sp,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        color = color,
+    )
 }
 
 sealed class PartInfoCells : TableCell<IndexedValue<UiPart>> {
     data object Number : PartInfoCells() {
         override val id: String = "#"
         override val name: StringSource = "#".asStringSource()
-        override val size: CellSize = CellSize.Fixed(32.dp)
+        override val size: CellSize = CellSize.Fixed(58.dp)
     }
 
     data object Status : PartInfoCells() {
         override val id: String = "Status"
         override val name: StringSource = Res.string.status.asStringSource()
-        override val size: CellSize = CellSize.Resizeable(100.dp..200.dp)
+        override val size: CellSize = CellSize.Resizeable(190.dp..440.dp, defaultWidth = 310.dp)
     }
 
     data object Downloaded : PartInfoCells() {
         override val id: String = "Downloaded"
         override val name: StringSource = Res.string.parts_info_downloaded_size.asStringSource()
-        override val size: CellSize = CellSize.Resizeable(90.dp..200.dp)
+        override val size: CellSize = CellSize.Resizeable(190.dp..450.dp, defaultWidth = 350.dp)
     }
 
     data object Total : PartInfoCells() {
         override val id: String = "Total"
         override val name: StringSource = Res.string.parts_info_total_size.asStringSource()
-        override val size: CellSize = CellSize.Resizeable(90.dp..200.dp)
+        override val size: CellSize = CellSize.Resizeable(170.dp..410.dp, defaultWidth = 300.dp)
     }
 
     companion object {
@@ -748,7 +985,7 @@ sealed class PartInfoCells : TableCell<IndexedValue<UiPart>> {
 
 
 @Composable
-private fun RenderPropertyItem(propertyItem: SingleDownloadPagePropertyItem) {
+private fun RenderPropertyItem(propertyItem: SingleDownloadPagePropertyItem, highlightStatus: Boolean = false) {
     val title = propertyItem.name
     val value = propertyItem.value
     Row(
@@ -760,7 +997,10 @@ private fun RenderPropertyItem(propertyItem: SingleDownloadPagePropertyItem) {
                 text = "${title.rememberString()}:",
                 modifier = Modifier.weight(0.3f),
                 maxLines = 1,
-                fontSize = myTextSizes.base
+                overflow = TextOverflow.Ellipsis,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Normal,
+                lineHeight = 18.sp,
             )
         }
         WithContentAlpha(1f) {
@@ -772,11 +1012,15 @@ private fun RenderPropertyItem(propertyItem: SingleDownloadPagePropertyItem) {
                     )
                     .weight(0.7f),
                 maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
                 fontSize = myTextSizes.base,
-                color = when (propertyItem.valueState) {
-                    SingleDownloadPagePropertyItem.ValueType.Normal -> LocalContentColor.current
-                    SingleDownloadPagePropertyItem.ValueType.Error -> myColors.error
-                    SingleDownloadPagePropertyItem.ValueType.Success -> myColors.success
+                fontWeight = FontWeight.Medium,
+                lineHeight = 18.sp,
+                color = when {
+                    highlightStatus -> Color(0xFF0065DB)
+                    propertyItem.valueState == SingleDownloadPagePropertyItem.ValueType.Normal -> LocalContentColor.current
+                    propertyItem.valueState == SingleDownloadPagePropertyItem.ValueType.Error -> myColors.error
+                    else -> myColors.success
                 }
             )
         }
@@ -789,6 +1033,9 @@ private fun RenderInfo(
     horizontalPadding: Dp,
     singleDownloadComponent: DesktopSingleDownloadComponent,
     speedHistory: List<Long>,
+    itemState: ProcessingDownloadItemState,
+    showGraph: Boolean,
+    onToggleGraph: () -> Unit,
 ) {
     // Approved Liquid window: file details on the left and a real chart on
     // the right, without hiding the transfer rate behind the Settings tab.
@@ -796,56 +1043,45 @@ private fun RenderInfo(
         modifier.padding(horizontal = horizontalPadding).padding(top = 8.dp),
         verticalAlignment = Alignment.Top,
     ) {
-        Column(Modifier.weight(0.59f)) {
-            for (propertyItem in singleDownloadComponent.extraDownloadProgressInfo.collectAsState().value) {
-                Spacer(Modifier.height(2.dp))
-                RenderPropertyItem(propertyItem)
+        Column(Modifier.weight(if (showGraph) 0.60f else 1f)) {
+            val properties = singleDownloadComponent.extraDownloadProgressInfo.collectAsState().value
+            properties.forEachIndexed { index, property ->
+                Spacer(Modifier.height(3.dp))
+                val displayProperty = when (index) {
+                    2 -> if (itemState.contentLength > 0L) property.copy(
+                        value = "${property.value.rememberString()}  (${java.text.NumberFormat.getIntegerInstance().format(itemState.contentLength)} bytes)".asStringSource()
+                    ) else property
+                    3 -> property.copy(
+                        value = "${property.value.rememberString()}  (${java.text.NumberFormat.getIntegerInstance().format(itemState.progress)} bytes)".asStringSource()
+                    )
+                    else -> property
+                }
+                RenderPropertyItem(displayProperty, highlightStatus = index == 1 &&
+                    itemState.status == DownloadJobStatus.Downloading)
+                if (index == 0) {
+                    Spacer(Modifier.height(3.dp))
+                    RenderPropertyItem(
+                        SingleDownloadPagePropertyItem(
+                            "URL".asStringSource(), itemState.downloadLink.asStringSource()
+                        )
+                    )
+                }
             }
         }
-        Spacer(Modifier.width(12.dp))
-        RealSpeedHistoryChart(speedHistory, Modifier.weight(0.41f))
+        if (showGraph) {
+            Spacer(Modifier.width(12.dp))
+            RealSpeedHistoryChart(speedHistory, Modifier.weight(0.40f), onHideGraph = onToggleGraph)
+        } else {
+            Spacer(Modifier.width(8.dp))
+            ActionButton(
+                text = "Show graph",
+                onClick = onToggleGraph,
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 5.dp),
+            )
+        }
     }
 }
 
-@Composable
-private fun RenderActions(
-    itemState: ProcessingDownloadItemState,
-    singleDownloadComponent: DesktopSingleDownloadComponent,
-    showingPartInfo: Boolean,
-    onRequestShowPartInfo: (show: Boolean) -> Unit,
-    downloadErrorReason: DownloadErrorReason?,
-    onRequestShowDownloadError: () -> Unit,
-) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-            PartInfoButton(showingPartInfo, onRequestShowPartInfo)
-        downloadErrorReason?.let {
-            Spacer(Modifier.width(mySpacings.smallSpace))
-            DownloadErrorInfoButton(
-                downloadErrorReason = it,
-                onClick = onRequestShowDownloadError,
-            )
-        }
-        }
-        Row(Modifier.weight(2f), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-        ToggleButton(
-            itemState = itemState,
-            toggle = singleDownloadComponent::toggle,
-            pause = singleDownloadComponent::pause,
-        )
-        Spacer(Modifier.width(8.dp))
-        CancelButton(
-            cancel = singleDownloadComponent::cancel,
-            icon = if (singleDownloadComponent.deletePartialFileOnDownloadCancellation.collectAsState().value) {
-                MyIcons.stop
-            } else {
-                null
-            },
-        )
-        }
-        Spacer(Modifier.weight(1f))
-    }
-}
 
 @Composable
 private fun PartInfoButton(
@@ -892,9 +1128,14 @@ private fun SingleDownloadPageButton(
     text: String,
     color: Color = LocalContentColor.current,
     icon: IconSource? = null,
+    primary: Boolean = false,
 ) {
+    CompositionLocalProvider(
+        LocalTextStyle provides LocalTextStyle.current.copy(fontWeight = FontWeight.SemiBold),
+    ) {
     ActionButton(
         text = text,
+        modifier = Modifier.widthIn(min = if (primary) 156.dp else 136.dp),
         start = {
             icon?.let {
                 Row {
@@ -903,10 +1144,15 @@ private fun SingleDownloadPageButton(
                 }
             }
         },
-        contentPadding = PaddingValues(vertical = 6.dp, horizontal = 12.dp),
-        contentColor = color,
+        contentPadding = PaddingValues(vertical = 9.dp, horizontal = 24.dp),
+        backgroundColor = if (primary) Brush.horizontalGradient(
+            listOf(Color(0xFF0B73FA), Color(0xFF0059E8))
+        ) else SolidColor(Color.White),
+        borderColor = SolidColor(if (primary) Color(0xFF0A63DF) else Color(0xFFAAB6C7)),
+        contentColor = if (primary) Color.White else color,
         onClick = onClick,
     )
+    }
 }
 
 @Composable
@@ -961,6 +1207,7 @@ private fun ToggleButton(
             },
             icon = icon,
             text = myStringResource(text),
+            primary = isResumeSupported,
             color = if (isResumeSupported) {
                 LocalContentColor.current
             } else {
@@ -1022,25 +1269,27 @@ private fun ToggleButton(
 
 @Composable
 private fun RenderParts(parts: List<UiPart>, modifier: Modifier) {
+    // Keep every part in its own narrow rectangular track, vertically centered
+    // in a small touch-safe strip instead of stretching it to the full 30dp.
     Row(
-        modifier
-            .fillMaxWidth()
+        modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         if (parts.isNotEmpty()) {
-            val sortedParts = remember(parts) {
-                parts.sortedBy {
-                    it.id
-                }
-            }
+            val sortedParts = remember(parts) { parts.sortedBy { it.id } }
+            // Unknown-size parts still need visible connection tracks.
+            val useEqualWeights = sortedParts.any { !it.partSpace.isFinite() || it.partSpace <= 0f }
             for (p in sortedParts) {
-                val partSpace = p.partSpace
-                if (partSpace <= 0f) continue
+                val partSpace = if (useEqualWeights) 1f else p.partSpace
                 key(p.id) {
                     RenderPart(
                         p,
                         Modifier
-                            .fillMaxHeight()
                             .weight(partSpace)
+                            .height(14.dp)
+                            // Wider separation makes each connection a clearly
+                            // independent, slim rectangle rather than one long line.
+                            .padding(horizontal = 4.dp)
                     )
                 }
             }
@@ -1050,23 +1299,28 @@ private fun RenderParts(parts: List<UiPart>, modifier: Modifier) {
 
 @Composable
 private fun RenderPart(part: UiPart, modifier: Modifier) {
-    val partProgress = part.percent?.let {
-        it / 100f
-    }
+    val partProgress = if (part.status == PartDownloadStatus.Completed) {
+        1f
+    } else part.percent?.let { it / 100f }
 
     val liquidColors = when (part.status) {
         is PartDownloadStatus.Canceled -> listOf(myColors.error, myColors.warning)
-        PartDownloadStatus.Completed -> myColors.primaryGradientColors
-        PartDownloadStatus.IDLE -> myColors.primaryGradientColors
-        PartDownloadStatus.ReceivingData -> myColors.primaryGradientColors
-        PartDownloadStatus.Connecting -> listOf(myColors.info, myColors.secondary)
+        PartDownloadStatus.Completed -> referenceLiquidColors
+        // Waiting or paused segments remain still and visually distinct
+        // from the bright blue-cyan actively receiving connections.
+        PartDownloadStatus.IDLE -> listOf(Color(0xFF8197B5), Color(0xFFB8C8DC))
+        PartDownloadStatus.ReceivingData -> referenceLiquidColors
+        PartDownloadStatus.Connecting -> referenceLiquidColors
     }
     LiquidProgressTrack(
         progress = partProgress,
         colors = liquidColors,
         active = part.status == PartDownloadStatus.ReceivingData ||
             part.status == PartDownloadStatus.Connecting,
-        modifier = modifier.padding(end = 1.dp),
-        bubbleCount = 2,
+        modifier = modifier,
+        // Three subtle bubbles are enough for a 14dp-high connection line.
+        bubbleCount = 3,
+        compact = true,
     )
 }
+

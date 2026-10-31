@@ -141,23 +141,17 @@ class ThemeManager(
 
     fun setDarkTheme(themeId: String) {
         synchronized(this) {
-            appSettings.defaultDarkTheme.value = if (themeIds.value.contains(themeId)) {
-                themeId
-            } else {
-                // theme id in setting is invalid update it
-                DefaultDarkTheme.id
-            }
+            // Never save a light palette as the system dark-mode choice.
+            appSettings.defaultDarkTheme.value =
+                getThemeById(themeId)?.takeUnless { it.isLight }?.id ?: DefaultDarkTheme.id
         }
     }
 
     fun setLightTheme(themeId: String) {
         synchronized(this) {
-            appSettings.defaultLightTheme.value = if (themeIds.value.contains(themeId)) {
-                themeId
-            } else {
-                // theme id in setting is invalid update it
-                DefaultLightTheme.id
-            }
+            // Prevent the inverse mismatch when system appearance changes.
+            appSettings.defaultLightTheme.value =
+                getThemeById(themeId)?.takeIf { it.isLight }?.id ?: DefaultLightTheme.id
         }
     }
 
@@ -202,12 +196,17 @@ data class ThemeInfo(
     val id: String,
     val name: StringSource,
     val color: Color,
+    // Each selector swatch describes its candidate palette, not the active UI.
+    val backgroundColor: Color = color,
+    val accentColor: Color = color,
 )
 
-private fun MyColors.toThemeInfo(): ThemeInfo {
+internal fun MyColors.toThemeInfo(): ThemeInfo {
     return ThemeInfo(
         id = id,
         name = name.asStringSource(),
         color = surface,
+        backgroundColor = background,
+        accentColor = primary,
     )
 }
