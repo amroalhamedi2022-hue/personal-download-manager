@@ -770,6 +770,39 @@ class DownloadCoreBaselineTest {
     }
 
     @Test
+    fun signedUrlRefreshCannotReusePartialDataForAnotherQuerySelectedFile() {
+        val base = "https://files.example.test/download"
+        assertTrue(ir.amirab.downloader.downloaditem.http.sameHttpResourceLocation(
+            "$base?file=photo.jpg&token=old",
+            "$base?token=new&file=photo.jpg",
+        ))
+        assertTrue(ir.amirab.downloader.downloaditem.http.sameHttpResourceLocation(
+            "$base?X-Amz-Date=20261031&X-Amz-Signature=old",
+            "$base?X-Amz-Date=20261101&X-Amz-Signature=new",
+        ))
+        assertFalse(ir.amirab.downloader.downloaditem.http.sameHttpResourceLocation(
+            "$base?file=photo.jpg&token=old",
+            "$base?file=private.pdf&token=new",
+        ))
+        assertFalse(ir.amirab.downloader.downloaditem.http.sameHttpResourceLocation(
+            "$base?id=100",
+            "$base?id=101",
+        ))
+        assertFalse(ir.amirab.downloader.downloaditem.http.sameHttpResourceLocation(
+            "https://files.example.test/a?token=same",
+            "https://files.example.test/b?token=same",
+        ))
+        assertFalse(ir.amirab.downloader.downloaditem.http.sameHttpResourceLocation(
+            "$base?object=alpha",
+            "$base?object=beta",
+        ))
+        assertTrue(ir.amirab.downloader.downloaditem.http.sameHttpResourceLocation(
+            "https://files.example.test/download?b=2&a=1#one",
+            "https://FILES.EXAMPLE.TEST/download?a=1&b=2#two",
+        ))
+    }
+
+    @Test
     fun threeRealHttpPartsAssembleTheExpectedFile() = withHttpFixture(
         rangeMode = RangeMode.Supported,
     ) { fixture ->

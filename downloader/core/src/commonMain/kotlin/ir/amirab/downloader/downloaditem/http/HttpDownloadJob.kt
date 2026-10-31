@@ -45,6 +45,45 @@ internal fun validateRemoteFileIdentity(
     }
 }
 
+internal fun sameHttpResourceLocation(firstUrl: String, secondUrl: String): Boolean {
+    // Signed URLs commonly rotate credentials, but arbitrary query values can
+    // select a *different file* behind the same path. Never reuse a partial
+    // download when an identity-bearing query parameter changed.
+    fun isEphemeralCredentialParameter(name: String): Boolean {
+        val key = name.lowercase(java.util.Locale.ROOT)
+        return key.startsWith("x-amz-") || key.startsWith("x-goog-") ||
+            key in setOf(
+                "token", "access_token", "signature", "sig", "expires",
+                "expiry", "expiration", "policy", "key-pair-id", "googleaccessid",
+            )
+    }
+
+    fun resourceIdentity(url: String): Pair<String, List<String>> {
+        val withoutFragment = url.substringBefore('#')
+        val withoutQuery = withoutFragment.substringBefore('?')
+        val schemeSeparator = withoutQuery.indexOf("://")
+        val location = if (schemeSeparator < 0) {
+            withoutQuery
+        } else {
+            val scheme = withoutQuery.substring(0, schemeSeparator).lowercase(java.util.Locale.ROOT)
+            val authorityAndPath = withoutQuery.substring(schemeSeparator + 3)
+            val pathStart = authorityAndPath.indexOf('/')
+            val authority = if (pathStart < 0) authorityAndPath else authorityAndPath.substring(0, pathStart)
+            val path = if (pathStart < 0) "" else authorityAndPath.substring(pathStart)
+            "$scheme://${authority.lowercase(java.util.Locale.ROOT)}$path"
+        }
+        val persistentQuery = withoutFragment.substringAfter('?', "")
+            .split('&')
+            .filter { parameter ->
+                parameter.isNotEmpty() &&
+                    !isEphemeralCredentialParameter(parameter.substringBefore('='))
+            }
+            .sorted()
+        return location to persistentQuery
+    }
+
+    return resourceIdentity(firstUrl) == resourceIdentity(secondUrl)
+}
 internal suspend fun persistProgressAfterFlush(
     flushDestination: () -> Unit,
     persistSnapshot: suspend () -> Unit,
@@ -139,8 +178,15 @@ class HttpDownloadJob(
     }
 
     override suspend fun reset() {
+        val preserveCompletedOutput = downloadItem.status == DownloadStatus.Completed
         pause()
         clearPartDownloaderList()
+        if (!preserveCompletedOutput) {
+            // New link/reset cannot reuse bytes from the old partial download.
+            // pause() must release Windows file handles before these deletes.
+            destination.deleteOutputFile()
+            destination.cleanUpJunkFiles()
+        }
         setParts(emptyList())
         downloadItem.contentLength = IDownloadItem.LENGTH_UNKNOWN
         downloadItem.serverETag = null
@@ -298,23 +344,40 @@ class HttpDownloadJob(
         val previousDestination = downloadManager.calculateOutputFile(previousItem)
         val newDestination = downloadManager.calculateOutputFile(newItem)
         val shouldUpdateDestination = previousDestination != newDestination
+        val linkChanged = previousItem.link != newItem.link
+        val resourceLocationChanged = linkChanged &&
+            !sameHttpResourceLocation(previousItem.link, newItem.link)
+        val wasActive = isDownloadActive.value ||
+            activeDownloadScope?.isActive == true ||
+            getPartDownloaderList().any { it.active }
+
         if (shouldUpdateDestination) {
-            if (isDownloadActive.value) {
+            // Stop every part before moving output; otherwise Windows rename can fail.
+            if (wasActive) {
                 pause()
+            } else {
+                cancelDownloadScope()
+                stopAllParts()
             }
             destination.moveOutput(newDestination)
         }
         // if there is no error update the actual download item
         downloadItem.applyFrom(newItem)
         if (shouldUpdateDestination) {
-            // destination should be closed for now!
             initializeDestination()
+        }
+
+        if (linkChanged) {
+            if (resourceLocationChanged) {
+                // A different file selector/path must not inherit stored partial bytes.
+                reset()
+                if (wasActive && !shouldUpdateDestination) resume()
+            } else {
+                onLinkChanged()
+            }
         }
         if (previousItem.preferredConnectionCount != downloadItem.preferredConnectionCount) {
             onPreferredConnectionCountChanged()
-        }
-        if (previousItem.link != downloadItem.link) {
-            onLinkChanged()
         }
         applySpeedLimit()
         extraConfig?.let {
