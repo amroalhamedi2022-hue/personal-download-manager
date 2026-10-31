@@ -167,6 +167,18 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Verify Liquid Progress typography and theme selection source contracts
+        shell: pwsh
+        run: python -m unittest discover -s scripts/source-tests -p test_hyperget_liquid_progress_source.py -v
+
+      - name: Verify candidate theme colors and readable palettes
+        shell: bash
+        run: >-
+          ./gradlew --no-daemon --stacktrace
+          --dependency-verification strict
+          :shared:app:desktopTest
+          --tests com.abdownloadmanager.shared.ui.theme.ModernThemePaletteContractTest
+
       - name: Build Windows installer from same source SHA
         shell: bash
         run: >-
