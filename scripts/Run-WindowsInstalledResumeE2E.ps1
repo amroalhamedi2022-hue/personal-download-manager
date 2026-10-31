@@ -15,6 +15,7 @@ param(
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'Wait-WindowsLoopbackHttpPort.ps1')
 $folder = [IO.Path]::GetFullPath($OutputDirectory)
 New-Item -ItemType Directory -Path $folder -Force | Out-Null
 $source = Join-Path $folder 'source-fixture.bin'
@@ -33,12 +34,7 @@ try {
         ('"' + $fixtureScript + '"'), '--file', ('"' + $source + '"'),
         '--port-file', ('"' + $portFile + '"'), '--chunk-delay-ms', '400'
     ) -PassThru -RedirectStandardOutput (Join-Path $folder 'server-stdout.txt') -RedirectStandardError (Join-Path $folder 'server-stderr.txt')
-    for ($i = 0; $i -lt 60 -and -not (Test-Path -LiteralPath $portFile); $i++) {
-        if ($server.HasExited) { throw 'HTTP fixture server exited unexpectedly.' }
-        Start-Sleep -Milliseconds 250
-    }
-    if (-not (Test-Path -LiteralPath $portFile)) { throw 'HTTP fixture server did not start.' }
-    $port = [int](Get-Content -LiteralPath $portFile -Raw)
+    $port = Wait-HyperGetLoopbackHttpPort -PortFile $portFile -Server $server -FixtureName 'HTTP pause/resume fixture' -Attempts 60 -ServerErrorPath (Join-Path $folder 'server-stderr.txt')
     $statsUrl = "http://127.0.0.1:$port/stats"
     $url = "http://127.0.0.1:$port/fixture.bin?task=real-pause-resume"
     $app = Start-Process -FilePath ([IO.Path]::GetFullPath($GuiExecutable)) -PassThru
@@ -74,7 +70,12 @@ try {
         }
         Start-Sleep -Milliseconds 250
     }
-    if (-not $stopped) { throw 'Pause did not close all active HTTP response bodies.' }
+    if (-not $stopped) {
+        $diagnostic = $stats | ConvertTo-Json -Compress -Depth 8
+        Write-Host "HTTP pause socket diagnostics: $diagnostic"
+        $diagnostic | Set-Content -LiteralPath (Join-Path $folder 'pause-failure-stats.json') -Encoding utf8
+        throw "Pause did not close all active HTTP response bodies. Stats=$diagnostic"
+    }
     $atPause = [long]$stats.bytes_sent
     Start-Sleep -Seconds 2
     $idleStats = Invoke-RestMethod -Uri $statsUrl -TimeoutSec 10

@@ -1,0 +1,330 @@
+name: HyperGet installed Windows Chrome + Firefox browser capture E2E
+
+# One purposeful Windows install shared by real Chrome and Firefox native-host download E2E.
+# The lightweight change-scope gate avoids repeating installer builds for docs-only commits.
+on:
+  pull_request:
+    branches: [codex/repair-rf00-rf01]
+    paths:
+      - ".github/workflows/windows-installed-native-host-e2e.yml"
+      - "desktop/app/build.gradle.kts"
+      - "desktop/app/icons/icon.ico"
+      - "desktop/app/icons/hyperget-icon.svg"
+      - "desktop/app/resources/installer/nsis-script-template.nsi"
+      - "scripts/Run-WindowsInstalledNativeHostE2E.ps1"
+      - "scripts/Run-WindowsChromeNativeE2E.mjs"
+      - "scripts/source-tests/test_hyperget_chrome_capture_source.py"
+      - "scripts/Run-WindowsFirefoxNativeE2E.mjs"
+      - "scripts/source-tests/test_hyperget_firefox_capture_source.py"
+      - "scripts/source-tests/test_hyperget_executable_identity_workflows.py"
+      - "scripts/source-tests/test_hyperget_pr_diff_scope.py"
+      - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/nativemessaging/**"
+      - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/AppInfo.kt"
+      - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/singleInstance/EnsureAppIsAwake.kt"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hyperget-installed-native-host-${{ github.event.pull_request.head.sha || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  change-scope:
+    name: Avoid repeated Windows packaging on docs-only commits
+    runs-on: ubuntu-24.04
+    outputs:
+      run: ${{ steps.scope.outputs.run }}
+    steps:
+      - name: Check out exact head and its parent
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - id: scope
+        env:
+          HYPERGET_EVENT_BEFORE: ${{ github.event.before || '' }}
+        shell: bash
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            git fetch --no-tags origin "+refs/heads/${GITHUB_BASE_REF}:refs/remotes/origin/${GITHUB_BASE_REF}"
+            changed="$(git diff --name-only "origin/$GITHUB_BASE_REF...HEAD")"
+            printf 'Full PR diff against origin/%s:\n%s\n' "$GITHUB_BASE_REF" "$changed"
+          elif [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
+            before="$HYPERGET_EVENT_BEFORE"
+            if [[ -n "$before" && "$before" != "0000000000000000000000000000000000000000" ]]; then
+              changed="$(git diff --name-only "$before" "$GITHUB_SHA")"
+            else
+              changed="$(git show --pretty='' --name-only HEAD)"
+            fi
+            printf 'Push change range:\n%s\n' "$changed"
+          else
+            changed="$(git show --pretty='' --name-only HEAD)"
+          fi
+          run=false
+          while IFS= read -r file; do
+            case "$file" in
+              .github/workflows/windows-installed-native-host-e2e.yml|scripts/Run-WindowsInstalledNativeHostE2E.ps1|scripts/Run-WindowsChromeNativeE2E.mjs|scripts/Run-WindowsFirefoxNativeE2E.mjs|scripts/source-tests/test_hyperget_executable_identity_workflows.py|scripts/source-tests/test_hyperget_chrome_capture_source.py|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/singleInstance/EnsureAppIsAwake.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/nativemessaging/*|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/cli/download/show/ShowDownload.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/AppInfo.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/MainExecutableResolver.kt|desktop/app/build.gradle.kts|desktop/app/icons/icon.ico|desktop/app/icons/hyperget-icon.svg|desktop/app/resources/installer/nsis-script-template.nsi|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/singleInstance/service/*|shared/app/build.gradle.kts|build.gradle.kts)
+                run=true
+                ;;
+            esac
+          done <<< "$changed"
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+
+  installed-native-host:
+    needs: change-scope
+    if: needs.change-scope.outputs.run == 'true'
+    name: Windows NSIS install, real Chrome and Firefox download capture
+    runs-on: windows-2022
+    timeout-minutes: 60
+    env:
+      SKIP_ANDROID_BUILD: "true"
+      HYPERGET_TESTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Check out exact tested source SHA
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Verify SHA and parse PowerShell before NSIS build
+        shell: pwsh
+        run: |
+          if ((git rev-parse HEAD).Trim() -ne $env:HYPERGET_TESTED_SHA) { throw 'Wrong source SHA' }
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path 'scripts/Run-WindowsInstalledNativeHostE2E.ps1').Path,
+            [ref]$tokens, [ref]$errors
+          ) | Out-Null
+          if ($errors.Count -ne 0) {
+            $errors | ForEach-Object { Write-Host $_.ToString() }
+            throw "Native host E2E script has $($errors.Count) parser errors"
+          }
+          Write-Host 'Native host PowerShell syntax PASS before installer build'
+      - name: Set up Node.js 22 for real Chrome DevTools native messaging
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Validate Chrome E2E JavaScript syntax before installer build
+        shell: pwsh
+        run: node --check scripts/Run-WindowsChromeNativeE2E.mjs
+      - name: Validate Firefox E2E JavaScript syntax before installer build
+        shell: pwsh
+        run: node --check scripts/Run-WindowsFirefoxNativeE2E.mjs
+      - name: Run Firefox E2E source contracts before installer build
+        shell: pwsh
+        run: |
+          python scripts/source-tests/test_hyperget_firefox_capture_source.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Firefox capture source contracts failed' }
+      - name: Set up JetBrains Runtime 25
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: jetbrains
+          java-package: jdk
+          java-version: "25"
+          cache: gradle
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build exactly one internal Windows NSIS installer
+        shell: bash
+        run: >-
+          ./gradlew --no-daemon --stacktrace
+          --dependency-verification strict
+          createReleaseFolderForCi
+      - name: Record installer SHA256 and install native host package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installers = @(Get-ChildItem -LiteralPath 'build/ci-release/binaries' -File -Recurse -Filter '*.exe')
+          if ($installers.Count -ne 1) { throw "Expected one internal NSIS installer, got $($installers.Count)" }
+          $sha = (Get-FileHash -LiteralPath $installers[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          New-Item -ItemType Directory -Path 'build/ci-release/native-host' -Force | Out-Null
+          "SourceSHA=$env:HYPERGET_TESTED_SHA" | Set-Content 'build/ci-release/native-host/installer-sha256.txt'
+          "InstallerSHA256=$sha" | Add-Content 'build/ci-release/native-host/installer-sha256.txt'
+          Write-Host "Internal NSIS test installer SHA256: $sha"
+          $dir = Join-Path $env:RUNNER_TEMP 'hyperget-native-host-installed'
+          if (Test-Path -LiteralPath $dir) { throw 'Unexpected pre-existing install directory' }
+          $proc = Start-Process -FilePath $installers[0].FullName -ArgumentList @('/S', "/D=$dir") -PassThru
+          if (-not $proc.WaitForExit(180000)) {
+            Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+            throw 'NSIS install timed out'
+          }
+          if ($proc.ExitCode -ne 0) { throw "NSIS exit code $($proc.ExitCode)" }
+          $gui = @(Get-ChildItem -LiteralPath $dir -File -Recurse -Filter 'HyperGet.exe')
+          $legacyGui = @(Get-ChildItem -LiteralPath $dir -File -Recurse -Filter 'DownloadManager.exe')
+          $nativeExeFiles = @(Get-ChildItem -LiteralPath $dir -File -Recurse -Filter 'DownloadManagerNativeMessagingHost.exe')
+          if ($gui.Count -ne 1 -or $legacyGui.Count -ne 0 -or $nativeExeFiles.Count -ne 1) {
+            throw "Installed GUI/native host identity mismatch: HyperGet=$($gui.Count), legacy=$($legacyGui.Count), host=$($nativeExeFiles.Count)"
+          }
+          "HYPERGET_GUI_EXE=$($gui[0].FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "HYPERGET_NATIVE_EXE=$($nativeExeFiles[0].FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Run installed Windows native host protocol acceptance
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & ./scripts/Run-WindowsInstalledNativeHostE2E.ps1 -GuiExecutable $env:HYPERGET_GUI_EXE -HostExecutable $env:HYPERGET_NATIVE_EXE -SourceSha $env:HYPERGET_TESTED_SHA -OutputDirectory 'build/ci-release/native-host/evidence'
+      - name: Check out pinned browser PR extension source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: amroalhamedi2022-hue/personal-download-manager-browser-integration
+          ref: 0fb5a304cbde07a9758d2b42417e7a8a85cba0f2
+          path: browser-integration
+          persist-credentials: false
+      - name: Build real Chrome MV3 extension from locked browser PR source
+        shell: pwsh
+        working-directory: browser-integration
+        run: |
+          if ((git rev-parse HEAD).Trim() -ne '0fb5a304cbde07a9758d2b42417e7a8a85cba0f2') { throw 'Wrong browser PR SHA' }
+          npm ci --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { throw 'Browser npm ci failed' }
+          npm run build:chrome
+          if ($LASTEXITCODE -ne 0) { throw 'Chrome MV3 extension build failed' }
+          if (-not (Test-Path 'dist/chrome/manifest.json')) { throw 'Built Chrome manifest missing' }
+      - name: Package real Firefox WebExtension from the same pinned browser PR source
+        shell: pwsh
+        working-directory: browser-integration
+        run: |
+          npm run pack:firefox
+          if ($LASTEXITCODE -ne 0) { throw 'Firefox WebExtension packaging failed' }
+          if (-not (Test-Path 'dist/firefox.zip')) { throw 'Packaged Firefox XPI ZIP missing' }
+      - name: Run actual Chrome for Testing MV3 extension nativeMessaging API acceptance
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # Branded Chrome >=137 intentionally ignores --load-extension. Google's
+          # official Chrome for Testing retains the switch for extension CI.
+          $catalog = Invoke-RestMethod -Uri 'https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json'
+          $matches = @($catalog.channels.Stable.downloads.chrome | Where-Object { $_.platform -eq 'win64' })
+          if ($matches.Count -ne 1) { throw 'Official Chrome for Testing win64 release not found' }
+          $download = [uri]$matches[0].url
+          if ($download.Scheme -ne 'https' -or $download.Host -ne 'storage.googleapis.com' -or
+              -not $download.AbsolutePath.StartsWith('/chrome-for-testing-public/')) {
+            throw 'Unexpected Chrome for Testing download origin'
+          }
+          $archive = Join-Path $env:RUNNER_TEMP 'hyperget-chrome-for-testing-win64.zip'
+          Invoke-WebRequest -Uri $download.AbsoluteUri -OutFile $archive
+          $archiveSha = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          $unpack = Join-Path $env:RUNNER_TEMP 'hyperget-chrome-for-testing'
+          Expand-Archive -LiteralPath $archive -DestinationPath $unpack
+          $chrome = Join-Path $unpack 'chrome-win64/chrome.exe'
+          if (-not (Test-Path -LiteralPath $chrome -PathType Leaf)) {
+            throw 'Official Chrome for Testing executable missing after extraction'
+          }
+          @(
+            "ChromeForTestingVersion=$($catalog.channels.Stable.version)",
+            "ChromeForTestingArchiveSHA256=$archiveSha"
+          ) | Set-Content 'build/ci-release/native-host/chrome-for-testing-sha256.txt'
+          & node ./scripts/Run-WindowsChromeNativeE2E.mjs $chrome 'browser-integration/dist/chrome' 'build/ci-release/native-host/chrome-evidence'
+          if ($LASTEXITCODE -ne 0) { throw "Real Chrome for Testing native E2E failed: $LASTEXITCODE" }
+      - name: Download official Mozilla Firefox and install isolated test browser
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $versions = Invoke-RestMethod -Uri 'https://product-details.mozilla.org/1.0/firefox_versions.json'
+          $version = [string]$versions.LATEST_FIREFOX_VERSION
+          if ($version -notmatch '^\d+(\.\d+)*$') { throw 'Mozilla stable Firefox version metadata is invalid' }
+          $installerUrl = "https://archive.mozilla.org/pub/firefox/releases/$version/win64/en-US/Firefox%20Setup%20$version.exe"
+          $uri = [uri]$installerUrl
+          if ($uri.Scheme -ne 'https' -or $uri.Host -ne 'archive.mozilla.org' -or
+              -not $uri.AbsolutePath.StartsWith("/pub/firefox/releases/$version/win64/en-US/")) {
+            throw 'Unexpected Mozilla Firefox installer origin'
+          }
+          $installer = Join-Path $env:RUNNER_TEMP "Firefox-Setup-$version.exe"
+          Invoke-WebRequest -Uri $uri.AbsoluteUri -OutFile $installer
+          $installerSha = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()
+          $firefoxDir = Join-Path $env:RUNNER_TEMP 'hyperget-firefox'
+          $install = Start-Process -FilePath $installer -ArgumentList @(
+            '/S', "/InstallDirectoryPath=$firefoxDir", '/DesktopShortcut=false',
+            '/StartMenuShortcut=false', '/MaintenanceService=false'
+          ) -PassThru
+          if (-not $install.WaitForExit(180000)) {
+            Stop-Process -Id $install.Id -Force -ErrorAction SilentlyContinue
+            throw 'Mozilla Firefox installation timed out'
+          }
+          if ($install.ExitCode -ne 0) { throw "Mozilla Firefox installer exit code $($install.ExitCode)" }
+          $firefox = Join-Path $firefoxDir 'firefox.exe'
+          if (-not (Test-Path -LiteralPath $firefox -PathType Leaf)) {
+            throw 'Firefox executable missing after official installation'
+          }
+          $reportedVersion = (& $firefox --version 2>&1 | Out-String).Trim()
+          @(
+            "FirefoxVersion=$version",
+            "FirefoxReportedVersion=$reportedVersion",
+            "FirefoxInstallerSHA256=$installerSha",
+            "FirefoxInstallerURL=$installerUrl"
+          ) | Set-Content 'build/ci-release/native-host/firefox-runtime-sha256.txt'
+          "HYPERGET_FIREFOX_EXE=$firefox" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Resolve official Mozilla geckodriver release without GitHub API quota
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # The unauthenticated releases API hit a shared-runner IP rate limit.
+          # Resolve GitHub's official /releases/latest redirect instead, then
+          # download the exact versioned asset from the same official repository.
+          $latestRelease = Invoke-WebRequest -Uri 'https://github.com/mozilla/geckodriver/releases/latest' -MaximumRedirection 10
+          $finalUri = $latestRelease.BaseResponse.RequestMessage.RequestUri
+          if (-not $finalUri) { $finalUri = $latestRelease.BaseResponse.ResponseUri }
+          $latestUri = [uri]$finalUri.AbsoluteUri
+          if ($latestUri.Scheme -ne 'https' -or $latestUri.Host -ne 'github.com') {
+            throw 'Unexpected official geckodriver latest-release redirect origin'
+          }
+          $tagMatch = [regex]::Match($latestUri.AbsolutePath, '^/mozilla/geckodriver/releases/tag/(v\d+\.\d+\.\d+)$')
+          if (-not $tagMatch.Success) { throw 'Official geckodriver latest redirect did not resolve to a version tag' }
+          $tag = $tagMatch.Groups[1].Value
+          $assetName = "geckodriver-$tag-win64.zip"
+          $uri = [uri]"https://github.com/mozilla/geckodriver/releases/download/$tag/$assetName"
+          if ($uri.Scheme -ne 'https' -or $uri.Host -ne 'github.com' -or
+              -not $uri.AbsolutePath.StartsWith("/mozilla/geckodriver/releases/download/$tag/") -or
+              [IO.Path]::GetFileName($uri.AbsolutePath) -cne $assetName) {
+            throw 'Unexpected geckodriver download origin or asset path'
+          }
+          $archive = Join-Path $env:RUNNER_TEMP 'geckodriver-win64.zip'
+          Invoke-WebRequest -Uri $uri.AbsoluteUri -OutFile $archive
+          $archiveSha = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          $extract = Join-Path $env:RUNNER_TEMP 'hyperget-geckodriver'
+          Expand-Archive -LiteralPath $archive -DestinationPath $extract -Force
+          $driver = Get-ChildItem -LiteralPath $extract -File -Recurse -Filter 'geckodriver.exe' | Select-Object -First 1
+          if (-not $driver) { throw 'geckodriver.exe missing after official archive extraction' }
+
+          # Firefox 138+ and a geckodriver exposing --allow-system-access are required
+          # only for this isolated extension-page E2E. The flag grants full browser-UI
+          # privileges, so it is never enabled in the delivered HyperGet application.
+          $runtimeInfo = Get-Content 'build/ci-release/native-host/firefox-runtime-sha256.txt' -Raw
+          $firefoxMajorMatch = [regex]::Match($runtimeInfo, '(?m)^FirefoxVersion=(\d+)\.')
+          if (-not $firefoxMajorMatch.Success -or [int]$firefoxMajorMatch.Groups[1].Value -lt 138) {
+            throw 'Firefox 138+ is required for the isolated privileged extension-page E2E'
+          }
+          $driverHelp = (& $driver.FullName --help 2>&1 | Out-String)
+          if ($LASTEXITCODE -ne 0 -or $driverHelp -notmatch '--allow-system-access') {
+            throw 'Official geckodriver does not support --allow-system-access'
+          }
+
+          "GeckodriverTag=$tag" | Add-Content 'build/ci-release/native-host/firefox-runtime-sha256.txt'
+          "GeckodriverArchiveSHA256=$archiveSha" | Add-Content 'build/ci-release/native-host/firefox-runtime-sha256.txt'
+          "GeckodriverURL=$($uri.AbsoluteUri)" | Add-Content 'build/ci-release/native-host/firefox-runtime-sha256.txt'
+          "GeckodriverAllowSystemAccessSupported=true" | Add-Content 'build/ci-release/native-host/firefox-runtime-sha256.txt'
+          "HYPERGET_GECKODRIVER_EXE=$($driver.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Run real Firefox extension -> installed HyperGet -> SHA-verified download
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & node ./scripts/Run-WindowsFirefoxNativeE2E.mjs $env:HYPERGET_FIREFOX_EXE $env:HYPERGET_GECKODRIVER_EXE 'browser-integration/dist/firefox.zip' 'build/ci-release/native-host/firefox-evidence'
+          if ($LASTEXITCODE -ne 0) { throw "Real Firefox native E2E failed: $LASTEXITCODE" }
+      - name: Upload non-sensitive Windows native host evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: hyperget-installed-native-host-evidence
+          path: |
+            build/ci-release/native-host/installer-sha256.txt
+            build/ci-release/native-host/evidence/native-host-report.json
+            build/ci-release/native-host/chrome-evidence/chrome-native-extension-report.json
+            build/ci-release/native-host/chrome-for-testing-sha256.txt
+            build/ci-release/native-host/firefox-runtime-sha256.txt
+            build/ci-release/native-host/firefox-evidence/firefox-native-extension-report.json
+          if-no-files-found: warn
+          retention-days: 14

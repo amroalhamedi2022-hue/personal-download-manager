@@ -1,0 +1,217 @@
+name: HyperGet source-only safety checks (NO APP BUILD)
+
+# Deliberately separate from Windows validation and installer packaging.
+# PR-triggered only to avoid duplicate push + PR runner minutes.
+# This workflow uses only Python stdlib and never invokes Gradle, Compose,
+# NSIS, MSI, EXE packaging, application compilation or artifact upload.
+on:
+  pull_request:
+    branches:
+      - codex/repair-rf00-rf01
+    paths:
+      - ".github/workflows/hyperget-source-only.yml"
+      - ".github/workflows/hyperget-windows-exe-aria2-evaluation.yml"
+      - ".github/workflows/windows-installed-active-benchmark.yml"
+      - ".github/workflows/windows-installed-http-e2e.yml"
+      - ".github/workflows/windows-installed-external-https-e2e.yml"
+      - "scripts/Run-WindowsIdleBenchmarkMatrix.ps1"
+      - "scripts/Run-WindowsInstalledFtpE2E.ps1"
+      - "scripts/Run-WindowsInstalledResumeE2E.ps1"
+      - "scripts/Run-WindowsExternalHttpsE2E.ps1"
+      - "scripts/Wait-WindowsLoopbackHttpPort.ps1"
+      - "scripts/source-tests/test_hyperget_executable_identity_workflows.py"
+      - "scripts/source-tests/test_hyperget_pr_diff_scope.py"
+      - "scripts/source-tests/test_hyperget_http_fixture_port_readiness.py"
+      - "scripts/source-tests/test_hyperget_external_https_e2e.py"
+      - "desktop/app/resources/installer/nsis-script-template.nsi"
+      - "desktop/app/build.gradle.kts"
+      - "desktop/app/icons/icon.ico"
+      - "desktop/app/icons/hyperget-icon.svg"
+      - "scripts/source-tests/test_hyperget_icon_contract.py"
+      - "scripts/audit_windows_icon_resources.py"
+      - "scripts/source-tests/test_hyperget_icon_resource_audit.py"
+      - "scripts/source-tests/test_hyperget_cross_version_upgrade_source.py"
+      - "scripts/Run-WindowsCrossVersionUpgradeRollbackE2E.ps1"
+      - "scripts/Run-WindowsInstallerLifecycleE2E.ps1"
+      - "scripts/Run-WindowsInstalledNativeHostE2E.ps1"
+      - "scripts/source-tests/test_hyperget_uninstaller_cleanup_order.py"
+      - "scripts/Run-WindowsControlledBenchmarkComparison.ps1"
+      - "scripts/source-tests/test_hyperget_uninstall_settle_source.py"
+      - "scripts/Run-WindowsActiveBenchmarkMatrix.ps1"
+      - "scripts/Run-WindowsAria2Viability.ps1"
+      - "scripts/LocalHttpRangeFixture.py"
+      - "scripts/test_local_http_range_fixture.py"
+      - "scripts/source-tests/test_hyperget_active_benchmark_source.py"
+      - "scripts/Run-WindowsAria2ActiveBenchmarkMatrix.ps1"
+      - "scripts/Run-WindowsAria2PairedComparison.ps1"
+      - "scripts/Compare-WindowsAria2Stage2.ps1"
+      - "scripts/Assert-WindowsAria2Stage2Gates.ps1"
+      - "scripts/source-tests/test_hyperget_aria2_comparison_source.py"
+      - "docs/ARIA2_CORE_MIGRATION_PLAN_2026-10-27.md"
+      - "scripts/source-tests/test_hyperget_http_dispatcher_bound_source.py"
+      - "scripts/source-tests/test_hyperget_memory_profile_source.py"
+      - "scripts/source-tests/test_hyperget_relative_time_refresh_source.py"
+      - "shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/util/TimeUtil.kt"
+      - "shared/app/src/commonTest/kotlin/com/abdownloadmanager/shared/util/TimeUtilRelativeRefreshTest.kt"
+      - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/TableDownloadItem.kt"
+      - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/DownloadList.kt"
+      - "scripts/Run-WindowsLiquidProgressVisualE2E.ps1"
+      - "scripts/source-tests/test_hyperget_liquid_progress_source.py"
+      - ".github/workflows/windows-installed-ui-smoke.yml"
+      - ".github/workflows/hyperget-relative-time-refresh-tests.yml"
+      - "scripts/Collect-WindowsJvmMemoryProfile.ps1"
+      - ".github/workflows/windows-installed-memory-profile.yml"
+      - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/di/Di.kt"
+      - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/singleInstance/EnsureAppIsAwake.kt"
+      - "scripts/source-tests/test_hyperget_http_part_admission_source.py"
+      - "scripts/source-tests/test_hyperget_http_part_deadline_source.py"
+      - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/part/PartDownloader.kt"
+      - "downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/part/PartDownloaderIoLifecycleTest.kt"
+      - "scripts/source-tests/test_hyperget_part_downloader_io_lifecycle_source.py"
+      - "downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/part/PartResponseDeadlineTest.kt"
+      - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/downloaditem/http/HttpDownloadJob.kt"
+      - "scripts/source-tests/test_hyperget_cli_status_lines_source.py"
+      - "scripts/source-tests/test_hyperget_chrome_capture_source.py"
+      - "scripts/Run-WindowsChromeNativeE2E.mjs"
+      - "scripts/source-tests/test_hyperget_lifecycle_context_source.py"
+      - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/DownloadManager.kt"
+      - "downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/DownloadManagerLifecycleContextTest.kt"
+      - "build.gradle.kts"
+      - "scripts/source-tests/test_hyperget_semver_source.py"
+      - "downloader/core/src/desktopMain/kotlin/ir/amirab/downloader/ftp/**"
+      - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/downloaditem/hls/**"
+      - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/destination/**"
+      - "scripts/source-tests/HyperGetHlsStagedSegmentSmoke.kt"
+      - "scripts/source-tests/test_hyperget_hls_resume_source.py"
+      - "scripts/source-tests/test_hyperget_hls_refresh_lifecycle_source.py"
+      - "scripts/source-tests/test_hyperget_hls_preview_lifecycle_source.py"
+      - "scripts/source-tests/test_hyperget_hls_redirect_base_source.py"
+      - "scripts/source-tests/test_hyperget_hls_segment_credentials_source.py"
+      - "scripts/source-tests/test_hyperget_hls_manifest_redirect_source.py"
+      - "scripts/source-tests/test_hyperget_hls_guarded_redirect_source.py"
+      - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/connection/OkHttpHttpDownloaderClient.kt"
+      - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/connection/Connection.kt"
+      - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/downloaditem/http/HttpDownloadCredentials.kt"
+      - "downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/downloaditem/hls/**"
+      - "scripts/source-tests/HyperGetHlsReconciliationSmoke.kt"
+      - "scripts/source-tests/test_hyperget_hls_playlist_source.py"
+      - "scripts/source-tests/test_hyperget_hls_segment_identity_source.py"
+      - "scripts/source-tests/test_hyperget_hls_segment_transfer_source.py"
+      - "scripts/source-tests/test_hyperget_hls_resume_assembly_source.py"
+      - "scripts/source-tests/HyperGetHlsBodyReaderSmoke.kt"
+      - "scripts/source-tests/test_hyperget_hls_body_source.py"
+      - "scripts/source-tests/HyperGetHlsContentTypeSmoke.kt"
+      - "scripts/source-tests/test_hyperget_hls_mime_source.py"
+      - "scripts/LocalHlsRestartFixture.py"
+      - "scripts/Run-WindowsInstalledHlsRestartE2E.ps1"
+      - "scripts/source-tests/test_hyperget_hls_restart_e2e_source.py"
+      - ".github/workflows/hyperget-hls-redirect-milestone.yml"
+      - "downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/ftp/FtpStagedIdentityTest.kt"
+      - "scripts/source-tests/test_hyperget_ftp_stage_source.py"
+      - "scripts/source-tests/test_hyperget_ftp_workflow_scope.py"
+      - ".github/workflows/windows-installed-ftp-e2e.yml"
+      - "scripts/test_local_ftp_fixture.py"
+      - "scripts/LocalFtpFixture.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-only:
+    name: Python source contracts and local FTP fixture (no binaries)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - name: Check out exact PR head (not synthetic merge)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Verify PR commit version is SemVer-safe
+        run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_semver_source.py -v
+      - name: Verify HyperGet uninstaller cleanup ordering (source only)
+        run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_uninstaller_cleanup_order.py -v
+      - name: Verify FTP stage source contract
+        run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_ftp_stage_source.py -v
+      - name: Verify installed FTP workflow skips unrelated commits
+        run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_ftp_workflow_scope.py -v
+      - name: Verify loopback HTTP fixture port readiness (source only)
+        run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_http_fixture_port_readiness.py -v
+      - name: Verify installed external HTTPS acceptance contract (source only)
+        run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_external_https_e2e.py -v
+      - name: Parse installed external HTTPS workflow YAML (source only)
+        run: ruby -e "require 'yaml'; YAML.parse_file('.github/workflows/windows-installed-external-https-e2e.yml')"
+      - name: Verify HLS playlist refresh source contract
+        run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_hls_playlist_source.py -v
+      - name: Verify HLS media identity after playlist relocation (source only)
+        run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_hls_segment_identity_source.py -v
+      - name: Verify complete HLS segment and assembly source contract
+        run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_hls_segment_transfer_source.py -v
+      - name: Verify HLS job resume and atomic staged assembly source contract
+        run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_hls_resume_assembly_source.py -v
+      - name: Verify HLS persisted completion and staged-file source contract
+        run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_hls_resume_source.py -v
+      - name: Verify HLS persisted playlist refresh and downloader retirement
+        run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_hls_refresh_lifecycle_source.py -v
+      - name: Verify HLS preview cannot replace active segment workers
+        run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_hls_preview_lifecycle_source.py -v
+      - name: Verify redirected HLS manifest URL is used for relative segments
+        run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_hls_redirect_base_source.py -v
+      - name: Verify HLS segment credential scoping and redirect guard
+        run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_hls_segment_credentials_source.py -v
+      - name: Verify HLS manifest redirect credential isolation (source only)
+        run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_hls_manifest_redirect_source.py -v
+      - name: Verify guarded same-origin HLS redirect wiring
+        run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_hls_guarded_redirect_source.py -v
+      - name: Verify bounded HLS playlist body source contract
+        run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_hls_body_source.py -v
+      - name: Verify HLS MIME source contract
+        run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_hls_mime_source.py -v
+      - name: Verify installed HLS process-kill/relaunch source contract (no build)
+        run: |
+          python3 -m py_compile scripts/LocalHlsRestartFixture.py scripts/source-tests/test_hyperget_hls_restart_e2e_source.py
+          python3 -m unittest discover -s scripts/source-tests -p test_hyperget_hls_restart_e2e_source.py -v
+      - name: Verify installed Chrome capture warm-start and privacy source contracts
+        run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_chrome_capture_source.py -v
+      - name: Verify CLI status-lines source regression (previously omitted)
+        run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_cli_status_lines_source.py -v
+      - name: Verify lifecycle actor source regression
+        run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_lifecycle_context_source.py -v
+      - name: Verify HTTP part scheduling cannot drop first admission
+        run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_http_part_admission_source.py -v
+      - name: Verify HTTP pre-response liveness and cancellation contract
+        run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_http_part_deadline_source.py -v
+      - name: Verify shared-I/O part streaming and cancellation lifecycle
+        run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_part_downloader_io_lifecycle_source.py -v
+      - name: Verify NSIS uninstall cleanup settles before residue audit
+        run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_uninstall_settle_source.py -v
+      - name: Verify installed HTTP 1/4/16 benchmark source contract (no app build)
+        run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_active_benchmark_source.py -v
+      - name: Verify all Windows installed acceptance harnesses follow HyperGet executable identity
+        run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_executable_identity_workflows.py -v
+      - name: Verify installed Windows acceptance uses the full PR diff
+        run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_pr_diff_scope.py -v
+      - name: Verify bounded OkHttp dispatcher and explicit transport cancellation source contract
+        run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_http_dispatcher_bound_source.py -v
+      - name: Verify installed JVM memory profile harness
+        run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_memory_profile_source.py -v
+      - name: Verify relative-date refresh cadence
+        run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_relative_time_refresh_source.py -v
+      - name: Verify shared Liquid Progress rendering and installed Windows visual gate
+        run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_liquid_progress_source.py -v
+      - name: Verify local HTTP fixture and gated socket admission
+        run: python3 -m unittest scripts/test_local_http_range_fixture.py -v
+      - name: Verify local FTP fixture protocol
+        run: python3 -m unittest scripts/test_local_ftp_fixture.py -v
+      - name: Verify HyperGet icon binary/vector contract
+        run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_icon_contract.py -v
+      - name: Verify Windows PE icon audit wiring (source only)
+        run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_icon_resource_audit.py -v
+      - name: Verify HyperGet executable identity and cross-version compatibility contracts
+        run: python3 -m unittest discover -s scripts/source-tests -p test_hyperget_cross_version_upgrade_source.py -v
+
+      - name: Verify aria2 Stage 2 paired-comparison contract (source only; no build)
+        run: |
+          python3 -m py_compile scripts/source-tests/test_hyperget_aria2_comparison_source.py
+          python3 -m unittest discover -s scripts/source-tests -p test_hyperget_aria2_comparison_source.py -v
+          ruby -e "require 'yaml'; YAML.parse_file('.github/workflows/hyperget-windows-exe-aria2-evaluation.yml')"

@@ -46,6 +46,45 @@ internal fun validateRemoteFileIdentity(
     }
 }
 
+internal fun sameHttpResourceLocation(firstUrl: String, secondUrl: String): Boolean {
+    // Signed URLs commonly rotate credentials, but arbitrary query values can
+    // select a *different file* behind the same path. Never reuse a partial
+    // download when an identity-bearing query parameter changed.
+    fun isEphemeralCredentialParameter(name: String): Boolean {
+        val key = name.lowercase(java.util.Locale.ROOT)
+        return key.startsWith("x-amz-") || key.startsWith("x-goog-") ||
+            key in setOf(
+                "token", "access_token", "signature", "sig", "expires",
+                "expiry", "expiration", "policy", "key-pair-id", "googleaccessid",
+            )
+    }
+
+    fun resourceIdentity(url: String): Pair<String, List<String>> {
+        val withoutFragment = url.substringBefore('#')
+        val withoutQuery = withoutFragment.substringBefore('?')
+        val schemeSeparator = withoutQuery.indexOf("://")
+        val location = if (schemeSeparator < 0) {
+            withoutQuery
+        } else {
+            val scheme = withoutQuery.substring(0, schemeSeparator).lowercase(java.util.Locale.ROOT)
+            val authorityAndPath = withoutQuery.substring(schemeSeparator + 3)
+            val pathStart = authorityAndPath.indexOf('/')
+            val authority = if (pathStart < 0) authorityAndPath else authorityAndPath.substring(0, pathStart)
+            val path = if (pathStart < 0) "" else authorityAndPath.substring(pathStart)
+            "$scheme://${authority.lowercase(java.util.Locale.ROOT)}$path"
+        }
+        val persistentQuery = withoutFragment.substringAfter('?', "")
+            .split('&')
+            .filter { parameter ->
+                parameter.isNotEmpty() &&
+                    !isEphemeralCredentialParameter(parameter.substringBefore('='))
+            }
+            .sorted()
+        return location to persistentQuery
+    }
+
+    return resourceIdentity(firstUrl) == resourceIdentity(secondUrl)
+}
 internal suspend fun persistProgressAfterFlush(
     flushDestination: () -> Unit,
     persistSnapshot: suspend () -> Unit,
@@ -140,8 +179,15 @@ class HttpDownloadJob(
     }
 
     override suspend fun reset() {
+        val preserveCompletedOutput = downloadItem.status == DownloadStatus.Completed
         pause()
         clearPartDownloaderList()
+        if (!preserveCompletedOutput) {
+            // Reset must not leave old partial bytes available to a later fresh transfer.
+            // Close the shared file handle before deleting the visible or staged file.
+            destination.deleteOutputFile()
+            destination.cleanUpJunkFiles()
+        }
         setParts(emptyList())
         downloadItem.contentLength = IDownloadItem.LENGTH_UNKNOWN
         downloadItem.serverETag = null
@@ -192,12 +238,14 @@ class HttpDownloadJob(
             onDownloadResuming()
             try {
                 fetchDownloadInfoAndValidate()
+                downloadManager.throwIfStopAllRequested()
                 createPartsIfNotCreated()
                 prepareDestination {
                     _status.value = DownloadJobStatus.PreparingFile(it)
                 }
                 createPartDownloaderList()
 //                println("part downloaders created")
+                downloadManager.throwIfStopAllRequested()
                 beginDownloadParts()
                 startAutoSaver()
                 downloadItem.status = DownloadStatus.Downloading
@@ -215,10 +263,12 @@ class HttpDownloadJob(
                     else -> false
                 }
                 if (shouldStop) {
-                    // this function called from activeDownloadScope
-                    // so we change the scope here to prevent cancel this suspend function
-                    scope.launch {
-                        pause(e)
+                    // Stop All owns cancellation once its gate is raised; do not race it with
+                    // a second asynchronous pause command from the resuming job.
+                    if (!downloadManager.isStopAllInProgress()) {
+                        scope.launch {
+                            pause(e)
+                        }
                     }
                 } else {
                     downloadFailedRetryOrPause(
@@ -298,23 +348,45 @@ class HttpDownloadJob(
         val previousDestination = downloadManager.calculateOutputFile(previousItem)
         val newDestination = downloadManager.calculateOutputFile(newItem)
         val shouldUpdateDestination = previousDestination != newDestination
+        val linkChanged = previousItem.link != newItem.link
+        val resourceLocationChanged = linkChanged &&
+            !sameHttpResourceLocation(previousItem.link, newItem.link)
+        val wasActive = isDownloadActive.value ||
+            activeDownloadScope?.isActive == true ||
+            getPartDownloaderList().any { it.active }
+
         if (shouldUpdateDestination) {
-            if (isDownloadActive.value) {
+            // The persisted active flag can lag a restored retry/part worker. Stop and join
+            // every worker before moving a file on Windows, where an open handle blocks rename.
+            if (wasActive) {
                 pause()
+            } else {
+                cancelDownloadScope()
+                stopAllParts()
             }
             destination.moveOutput(newDestination)
         }
+
         // if there is no error update the actual download item
         downloadItem.applyFrom(newItem)
         if (shouldUpdateDestination) {
             // destination should be closed for now!
             initializeDestination()
         }
+
+        if (linkChanged) {
+            if (resourceLocationChanged) {
+                // A different origin/path is a different resource, not a signed-URL refresh.
+                // Drop stale range progress before the replacement URL can write into this file.
+                reset()
+                if (wasActive && !shouldUpdateDestination) resume()
+            } else {
+                // Query/fragment-only refresh keeps the partial state; resume validates length/ETag.
+                onLinkChanged()
+            }
+        }
         if (previousItem.preferredConnectionCount != downloadItem.preferredConnectionCount) {
             onPreferredConnectionCountChanged()
-        }
-        if (previousItem.link != downloadItem.link) {
-            onLinkChanged()
         }
         applySpeedLimit()
         extraConfig?.let {
@@ -378,16 +450,11 @@ class HttpDownloadJob(
     private val partLoopLock = Mutex()
 
     //    private val c = AtomicInteger(0)
-    private fun beginDownloadParts() {
-        if (partLoopLock.isLocked) {
-            return
-        }
-        activeDownloadScope?.launch {
-            if (!partLoopLock.tryLock()) {
-                return@launch
-            }
-//            c.incrementAndGet()
-            try {
+    private suspend fun beginDownloadParts() {
+        // A skipped tryLock could leave a newly resumed job marked Downloading
+        // with no part ever scheduled. Wait for the current scheduling pass.
+        // This call completes before onDownloadResumed publishes Downloading.
+        partLoopLock.withLock {
                 val activeCount = getPartDownloaderList()
                     .count { it.active }
                 val howMuchCreate = getRequestedPartitionCount() - activeCount
@@ -450,13 +517,7 @@ class HttpDownloadJob(
                             it.awaitIdle()
                         }
                 }
-            } catch (e: Exception) {
-                throw e
-            } finally {
-//                println("C:" + c)
-                partLoopLock.unlock()
-//                c.decrementAndGet()
-            }
+
         }
     }
 

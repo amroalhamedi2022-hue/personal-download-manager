@@ -1,6 +1,7 @@
 package com.abdownloadmanager.shared.ui.theme
 
 import androidx.compose.ui.graphics.luminance
+import com.abdownloadmanager.shared.storage.appsettings.DefaultAppSettings
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -33,11 +34,30 @@ class ModernThemePaletteContractTest {
     fun sevenLegacyThemeIdsArePreservedWithoutAliasesOrOverwrites() {
         val themes = DefaultThemes.getAll()
         val ids = themes.map { it.id }
-        assertEquals(23, themes.size, "7 legacy + 16 modern themes")
+        assertEquals(25, themes.size, "2 HyperGet + 7 legacy + 16 modern themes")
         assertEquals(ids.size, ids.toSet().size, "Theme IDs must be unique for persistence")
         legacyIds.forEach { legacy ->
             assertEquals(1, ids.count { it == legacy }, "Legacy setting '$legacy' must remain loadable")
         }
+    }
+
+    @Test
+    fun hyperGetAuroraIsTheNewInstallDefaultWithoutRemovingLegacyThemes() {
+        val themes = DefaultThemes.getAll()
+        val newInstallDefaults = object : DefaultAppSettings() {
+            override val useSparseFileAllocation = true
+        }
+        assertEquals("hyperget_aurora_dark", DefaultThemes.getDefaultDark().id)
+        assertEquals("hyperget_aurora_light", DefaultThemes.getDefaultLight().id)
+        assertEquals("hyperget_aurora_dark", newInstallDefaults.theme)
+        assertEquals("hyperget_aurora_dark", newInstallDefaults.defaultDarkTheme)
+        assertEquals("hyperget_aurora_light", newInstallDefaults.defaultLightTheme)
+        assertEquals(1, themes.count { it.id == "hyperget_aurora_dark" })
+        assertEquals(1, themes.count { it.id == "hyperget_aurora_light" })
+        assertFalse(DefaultThemes.hyperGetDark.isLight)
+        assertTrue(DefaultThemes.hyperGetLight.isLight)
+        assertTrue(DefaultThemes.hyperGetDark.primary != DefaultThemes.hyperGetDark.secondary)
+        assertTrue(DefaultThemes.hyperGetLight.primary != DefaultThemes.hyperGetLight.secondary)
     }
 
     @Test

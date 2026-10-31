@@ -22,7 +22,8 @@ if (-not $installDir.StartsWith($runnerTemp + [IO.Path]::DirectorySeparatorChar,
 }
 if (-not (Test-Path -LiteralPath $installer -PathType Leaf)) { throw 'Installer missing.' }
 if (-not (Test-Path -LiteralPath $installDir -PathType Container)) { throw 'Previously installed app missing.' }
-$main = Join-Path $installDir 'DownloadManager.exe'
+$main = Join-Path $installDir 'HyperGet.exe'
+$legacyMain = Join-Path $installDir 'DownloadManager.exe'
 $cli = Join-Path $installDir 'DownloadManagerCli.exe'
 $uninstaller = Join-Path $installDir 'uninstall.exe'
 foreach ($path in @($main, $cli, $uninstaller)) {
@@ -30,8 +31,9 @@ foreach ($path in @($main, $cli, $uninstaller)) {
         throw "Expected installed app executable is missing: $path"
     }
 }
+if (Test-Path -LiteralPath $legacyMain -PathType Leaf) { throw 'Branded install retained legacy DownloadManager.exe.' }
 $initialHash = (Get-FileHash -LiteralPath $main -Algorithm SHA256).Hash
-if (@(Get-Process -Name 'DownloadManager' -ErrorAction SilentlyContinue).Count -ne 0) {
+if (@(Get-Process -Name 'DownloadManager','HyperGet' -ErrorAction SilentlyContinue).Count -ne 0) {
     throw 'GUI must be stopped before silent reinstall and uninstall.'
 }
 # Reinstall the exact same signed/unsigned snapshot build. This checks NSIS
@@ -43,7 +45,7 @@ if (-not $reinstall.WaitForExit(180000)) {
 }
 if ($reinstall.ExitCode -ne 0) { throw "NSIS reinstall exit $($reinstall.ExitCode)" }
 Start-Sleep -Seconds 2
-if (@(Get-Process -Name 'DownloadManager' -ErrorAction SilentlyContinue).Count -ne 0) {
+if (@(Get-Process -Name 'DownloadManager','HyperGet' -ErrorAction SilentlyContinue).Count -ne 0) {
     throw 'NSIS silent reinstall unexpectedly launched a GUI.'
 }
 foreach ($path in @($main, $cli, $uninstaller)) {
@@ -51,6 +53,7 @@ foreach ($path in @($main, $cli, $uninstaller)) {
         throw "NSIS reinstall lost launcher: $path"
     }
 }
+if (Test-Path -LiteralPath $legacyMain -PathType Leaf) { throw 'Same-version reinstall restored legacy DownloadManager.exe.' }
 $reinstalledHash = (Get-FileHash -LiteralPath $main -Algorithm SHA256).Hash
 if ($reinstalledHash -ne $initialHash) {
     throw 'Reinstall changed the tested desktop executable unexpectedly.'
@@ -62,7 +65,7 @@ if (-not $uninstall.WaitForExit(180000)) {
 }
 if ($uninstall.ExitCode -ne 0) { throw "NSIS uninstall exit $($uninstall.ExitCode)" }
 Start-Sleep -Seconds 2
-foreach ($path in @($main, $cli, $uninstaller)) {
+foreach ($path in @($main, $legacyMain, $cli, $uninstaller)) {
     if (Test-Path -LiteralPath $path -PathType Leaf) {
         throw "NSIS uninstall left an installed executable: $path"
     }
@@ -76,6 +79,7 @@ New-Item -ItemType Directory -Path $proofDir -Force | Out-Null
 @(
     "SourceSha=$SourceSha"
     "InstallerSHA256=$((Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash)"
+    "GuiExecutableName=$([IO.Path]::GetFileName($main))"
     "ReinstalledGuiSHA256=$reinstalledHash"
     "SilentAutoLaunch=false"
     "ReinstallSameVersion=PASS"

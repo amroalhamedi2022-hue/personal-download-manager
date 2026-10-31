@@ -9,6 +9,7 @@ import threading
 import time
 import unittest
 from pathlib import Path
+from scripts.LocalHttpRangeFixture import BurstReadyHTTPServer
 
 
 class LocalHttpRangeFixtureTest(unittest.TestCase):
@@ -26,21 +27,27 @@ class LocalHttpRangeFixtureTest(unittest.TestCase):
                 str(Path(__file__).resolve().with_name("LocalHttpRangeFixture.py")),
                 "--file", str(cls.file),
                 "--port-file", str(cls.port_file),
-                "--chunk-delay-ms", "80"
+                "--chunk-delay-ms", "80",
+                "--task-chunk-delay-ms", "120"
             ],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
         )
+        # On Windows the file may become visible before write_text has
+        # flushed its port digits. Wait for a complete numeric value.
+        port_text = ""
         for _ in range(100):
             if cls.port_file.exists():
-                break
+                port_text = cls.port_file.read_text().strip()
+                if port_text.isdecimal():
+                    break
             if cls.process.poll() is not None:
                 raise RuntimeError(f"Fixture exited: {cls.process.stderr.read().decode()}")
             time.sleep(0.05)
-        if not cls.port_file.exists():
+        if not port_text.isdecimal():
             cls.process.kill()
-            raise RuntimeError("Fixture server did not start")
-        cls.port = int(cls.port_file.read_text())
+            raise RuntimeError("Fixture server did not publish a valid port")
+        cls.port = int(port_text)
 
     @classmethod
     def tearDownClass(cls):
@@ -64,8 +71,9 @@ class LocalHttpRangeFixtureTest(unittest.TestCase):
         finally:
             conn.close()
 
-    def get_stats(self, reset=False):
-        status, fields, body = self.request("GET", "/stats?reset=1" if reset else "/stats")
+    def get_stats(self, reset=False, gate_tasks=0):
+        path = (f"/stats?reset=1&gate_tasks={gate_tasks}" if reset else "/stats")
+        status, fields, body = self.request("GET", path)
         self.assertEqual(200, status)
         self.assertEqual("application/json", fields["Content-Type"])
         return json.loads(body)
@@ -76,6 +84,247 @@ class LocalHttpRangeFixtureTest(unittest.TestCase):
                 return
             time.sleep(0.03)
         self.fail("Fixture leaked active request(s)")
+
+    def test_burst_32_simultaneous_range_probes_do_not_refuse_connections(self):
+        # The Windows 16-job benchmark opens many more than five Range sockets.
+        # Check the actual fixture's listen backlog AND its live burst behavior.
+        self.assertGreaterEqual(BurstReadyHTTPServer.request_queue_size, 128)
+        self.wait_idle()
+        self.get_stats(reset=True)
+        count = 32
+        start = threading.Barrier(count + 1)
+        results, errors = [], []
+        lock = threading.Lock()
+
+        def fetch(index):
+            try:
+                start.wait(timeout=10)
+                status, _, body = self.request(
+                    "GET", f"/fixture.bin?task=burst-{index}",
+                    {"Range": "bytes=0-255"},
+                )
+                with lock:
+                    results.append((status, len(body)))
+            except Exception as exc:
+                with lock:
+                    errors.append(type(exc).__name__)
+
+        workers = [threading.Thread(target=fetch, args=(i,)) for i in range(count)]
+        for worker in workers:
+            worker.start()
+        start.wait(timeout=10)
+        for worker in workers:
+            worker.join(timeout=15)
+            self.assertFalse(worker.is_alive(), "A burst probe hung")
+        self.assertEqual([], errors, "Fixture refused a burst connection")
+        self.assertEqual(count, len(results))
+        self.assertTrue(all(result == (206, 256) for result in results))
+        self.wait_idle()
+        snapshot = self.get_stats()
+        self.assertEqual(count, snapshot["unique_tasks_seen"])
+        self.assertEqual(0, snapshot["active_distinct_tasks"])
+        self.get_stats(reset=True)
+
+    def test_gated_two_task_overlap_without_blocking_first_body(self):
+        self.wait_idle()
+        before = self.get_stats(reset=True, gate_tasks=2)
+        self.assertEqual(2, before["gate_expected_tasks"])
+        self.assertFalse(before["gate_released"])
+        results, errors = {}, []
+        def fetch(task):
+            try:
+                results[task] = self.request("GET", f"/fixture.bin?task={task}")
+            except Exception as exc:
+                errors.append(str(exc))
+        first = threading.Thread(target=fetch, args=("gate-first",))
+        second = threading.Thread(target=fetch, args=("gate-second",))
+        first.start()
+        for _ in range(100):
+            snapshot = self.get_stats()
+            if snapshot["active_distinct_tasks"] == 1:
+                break
+            time.sleep(0.02)
+        else:
+            self.fail("First gated socket was not registered")
+        # The first data GET must make progress BEFORE the second arrives;
+        # waiting for every task can exhaust a downloader-wide host socket cap.
+        for _ in range(30):
+            snapshot = self.get_stats()
+            if snapshot["bytes_sent"] > 0:
+                break
+            time.sleep(0.01)
+        self.assertGreater(snapshot["bytes_sent"], 0)
+        self.assertFalse(snapshot["gate_released"])
+        self.assertTrue(first.is_alive())
+        second.start()
+        for worker in (first, second):
+            worker.join(timeout=12)
+            self.assertFalse(worker.is_alive())
+        self.assertEqual([], errors)
+        for task in ("gate-first", "gate-second"):
+            self.assertEqual(200, results[task][0])
+            self.assertEqual(self.payload, results[task][2])
+        self.wait_idle()
+        after = self.get_stats()
+        self.assertTrue(after["gate_released"])
+        self.assertEqual(2, after["peak_distinct_tasks"])
+        self.assertEqual(2, after["unique_tasks_seen"])
+        self.get_stats(reset=True)
+
+    def test_gated_metadata_probes_do_not_release_data_socket_barrier(self):
+        # Windows evidence showed four tasks with only 256/512 bytes:
+        # those completed probes must not masquerade as active downloads.
+        self.wait_idle()
+        self.get_stats(reset=True, gate_tasks=2)
+        status, _, body = self.request(
+            "GET", "/fixture.bin?task=probe-first",
+            {"Range": "bytes=0-255"},
+        )
+        self.assertEqual(206, status)
+        self.assertEqual(self.payload[:256], body)
+        before = self.get_stats()
+        self.assertFalse(before["gate_released"])
+        self.assertEqual(0, before["active_distinct_tasks"])
+        self.assertEqual(1, before["task_probe_get_started"]["probe-first"])
+        results, errors = {}, []
+
+        def data_fetch(task, start, end):
+            try:
+                results[task] = self.request(
+                    "GET", f"/fixture.bin?task={task}",
+                    {"Range": f"bytes={start}-{end}"},
+                )
+            except Exception as exc:
+                errors.append(str(exc))
+
+        first = threading.Thread(target=data_fetch, args=("data-first", 0, 262143))
+        second = threading.Thread(target=data_fetch, args=("data-second", 0, 262143))
+        first.start()
+        for _ in range(100):
+            waiting = self.get_stats()
+            if waiting["active_distinct_tasks"] == 1:
+                break
+            time.sleep(0.02)
+        else:
+            self.fail("First long data GET did not become active")
+        self.assertFalse(waiting["gate_released"])
+        status, _, body = self.request(
+            "GET", "/fixture.bin?task=probe-second",
+            {"Range": "bytes=0-511"},
+        )
+        self.assertEqual(206, status)
+        self.assertEqual(self.payload[:512], body)
+        waiting = self.get_stats()
+        self.assertEqual(1, waiting["active_distinct_tasks"])
+        self.assertFalse(waiting["gate_released"])
+        second.start()
+        for worker in (first, second):
+            worker.join(timeout=8)
+            self.assertFalse(worker.is_alive())
+        self.assertEqual([], errors)
+        self.assertEqual(self.payload, results["data-first"][2])
+        self.assertEqual(self.payload, results["data-second"][2])
+        self.wait_idle()
+        after = self.get_stats()
+        self.assertTrue(after["gate_released"])
+        self.assertEqual(2, after["peak_distinct_tasks"])
+        self.assertEqual(4, after["unique_tasks_seen"])
+        self.assertEqual(1, after["task_probe_get_started"]["probe-second"])
+        self.assertEqual(1, after["task_data_get_started"]["data-first"])
+        self.assertEqual(1, after["task_data_get_started"]["data-second"])
+        reset = self.get_stats(reset=True)
+        self.assertEqual({}, reset["task_probe_get_started"])
+        self.assertEqual({}, reset["task_data_get_started"])
+
+    def test_gated_parallel_ranges_share_one_task_byte_budget(self):
+        self.wait_idle()
+        self.get_stats(reset=True, gate_tasks=2)
+        results, errors = {}, []
+
+        def fetch(label, task, range_header):
+            try:
+                headers = {"Range": range_header} if range_header else {}
+                results[label] = self.request("GET", f"/fixture.bin?task={task}", headers)
+            except Exception as exc:
+                errors.append(str(exc))
+
+        workers = [
+            threading.Thread(target=fetch, args=("left", "split", "bytes=0-131071")),
+            threading.Thread(target=fetch, args=("right", "split", "bytes=131072-262143")),
+            threading.Thread(target=fetch, args=("peer", "peer", None)),
+        ]
+        for worker in workers:
+            worker.start()
+        for worker in workers:
+            worker.join(timeout=12)
+            self.assertFalse(worker.is_alive())
+        self.assertEqual([], errors)
+        self.assertEqual(self.payload[:131072], results["left"][2])
+        self.assertEqual(self.payload[131072:], results["right"][2])
+        self.assertEqual(self.payload, results["peer"][2])
+        self.assertEqual(206, results["left"][0])
+        self.assertEqual(206, results["right"][0])
+        self.wait_idle()
+        snapshot = self.get_stats()
+        self.assertEqual(2, snapshot["peak_distinct_tasks"])
+        self.assertEqual(3, snapshot["total_requests"])
+        self.assertEqual(8, snapshot["paced_chunks"])
+        # The aggregate gated pacer is the ONLY throttle for 16-way
+        # workloads: do not stack the legacy per-connection sleep.
+        self.assertEqual(0, snapshot["connection_delay_sleeps"])
+        # The split task's two sockets must wait for the SAME budget.
+        self.assertGreater(snapshot["paced_wait_seconds"], 0.1)
+        self.assertEqual(len(self.payload) * 2, snapshot["bytes_sent"])
+        self.assertEqual(len(self.payload), snapshot["task_bytes_sent"]["split"])
+        self.assertEqual(len(self.payload), snapshot["task_bytes_sent"]["peer"])
+        reset = self.get_stats(reset=True)
+        self.assertEqual({}, reset["task_bytes_sent"])
+        self.assertEqual(0, reset["paced_chunks"])
+        self.assertEqual(0.0, reset["paced_wait_seconds"])
+
+    def test_many_range_sockets_share_bounded_live_task_pacer(self):
+        self.wait_idle()
+        self.get_stats(reset=True, gate_tasks=1)
+        results, errors = [], []
+        # Twelve sockets share one task, with no speculative reservations
+        # beyond the current send. This catches starvation/timeouts when a
+        # segmented downloader opens many parallel Range connections.
+        def fetch(part):
+            try:
+                start = (part % 4) * 65536
+                status, _, body = self.request(
+                    "GET", "/fixture.bin?task=multi-range",
+                    {"Range": f"bytes={start}-{start + 65535}"}
+                )
+                results.append((status, body, start))
+            except Exception as exc:
+                errors.append(str(exc))
+        workers = [threading.Thread(target=fetch, args=(i,)) for i in range(12)]
+        for worker in workers:
+            worker.start()
+        for worker in workers:
+            worker.join(timeout=8)
+            self.assertFalse(worker.is_alive(), "A Range socket was starved")
+        self.assertEqual([], errors)
+        self.assertEqual(12, len(results))
+        for status, body, start in results:
+            self.assertEqual(206, status)
+            self.assertEqual(self.payload[start:start + 65536], body)
+        self.wait_idle()
+        snapshot = self.get_stats()
+        self.assertEqual(12, snapshot["total_requests"])
+        self.assertEqual(12, snapshot["paced_chunks"])
+        self.assertEqual(0, snapshot["connection_delay_sleeps"])
+        self.assertEqual(12 * 65536, snapshot["task_bytes_sent"]["multi-range"])
+        self.assertEqual(1, snapshot["peak_distinct_tasks"])
+        self.get_stats(reset=True)
+
+    def test_gate_rejects_invalid_configuration(self):
+        for path in ("/stats?gate_tasks=2", "/stats?reset=1&gate_tasks=65",
+                     "/stats?reset=1&gate_tasks=abc"):
+            status, _, _ = self.request("GET", path)
+            self.assertEqual(400, status)
+        self.assertEqual(0, self.get_stats(reset=True)["gate_expected_tasks"])
 
     def test_range_response_body_and_headers(self):
         status, headers, data = self.request("HEAD", "/fixture.bin")
@@ -90,6 +339,30 @@ class LocalHttpRangeFixtureTest(unittest.TestCase):
         self.assertEqual("bytes 7-70/262144", headers["Content-Range"])
         self.assertEqual(self.payload[7:71], data)
         self.wait_idle()
+
+    def test_short_range_probe_has_completed_response_evidence(self):
+        # A 512-byte GET is a completed short probe, not proof that the
+        # entire 32-MiB download task completed. Keep both counts visible.
+        self.wait_idle()
+        self.get_stats(reset=True)
+        status, headers, body = self.request(
+            "GET", "/fixture.bin?task=short-probe",
+            {"Range": "bytes=0-511"},
+        )
+        self.assertEqual(206, status)
+        self.assertEqual(self.payload[:512], body)
+        self.wait_idle()
+        snapshot = self.get_stats()
+        self.assertEqual(1, snapshot["task_get_started"]["short-probe"])
+        self.assertEqual(1, snapshot["task_get_completed"]["short-probe"])
+        self.assertEqual(0, snapshot["task_get_interrupted"].get("short-probe", 0))
+        self.assertEqual(512, snapshot["task_requested_bytes"]["short-probe"])
+        self.assertEqual(512, snapshot["task_bytes_sent"]["short-probe"])
+        self.assertEqual(0, snapshot["active_distinct_tasks"])
+        reset = self.get_stats(reset=True)
+        for field in ("task_get_started", "task_get_completed",
+                      "task_get_interrupted", "task_requested_bytes"):
+            self.assertEqual({}, reset[field])
 
     def test_invalid_ranges_and_paths_do_not_expose_files(self):
         for bad in ("bytes=999999-", "bytes=99-7", "garbage"):
@@ -134,11 +407,74 @@ class LocalHttpRangeFixtureTest(unittest.TestCase):
         self.assertEqual(len(self.payload) * 2, snapshot["bytes_sent"])
         self.assertEqual(0, snapshot["active_distinct_tasks"])
         self.assertEqual(0, snapshot["active_requests"])
+        # Ungated 1/4-way workloads still exercise legacy socket pacing.
+        self.assertGreater(snapshot["connection_delay_sleeps"], 0)
         zero = self.get_stats(reset=True)
+        self.assertEqual(0, zero["connection_delay_sleeps"])
         self.assertEqual(0, zero["total_requests"])
         self.assertEqual(0, zero["peak_distinct_tasks"])
         self.assertEqual(0, zero["unique_tasks_seen"])
 
+
+    def test_redirect_route_preserves_task_query(self):
+        status, headers, body = self.request("GET", "/redirect?task=redirect-test")
+        self.assertEqual(302, status)
+        self.assertEqual(b"", body)
+        self.assertEqual("/fixture.bin?task=redirect-test", headers["Location"])
+        status, _, body = self.request("GET", headers["Location"])
+        self.assertEqual(200, status)
+        self.assertEqual(self.payload, body)
+        self.wait_idle()
+
+    def test_http_error_routes_return_the_requested_status_without_a_body(self):
+        for expected in (404, 429, 500):
+            status, headers, body = self.request("GET", f"/status/{expected}?task=status-{expected}")
+            self.assertEqual(expected, status)
+            self.assertEqual("0", headers["Content-Length"])
+            self.assertEqual(b"", body)
+        self.wait_idle()
+        self.assertEqual(0, self.get_stats()["active_requests"])
+        self.get_stats(reset=True)
+
+    def test_ignore_range_route_returns_full_200_and_records_the_ignored_header(self):
+        self.wait_idle()
+        self.get_stats(reset=True)
+        status, headers, body = self.request(
+            "GET", "/ignore-range?task=ignored-range",
+            {"Range": "bytes=100-199"},
+        )
+        self.assertEqual(200, status)
+        self.assertNotIn("Content-Range", headers)
+        self.assertEqual(self.payload, body)
+        self.wait_idle()
+        ranges = self.get_stats()["task_ranges"]["ignored-range"]
+        self.assertEqual(1, len(ranges))
+        self.assertTrue(ranges[0]["range"])
+        self.assertFalse(ranges[0]["honored"])
+        self.assertEqual(0, ranges[0]["start"])
+        self.assertEqual(len(self.payload) - 1, ranges[0]["end"])
+        self.get_stats(reset=True)
+
+    def test_range_telemetry_records_nonzero_resume_offsets_and_reset_clears_it(self):
+        self.wait_idle()
+        self.get_stats(reset=True)
+        status, _, body = self.request(
+            "GET", "/fixture.bin?task=resume-offset",
+            {"Range": "bytes=1000-"},
+        )
+        self.assertEqual(206, status)
+        self.assertEqual(self.payload[1000:], body)
+        self.wait_idle()
+        snapshot = self.get_stats()
+        ranges = snapshot["task_ranges"]["resume-offset"]
+        self.assertEqual(1, len(ranges))
+        self.assertEqual(1000, ranges[0]["start"])
+        self.assertEqual(len(self.payload) - 1, ranges[0]["end"])
+        self.assertTrue(ranges[0]["range"])
+        self.assertTrue(ranges[0]["honored"])
+        self.assertEqual(len(self.payload) - 1000, snapshot["task_requested_bytes"]["resume-offset"])
+        reset = self.get_stats(reset=True)
+        self.assertEqual({}, reset["task_ranges"])
 
 if __name__ == "__main__":
     unittest.main()

@@ -10,6 +10,7 @@ import com.abdownloadmanager.desktop.pages.enterurl.FtpDownloadRequest
 import com.abdownloadmanager.shared.storage.appsettings.requireSupportedMaxConcurrentDownloads
 import ir.amirab.downloader.downloaditem.contexts.RemovedBy
 import ir.amirab.downloader.downloaditem.contexts.User
+import ir.amirab.downloader.downloaditem.DownloadStatus
 import ir.amirab.downloader.monitor.CompletedDownloadItemState
 import ir.amirab.downloader.monitor.ProcessingDownloadItemState
 import ir.amirab.downloader.monitor.statusOrFinished
@@ -59,8 +60,17 @@ class DefaultAppIPCServiceImpl : IDefaultAppIPCService, KoinComponent {
 
     override suspend fun resumeDownload(ids: List<Long>) {
         awaitAppBoot()
-        for (id in ids) {
-            downloadSystem.userManualResume(id)
+        // The CLI/IPC list is a single user action, not N independent queue
+        // admissions. Respect the persisted global concurrency setting.
+        downloadSystem.userManualResume(ids)
+    }
+
+    override suspend fun openDownload(ids: List<Long>) {
+        awaitAppBoot()
+        ids.distinct().forEach { id ->
+            if (downloadSystem.getDownloadItemById(id) != null) {
+                appComponent.openDownloadDialog(id)
+            }
         }
     }
 
@@ -98,7 +108,10 @@ class DefaultAppIPCServiceImpl : IDefaultAppIPCService, KoinComponent {
                 status = ShowDownloadIPC.DownloadStatus.fromDownloadStatus(
                     it.status
                 ),
-                percent = null
+                percent = null,
+                failureType = if (it.status == DownloadStatus.Error) {
+                    safeFailureType(downloadSystem.downloadErrorsFlow.value[it.id]?.throwableName)
+                } else null
             )
         }
     }

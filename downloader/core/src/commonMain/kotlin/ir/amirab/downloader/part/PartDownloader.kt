@@ -21,16 +21,91 @@ import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import java.io.Closeable
+import java.net.SocketTimeoutException
 import okio.Buffer
 import okio.Source
 import okio.use
-import kotlin.concurrent.thread
 import kotlin.math.min
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
 const val PART_MAX_TRIES = 10
 const val RetryDelay = 1_000L
+
+// Bounds only the pre-response connection phase; long streaming bodies remain unrestricted.
+private const val PART_RESPONSE_DEADLINE_MILLIS = 45_000L
+
+// Reserve four workers under the default 64-worker Dispatchers.IO ceiling while
+// retaining enough body-copy capacity for the installed 16-download workload. The
+// 48-copy experiment reduced peak memory modestly but failed the controlled 16-way
+// throughput gate; 60 is the next bounded trial, not accepted until Windows A/B passes.
+// Acquire before Dispatchers.IO so excess parts suspend without occupying IO workers.
+// This does not cap task admission or change the independent OkHttp request-dispatch limits.
+internal const val PART_BODY_COPY_PARALLELISM = 60
+private val partBodyCopyPermits = Semaphore(PART_BODY_COPY_PARALLELISM)
+// Keep one connection slot available for each of the 16 queued HTTP jobs even
+// when earlier downloads start eight ranges each. Non-primary parts may use
+// at most 44 of the 60 shared slots; all parts still acquire the global gate.
+internal const val PART_PRIMARY_COPY_RESERVE = 16
+private val partNonPrimaryCopyPermits = Semaphore(PART_BODY_COPY_PARALLELISM - PART_PRIMARY_COPY_RESERVE)
+
+internal suspend fun <T> withPartBodyCopyPermit(block: suspend () -> T): T {
+    partBodyCopyPermits.acquire()
+    try {
+        return block()
+    } finally {
+        partBodyCopyPermits.release()
+    }
+}
+
+/** The first range/segment receives protected admission; extra ranges cannot starve it. */
+internal suspend fun <T> withFairPartBodyCopyPermit(isPrimaryPart: Boolean, block: suspend () -> T): T {
+    if (isPrimaryPart) return withPartBodyCopyPermit(block)
+    partNonPrimaryCopyPermits.acquire()
+    try {
+        return withPartBodyCopyPermit(block)
+    } finally {
+        partNonPrimaryCopyPermits.release()
+    }
+}
+
+// A stop request must win even if the worker coroutine has not been dispatched yet.
+internal fun shouldContinuePartWorker(coroutineActive: Boolean, stopRequested: Boolean): Boolean =
+    coroutineActive && !stopRequested
+
+/**
+ * A suspended HTTP call may otherwise leave a part Connecting forever while the
+ * persisted job reports Downloading. Turn the response-header deadline into an
+ * IOException so the existing retry budget handles it; never turn user/parent
+ * cancellation into a network retry. Close a connection acquired at the race edge.
+ */
+internal suspend fun <T : Closeable> awaitPartResponseWithDeadline(
+    timeoutMillis: Long,
+    connect: suspend () -> T,
+): T {
+    require(timeoutMillis > 0L)
+    var acquired: T? = null
+    try {
+        return withTimeout(timeoutMillis) {
+            connect().also { acquired = it }
+        }
+    } catch (timeout: TimeoutCancellationException) {
+        runCatching { acquired?.close() }
+        // An enclosing timeout cancels our caller; it is NOT a retryable socket error.
+        currentCoroutineContext().ensureActive()
+        throw SocketTimeoutException("HTTP response headers were not received before the connection deadline")
+    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+        runCatching { acquired?.close() }
+        throw cancelled
+    }
+}
+
 
 abstract class PartDownloader<
         TPart : DownloadPart
@@ -39,7 +114,8 @@ abstract class PartDownloader<
     val getDestWriter: () -> DestWriter,
     private val allowInternalRetries: Boolean = true,
 ) {
-    private var thread: Thread? = null
+    private val connectionLock = Any()
+    private var activeConnection: Connection<*>? = null
     private var scope: CoroutineScope? = null
     private var workerJob: Job? = null
     private val _statusFlow = part.statusFlow
@@ -67,7 +143,9 @@ abstract class PartDownloader<
             if (active) {
                 return
             }
-            stop = false
+            synchronized(connectionLock) {
+                stop = false
+            }
             active = true
         }
         val scope = CoroutineScope(SupervisorJob()).also {
@@ -78,7 +156,7 @@ abstract class PartDownloader<
             lastCriticalException = null
             lastException = null
             val result = runCatching {
-                while (coroutineContext.isActive || !stop) {
+                while (shouldContinuePartWorker(coroutineContext.isActive, stop)) {
                     if (tries > 0) {
                         delay(RetryDelay.milliseconds)
 //                        println("#${part.from}retrying $tries")
@@ -131,11 +209,6 @@ abstract class PartDownloader<
                 }
             }
 
-            active = false
-            if (!part.isCompleted) {
-                part.statusFlow.value = PartDownloadStatus.IDLE
-            }
-
             result.onFailure {
                 if (it is ShouldNotHappened) {
                     throw it
@@ -144,6 +217,17 @@ abstract class PartDownloader<
         }
         this.workerJob = workerJob
         workerJob.invokeOnCompletion {
+            // The coroutine body may never run if stop() cancels the worker before
+            // its first dispatch. Always clear active, including that early-cancel path.
+            // Keep cleanup associated with this exact run, not a subsequent restart.
+            synchronized(this) {
+                if (this.workerJob === workerJob) {
+                    active = false
+                    if (!part.isCompleted) {
+                        part.statusFlow.value = PartDownloadStatus.IDLE
+                    }
+                }
+            }
             // A SupervisorJob does not complete merely because its child completed.
             // Close the per-run scope so it cannot remain active after the part is done.
             scope.coroutineContext.job.cancel()
@@ -152,17 +236,22 @@ abstract class PartDownloader<
 
     @Volatile
     var stop = false
+
+    /**
+     * Closing the active response is the cancellation signal for a blocking Okio read.
+     * Interrupting a newly-created thread is not sufficient for every Source implementation.
+     */
     fun stop() {
-        stop = true
-        thread?.interrupt()
+        val connectionToClose = synchronized(connectionLock) {
+            stop = true
+            activeConnection
+        }
+        runCatching { connectionToClose?.close() }
         scope?.coroutineContext?.job?.cancel()
     }
 
     suspend fun join() {
-        withContext(Dispatchers.IO) {
-            workerJob?.join()
-            thread?.join()
-        }
+        workerJob?.join()
     }
 
 
@@ -210,26 +299,53 @@ abstract class PartDownloader<
 
     private suspend fun download() {
         onNewStatus(PartDownloadStatus.Connecting)
-        val conn = connectAndVerify()
-        thread = thread {
-            if (stop || Thread.currentThread().isInterrupted) {
-                conn.close()
-                onCanceled(kotlinx.coroutines.CancellationException())
-                return@thread
+        // Reserve a body-copy slot BEFORE opening a network connection. Previously all
+        // pending parts could connect first, leaving hundreds of idle HTTP responses
+        // (and their socket/Okio buffers) resident while only 60 parts could copy.
+        // The permit covers both the response-header wait and the body lifecycle.
+        withFairPartBodyCopyPermit(part.getID() == 0L) {
+            downloadWithReservedConnectionSlot()
+        }
+    }
+
+    private suspend fun downloadWithReservedConnectionSlot() {
+        val conn = awaitPartResponseWithDeadline(PART_RESPONSE_DEADLINE_MILLIS) {
+            connectAndVerify()
+        }
+
+        // Register before entering the blocking body copy. If stop wins the race,
+        // close the just-acquired connection instead of leaking a response stream.
+        val registered = synchronized(connectionLock) {
+            if (stop) {
+                false
+            } else {
+                activeConnection = conn
+                true
             }
-//            thisLogger().info("going to copy data to destination $conn")
-            try {
-                conn.use {
-                    // connection automatically closes the source
-                    val connectionStream = it.source
+        }
+        if (!registered) {
+            runCatching { conn.close() }
+            onCanceled(kotlinx.coroutines.CancellationException("Part stopped before body copy started"))
+            return
+        }
+
+        try {
+            // The shared permit is already held while the connection is opened.
+            // Keep the connection in use() so cancellation closes its response.
+            conn.use { connection ->
+                withContext(Dispatchers.IO) {
                     getDestWriter().use { writer ->
-                        copyDataSync(connectionStream, writer)
+                        copyDataSync(connection.source, writer)
                     }
                 }
-            } catch (e: Exception) {
-                onCanceled(e)
-            } finally {
-                thread = null
+            }
+        } catch (e: Exception) {
+            onCanceled(e)
+        } finally {
+            synchronized(connectionLock) {
+                if (activeConnection === conn) {
+                    activeConnection = null
+                }
             }
         }
     }
@@ -263,7 +379,7 @@ abstract class PartDownloader<
         var firstLoop = true
         val bufferSize = DEFAULT_BUFFER_SIZE.toLong()
         while (true) {
-            if (stop || Thread.currentThread().isInterrupted) {
+            if (stop) {
                 onCanceled(kotlinx.coroutines.CancellationException())
                 break
             }
@@ -295,7 +411,14 @@ abstract class PartDownloader<
 //                "read count $readCount is bigger than homMuchReadFromBuffer $homMuchReadFromBuffer"
 //            }
             if (readCount == -1L) {
-                onFinish()
+                // A socket can end before its advertised range is complete. Never
+                // persist a truncated known-length range as successfully finished;
+                // retry from part.current instead of corrupting the final file.
+                if (part is RangedPart && part.to != null && !part.isCompleted) {
+                    onCanceled(java.io.EOFException("HTTP range ended at byte ${part.current} before the expected end ${part.to}"))
+                } else {
+                    onFinish()
+                }
                 break
             }
             destWriter.write(buffer, readCount)

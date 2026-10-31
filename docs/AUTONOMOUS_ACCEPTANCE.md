@@ -1,0 +1,2491 @@
+## 2026-10-28 — Stage 2 same-end Range accounting must ignore concurrent handler arrival order (FIX STAGED; exact-head Windows rerun required)
+
+**Previous exact tested code/harness SHA:** `d0f146776233f21b9d96ba0a0de23457d4b05178` on `automation/idm-ftp-cancel-and-category-flush` → PR #3, base `codex/repair-rf00-rf01`.
+
+### Evidence from the preceding Windows run
+
+- **PASS:** the exact-head desktop/downloader regression suites and Windows installer job in [run 40733504846](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40733504846); the staged test installer SHA-256 was `e33bc6587084ef09e24a8ab1b5e7112b3079de1f632536b736282cb1a3590596`. This is a test installer, not final delivery.
+- **PASS:** pinned aria2 1.37.0 archive verification and Stage 1 HTTP/FTP/RPC viability; the source contract passed 9/9.
+- **PASS:** the other exact-head Windows gates for installed HTTP, FTP Pause/REST resume, HLS, HTTPS/Range, browser capture, GUI smoke, upgrade/rollback, queue lifecycle, relative-time refresh, memory profiling and HyperGet's one-round 1/4/16 workload.
+- **FAIL — Stage 2 harness accounting only:** the paired matrix stopped during aria2 active-16 round 1 at task 2, after the installed HyperGet 1/4/16 round and aria2 1- and 4-task rounds passed. The exception was `has unexplained duplicate socket bytes`; the three paired rounds and the 1/4/8 segmentation sweep did not finish. Do not promote this run to Stage 2 PASS.
+- Run artifacts: [comparison diagnostics and outputs](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40733504846/artifacts/12836303521), archive SHA-256 `591fdb81c61f98acfc4842eb57556de8808927a1c940a4f7da039cd6d1644332`.
+
+### Root cause and controlled fix
+
+The loopback fixture records each request when its handler starts. With many concurrent Range GETs, that arrival order is not guaranteed to match byte-offset order. The matrix already classified overlap after sorting intervals by byte offsets, but counted a same-end tail overlap only when its lower-start range happened to appear earlier in the request-arrival list. That nondeterminism could undercount the allowed retry event and falsely reject otherwise fully reconciled bytes.
+
+Production download code and performance thresholds are unchanged. Commit `20932bd6964532c6a23cccd47e692c195a82910f` changes only the benchmark harness so each completed same-end range is compared against every *other* distinct same-end range, independent of handler arrival order. The 64-KiB maximum per overlap, retry-count bound, complete unique coverage, no-gap/no-out-of-bounds checks, exact socket-write reconciliation and final SHA-256 requirements remain intact.
+
+The companion source regression was added in commit `4b053cc6d674ce70112b30d10f80711c5284776e`, including a reordered response list plus the existing oversized-overlap and missing-byte rejection cases.
+
+### First regression attempt on the updated head — FAIL (8/9 source contract cases)
+
+Run [40745429146](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40745429146) checked out exact SHA `4b053cc6d674ce70112b30d10f80711c5284776e`. The new reordered fixture case exposed a second copy of the same assumption in the Python reference model: it still searched only `responses[:index]`, so it undercounted a tail overlap when the handler-arrival order differed from byte-offset order. The PowerShell harness loop had already been changed, but the mirrored source model had not yet been updated. The aria2 preflight therefore failed and Stage 1 was skipped; this is a test-model failure, not a product-download failure. The separate Windows build job was still running when this result was inspected. Do not count this run as acceptance. The next patch updates the Python model in lockstep and reruns the full exact-head gate.
+
+### Pre-build acceptance question
+
+Does the revised accounting accept the known bounded 128-KiB total overlap when the two causes arrive in a different order, while still rejecting oversized overlap or incomplete coverage, and then allow the full exact-head Windows comparison to finish?
+
+**Expected:** the source regression passes first; then a purposeful Windows run on the commit containing both harness fix and regression proves all 63 outputs per engine, all three paired 1/4/16 rounds, the 1/4/8 segmentation sweep, SHA-256 equality, real concurrency and CPU/RAM gates. Source tests alone cannot reproduce concurrent Windows socket-handler ordering and aria2's actual Range retry behavior.
+
+**Status until that exact-head run completes:** Stage 2 **NOT PASS**; aria2 migration remains blocked. Stock aria2 is evaluation-only because Torrent is prohibited; no Torrent workload or bundling, no merge, no main write, and no final EXE/release claim.
+
+---
+
+## 2026-10-28 — Stage 2 exact-head failure and strict socket-byte reconciliation (FIX SUBMITTED; Windows rerun pending)
+
+**Exact PR head:** \`84cf6671d9ef5297a8ab5441d3db6f23016bb11d\` on \`automation/idm-ftp-cancel-and-category-flush\` → PR #3, base \`codex/repair-rf00-rf01\`.
+
+### Current evidence
+- **PASS:** exact-head Windows desktop/downloader regression and installer job in [run 40723169362](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40723169362); the build job staged the test installer with SHA-256 \`515a160e42c9e3f556277e95f9fdb239757009e1ab2de4576ce04188b2760dab\`. This is a test installer, not final delivery.
+- **PASS:** pinned aria2 1.37.0 archive SHA-256 and Stage 1 HTTP/FTP/RPC viability job in the same run.
+- **PASS:** the exact-head FTP loopback/REST/WinCred, queue lifecycle, HTTP, external HTTPS/Range, HLS, installed GUI, browser capture, upgrade/rollback and one-round 1/4/16 workload jobs completed successfully. These results remain scoped to this SHA and their own gates.
+- **FAIL — Stage 2 harness accounting:** the paired comparison stopped at aria2 active-16 round 1, task 10, in \`scripts/Run-WindowsAria2ActiveBenchmarkMatrix.ps1\`. Fixture socket-write count was \`33,685,504\` bytes; the old bound allowed only \`33,619,968\` (32 MiB plus one 64-KiB chunk). The artifact shows an interrupted un-ranged response that overlapped the first honored Range by 64 KiB, plus a completed same-end tail retry that overlapped a prior range by another 64 KiB. The resulting 128-KiB duplicate write is concrete, bounded overlap—not unexplained missing payload.
+- **Independent artifact post-check:** all 21 available aria2 outputs in the failed round (1 + 4 + 16) were byte-for-byte equal to the 32-MiB fixture and had SHA-256 \`e09320c5b00b34bb704802136c599a95b3996332ba84d7c7f21112b6231b6bd0\`. This post-check does **not** convert the failed matrix into PASS: the workflow stopped before its own full aria2 acceptance loop and the three-round comparison/1-4-8 sweep did not complete.
+- Failure artifact: [Stage 2 diagnostics and outputs, artifact 12830914928](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40723169362/artifacts/12830914928), archive digest \`sha256:46e3a3c45b42b58f45aad5747c8f953bb117f39a5474c413d2df3da11e41371a\`.
+
+### Controlled repair in this commit
+Replace the single \`interrupted × 64 KiB\` threshold with exact response-interval reconciliation: response socket-write totals must match fixture counters; unique intervals must cover exactly the expected payload with no gaps or out-of-bounds bytes; each overlap is capped at 64 KiB and must be attributable to an interrupted un-ranged response or a same-end tail retry; tiny metadata probes are separately bounded; duplicate bytes must reconcile exactly with the served intervals. Final SHA-256 checks remain mandatory. Add a source regression model for the observed 128-KiB case and for oversized overlap/missing-byte rejection.
+
+### Pre-build acceptance question
+Does the strict interval accounting accept the observed bounded 128-KiB overlap while rejecting larger overlaps and any byte-coverage gap, and then allow the full exact-head three-round 1/4/16 comparison plus 1/4/8 segmentation sweep to finish?
+
+**Expected:** source regression PASS, then a purposeful Windows run on the new exact SHA with all outputs SHA-256 verified and the unchanged performance/working-set gates applied. Source tests alone cannot reproduce real socket timing or aria2 retry behavior. Until that run completes, Stage 2 is **NOT PASS**, production engine migration remains blocked, and the prior \`STAGE2_PERFORMANCE_GO\` is valid only for its previously tested SHA.
+
+**No merge, no main write, no release, no Torrent workload or bundling.**
+
+---
+
+## 2026-10-27 — restored HTTP lifecycle and Windows destination mutation (FIX SUBMITTED; exact-head verification pending)
+
+**Prior exact PR head:** `fdc971c117f166a007d5ea5beeed1be2a6a23239`. The Windows desktop test workflow [40577539587](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40577539587) compiled the test sources and ran 202 downloader-core tests; **200 passed, 2 failed**:
+
+- `concurrentResumeResetAndLinkUpdateKeepOneActualHttpLifecycle`: the replacement download was 4 KiB larger than the fixture (528,384 vs 524,288 bytes). The existing link-change path retained range state even when origin/path changed, allowing stale progress to be reused for a different resource.
+- `restoredHttpRetryStopsBeforeMovingDestinationAndCanResumeSafely`: Windows rejected the destination rename because the shared Okio file handle was still open after worker cancellation. The asynchronous part-status collector is not a reliable sole owner of handle release because StateFlow may conflate cancellation with IDLE.
+
+### Controlled production + regression repair
+
+- Add an explicit resource-location comparison: query/fragment-only signed URL refresh preserves partial state and still validates remote length/ETag; a different origin or path resets transfer metadata and removes incomplete output before restarting.
+- Reset now removes incomplete/staged output after workers are stopped, while preserving a previously completed user file.
+- Destination changes stop/join part workers even if the persisted active flag is stale. `SimpleDownloadDestination` closes its shared file handle and clears writer references before moving or deleting output.
+- Add regression coverage for URL identity normalization. Existing two failing end-to-end downloader tests remain the primary acceptance checks; no assertion was weakened.
+
+### Pre-build acceptance question
+
+Will the focused Windows Gradle regression suite pass both previously failing cases, produce exactly 512 KiB of the replacement resource with matching bytes, and move the restored retry output without a sharing violation?
+
+**Expected:** source checks pass; the two tests pass with exact file-byte equality and no open transfer/file handle after the move. Source tests alone cannot establish Windows file-sharing semantics or real worker/Okio teardown, so the targeted Windows Gradle test run is required before the fix is accepted.
+
+**Status until the new run completes:** NOT TESTED on the new SHA. The 1/4/16 paired benchmark [40577539492](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40577539492) is still running on the prior exact head and must be kept separate. No threshold change, no main write, no merge, no final EXE or release claim.
+
+---
+
+## 2026-10-27 — HG-03 exact-head executable-identity gates (OPEN)
+
+**Exact PR head inspected:** e36266add4eb4e009eb6c64a4e71ceae5d5090b7 on automation/idm-ftp-cancel-and-category-flush; PR #3 remains open/Draft. This checkpoint is recorded before the next targeted Windows build.
+
+### Evidence from that exact head
+- Source-only run [40549485454](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40549485454) failed four identity subcases. The assertion expected the literal DownloadManagerCli$, while the active benchmark, memory profile, HTTP E2E and FTP E2E contained incomplete -match 'DownloadManagerCli lines. These were malformed acceptance scripts, not a download-engine failure.
+- Windows GUI run [40549485330](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40549485330) built and installed the exact-head installer and launched the GUI/screenshot step, but Liquid Progress E2E failed at Run-WindowsLiquidProgressVisualE2E.ps1:162: the harness still filtered ProcessName -match 'DownloadManager' after the branded process became HyperGet. Artifact [12753789808](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40549485330/artifacts/12753789808), SHA-256 b1e2404c460c8b40e13b4a923f5bfb18dc99f768c73fc920d6673d012ca734aa.
+- Cross-version run [40549485561](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40549485561) passed change-scope only; the actual upgrade/rollback job was skipped. Browser run [40549485303](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40549485303) also skipped its installed Chrome/Firefox job. Neither is a current-head functional PASS.
+- Exact-head queue lifecycle [40549485344](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40549485344), FTP Kotlin/WinCred [40549485310](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40549485310), and HLS [40549485488](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40549485488) completed successfully. These do not replace the skipped installed gates.
+
+### Controlled repair
+- Replace all four malformed CLI selectors with exact BaseName -eq 'DownloadManagerCli' selection and require exactly one branded GUI, zero legacy GUI binaries and exactly one backward-compatible CLI.
+- Make the Liquid Progress harness derive the GUI process name from the supplied installed executable, require HyperGet.exe, and discover that exact process instead of the retired GUI name.
+- Add regression assertions for the selector, cardinality and Liquid Progress process identity; add the regression file to cross-version and real Chrome/Firefox native-host workflow path/scope gates.
+
+### Pre-build question
+Can the exact-head installer now expose one HyperGet.exe plus the stable CLI, display a real active Liquid Progress window, and proceed through cross-version upgrade/rollback and Chrome/Firefox capture?
+
+**Expected:** source contracts and PowerShell parsing PASS; Windows installer builds; installed HTTP output matches fixture SHA-256; Liquid Progress is captured while a real transfer is active; upgrade/rollback and installed browser capture run rather than skip. **Why source tests are insufficient:** the renamed process name, native window handle, NSIS layout, CLI IPC, transfer bytes and Windows lifecycle only exist in the installed Windows execution.
+
+**Acceptance remains OPEN.** No final EXE/release is claimed; no merge or main write.
+
+---
+
+## 2026-10-27 — follow-up: Windows table border hid the requested ID (OPEN)
+
+**Exact candidate SHA:** `e986936bb5ffd7f4fa6183e7cf50a53281b8afd2`.  
+**Windows run:** [40410263260](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40410263260).  
+**Proof artifact:** [12692738726](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40410263260/artifacts/12692738726), archive SHA-256 `163b3d3e98b44d92a45ac5d182c187044b6130e5aff70818f1dddf0f53240381`.
+
+### Evidence
+- **PASS:** source contracts passed before packaging.
+- **PASS:** both exact-snapshot Windows installers built. Baseline installer SHA-256: `c3b7a333e51980cbea96aab4febaaf4b5be778e63436c40ba382eebfc1f06d9a`; candidate installer SHA-256: `34442e65f317d7e90dcb2e416241ab387a766140ae6233d7ac3e4f3ee595506d`.
+- **PASS:** the baseline CLI created the loopback download. The file reached exactly 8,388,608 bytes and its SHA-256 matched the fixture; fixture counters were 9 requests and 8,388,864 bytes sent.
+- **FAIL (harness only, after transfer):** status remained `UNPARSED`. The actual row began `? 0 ? Finish? ...`: the leading table-border glyph had been decoded as `?`, so the numeric-ID row regex never matched. The prior parser change handled the clipped status token but not this leading border. Upgrade, rollback and WinCred lifecycle assertions did not run; test-owned data cleanup passed.
+
+### Next controlled fix — recorded before the next build
+Trim only leading/trailing table-border replacement characters from each captured line, then parse the requested numeric ID and its first status cell. Preserve the internal `Finish?` marker so it normalizes to `Finished`. Extend the regression to the complete observed row, including the leading border, and retain the no-neighbor-row invariant.
+
+**Pre-build question:** does normalizing the outer table border let the baseline row ID and truncated `Finished` status parse correctly, so the full cross-version lifecycle can execute?  
+**Expected:** source contracts pass; on Windows the real 8 MiB transfer is observed as `Finished`, then upgrade → candidate uninstall → rollback → normal uninstall completes with history/settings/shortcuts/registry and synthetic WinCred preserved and safely cleaned up.  
+**Why source tests are insufficient:** only the packaged baseline process reproduces the native Windows table formatting, actual file transfer and Windows installer/credential-store transitions.
+
+**Acceptance remains OPEN.** No production downloader source changed. Do not mark upgrade/rollback/WinCred PASS until a new exact-head artifact records `Result=PASS`. No merge, release or final EXE delivery.
+
+---
+
+## 2026-10-27 — cross-version Windows gate: real transfer succeeded; status parser false-negative (OPEN)
+
+**Prior exact candidate SHA:** `69d6120442e7abbe092e1af95a146579f6a0a42a`.  
+**Windows run:** [40401156337](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40401156337).  
+**Proof artifact:** [12689113834](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40401156337/artifacts/12689113834), archive SHA-256 `4cbc9fb96fa5b410ef7b824b0253e220fe454c29a6cc082d6f2c86dfe50df8c8`.
+
+### Evidence from the failed gate
+- **PASS:** baseline installer built from exact base SHA `6c386abeae95e8e0460308d17c033558cbd60f15`; installer SHA-256 `363aa5751ba15574a856c361d5e4a38244996371105680ca7cd4785c9e8a2691`.
+- **PASS:** candidate installer built from exact PR SHA `69d6120442e7abbe092e1af95a146579f6a0a42a`; installer SHA-256 `ec6b0f4b5cef89694fb3748fbab5b8ddda6f9997bfd81d805d7c7fe89314661e`.
+- **PASS:** direct baseline CLI invocation added the loopback task; the fixture saw 9 requests and 8,388,864 response bytes. The final file was exactly 8,388,608 bytes and its SHA-256 matched the expected fixture.
+- **FAIL (test harness, after transfer):** status remained `UNPARSED`. The baseline CLI's fixed-width table appeared in the transcript as `0 ? Finish? ...`; the parser only recognized the full word `Finished`. The script stopped before upgrade, rollback and WinCred lifecycle assertions. Test-owned data cleanup passed.
+- This run disproves the earlier URL-validation suspicion for this attempt: the URL passed and the real transfer completed. Do not mark upgrade/rollback or WinCred preservation as PASS.
+
+### Controlled fix staged before the next Windows build
+The parser now reads only the status cell after the requested numeric ID, recognizes the truncated `Finish?`/ellipsis representation as `Finished`, and retains the existing row-boundary guard so a neighboring download cannot satisfy the poll. A source regression exercises full, truncated, wrapped and unrelated status cells.
+
+**Pre-build question:** can the baseline CLI's narrow Windows table be parsed as `Finished` after the verified 8 MiB transfer, allowing the full upgrade → candidate uninstall → rollback → normal uninstall and synthetic WinCred lifecycle to execute?  
+**Expected:** source contracts pass; on Windows the baseline status becomes `Finished`, then settings/history/shortcuts/registry and synthetic WinCred remain valid through upgrade and rollback, with final SHA and cleanup checks passing.  
+**Why source tests are insufficient:** only the packaged baseline process on Windows reproduces the actual CLI table width, native output decoding and real Windows install/uninstall/credential-store transitions.
+
+**Acceptance remains OPEN.** The new Windows run must build both exact snapshots and record `Result=PASS` before this milestone can close. No production downloader code was changed in this parser-only fix; no merge, release or final EXE delivery is authorized by this checkpoint.
+
+---
+
+## 2026-10-26 — latest exact-head cross-version gate: HTTP setup still fails (OPEN)
+
+**Exact candidate SHA:** 78c830d4005c64c347073fb96a7dfa88666e9e70.  
+**Run:** [40397222265](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40397222265).  
+**Proof artifact:** [12687572255](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40397222265/artifacts/12687572255), archive SHA-256 `94703509c35388c42cc130b3955b7e69d559f17233a57fd1b793e3be3f4f16ce`.
+
+### What passed / failed
+- **PASS:** all other exact-head gates completed successfully: source safety [40397222487](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40397222487), installed HTTP 1/4/16 [40397222283](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40397222283), FTP Kotlin/WinCred [40397222194](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40397222194), relative-time tests [40397222409](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40397222409), JVM profile [40397222210](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40397222210), installed FTP E2E [40397222391](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40397222391), Chrome/Firefox capture [40397222328](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40397222328), GUI smoke [40397222303](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40397222303), queue/I/O lifecycle [40397222290](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40397222290), and HLS [40397222279](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40397222279).
+- **PASS:** both cross-version installers built from the exact source snapshots. Baseline installer SHA-256: `b9d2d40068bc0b7dc7e8d268a5d1dec87795dc0965a571c4842064feb7d3782f`; candidate installer SHA-256: `92416aab86f9d3a961d49749261410407cf9776a6d7c68369ede57cc68202388`.
+- **FAIL:** the baseline CLI's add-download request was rejected by the GUI-side `HttpDownloadCredentials.validate` with `url is not valid` before the HTTP fixture sent any bytes. The run never reached the upgrade/rollback or WinCred lifecycle assertions. Test-owned data cleanup passed.
+- **Important correction:** the current script already uses `http://127.0.0.1:<port>/fixture.bin` with no query. The earlier hypothesis that the `?task=upgrade-rollback` query alone caused this failure is **not supported** by the latest run and must not be repeated as the root cause.
+
+### Next controlled experiment
+Before the next Windows build, add a safe loopback-URI preflight (log scheme/host/port/path and length only, never arbitrary URLs/secrets) and invoke the baseline CLI directly with the same native argument form used by the previously passing installed HTTP E2E, instead of the wrapper/splatting helper. Add source regression assertions for that contract.
+
+**Pre-build question:** does the direct invocation pass the exact loopback URL through the installed CLI/GUI IPC and complete the 8 MiB download with the expected SHA-256?  
+**Expected:** preflight shows host 127.0.0.1, a nonzero port, path /fixture.bin, no query; CLI adds the task; 8,388,608 bytes and matching SHA-256 are proven, then the full upgrade → candidate uninstall → rollback → normal uninstall and synthetic WinCred checks continue.  
+**Why source tests are insufficient:** only the packaged baseline process on Windows can reveal the actual argument/IPC behavior; URL shape assertions cannot prove bytes or Windows state transitions.
+
+**Acceptance remains OPEN.** No production downloader code changed in this diagnostic experiment. Do not mark transfer, upgrade, rollback, or WinCred lifecycle PASS until the new exact-head artifact records `Result=PASS`.
+
+---
+
+## 2026-10-25 — two installed Windows functional milestones PASS (no final release)
+
+### HTTP/HTTPS engine queue — localhost HTTP 1/4/16 acceptance
+**PASS:** [installed Windows benchmark 40196524970](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40196524970) at exact production SHA `1d2f5179ec7e15016087afd17f453db5fa48673f`: **63/63 distinct downloads** with matching SHA-256, **three rounds each at 1/4/16 simultaneously transferring tasks**, **9/9 process-tree CPU/RAM CSVs**; real NSIS compile, silent install, GUI and CLI executed on Windows Server 2022. The 16-task peak working set in recorded report was **524.254 MiB**, private bytes **582.953 MiB**; performance optimization remains open. [Artifact 12600169524](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40196524970/artifacts/12600169524), ZIP SHA-256 `2148b7c60c94ee9da2d711e129fb3bddcb1075f56f7da5edc028d3ac11e3b902`. This closes the **tested local HTTP concurrency gate** at that SHA, not all internet HTTP/HTTPS, performance parity, or independent recheck. Comparison from this SHA to FTP-tested `3f0cdafd` changes only FTP test workflow/harness, not HTTP production. An additional [installed HTTP run 40202209017](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40202209017) was still in progress at checkpoint; do not infer its result.
+
+### FTP installed pause/restart/resume — Windows Credential Manager
+**PASS:** [Windows installed authenticated FTP run 40202208932](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40202208932) at exact SHA `3f0cdafd7577da9747ce6c55f149e3a5617282df`: free runner built and installed NSIS GUI/CLI, authenticated to a real loopback FTP control/data server, paused **32 MiB** after **4,259,840 bytes**, restarted GUI process, resumed using positive `REST` offset from WinCred-backed credentials, verified final SHA-256 `e09320c5b00b34bb704802136c599a95b3996332ba84d7c7f21112b6231b6bd0`, and verified task/data/credential cleanup. Fixture and installed jobs PASS. [Artifact 12602556943](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40202208932/artifacts/12602556943), ZIP SHA-256 `c1d39c0008a34011659cfe8fc4123ff01cc4c28a9a3ba39ebd95291870ca1619`, includes the internal installer SHA report. Previous runs failed due to test-harness formatting/parser issues, not established FTP transfer defects.
+
+### Browser integration — separate repository, separate Draft PR
+**PASS in browser [PR #1](https://github.com/amroalhamedi2022-hue/personal-download-manager-browser-integration/pull/1):** [CI 40202955190](https://github.com/amroalhamedi2022-hue/personal-download-manager-browser-integration/actions/runs/40202955190) at exact SHA `7bdc9dd1`: 11/11 real Node native transport tests, targeted TS typecheck, production Chrome and Firefox Vite bundles and HyperGet/nativeMessaging manifests. The one-shot browser-native call now times out rather than hanging forever. **FAIL/OPEN:** full-repository TypeScript strict check due to pre-existing dependency declaration, BackendProvider import and manifest typing errors; targeted check does not hide or close these. **NOT TESTED:** installed browser ↔ Windows host E2E, capture/download and legacy upgrade. No main-repo browser files were changed.
+
+### Remaining product gates (do not claim release)
+**PASS only within exact tested scope:** localhost HTTP 1/4/16 SHA and CPU/RAM; localhost authenticated FTP pause/REST/restart; browser source+bundle checks; earlier targeted HLS/queue JUnit. **NOT TESTED / OPEN:** real HTTPS and external FTP sites, HLS installed kill/restart+SHA, independent Windows double recheck, browser↔host E2E, Liquid Progress visual parity, 16 theme variants, HyperGet icon and all user-facing rename surfaces, safe in-place upgrade/rollback, native host registration, single **HyperGet.exe**, CPU/RAM optimization and real IDM comparison. Installed benchmark executables still use legacy `DownloadManager.exe` / `DownloadManagerCli.exe` for compatibility; test installers are **not** deliverables. PR #3 stays Draft, no main write, auto-merge, Torrent, paid service or release. Progress is measured by functional acceptance gates, not number of commits.
+
+---
+
+## 2026-10-25 HyperGet queue lifecycle milestone — Windows JUnit pending
+
+**Exact evidence:** Windows installed HTTP run 40179341528 on e16d779a FAIL: 1/4 concurrency rounds PASS (15/63 SHA transfers and 6/9 CPU/RAM CSV); first 16-task round only 15 real active tasks. Artifact 12593552642 shows task ID 16 (active-16-round-1-task-2.bin) **Paused** without any GET, while 15 other tasks transferred. This is evidence of a pre-network cancellation/pause, **not proof of an HTTP host socket cap**. Root cause of that Pause remains unknown.
+
+**Production correctness:** DownloadManager retained previous StoppedBy and ResumedBy context across opposite lifecycle commands, so later events could carry stale actor attribution. Replace both lifecycle keys on each Pause/Resume; retain unrelated context and persistence/IPC. Four Kotlin regressions check actor replacement, 16 cycles and unrelated context preservation. Existing seven batch/queue tests run alongside them. Also wire the previously omitted five CLI status-line source tests into fast CI. Existing project is Apache-2.0; no new library or copied implementation.
+
+**Purposeful build question (written before run):** Do the changed Kotlin transitions compile on Windows and pass >=11 targeted JUnit tests, zero failures/errors/skips? Source checks cannot prove this. New path-scoped workflow compiles downloader core desktopTest only; no EXE/installer. **NOT TESTED** until exact-head CI/JUnit XML inspected. This fixes a real lifecycle attribution bug but **does not claim** to fix 16-task concurrency. FTP/HLS exact-head Windows suites on e16d779a PASS; full installed Windows, independent recheck, browser, Liquid Progress, upgrade and HyperGet.exe remain open. PR #3 Draft; no main write, merge, Torrent or paid runner.
+
+---
+
+## HyperGet — 2026-10-24 HG-HLS-AUTH-01 evidence checkpoint (no release)
+
+**Current functional slice:** Guarded same-origin authenticated redirects are wired into HLS manifest refresh, UI preview and media segment workers. They preserve explicit headers on same-origin hops and reject cross-origin/downgrade/port/userinfo/loop/over-limit hops. No Torrent, new paid dependency or user-data schema change.
+
+**PASS — exact PR head a998156e3d74bc719960f772de931355407c9459:** [source-only CI 40115162196](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40115162196) completed successfully, including 88 Python source/FTP fixture tests across 13 test batches; these are structural/fixture checks, not Windows network evidence. No EXE/installer was produced.
+
+**PASS — earlier exact PR head 68874b2cf56968726ad9119790f4d3bc614f3ad9:** [Windows Kotlin milestone 40114985141](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40114985141) built the relevant Kotlin desktop test target and validated 10/10 fake-transport redirect tests via JUnit XML; no executable distribution was produced. This does not cover the two new real loopback tests added after that SHA.
+
+**IN PROGRESS / NOT TESTED at checkpoint:** [Windows loopback milestone 40115162273](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40115162273) was still running when checked. It must produce two JUnit XML files and >=12 tests with zero failures/skips before real localhost redirect behavior can be marked PASS. No conclusion is inferred from a running job.
+
+**Observed earlier failure and repair:** [Windows 40114659012](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40114659012) failed during root Gradle configuration, not HLS tests, because a synthetic PR merge SHA yielded invalid SemVer `1.0.0-sha.03710`. Production build version now uses `sha.g<7-hex>`, and CI checks out the exact PR head. That repair passed subsequent Windows Kotlin compilation on 68874b2c.
+
+**Remaining acceptance:** Actual full HLS transfer and resume/byte verification, HTTP/HTTPS/FTP Windows E2E, 1/4/16 concurrent sockets and SHA-256, CPU/RAM, Liquid Progress, icon/branding, installer/upgrades, browser extension and final HyperGet.exe plus independent recheck are still NOT TESTED at this head. PR #3 stays Draft, no main write/merge, no packaging or paid runner.
+
+---
+
+## HyperGet — 2026-10-24 HG-HLS-AUTH-01 real loopback HTTP acceptance extension
+
+Added two Windows Kotlin tests using JDK HttpServer and production OkHttpHttpDownloaderClient (not a fake network): a same-origin 302 must carry the explicit Cookie to the final endpoint without leaking an ambient CookieJar cookie, and a cross-port redirect must be rejected before the second server sees any request. No internet, paid runner or additional dependency required. The targeted Windows workflow now requires both JUnit XML suites and at least 12 passing tests; results remain NOT TESTED until the exact new SHA completes. This is a justified network milestone compile/test, not EXE packaging. Real installed-GUI and public HTTPS E2E remain open.
+
+---
+
+## HyperGet — 2026-10-24 HLS Windows gate failure and SemVer prerequisite repair
+
+**Observed FAIL (not a Kotlin test result):** Windows guarded-HLS workflow Run 40114659012 on the first head b1c1a8e could not configure the root Gradle build. The exact error at build.gradle.kts:33 was `Invalid version: 1.0.0-sha.03710`; the PR synthetic merge commit happened to start with a numeric identifier containing a leading zero, which violates SemVer. No JUnit XML or executable was produced, so the HLS Kotlin tests remain NOT TESTED on that run.
+
+**Repair:** Prefix the commit-hash prerelease token with `g` and use seven characters, e.g. `1.0.0-sha.g03710ab`, preserving tagged release versions and existing persistence identifiers. Both PR source CI and targeted Windows JUnit workflow now check out the exact PR head instead of GitHub's synthetic merge ref; add a source regression for leading-zero SHA. This is a build configuration fix motivated by an observed failure, not a new EXE packaging request. A subsequent exact-head Windows test result is required before marking the HLS milestone PASS.
+
+---
+
+## HyperGet — 2026-10-24 HG-HLS-AUTH-01 protected HLS redirect milestone
+
+**Functional acceptance:** A protected HLS manifest, preview and media segment may follow at most five HTTP 301/302/303/307/308 redirects on the same scheme/canonical host/effective port while retaining explicit Cookie/Authorization/Basic credentials. Reject cross-origin, HTTPS downgrade, port change, URL-embedded credentials, missing Location, loops and excess hops before issuing a second request. Close every intermediate response. Anonymous HLS keeps OkHttp's existing redirect handling. This completes a functional compatibility slice after earlier security-only guards.
+
+**Production:** New HlsGuardedRedirects.kt implements one shared request policy used by HLSDownloadJob, HLSPartDownloader and HLSLinkChecker. No storage, extension protocol, user identity or new runtime dependencies changed. Reviewed existing Apache-2.0 OkHttp implementation and RFC 9110 redirect guidance; no borrowed code or new license obligations.
+
+**Regression:** 10 Kotlin desktopTest scripted-transport cases test same-origin chains and secret retention, cross-host, scheme/port changes, URL userinfo, missing Location, cycle, hop limit, anonymous compatibility and protected segments. A Python source-contract suite checks all three production call sites, origin checks, socket closure and bounds; the previous manifest source contract was updated to reflect shared policy. **Status pending exact-SHA CI; no PASS is claimed before results.**
+
+**Purposeful compile gate (specified before triggering):** Does real Kotlin compile and do the 10 redirect JUnit tests run on Windows with zero failures, errors and skips? Source tests cannot answer that. Expected result: targeted :downloader:core:desktopTest with XML >=10 tests; new PR-only Windows workflow compiles/tests this milestone only, no EXE/installer. If it fails, the milestone is blocked and the log must be investigated.
+
+**Still NOT TESTED:** live local two-host HTTP/HTTPS with actual OkHttp; custom interceptors/authenticators; staged segment content identity; HTTP/FTP/HLS end-to-end; 1/4/16 concurrent sockets and SHA-256; CPU/RAM; Liquid Progress; full HyperGet UI/icon, upgrade and browser E2E; single HyperGet.exe and independent Windows recheck. No main writes, merge, paid API, Torrent or unrelated-project changes. PR #3 remains Draft.
+
+---
+
+## HyperGet — 2026-10-24: guarded HLS CookieJar isolation (SOURCE ONLY)
+
+**Status: IN_PROGRESS; NO APP BUILD.** Reviewed the existing HLS manifest/segment origin policy and the shared OkHttp transport. The guarded `noRedirectClient` inherited the application's configured `CookieJar` from `singleAttemptClient`; that meant an explicit-header origin policy did not also control implicit ambient cookies. No evidence establishes that the current configured jar actually contains cookies, so this is a defense-in-depth isolation fix rather than a demonstrated exfiltration exploit.
+
+**Production** [`c27627e5`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/c27627e56125a7b3caa587de9bf5ce2439767ccc): guarded HLS calls now derive their OkHttp client with `CookieJar.NO_COOKIES`, while keeping `followRedirects(false)` and `followSslRedirects(false)`. Explicit Cookie/Authorization headers supplied by the user still go through `newCall`; ordinary HTTP and anonymous HLS continue using the original `singleAttemptClient` configuration. No new dependencies, persistent schema, migration, IPC, extension or licensing changes.
+
+**Source regression** [`d6da810b`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/d6da810b6d8ec4c0e5c54f00e6e488b1e95f3638): three additional Python source-contract cases check guarded CookieJar isolation, normal client preservation, and explicit Cookie compatibility. **PASS:** [source-only CI Run 40109441035](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40109441035) on exact production+test SHA `d6da810b6d8ec4c0e5c54f00e6e488b1e95f3638`; all 11 substantive source/FTP steps passed. Independent post-push inspection matched exact GitHub blobs and passed 7/7 structural assertions. The prior source-only Run 40109427336 also passed at the production-only SHA. **NOT RUN:** Kotlin/Gradle tests, app compilation, Windows network tests, installer, EXE.
+
+**Residual risks:** Custom OkHttp application/network interceptors or authenticators could still add request headers; the source-only contracts do not simulate live cookie redirects or prove runtime isolation. Guarded HLS requests intentionally cannot rely on implicit CookieJar cookies; users must supply explicit Cookie headers for those flows. Same-origin authenticated redirects remain conservatively rejected. A local two-host redirect fixture and Windows runtime verification are required before security acceptance. Remaining functional/visual gates (HTTP/HTTPS/FTP/HLS E2E, 1/4/16, SHA-256, CPU/RAM, Liquid Progress, branding, icon, upgrade, browser extension, final `HyperGet.exe`, independent recheck) remain **NOT TESTED** on this head. PR #3 remains Draft; no main write, merge, packaging, release, paid API or Torrent.
+
+---
+
+## HyperGet — 2026-10-24: authenticated HLS manifest redirect isolation (SOURCE ONLY)
+
+**Status: IN_PROGRESS; NO APP BUILD.** The previous HLS segment credential policy prevented cross-origin leakage from segment requests, but the *manifest itself* was still fetched with `client.connect(downloadItem, ...)` (and the UI preview with `client.connect(credentials, ...)`). OkHttp's default redirect behavior could follow a 302/307 to a foreign host while carrying user-supplied Cookie, Authorization, Referer or Basic credentials.
+
+**Production:** [`3bbba4f1`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/3bbba4f1d54ead8860465c827a603498724b4e3c) introduces `credentialsForHlsPlaylist(IHLSCredentials)` using a request-local `HttpDownloadCredentials`: strips Host, Proxy-Authorization and hop-by-hop/Range headers; retains required headers/Basic auth on the initial URL; **disables automatic redirects whenever any allowed user header or complete Basic credentials are present**. Anonymous playlists still follow normal redirects. [`e38c909f`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/e38c909f73e1a216323871634c75f5906bc07034) applies the policy to resume/playlist refresh; [`ce2f2e93`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/ce2f2e93545b18e08b0579364e0d556e406b2aca) applies it to new/edit HLS UI link previews. No stored schema, native IPC, extension ID, download database, or migration changes.
+
+**Verification:** Seven Kotlin desktopTest regression cases were added in [`3895f0e9`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/3895f0e991d029ffea2597d0826ad12347e513bb), **NOT RUN** because full Gradle/app compilation remains forbidden. Eight Python source-contract tests were added in [`488516f4`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/488516f41635cdf3d024c9280f21145c6f2f3f21) and wired to PR-only source CI in [`aa42645c`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/aa42645cdb0aedbd2117f58afdbdc3ac51e310b8). **PASS:** [GitHub source-only Run 40105237869](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40105237869) on exact source SHA `aa42645cdb0aedbd2117f58afdbdc3ac51e310b8`; all **11 substantive source/FTP steps passed**, including the eight new manifest source tests. Independently re-fetched exact GitHub blobs and checked 10/10 structural assertions. No Gradle, packaging, EXE, installer, release or paid API.
+
+**Residual limits:** Authenticated manifest redirects (including safe same-origin redirects) are conservatively rejected rather than followed; an explicit origin-checked redirect handler would be needed to support them without exposing credentials. Source contracts cannot prove runtime redirect safety. Custom OkHttp cookie-jar/interceptor/authenticator behavior requires separate review and real local cross-origin server tests on Windows. HLS segment integrity under unchanged URLs, concurrent staged-file mutation, HTTP/HTTPS/FTP E2E, 1/4/16, SHA-256 full transfers, CPU/RAM, Liquid Progress, Windows icon/branding, old-version upgrade, browser integration, final `HyperGet.exe` and independent recheck remain **NOT TESTED** on this head. No main write, merge, Torrent or other-project changes. PR #3 remains Draft.
+
+---
+
+## HyperGet — 2026-10-24: HLS segment credentials and redirect guard (SOURCE ONLY)
+
+**Status: IN_PROGRESS; NO APP BUILD.** Previously, HLS segment workers created `HttpDownloadCredentials(url)` and lost the playlist's user-supplied Cookie, Authorization, Referer, Basic credentials and User-Agent. A naive copy to every segment would leak private headers to arbitrary hosts listed in a playlist.
+
+**Production source change:** `HlsSegmentCredentialPolicy.kt` now forwards user-supplied headers and Basic credentials **only when original playlist URL, final (possibly redirected) playlist URL, and segment URL share the exact scheme, canonical host and effective port**. It drops transport/hop-by-hop headers and does not forward `downloadPage`. User-Agent may be forwarded independently. Authenticated segment requests disable automatic OkHttp redirects so a 3xx cannot silently forward user-supplied headers to a different origin. Unauthenticated segment redirects retain existing behavior. The request-only redirect flag is `@Transient` and defaults to true for other HTTP downloads, preserving stored credential schemas. This deliberately prefers failing a redirected authenticated segment over leaking its secrets; supporting same-origin authenticated redirect chains safely remains future work.
+
+**Verification:** Six Python source-contract cases added to source-only PR CI; seven Kotlin desktopTest cases added but **NOT RUN** due the user's prohibition on application compilation/Gradle. **PASS:** [source-only CI Run 40101015521](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40101015521) on exact code SHA `3f85b091277875db83616d3568307c70ad23bed2`; all ten substantive Python/FTP steps succeeded, including the six new HLS credential source-contract tests. An earlier attempt [Run 40100955530](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40100955530) failed because its Git tree accidentally omitted pre-existing PR source tests; a subsequent restoration commit restored the PR's original tree, and a comparison against pre-change SHA `16312166e408e0ed2b6c1b3b30e00c047a110350` confirms **only the nine intended files** differ. No prior PR source files remain deleted. The successful CI tested the restored code SHA. The Python tests are structural and do not establish runtime network security. No new dependency, license change, persistent schema migration, IPC change, extension protocol change or paid service. Reference: RFC 8216 §4.1 for playlist-relative URIs and OkHttp client redirect settings.
+
+**Still NOT TESTED:** actual authenticated HLS server, cross-origin redirect on Windows, Kotlin JUnit, HTTP/FTP/HLS end-to-end, 1/4/16, SHA-256 full transfers, CPU/RAM, Liquid Progress, icon/branding, browser integration, migration, final HyperGet.exe and independent recheck. **Residual risk:** original *playlist* request still uses the existing OkHttp redirect policy and may forward custom headers across origins; that path needs its own reviewed guard. Default cookie-jar/interceptor behavior also needs end-to-end review. PR #3 remains Draft; no main write/merge/build/installer/Torrent.
+
+---
+
+## HyperGet — 2026-10-24: redirected HLS playlist segment-base fix (SOURCE ONLY)
+
+**Status: IN_PROGRESS; no application build.** The HLS response parser already resolves the first segment against `responseInfo.requestUrl` (the final OkHttp response URL), but `HLSDownloadJob.getOrCreatePartDownloader` previously passed `downloadItem.link` (the pre-redirect playlist URL) to segment workers. For a playlist redirected to a different host or directory, relative `.ts` segment links could therefore resolve to the wrong resource.
+
+**Production:** [`971aade7`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/971aade7b53b7a5f1733d715a3093d0250b827be) tracks the final manifest response URL as `segmentBaseUrl`, updates it after retiring old workers and before reconciling segments, and passes it to new `HLSPartDownloader` instances. The original link remains the initial fallback until a successful refresh. No persistence schema, IPC protocol, extension ID, credential, or user data migration changed.
+
+**Regression:** [`6593e05c`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/6593e05c10f3fd4e5207f23dc857820fb6141b52) adds seven Python source-contract/URL-resolution cases covering the final response URL, update ordering, worker wiring, changed host/path, and absolute segment URLs. [`38b27808`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/38b27808653fdd8f100ca01cdea4dd5aad4e7297) wires them into the source-only CI. **PASS** 9/9 independent post-push source assertions. **PASS** [GitHub source-only Run 40096795128](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40096795128) on exact code SHA `38b27808653fdd8f100ca01cdea4dd5aad4e7297`: all nine substantive Python/FTP steps succeeded, including the new redirect test. This is source-level verification, **not** a live Kotlin HTTP redirect test.
+
+**NOT TESTED:** Kotlin/Gradle JUnit, live HLS redirect with signed/authenticated segments, Windows HLS/FTP/HTTP E2E, 1/4/16 transfers, SHA-256 full downloads, CPU/RAM, Liquid Progress, browser integration, installer/upgrade, final `HyperGet.exe`, independent recheck. **Residual risk:** segment requests currently construct `HttpDownloadCredentials(url)` without propagating playlist credentials; authenticated HLS segments and cross-origin redirect credential isolation need a separate reviewed change. Same-URL changed-content detection and concurrent staged-file replacement remain open. No full compile, Gradle, package/EXE/installer Actions, paid API, release, main write, merge or Torrent. PR #3 remains Draft.
+
+---
+
+## HyperGet — 2026-10-24: serialize HLS preview edits against active playlist refresh (SOURCE ONLY)
+
+**Status: IN_PROGRESS; NO APP BUILD.** On an existing HLS job, `extraConfigsReceived` previously applied a UI link-checker's `hlsManifest` directly to `parts`, even while segment workers and listeners were active. That could replace in-memory `MediaSegment` objects without retiring old workers, allowing stale status callbacks and staged segment reuse during active transfer.
+
+**Production change:** [`259355bc`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/259355bc4e76140679a626a5b49626fb392944d4) introduces a shared `playlistMutationLock` around remote refresh and preview replacement. UI preview manifests are **ignored while the job or active scope is running**; resume still fetches the authoritative remote playlist. For an inactive job, the preview path now stops/awaits old workers, retires listeners and cached downloader objects, then replaces and saves segments. Explicit `Mutex.lock()/unlock()` in `try/finally` supports suspending stop/join and persistence calls without using `withLock`'s non-suspending action.
+
+**Source verification:** New `test_hyperget_hls_preview_lifecycle_source.py` contains **6 source-contract tests** covering shared lock, remote refresh transaction, preview transaction, active-job guard, old-worker retirement ordering and save ordering. [Source-only CI Run 40092490941](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40092490941) **PASS** at exact code SHA `259355bc4e76140679a626a5b49626fb392944d4`: all **8 substantive Python/FTP source-only steps** succeeded, including the new preview test. Workflow remains PR-scoped, Python-only, without Gradle, app compilation, EXE, installer, artifact upload or paid API. No runtime dependencies or licensing changes; Apache-2.0 baseline unchanged.
+
+**NOT TESTED:** Kotlin/Gradle JUnit, actual HLS simultaneous edit/resume race, HTTP/HTTPS/FTP Windows E2E, 1/4/16, SHA-256 full transfers, CPU/RAM, Liquid Progress, branding/icon migration, browser native messaging, final `HyperGet.exe`, independent recheck. Source contracts are structural and **do not prove all concurrency races are eliminated**; callbacks and playlist updates outside these two paths require later audit. PR #3 stays Draft; no main write, merge, build, installer, release or Torrent.
+
+---
+
+## HyperGet — 2026-10-24: persisted HLS playlist refresh + stale downloader retirement (SOURCE ONLY)
+
+**Status: IN_PROGRESS; NO APP BUILD.** On restart the HLS job previously fetched a remote playlist only when the persisted part list was empty. Thus a fully persisted old playlist could be assembled after staged-file size validation **without checking whether the server's segment URI/duration changed**. Moreover, `clearPartDownloaderList()` iterated current `parts`, missing cached workers/listeners for segments removed by reconciliation.
+
+**Production** [`653a18a5`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/653a18a5d3d9de5ceb0bf27ef1a45ebff31dba07): on each HLS resume, fetch and reconcile the current remote playlist before the all-complete shortcut; await old part workers, cancel all status listeners, and clear cached downloader instances before replacing segment objects. Existing sequence+URI+duration reconciliation retains progress only for matching identities, and existing staged-file checks still run before final assembly. **Remote playlist failure now prevents completion based only on stale persisted metadata**, intentionally preferring correctness to offline assembly.
+
+**Regression** [`1342af31`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/1342af314086992632e2ccea1f6c3a519ff71858): six new Python source-contract tests check unconditional refresh, ordering before fast completion, stopping workers before cache retirement, full listener/cache cleanup, reconciliation wiring, and staged-file revalidation. **CI wiring** [`c0b5313d`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/c0b5313df137e95b215a8c3287d8c92c02067cb5): source-only Python workflow includes new test; no Gradle, EXE, installer, artifact upload or paid API.
+
+**Verification:** **PASS** 8/8 independent remote-source assertions against exact GitHub blobs; **PASS** [GitHub source-only Run 40088136056](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40088136056) at `c0b5313df137e95b215a8c3287d8c92c02067cb5`: all seven substantive Python/FTP steps passed, including the new HLS lifecycle test. The acceptance-document-only commit below is not itself a new CI-tested code SHA. **NOT TESTED:** full Kotlin/Gradle JUnit, live HLS restart, Windows app, browser E2E, 1/4/16, SHA-256 end-to-end, CPU/RAM, GUI, migration, final EXE and independent recheck.
+
+**Residual risks:** Source contracts are structural, not proof of full HLS runtime correctness. Playlist identity by URI/duration cannot detect changed bytes served at an unchanged URL; robust validators/hash and real HTTP fixture tests remain required. Playlist refresh and worker cleanup are not yet proven under every concurrent `extraConfigsReceived` path; concurrent file replacement between stage check and assembly also remains open. PR #3 stays Draft; no main write, auto-merge, release, build or Torrent.
+
+---
+
+## HyperGet — 2026-10-24: persisted HLS completed-part safety (NO APP BUILD)
+
+**Status: IN_PROGRESS.** On resume, the old HLS fast path finalized a job whenever every persisted part carried `isCompleted=true`, **before** checking whether the corresponding staged files still existed or had the expected length. A deleted, empty or truncated segment could therefore be assembled or cause a late failure.
+
+**Source repair:** `HLSDownloadJob.resumeWithNewScope` now invokes `fetchDownloadInfoAndValidate` before the all-complete fast path. Invalid completed segments lose their completion flag, current-byte counter and completed status-flow state so they can be redownloaded. `SegmentedDownloadDestination.isDownloadPartValid` reads NOFOLLOW_LINKS file attributes, rejects non-regular/zero-byte files and compares actual length with a positive known HLS segment length. Unknown server lengths remain accepted only for nonempty regular files.
+
+**Verification:** The isolated pure Kotlin validation helper and eight standalone regression cases passed locally with `kotlinc`/`kotlin` (8/8); this did not compile or package the application. Six Python source-contract checks were added and **PASS 6/6** in source-only [Run 40084292413](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40084292413) at source SHA `50a81a93bc8a32eaf0a27e38a1e7e34068eeab71`. All CI steps passed (FTP stage, HLS reconciliation, persisted completion, bounded playlist body, MIME and local FTP fixture). This CI ran Python only, with no application build or installer. No Windows/HLS runtime, JUnit, packaging or EXE test was performed.
+
+**Known limits:** This prevents premature completion for missing/truncated staged segments but does **not** establish that a saved segment's bytes match the latest remote playlist. The existing HLS saved-playlist refresh and stale downloader-instance references remain open. Attribute inspection is not an atomic open/assembly guarantee against concurrent file replacement. Real HLS resume and SHA-256 acceptance remain NOT TESTED. No paid API, new runtime dependency, main change, auto-merge, installer, or Torrent.
+
+## HyperGet — 2026-10-24: HLS Content-Type parsing compatibility and source-only regression
+
+**Status: IN_PROGRESS; NO APP BUILD.** Existing draft [PR #3](https://github.com/amroalhamedi2022-hue/personal-download-manager/pull/3) on `automation/idm-ftp-cancel-and-category-flush`, targeting `codex/repair-rf00-rf01`. The previous `HLSResponseInfo.expectSuccess` compared `supportedMime.startsWith(rawContentType)`, which rejected a valid HLS `Content-Type: application/vnd.apple.mpegurl; charset=utf-8` when the length was unknown, yet treated a partial MIME prefix as valid. Both cases matter for chunked/unknown-length playlists.
+
+**Production change:** New dependency-free `HlsContentType.kt` compares the trimmed, lowercased MIME token before any semicolon with the two supported HLS MIME types. `HLSResponseInfo.kt` calls the helper, preserving the existing bounded 2 MiB playlist body reader and unconditional declared-length guard. The pre-existing small-body fallback for unexpected MIME types remains unchanged: **this is MIME compatibility/validation, not an authentication or content-security boundary**. The HLS parser still validates the playlist itself.
+
+| Gate | Result | Evidence |
+| --- | --- | --- |
+| Isolated Kotlin/JVM source regression | **PASS 12/12** | Compiled **only** `HlsContentType.kt` + `HyperGetHlsContentTypeSmoke.kt` with local `kotlinc` and ran the standalone `kotlin` main. Covered both supported types, charset, mixed case, whitespace, false prefixes/suffixes, missing/empty/unrelated/multiple values. **No application compile or packaging.** |
+| Tested-source GitHub blob identity | **PASS 3/3** | `git hash-object` for the locally tested helper `1be7be858690c9bf6ca21b66fe5a436ccf5be13b`, smoke `045564bb9fb5dfcff86ba63de7b9993e16a0c0e1`, and Python source contract `5cfd28b72518a8907dd51d6e892cf996f39eb6b8` matched the uploaded GitHub blobs. |
+| Exact remote source static review | **PASS 11/11** | Verified production helper wiring, exact MIME equality, parameter normalization, removal of legacy prefix check, preservation of declared/actual 2 MiB limits, source test and Python-only CI wiring. |
+| Source-only GitHub CI at `d22383fd6aceedb11143717bbe7d1d68a926fedd` | **PASS** | [Run 40080682643](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40080682643): FTP stage contract, HLS reconciliation, HLS bounded-body, **new HLS MIME** contract and local FTP fixture all succeeded. Python-only, no Gradle, no EXE or installer. |
+| Earlier CI regression and correction | **FIXED** | [Run 40080642252](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40080642252) failed because the pre-existing bounded-body *test* searched for the deleted local variable `val hlsPossibleHeaders`. The test was corrected to anchor on the actual `Content-Type` lookup without weakening the declared-length check; subsequent run passed. |
+| Real HLS HTTP server / Windows, persisted-playlist refresh, stale downloader references, 1/4/16, SHA-256, CPU/RAM, Liquid Progress, HyperGet.exe, migration, browser integration and independent recheck | **NOT TESTED / DEFERRED** | User's mandatory NO-BUILD rule remains active until complete source/UI/security readiness. |
+
+**Scope and risk:** No new dependency, license, credentials, data migration, IPC, packaging, release, main write, merge, paid API or Torrent. Existing Apache-2.0/JDK/Kotlin primitives only. Source-only validation cannot prove runtime HLS/Windows behavior. Incomplete persisted HLS playlist revalidation and cached downloader lifecycle remain open and must be reviewed before the final build. Keep PR Draft and the development task active until verified delivery.
+
+---
+
+## HyperGet — 2026-10-24: bounded HLS playlist response (SOURCE ONLY; NO APP BUILD)
+
+**Status: IN_PROGRESS.** PR #3 remains Draft on `automation/idm-ftp-cancel-and-category-flush` against `codex/repair-rf00-rf01`. Security review found `HLSResponseInfo.fromConnection` called unbounded `readUtf8()` on the response body; its 2 MiB content-length check applied only when the Content-Type was unexpected. A server with a correct HLS Content-Type, a missing Content-Length (chunked), or a misleading declared length could exhaust memory before parsing.
+
+**Production fix:** `HlsPlaylistBodyReader.kt` reads a maximum of 2 MiB of actual response bytes, probing one additional byte and rejecting oversize with `IOException`, regardless of Content-Type or declared size. `HLSResponseInfo` now rejects oversized declared lengths unconditionally and uses the bounded reader for all playlist responses. No change to stored download records, credentials, browser IPC, app identity, licenses, dependencies, or Torrent scope.
+
+| Gate | Status | Evidence |
+| --- | --- | --- |
+| Isolated Kotlin/JVM reader regression | **PASS 10/10** | Compiled **only** `HlsPlaylistBodyReader.kt` and `HyperGetHlsBodyReaderSmoke.kt` with `kotlinc -J-Xmx384m` and ran the standalone main; exact-size acceptance, 1-byte oversize, actual 2 MiB boundary and +1 byte, >8KiB stream, UTF-8, empty body, invalid limit, and zero-byte read. **No full app compile or packaging.** |
+| Exact GitHub blob identity | **PASS** | `git hash-object` of both locally compiled source files matched remote blobs: helper `cf1f12ed03594888f97f4d5ad4b3e0b9db532ca2`, smoke `def73a40654681ff1ec6c6b769bacac002c8d907`. |
+| Source-only static contracts | **PASS 9/9 local checks** | Confirmed production wiring, declared/actual caps, oversize rejection, smoke coverage and Python-only CI configuration against fetched GitHub blobs. New Python unittest `test_hyperget_hls_body_source.py` is wired to `.github/workflows/hyperget-source-only.yml`. |
+| Source-only GitHub CI at source+acceptance SHA `c295c5112e0f5ba23c3f1dcc9bbaa0bc5145dbbd` | **PASS** | [Run 40076471566](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40076471566) completed successfully: FTP source, HLS reconciliation, new bounded HLS response source, and local FTP fixture. The subsequent acceptance-document commit changes no source. CI invokes Python only, no Gradle or installers. |
+| Full HLS integration/Windows memory, HTTP/HTTPS/FTP, 1/4/16, SHA-256, CPU/RAM, Liquid Progress, HyperGet.exe/icon, migration, browser, independent recheck | **NOT TESTED** | Binding NO-BUILD gate. |
+
+**Residual risk:** The source reader has been tested in isolation, not compiled with Okio/HLS parser or exercised on Windows. The response-size cap does not prove full memory bounds for segment downloads or the entire application. HLS persisted-playlist refresh, stale part downloader references, and installed Windows acceptance remain open. Do not declare delivery or disable the developer automation.
+
+---
+
+## HyperGet — 2026-10-24: HLS playlist reconciliation safety (SOURCE ONLY; NO APP BUILD)
+
+**Status: IN_PROGRESS.** Draft PR #3, branch `automation/idm-ftp-cancel-and-category-flush` targeting `codex/repair-rf00-rf01`; no main write or merge. The prior `HLSDownloadJob.updateParts` constructed `newPartsToSave` but never called `setParts` on it. It also reused a completed segment by sequence/duration alone even when the segment URI changed. This could leave refreshed playlists unapplied and mark different bytes as already downloaded.
+
+**Production fix:** `HlsPlaylistReconciliation.kt` provides dependency-free reconciliation by sequence + **exact URI** + duration, preserving completion/length/progress only for matching identity. `HLSDownloadJob.updateParts` now applies the entire reconciled playlist in incoming order, including removal of obsolete segments. Changed URI/duration resets stale completion and byte metadata. No new dependencies, credentials, IPC, registry, identity migration or Torrent code.
+
+| Gate | Status | Evidence |
+| --- | --- | --- |
+| Isolated Kotlin/JVM source regression | **PASS 11/11** | JDK/Kotlin compiler: compiled **only** `HlsPlaylistReconciliation.kt` and `HyperGetHlsReconciliationSmoke.kt`; checked same identity, signed URI change, duration change, sequence change, incoming order, empty/new playlists, completion/length/progress. No full app compile or installer. |
+| Exact GitHub blob identity of tested source | **PASS** | Helper `4ad1ac4968a7ee85df5b3b9a3c286601a3e30445`; smoke `0fe383ef8320194ecee0e9f760644e7f20cf6a61` matched local `git hash-object` of compiled files. |
+| HLS source-only Python contract in CI | **PASS** | [Run 40072872187](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40072872187) on source/acceptance SHA `d39034f4`: HLS, FTP source and local FTP fixture steps completed successfully; workflow invokes Python stdlib only, no Gradle or executable artifacts. |
+| Desktop JUnit `HlsPlaylistReconciliationTest` | **NOT TESTED** | Three methods committed for eventual full application validation, explicitly deferred by NO-BUILD rule. |
+| Real HLS refresh/restart, HTTPS, FTP Windows Pause/Resume, 1/4/16, SHA-256, CPU/RAM, UI, HyperGet.exe/icon, upgrade, browser integration and independent recheck | **NOT TESTED** | Binding NO-BUILD rule remains active. |
+
+**Residual risk:** This repairs `updateParts` when called; it does **not** change the existing `fetchDownloadInfoAndValidate` behavior that fetches a playlist only if no segments are persisted. A separate policy and test are needed for revalidating persisted playlists, particularly sliding live HLS windows and signed URL refresh. `HLSDownloadJob` itself was not compiled, and Windows runtime behavior is unverified. Existing 13/16 active transfer failure is not resolved by this change. Continue source-only feature/security/UI review; first Windows build only after complete readiness.
+
+**Commits:** `6d25cc56` (helper), `167b095f` (integration), `8a97247a` (smoke), `007592cd` (source contract), `374fabe8` / `7152bec9` (source-only CI), `a3065b86` (deferred JUnit). No paid API, EXE/installer, workflow packaging dispatch, auto-merge or main write.
+
+---
+
+## HyperGet — 2026-10-24: bounded, symlink-safe FTP resume metadata (SOURCE + TEST; NO APP BUILD)
+
+**Status: IN_PROGRESS.** Draft [PR #3](https://github.com/amroalhamedi2022-hue/personal-download-manager/pull/3), head `automation/idm-ftp-cancel-and-category-flush`, base `codex/repair-rf00-rf01`. This round changed production code and tests, without touching `main` or merging.
+
+**Finding:** The old `loadIdentity` used `Files.isRegularFile(path)` and `Files.newInputStream(path)`, which follow symbolic links. A local `.ftp-part.properties` link could therefore make FTP resume parse an unrelated file. The parser also had no input-size bound. **Fix:** new `loadFtpResumeIdentity` checks a regular file without following links, opens with `NOFOLLOW_LINKS`, limits reads to 16 KiB (+1 byte for rejection), checks file-key continuity when supported, and converts malformed Java-properties Unicode escapes into a fixed `IOException`. A truly missing sidecar still returns null; existing unsafe sidecars fail closed without deleting staged download data. `FtpTransferClient` uses the guarded reader before REST resume. No schema, credentials, IPC, registry, remote FTP protocol, dependency or paid service changes.
+
+| Gate | Status | Evidence |
+| --- | --- | --- |
+| Isolated Kotlin/JVM sidecar regression | **PASS 11/11** | JDK 21 / kotlinc; compiled only `FtpResumeIdentity.kt` and `HyperGetFtpResumeIdentitySmoke.kt`. Missing/valid sidecar, symlink and dangling link, directory, oversized and malformed metadata; unrelated file preserved. **Not full-app compilation.** |
+| Exact source/test blob identity | **PASS** | Local `git hash-object` matches GitHub: helper `7f754047f3fc33c394d8490113f65ac936682b9e`; smoke `5848b2464c6f2e875b5ff75b8525e83a8d5751df`. |
+| GitHub source-only CI at source/test SHA `2c14dc13bc2518b074f2b8ae226724894ad94c64` | **PASS** | [Run 40068779167](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40068779167): 8/8 Python source-contract checks, 3/3 local FTP fixture checks. Workflow contains no Gradle, packaging or executable artifact upload. |
+| New repository JUnit test `FtpResumeIdentityTest` | **NOT TESTED** | Five JUnit methods added but not run under the no-full-build rule. |
+| Windows FTP real Pause/Resume, HTTP/HTTPS/HLS, 1/4/16, SHA-256, CPU/RAM, Liquid Progress, HyperGet.exe/icon, upgrade, browser integration and independent recheck | **NOT TESTED / DEFERRED** | User's binding NO-BUILD restriction; no Windows executable, installer or release produced. |
+
+**Residual risk:** A hostile process with write access to the same directory can still mutate a regular sidecar in place, including during reading; `fileKey` may be null on some filesystems. This guard is not a cross-process locking scheme. Windows provider behavior and FTP resume integration require final exact-SHA tests. The earlier 13/16 active transfer and FTP installed regressions remain unproven fixed.
+
+**Commits:** helper `dae9b070`; transport wiring `29ff4324`; isolated smoke `3ceccd6d`; deferred JUnit `29c7691a`; source CI checks `2c14dc13`. No full Gradle/Compose compilation, EXE/NSIS/MSI, packaging workflow dispatch, auto-merge, Torrent or paid API. Next: source-only HTTP/HLS/FTP/UI/identity review; final build only after complete readiness, followed by Windows acceptance and independent recheck.
+
+---
+
+## HyperGet — 2026-10-24: FTP staged-output symlink and resume-offset guard (SOURCE + REGRESSION; NO BUILD)
+
+**Status: IN_PROGRESS.** Existing draft [PR #3](https://github.com/amroalhamedi2022-hue/personal-download-manager/pull/3) on `automation/idm-ftp-cancel-and-category-flush`, targeting `codex/repair-rf00-rf01`; no main write or merge. Production commits: [`bae58037`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/bae580374194ee35948abaf8f2282a4ba2fbbd68) (new guarded staged-file helper), [`16cfdbd5`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/16cfdbd594426bc44de3f422f6a91f5f10396b68) (FTP transport integration); source regression [`f63f379b`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/f63f379b90783263cb0f8d7a9105cf3f240ab474); desktop integration regression [`ad668625`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/ad6686257759282ea88c54600aaf39cfd847875e).
+
+**Reproduced defect:** The previous `Files.newOutputStream(part, CREATE, WRITE, APPEND)` follows symbolic links. On JDK 21/Linux, a `.ftp-part` symlink to `user-data.txt` appended `-FTP` to the unrelated target, reproducing `USER-DATA-FTP`. A swapped/changed staged file could also be opened after its previously measured REST offset, causing unsafe append. The new `ftpStagedBytes` rejects symbolic links, directories and other non-regular staged paths using `NOFOLLOW_LINKS`; `openFtpStagedOutput` opens with `NOFOLLOW_LINKS` and verifies channel size equals the expected REST offset before writing. On mismatch, it closes the channel and preserves the staged bytes. No extra dependency or paid API; existing Apache-2.0 project/JDK APIs reused.
+
+| Gate | Status | Evidence |
+| --- | --- | --- |
+| Pre-fix symlink append reproduction | **FAIL reproduced (expected)** | JShell/JDK 21 on Linux, real temporary files; legacy output stream appended to the unrelated symlink target. |
+| Isolated Kotlin/JVM source regression | **PASS 13/13** | `kotlinc -J-Xmx384m FtpStagedOutput.kt HyperGetFtpStagedOutputSmoke.kt -d classes && kotlin -classpath classes ir.amirab.downloader.ftp.HyperGetFtpStagedOutputSmokeKt` on JDK 21/Linux; covers new/continued append, offset mismatch, valid/dangling symlinks, directory staging and untouched user file. **Only two isolated source files compiled; no Gradle or full application compile.** |
+| Committed-source identity | **PASS** | Production helper Git blob `803e25d7e9a7abd42c050515575cb6ee7e1974be` and smoke Git blob `cb5e3c006e31465c11164375238b0c541b07cf9f` match local `git hash-object` of files actually compiled and run. |
+| Cross-file static source checks | **PASS 16/16** | Re-fetched helper, production transport, source smoke and desktop test from GitHub. Verified guarded size/open integration, no old unsafe writer, REST/MDTM identity, cancellation, final no-replace publish, and regression coverage. Static checks do not establish runtime FTP correctness. |
+| New desktop FTP integration test | **NOT TESTED** | `FtpTransferClientTest.nonFileFtpStagingPathCannotBeUsedAsOutput` exercises rejection of a directory at the staged path against a local Apache FTP fixture; deferred with all desktop tests until permitted final build. |
+| CI for `ad668625` | **0 PR workflow runs, 0 combined statuses at query time** | Read-only GitHub CI inspection. Packaging workflows remain push-scoped to other branches, tags or manual dispatch; no Actions triggered deliberately. This is **not** a global CI disablement. |
+| Windows FTP Pause/Resume and symlink behavior, HTTP/HTTPS/HLS, 1/4/16, SHA-256, CPU/RAM, Liquid Progress, HyperGet.exe/icon, upgrade, browser extension, independent recheck | **NOT TESTED / DEFERRED** | Binding user NO-BUILD gate; no new EXE, installer, release or paid service. |
+
+**Residual risk:** `NOFOLLOW_LINKS` guards the open against symbolic links but does not provide a global cross-process lock against a same-size regular-file replacement or hard-link manipulation. Windows file-system/provider behavior and actual FTP/REST semantics require later exact-SHA tests. Do not claim this is a complete adversarial filesystem sandbox.
+
+**Next:** Continue source-only review of HTTP/HLS/FTP, UI/brand/icon and migration readiness, with isolated regressions and independent security/license review. After all feature/source/UI gates are ready, allow the first final Windows build and full installed acceptance/recheck. Do not disable the recurring task until a verified `HyperGet.exe` is delivered and accepted.
+
+---
+
+## HyperGet — 2026-10-24: FTP final publish must not clobber a concurrent destination (SOURCE ONLY; NO BUILD)
+
+**Status: IN_PROGRESS.** Existing draft PR #3, branch `automation/idm-ftp-cancel-and-category-flush`, base `codex/repair-rf00-rf01`. Source change: the FTP final publish now calls `publishFtpStagedFile` instead of `Files.move(part, destination, ATOMIC_MOVE)`. On Linux, the old ATOMIC_MOVE call was **reproduced overwriting an existing destination** without REPLACE_EXISTING (JShell/JDK 21, actual temp files); the initial `Files.exists` check is not sufficient when another process creates the target during RETR.
+
+**Fix:** Try an exclusive hard-link publish in the same directory (atomic destination creation on supporting file systems), then remove the staged name. If hard links are unavailable (e.g., FAT/exFAT or some shares), fall back to `Files.move` without ATOMIC_MOVE or REPLACE_EXISTING. The fallback is not a universal cross-process atomicity guarantee; do not overstate it. The sidecar's atomic REPLACE_EXISTING update remains unchanged. No credentials, IPC, Registry, user-data schema or download identity changes. Existing Apache-2.0 source and Java NIO reused; no new dependencies or paid service.
+
+| Gate | Status | Evidence |
+| --- | --- | --- |
+| Before-fix overwrite reproduction | **FAIL reproduced (expected)** | JDK 21 JShell, existing target `user-data` was overwritten by `Files.move(part, target, ATOMIC_MOVE)`, result `downloaded`. |
+| Isolated Kotlin/JVM source test | **PASS 9/9** | `kotlinc -J-Xmx384m FtpStagedFileCommit.kt HyperGetFtpStagedFileCommitSmoke.kt -d classes && kotlin -classpath classes ir.amirab.downloader.ftp.HyperGetFtpStagedFileCommitSmokeKt`. Tests complete publish, stage cleanup, existing-target preservation, missing-part rejection and symlink-target protection on Linux. **Not full app compilation.** |
+| Integrated FTP call site | **SOURCE REVIEW ONLY** | `FtpTransferClient.download` now delegates final publish to the helper after completion/size/cancellation checks; no changes to REST or speed limiter. |
+| GitHub CI at new SHA | **NOT TESTED until queried** | Existing workflows were audited: packaging workflows are push-scoped to `main` / `codex/repair-rf00-rf01`, tag or manual dispatch; no workflow requested. Do not equate this with disabling all automatic Actions globally. |
+| Windows FTP live, cross-volume/network share fallback, concurrent 1/4/16, HTTP/HTTPS/HLS, CPU/RAM, SHA-256, Liquid Progress, HyperGet.exe, upgrade, browser integration, independent recheck | **NOT TESTED / DEFERRED** | User's NO-BUILD gate remains binding until source/UI/security readiness. |
+
+**Follow-up integration regression (added, NOT EXECUTED under NO-BUILD):** `FtpTransferClientTest.destinationCreatedWhileRetrIsRunningCannotBeOverwrittenAtCommit` uses the existing local Apache FTP fixture. It creates a conflicting destination from `onProgress` *after* RETR begins, expects `FileAlreadyExistsException`, verifies user bytes remain unchanged and the fully received staged bytes survive. This is a future desktopTest gate, **NOT TESTED** until the final build stage.
+
+**Next:** test Windows hard-link/fallback behavior and actual race after final readiness; continue HTTP/HLS and identity/UI source work. Do not merge, write main, run packaging or disable recurring development.
+
+---
+
+## HyperGet — 2026-10-24: FTP RETR Pause/stream-registration cleanup race (SOURCE + TEST; NO APP BUILD)
+
+**Status: IN_PROGRESS. Production source changed: YES.** Existing draft [PR #3](https://github.com/amroalhamedi2022-hue/personal-download-manager/pull/3), head `automation/idm-ftp-cancel-and-category-flush` → base `codex/repair-rf00-rf01`. Production commits: [`05b88c4d`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/05b88c4df4924e3b9411d022c99da9f268c67026) (small stream-lifecycle helper) and [`ee598b4e`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/ee598b4e9596f4ca002259a06c9e3d172e82ac56) (FTP transport integration); regression commit [`f8f3a808`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/f8f3a8081fd3b39faa192104f201e56eae96570d).
+
+**Defect:** After a successful `retrieveFileStream`, `FtpTransferClient` registered the new data stream and called `ensureNotCancelled()` *before* entering its stream-closing `try/finally`. A concurrent Pause in that narrow interval could throw without closing the just-opened RETR data socket, despite closing the control connection. The new `withFtpDataStream` helper checks cancellation **inside** the guarded region and always unregisters/closes the stream, including when cancellation, body execution or unregistering fails. FTP REST identity checks, staged-file semantics and credential storage are unchanged.
+
+| Gate | Status | Exact evidence |
+| --- | --- | --- |
+| Isolated real Kotlin/JVM source test | **PASS 4/4** | `kotlinc FtpDataStreamLifecycle.kt HyperGetFtpDataStreamLifecycleSmoke.kt -d classes && kotlin -classpath classes HyperGetFtpDataStreamLifecycleSmokeKt` (in a temporary source-only folder). Cases: cancellation before body prevents work and closes stream, normal completion, body failure, unregister failure still closes. **Not a full-app compile or live FTP test.** |
+| Exact committed helper/test source identity | **PASS** | GitHub blob SHA `55dcb4b0122b3f8393c6df951a46740a7a86c7f2` and test blob `b4dc98d89190700539f9cbc8779ac87d24fc86ab` match local `git hash-object` on tested source files. Integrated transport blob `f7967951d0b7a340c8d6bdecc401567205a82970` was re-fetched for static review. |
+| Source-only integration invariants | **PASS 10/10** | Re-fetched transport/helper/test; checked RETR registration before guarded check, unconditional close/unregister in `finally`, pre-body cancellation regression, preservation of completion check before final commit, and REST identity guard. Static checks are **not** runtime FTP or Windows evidence. |
+| CI at regression SHA `f8f3a808` | **0 runs, 0 statuses** | Queried commit-associated PR workflow runs and combined status. Existing packaging workflows are push-scoped to `codex/repair-rf00-rf01` or `main`, or manual/tag-triggered; no Actions dispatched and no packaging attempted. |
+| FTP live Pause/REST, HTTP/HTTPS/HLS, Windows build/upgrade, browser integration, 1/4/16 SHA-256 and CPU/RAM, Liquid Progress, HyperGet.exe, icon, independent recheck | **NOT TESTED / DEFERRED** | Binding NO-BUILD rule remains active. No new executable/installer or Windows acceptance evidence. Historical FTP and 13/16 active-benchmark failures remain unresolved for this SHA. |
+
+**Open-source/license/security:** Continued the repository's existing Apache Commons Net FTP transport (Apache-2.0) and Kotlin/JDK primitives; no new dependency, paid API, user data/credential/IPC/registry mutation or Torrent. The helper does not claim FTP server behavior is validated; source-level race closure still needs exact-SHA full build and installed FTP E2E after readiness.
+
+**Next bounded source-only action:** Review remaining FTP cancellation/commit races, HTTP/HLS resume correctness and HG-01–HG-05 installer/identity/icon readiness; add source-only regressions. After *all* source and UI readiness gates, permit first final Windows build, live install/upgrade/FTP/1-4-16/security acceptance and independent double recheck. No direct `main` write, merge, ChatGPT Library update or task disablement.
+
+---
+
+## HyperGet — 2026-10-24: privacy-safe browser errors, correlated replies, fatal input EOF (SOURCE + TEST; NO BUILD)
+
+**Status:** IN_PROGRESS; source readiness only. Existing draft [PR #3](https://github.com/amroalhamedi2022-hue/personal-download-manager/pull/3), head `automation/idm-ftp-cancel-and-category-flush`, base `codex/repair-rf00-rf01`. **Production source changed:** YES. Last source commit before this ledger entry: [`ef82fba2`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/ef82fba2ad729ec36f0bc373c6503069ea4af448). No main write, merge, build, installer, workflow dispatch, paid API or Torrent.
+
+**Findings from current source and separate extension protocol:** `NativeMessagingMessage.Content.error(throwable)` previously returned raw exception class names and `localizedMessage` to the browser, including potential URLs, signed query strings, request headers or credentials in parse/handler exceptions. `NativeMessagingHost.replyError` did the same. The host/router also logged exception objects; a truncated input frame (EOF/other IO) could prompt an unsolicited error response. Finally, router/send failures were answered with a new `N_` ID instead of the decoded request's `B_` ID, while the separate extension resolves pending requests by exact message ID, potentially leaving the request to time out.
+
+**Repair:** Added a tiny, dependency-free `safeBrowserError` policy returning fixed HyperGet error codes/messages without exception text; routed both handler and host errors through it; stopped logging raw exception objects and stack traces on the browser host path; treated input `IOException`/EOF as fatal without writing another response; retained the browser's original request ID for router/send errors, using a new ID only if no decoded request exists. Existing IPC names, extension IDs, credentials, Registry and user data remain untouched. Reused existing Apache-2.0 project code/JDK; no new external library. Browser extension repository inspected read-only; separate extension branding/integration PR remains pending.
+
+| Gate | Status | Exact evidence |
+| --- | --- | --- |
+| Isolated Kotlin/JVM source tests | **PASS 17/17** | `kotlinc NativeMessagingErrorPolicy.kt HyperGetNativeMessagingErrorPrivacySmoke.kt -d /tmp/hyperget-source-smoke/classes && kotlin -classpath /tmp/hyperget-source-smoke/classes HyperGetNativeMessagingErrorPrivacySmokeKt`; four secret-bearing error samples × three exception categories, deterministic safe responses, preserved browser request ID without generating another, and fallback generated ID. **Only the two isolated Kotlin source files were compiled, not the app.** |
+| Exact uploaded source/test blob identity | **PASS** | Production policy blob `d552fbbaca76c3a447568f6e3137f16dddb04f61` and regression blob `fe3fdcf52aaf5a20c370611b797c7ee9b8e2b63b` match local `git hash-object` for the tested files. |
+| Cross-file source-only invariants | **PASS 14/14** | Re-fetched production host/router/model/policy/test and extension transport from GitHub. Verified no raw exception text/class in browser error payloads, two request-ID-correlated error paths, no raw exception/stacktrace host logging, fatal receive IO precedes any reply, and extension `pendingRequests.get(message.id)`. **Static checks do not replace app compilation/integration.** |
+| PR CI/commit status at `8f8cc8f5` before this patch | **0 reported** | Queried PR workflow runs and combined commit statuses; no runs/statuses reported. **No Actions run requested** for this change. |
+| Gradle/full Kotlin desktop compile, Windows host/browser behavior, install/upgrade, real HTTP/HTTPS/HLS, FTP REST, 1/4/16 active downloads, SHA-256, CPU/RAM, Liquid Progress, icon, HyperGet.exe, independent double recheck | **NOT TESTED / DEFERRED** | User's binding 2026-10-23 NO-BUILD rule. Source-only evidence is not Windows acceptance; no executable or installer delivered. |
+
+**Next bounded source-only work:** audit extension's separate-repository native transport disconnect/pending-request lifecycle and HyperGet branding in its own PR, then continue FTP/HTTP queue correctness and HG-01..HG-05 UI/icon/migration readiness. Do not trigger packaging workflows; preserve source-only/packaging CI separation. First final Windows build only after source/UI/security readiness, then real installed acceptance and independent double recheck. Do not disable the recurring task.
+
+---
+
+## HyperGet — 2026-10-24: abort browser native-messaging stdout after a partial write (SOURCE + TEST; NO APP BUILD)
+
+**Production commits:** [`d52063bc`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/d52063bc111e8abeac6f021150d2856b096f961a) (poison broken stdout under the existing frame lock), [`df6da92e`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/df6da92e41895245af9c35fc9c7310dfb9ee4b78) (native host propagates write/flush `IOException` instead of sending a second reply); **regression:** [`b98c14e1`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/b98c14e13654f110cf8a75396ba95cfdbd6aa820). Existing draft PR #3, head `automation/idm-ftp-cancel-and-category-flush`, base `codex/repair-rf00-rf01`. No new dependency; existing Apache-2.0/JDK implementation reused. No change to extension IDs, Registry, IPC, user data or credentials.
+
+**Defect:** `StdioProtocol.writeMessage` serialized concurrent frames but a failed prefix/body write or flush left stdout eligible for later frames. `NativeMessagingHost` also attempted `replyError` on a failed response send, which can append a second frame after an incomplete first frame. A native browser pipe has no resynchronization mechanism. **Repair:** store the original `IOException` while holding `outputFrameLock`, refuse every subsequent write without touching the stream, and terminate the native host on outbound `IOException`, including error-reply failure. Recoverable pre-write JSON/argument errors retain their existing behavior.
+
+| Gate | Result | Direct evidence |
+| --- | --- | --- |
+| Production and test files on existing PR | **PASS** | Source Git blobs `95dc3977fe24fb7cfbb21c7c9a3be645e31fbf81` and `5b187768168b9a34f5d552bd6298444ead51830a`; test blob `551720e68f1d53d8318e93cbd6e557cd7f2537c1`. Re-fetched from GitHub; local `git hash-object` matched source and test. |
+| Before-fix Kotlin/JVM reproduction | **FAIL reproduced (expected)** | Isolated prior `StdioProtocol` source accepted a second frame after simulated partial PREFIX write; regression exited 1 with `Broken PREFIX stream accepted another frame`. |
+| After-fix Kotlin/JVM test | **PASS 10/10** | `kotlinc StdioProtocol.kt NativeMessagingFinished.kt HyperGetNativeMessagingBrokenPipeSmoke.kt -d /tmp/hyperget_broken_pipe_test_classes && kotlin -classpath /tmp/hyperget_broken_pipe_test_classes HyperGetNativeMessagingBrokenPipeSmokeKt`. Real GitHub-blob-matched production protocol. Tests partial prefix, partial body, failed flush; no retry, no additional bytes or flush, preserved original cause, and a fresh healthy connection. **Isolated test, not full application build.** |
+| Source/host static guards | **PASS 9/9** | 3 protocol guards + 2 native-host fatal-send guards + 4 regression-presence checks. **Host class was not compiled or integration-tested.** |
+| GitHub Actions on test SHA `b98c14e1` | **NOT TESTED / 0 reported** | 0 PR workflow runs and 0 commit statuses; no CI/build/installer job requested. |
+| Real Windows/browser host, HTTP/HTTPS/HLS, FTP REST, 1/4/16 and CPU/RAM, SHA-256, Liquid Progress, upgrade, `HyperGet.exe`, independent recheck | **NOT TESTED / DEFERRED** | Binding NO-BUILD restriction applies until source/UI/security readiness. No Windows run or final artifact was created. |
+
+**Next bounded source-only action:** Inspect and test the browser extension's native-host error/disconnect handling in its **separate repository** via its own authorized branch/PR; then continue HTTP/FTP and HyperGet identity/UI readiness on the main application's existing PR. Do not run Gradle/packaging/Actions producing installers before final readiness. Do not merge or disable the recurring task. Torrent remains excluded.
+
+---
+
+## HyperGet — 2026-10-24: browser outbound native-messaging limit and strict encoding (SOURCE + REGRESSION; NO APP BUILD)
+
+**Production commit:** [`02ee41e8`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/02ee41e816a8165a06a85954419e98a4fa3d57ce); **test commit:** [`8282b547`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/8282b5477e33012d19d34930a5b8a0e51c8831cc); existing draft [PR #3](https://github.com/amroalhamedi2022-hue/personal-download-manager/pull/3), head `automation/idm-ftp-cancel-and-category-flush` → base `codex/repair-rf00-rf01`. No main writes, merge, workflow trigger, release or paid service.
+
+**Verified protocol discrepancy:** Existing `StdioProtocol.writeMessage` allowed a 4-MiB **host-to-browser** payload even though both [Microsoft Edge](https://learn.microsoft.com/en-us/microsoft-edge/extensions-chromium/developer-guide/native-messaging) and [Firefox/MDN](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/Native_messaging) document a **1-MB host-to-browser limit**. The existing 4-MiB **browser-to-host local allocation cap** is retained separately. Existing `String.toByteArray(UTF_8)` also silently replaced malformed UTF-16 surrogates on outbound responses. Reused the existing Apache-2.0 project protocol implementation and JDK `CharsetEncoder` with `CodingErrorAction.REPORT`; no dependency added, no extension ID, IPC name, Registry key, credentials or stored download migration.
+
+| Gate | Result | Direct evidence |
+| --- | --- | --- |
+| Source change and regression committed | **PASS** | Production Git blob `37d3040fd9b02217460354830c9ec689ecca8df5`; test blob `c8fc58658e706183ec57cb31026b462911f519c8`. Both GitHub-fetched blobs matched `git hash-object` of the exact files compiled locally. |
+| Before-fix regression | **FAIL reproduced (expected)** | Original GitHub-blob-matched source `5a25a27a036fc97fa23fea9f8f9dc62cc0b346e6` compiled with the new regression; it wrongly accepted a 1-MiB+1 outbound message. Test stopped at case 4. |
+| After-fix Kotlin/JVM regression | **PASS 10/10** | `kotlinc StdioProtocol.kt NativeMessagingFinished.kt HyperGetNativeMessagingOutboundSmoke.kt -d after-classes && kotlin -classpath after-classes HyperGetNativeMessagingOutboundSmokeKt`. Checks ASCII and Arabic/emoji round-trip framing, exact 1-MiB boundary, 1-MiB+1 ASCII and multibyte rejection **before any output bytes**, lone high/low surrogate rejection, valid surrogate pair, 2-MiB inbound frame still accepted, and subsequent valid output. Isolated real Kotlin/JVM source test; not Gradle or installed Windows. |
+| Static/source invariants | **PASS 12/12** | Checked independent inbound/outbound caps, strict encoder, error reporting, output-before-rejection ordering, no silent encoding, regression cases and retained inbound allowance. |
+| GitHub Actions / commit statuses at test SHA `8282b547` | **NOT TESTED / 0 reported** | 0 PR workflow runs and 0 commit statuses when queried. Existing Windows packaging workflow push trigger excludes the isolated PR head; **no Actions build was requested**. |
+| Browser integration and real Windows host | **NOT TESTED** | No browser process or Windows install executed; the extension repository was read-only in this round and its old README still uses upstream branding. Cross-repo identity/manifest compatibility remains open. |
+| HyperGet.exe, Gradle/desktop compilation, installer, real FTP/HTTP(S)/HLS, 1/4/16, SHA-256, CPU/RAM, Liquid Progress, upgrade, icon and independent double recheck | **DEFERRED / NOT TESTED on this SHA** | Binding NO-BUILD gate remains active until all source/readiness requirements are complete. No EXE or installer generated. Torrent remains excluded. |
+
+**Next source-only action:** Audit native-host error handling after a partial stdout write (do not retry into a broken stream); inspect the separate browser extension protocol/branding and HG-01..HG-05 readiness without changing its repository from this task. Continue download/FTP/queue source fixes and tests. Do not begin first final Windows build until all source/readiness gates are met; do not claim final delivery or disable the recurring task.
+
+---
+
+## HyperGet 2026-10-23 — Strict UTF-8 native browser-message decoding (SOURCE + TEST; NO BUILD)
+
+**Production SHA:** [`09abfe24`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/09abfe24137589d6e374b44af3d61797bd6365fd). **Regression SHA:** [`32a4127d`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/32a4127d9b3a2118df06131ed9b264ae1469af1a). Existing draft [PR #3](https://github.com/amroalhamedi2022-hue/personal-download-manager/pull/3), head `automation/idm-ftp-cancel-and-category-flush`, base `codex/repair-rf00-rf01`; no merge or main write.
+
+**Reproduced defect:** `StdioProtocol.readMessage()` used `String(bytes, UTF_8)`, which silently converted malformed browser-supplied UTF-8 into replacement character U+FFFD. An isolated Kotlin/JVM reproduction on the **unmodified, GitHub-blob-matched production source** confirmed that bytes `C3 28` were accepted as `[FFFD, 28]`. Native messaging requires UTF-8; silently changing request bytes is not safe. The source now uses JDK's strict UTF-8 `CharsetDecoder` (`CodingErrorAction.REPORT`) and throws a distinct **recoverable** `InvalidNativeMessagingPayloadException : IllegalArgumentException` after consuming the complete frame. Invalid *length* prefixes remain fatal via `InvalidNativeMessagingFrameException`, preserving the prior host-loop safety behavior. Existing host catch path treats a bad complete payload as recoverable and can read the next frame. No new dependency; existing repository `LICENSE` is Apache-2.0 and JDK decoder is built in.
+
+| Gate | Status | Evidence |
+| --- | --- | --- |
+| Production source changed and regression committed | **PASS** | Commits `09abfe24` and `32a4127d`; GitHub returned source blob `5a25a27a036fc97fa23fea9f8f9dc62cc0b346e6` and test blob `d7c90fd65b2cb6ef52d7830e102d934f576734cb`, exactly matching locally tested `git hash-object` results. |
+| Isolated Kotlin/JVM source test | **PASS 15/15** | `kotlinc StdioProtocol.kt NativeMessagingFinished.kt HyperGetNativeMessagingFramingSmoke.kt -d /tmp/hyperget-post-fix-classes && kotlin -classpath /tmp/hyperget-post-fix-classes HyperGetNativeMessagingFramingSmokeKt`. 12 existing cases + malformed continuation, truncated multibyte, UTF-8 surrogate. Each invalid payload is framed between two valid messages; rejection and subsequent successful frame read verified. No Gradle or app build. |
+| Source-only static guards | **PASS 11/11** | Checked strict UTF-8 decoder/error policy, recoverable payload exception vs fatal frame exception, complete-frame-before-decode ordering, unchanged 4-MiB cap, and three malformed UTF-8 variants with next-frame recovery. Static only, not a Windows/Gradle result. |
+| GitHub PR workflow runs and commit statuses on test SHA `32a4127d` | **NOT TESTED (0 reported)** | Connector returned 0 PR runs and 0 statuses; existing Windows packaging workflow does not push-trigger on this PR head. No CI requested. |
+| Full desktop app, Windows, browser extension and socket integration | **NOT TESTED** | User's NO-BUILD gate remains binding. No Gradle, app compilation, EXE, installer or executable-producing Actions invoked. |
+| FTP/REST, HTTP(S)/HLS, 1/4/16 active downloads, SHA-256, CPU/RAM, UI/identity, HyperGet.exe, migration, independent double recheck | **NOT TESTED on current SHA** | Historical acceptance below remains; no final delivery. Torrent remains excluded. |
+
+**Next bounded action:** Review outbound native-messaging UTF-8 encoding and browser host error-path handling, then continue source-only HG-01–HG-05/functional tests. When all source/readiness requirements are complete, permit first final Windows build and installed acceptance; do not mark VERIFIED or disable the recurring task.
+
+---
+
+## HyperGet 2026-10-23 — Native browser-messaging frame desynchronization repair (SOURCE + TEST)
+
+**Production SHAs:** `94114937c1d2e67af121ef699bbb46f9b0c668ef` (`StdioProtocol.kt`), `e8929d0b2116a5b269ea0acfcd5214c22db52f9c` (`NativeMessagingHost.kt`). **Regression source SHA:** `6a66b4a20d567fc0a382dc7857f908f35bc6a9c6` (`scripts/tests/HyperGetNativeMessagingFramingSmoke.kt`). Existing draft [PR #3](https://github.com/amroalhamedi2022-hue/personal-download-manager/pull/3); no merge or direct main changes.
+
+**Defect:** The original Apache-2.0-based native-messaging parser rejected a zero/negative/>4-MiB frame length as `IllegalArgumentException`; the browser host treated that exception as recoverable and read the next four bytes as a new length. Those bytes may actually be the malformed frame's payload, causing a desynchronized error loop. **Fix:** A dedicated `InvalidNativeMessagingFrameException` terminates the host read loop for unrecoverable framing errors, without consuming or reinterpreting attacker-controlled payload. Ordinary JSON serialization/argument errors after a valid frame retain the previous recoverable behavior. Existing native host names, extension IDs, registry keys, IPC, stored downloads and credential keys are unchanged. Reviewed the existing upstream AB Download Manager v1.11.1 implementation and this repository's Apache-2.0 LICENSE; reused existing framing code, no new dependency.
+
+| Gate | Status | Exact evidence |
+| --- | --- | --- |
+| Kotlin/JVM isolated source framing test | **PASS 12/12** | `kotlinc StdioProtocol.kt NativeMessagingFinished.kt HyperGetNativeMessagingFramingSmoke.kt -include-runtime -d /tmp/hyperget-native-framing-test.jar && java -jar /tmp/hyperget-native-framing-test.jar`; cases cover valid ASCII/UTF-8, consecutive frames, output framing, invalid 0/-1/>4-MiB prefixes, exact 4-MiB boundary, outbound oversize, truncated header/body, clean EOF. Compiled source Git blob hashes `e18907902697ab70fb9ac5f15814796dcafa5a67`, `2b9958f9e5625cf8069fde7cd1b75b88c61b30d9`, test `d744b276d98bfe0a102387f285c6bdee6b4510f3` match the GitHub files exactly. This is NOT full app compilation. |
+| GitHub-source guard/static assertions | **PASS 8/8** | Re-fetched exact production/host/test and checked fatal-frame propagation, recoverable JSON behavior, 4-MiB limit, test presence and branch workflow trigger scope. Static only; host as a whole was NOT compiled. |
+| GitHub Actions on exact source+test SHA `6a66b4a2` | **NOT TESTED** | 0 PR workflow runs and 0 commit statuses at check. Existing `private-windows-validation.yml` push trigger lists base branch but NOT the isolated PR branch; no Actions requested. |
+| Browser extension on real Chrome/Firefox, native-host end-to-end | **NOT TESTED** | No real browser/Windows execution; separate browser repository unchanged. |
+| Full Gradle/JUnit, app compile, installer, HyperGet.exe | **DEFERRED / NOT TESTED** | Binding user NO-BUILD gate. No Gradle, packaging, EXE, installer or executable-producing Actions invoked. The temporary isolated JVM test JAR is not a HyperGet application build. |
+| HTTP(S)/HLS, FTP/REST, 1/4/16, SHA-256, CPU/RAM, Liquid Progress, upgrade/rollback, icon, independent double recheck | **NOT TESTED on this SHA** | Existing historical failures/gates below remain open. No change to Torrent exclusion. |
+
+**Next bounded action:** Continue HG-01–HG-05 and functional source fixes without building; add a source-only host-loop integration regression when the full serialization dependency is available, then verify extension manifest/identity and Windows migration readiness. After ALL source/readiness gates pass, perform the first final Windows build and strict installed acceptance, including browser framing and actual sockets. Do not mark HyperGet complete, merge, publish, or disable the recurring task.
+
+---
+
+## HyperGet renaming acceptance gates — 2026-10-23
+
+**Approved brand:** HyperGet. This is an administrative plan update only, **no production code/icon/installer changed yet**. [Detailed plan](HYPERGET_REBRAND_PLAN.md). All earlier acceptance/evidence applies to this same project under the new name, without implying rename was implemented.
+
+| Gate | Status | Proof required |
+|---|---|---|
+| HG-01 User-visible HyperGet name across Windows app/UI, settings, dialogs and system integration | NOT TESTED | Source changes + exact-head Windows screenshots and string audit |
+| HG-02 Upgrade-safe persistence: settings, credentials, downloads, database and Windows registrations | NOT TESTED | Previous-to-new version migration/rollback and data integrity tests |
+| HG-03 HyperGet.exe + installer/uninstaller/shortcuts + separately maintained browser integration | NOT TESTED | Genuine EXE + clean/upgrade Windows UI, functional extension IPC tests |
+| HG-04 Original modern HyperGet icon, not IDM/other app copy | NOT TESTED | Actual embedded ICO resources and Windows icon review |
+| HG-05 Full independent final regression (1/4/16 download SHA, CPU/RAM, FTP/HTTP/HLS, resumed installs) | NOT TESTED | Exact-SHA Windows CI, real device/process tests and recheck report |
+
+# Personal Download Manager — autonomous acceptance ledger
+
+AUTOMATION_COMPLETE: IN_PROGRESS
+
+Updated: 2026-10-23 (Asia/Jerusalem)
+Base branch: `codex/repair-rf00-rf01`
+Base SHA inspected: `6c386abeae95e8e0460308d17c033558cbd60f15`
+Change branch: `automation/idm-ftp-cancel-and-category-flush`
+Current change commit before this ledger: `610d804a1d39e82a8b4043c832b16ae4d598f8ae`
+
+## This development round — production source changed
+
+1. `FtpTransferClient.kt`: FTP Pause now cancels the **active RETR data InputStream** as well as the control socket. An independent per-transfer cancellation flag is checked after connection/login, during buffered reads and before final commit. Closing the data stream is supported by the official Apache Commons Net 3.13.0 `FTPClient.retrieveFileStream` contract. Stream cleanup now also covers sidecar-creation failures. This addresses the observed Windows FTP E2E defect where Pause left a full 32-MiB `.ftp-part` file instead of a genuine partial transfer.
+2. `FtpTransferClientTest.kt`: a real local Apache FTP integration regression test cancels an in-flight transfer from another thread, requires a partial file and no final commit, then REST-resumes it and verifies exact bytes.
+3. `CategoryRestartPersistenceTest.kt`: replaced a timing-dependent two-second sample/poll with `CategoryManager.close()` (existing production shutdown flush) followed by an exact disk assertion and restart. This exercises deterministic persistence instead of Windows runner scheduling.
+
+**Verification in this automation runtime:** Source files were fetched from GitHub, compared to the observed failures and modified on an isolated branch. **No Gradle compilation, JUnit execution, Windows install or FTP/HTTP transfer was executed here.** Local environment cannot clone GitHub (network/DNS blocked), and the existing Windows Actions workflows only auto-trigger on the approved base branch, not this PR branch. A passing source inspection is **not** a passing test.
+
+## Evidence and outstanding gates
+
+| Requirement | Status | Direct evidence / next gate |
+| --- | --- | --- |
+| Clikt header option + persistent IPC compilation | HISTORICAL PASS, CURRENT NOT TESTED | Fixed in base source after `51a4658`; Windows validation [39926396165](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/39926396165) passed on `40caada3`. The latest base SHA and this PR SHA have no verified Windows build yet. |
+| Category restart persistence | FAIL on older SHA; PATCH UNTESTED | [39929246766](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/39929246766) on `46a17b9e`: `CategoryRestartPersistenceTest.restartRestoresCategoriesAndRepairsDuplicateMemberships` timed out, 26 tests/1 failed. New deterministic close/flush test requires rerun. |
+| FTP authenticated Pause → restart → REST Resume | FAIL on older SHA; PATCH UNTESTED | [39929246815](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/39929246815) on `46a17b9e`: `FTP pause staging invariant failed: partial=33554432 final=False`. New data-stream cancellation and regression test require Windows acceptance. |
+| FTP real external LAN/WAN, GUI Add URL/OK | NOT TESTED | Loopback tests do not prove external connectivity, GUI behavior or firewall/NAT handling. |
+| 1/4/16 simultaneous installed HTTP + SHA256 + CPU/RAM | FAIL / PARTIAL | [39929246748](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/39929246748) on `46a17b9e`: `active-16` round 1 verified 16/16; round 2 observed only 13/16 in-flight tasks. Do not weaken the strict active-socket assertion or modify normal concurrency default of 3. Nine complete rounds remain unverified. |
+| HTTP/HTTPS/HLS, signed links, Refresh URL, browser extension | NOT FULLY TESTED | Require current SHA integration tests and real-browser/real-network acceptance. Browser extension remains a separate repository. |
+| Liquid Progress, full IDM parity, settings, 16 themes | NOT TESTED | Require actual screenshot comparisons to approved assets on Windows. |
+| One Windows EXE, reinstall/uninstall, data safety | HISTORICAL PASS / CURRENT NOT TESTED | [39918464707](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/39918464707) packaged exactly one EXE on older SHA; [39919442198](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/39919442198) validated same-version lifecycle. Cross-version upgrade and current SHA still open. |
+| Torrent | EXCLUDED | Explicitly cancelled by user; never reintroduce. |
+
+## Exact next test commands (NOT executed in this round)
+
+On an authorized Windows runner, at this PR's exact head SHA:
+
+```bash
+./gradlew --no-daemon --stacktrace --dependency-verification strict :downloader:core:desktopTest :downloader:monitor:desktopTest :shared:app:desktopTest :desktop:app:compileKotlin
+./gradlew --no-daemon --stacktrace --dependency-verification strict createReleaseFolderForCi
+```
+
+Then execute the existing installed Windows FTP E2E workflow and the installed 1/4/16 benchmark workflow on that same source SHA, retaining JUnit XML, artifact hashes and full failure logs. Do not spend CI minutes re-running older SHAs. Existing workflows are configured to run on `codex/repair-rf00-rf01` after reviewed integration; no workflow/credentials were changed by this PR.
+
+## Next bounded development action
+
+1. Review/merge this production-code PR into the authorized development branch, or run equivalent exact-SHA Windows validation if workflow permissions permit.
+2. If FTP cancellation test/E2E fails, inspect the data-stream close/pause handshake and fix without weakening the staging or REST-offset assertions.
+3. Investigate why 16-task round 2 reached only 13 live tasks, preserving per-user concurrency settings and real-socket measurements.
+4. Continue FTP GUI acceptance, external network, browser integration and Liquid Progress parity.
+5. Only when all requirements have actual end-to-end evidence, mark CANDIDATE and run a separate independent recheck; do not self-certify VERIFIED.
+
+Cost: no OpenAI API or paid CI was enabled; this branch changes no workflows, credentials, repository visibility or releases.
+
+
+## 2026-10-23 — Follow-up autonomous development: atomic 1/4/16 batch admission (UNTESTED)
+
+Production commits on this same existing draft PR (no new PR, no merge):
+- `e5e6ff746b4318e2a8a68a49b2ee8af8e3ffcda5`: `ManualDownloadQueue.resumeAll(Collection<Long>)` now deduplicates and admits the complete user-requested list in one lock-protected queue update and one immediate scheduler pass; existing `resume(id)` delegates to it. The existing user `maxConcurrent` cap is **not** bypassed.
+- `010fc6c2106e1cf20818cc78088bffe92358ee07`: `DownloadSystem.userManualResume(ids)` exposes the batch operation while preserving the single-ID entry point.
+- `1e68b0cca03419e315155930e1f310633575dc6e`: desktop IPC `resumeDownload(ids)` now calls the batch facade once instead of N sequential admissions.
+- `12f42f9728474551ce0b0f5abddacec58752e757`: new `ManualDownloadQueueBatchResumeTest` exercises 16 requested IDs (including duplicates), verifies only 4 are admitted under a 4-task cap, then verifies all 16 are admitted once when the existing cap is raised to 16. Concurrent completion order is not assumed.
+- `105f33859868bd5214871a2851bdc2525e151697`: Windows active benchmark now writes `failure-diagnostics.txt` (live fixture counters, persisted limit, installed CLI task status, output sizes) when the exact 1/4/16 active-socket gate fails. **No assertion, concurrency setting, SHA-256 check, CPU/RAM measurement, or sample duration was relaxed.**
+
+**Motivation, not proof of a root cause:** Windows [run 39929246748](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/39929246748), source `46a17b9e`, showed active-16 round 1 passing 16/16 and round 2 reaching only 13/16 simultaneously. Previously the desktop IPC admitted each of 16 IDs individually, re-shaking the scheduler after every ID. Atomic batch admission removes that unnecessary repeated scheduling, but the 13/16 failure may have additional causes. The new diagnostic artifact will help identify them if it recurs.
+
+**Verification status:** The new source and test were written to the existing PR branch and their GitHub blob/commit SHAs returned. **No Gradle, JUnit, Windows process measurement, FTP socket test, installed-app test, or PowerShell parser was executed on these commits in this automation runtime.** GitHub Actions currently has no run on this isolated PR head. Status remains **PATCH UNTESTED / FAIL historically**; do not claim 16/16, SHA-256, CPU/RAM or installer success on this head.
+
+**Next gates (run on exact PR head after review/authorized CI):**
+1. `./gradlew --no-daemon --dependency-verification strict :downloader:core:desktopTest :downloader:monitor:desktopTest :shared:app:desktopTest :desktop:app:compileKotlin` — including `ManualDownloadQueueBatchResumeTest`, `FtpTransferClientTest` and category restart.
+2. `./gradlew --no-daemon --dependency-verification strict createReleaseFolderForCi`, strict JUnit XML verification and one-EXE check.
+3. Installed Windows FTP Pause → REST Resume + exact SHA-256; installed 1/4/16 x 3 HTTP concurrency benchmark with real process-tree CPU/RAM CSV and 63 verified outputs. Inspect `failure-diagnostics.txt` if the strict 16-task gate still fails.
+4. Preserve the separation of the browser-integration repository, exclude Torrent, and continue the remaining original plan/visual acceptance. Only after all acceptance gates pass may a separate agent perform the final independent recheck.
+
+No paid API, new workflow, public release, repository visibility change, automatic merge or other-project modification was made.
+
+
+## 2026-10-23 — Follow-up: refill a vacated manual queue slot (PATCH UNTESTED)
+
+**Production change:** [`f8b81550`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/f8b81550f275eff8c01588572b83dfd3dd815c78) changes `ManualDownloadQueue.removeFromQueue(ids)`: when a queued/active ID is removed, the queue now schedules a **debounced** admission pass after releasing `admissionLock`. Before this fix, the `OnJobRemoved` listener simply removed the ID without calling `shake()`; if that ID occupied an active slot, pending jobs could remain stranded indefinitely until an unrelated queue event. Existing completion/cancellation flows continue to work and the configured concurrency cap is unchanged. Empty/repeated removal is idempotent.
+
+**Regression test:** [`38e40674`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/38e40674679e683839f417824de5acc19e03fd48) extends `ManualDownloadQueueBatchResumeTest.kt` with `removingAnActiveJobAdmitsNextPendingJobWithoutCompletionEvent`: start three IDs with max concurrent=1, remove the active ID without a completion event, require admission of the next queued ID, confirm duplicate removal does not double-start, then remove that ID and require the third. This test would time out against the prior source because no scheduling was triggered.
+
+**Actual verification in this run:** Source and test were written to existing draft PR #3. The GitHub connector returned the above commit SHAs. No Kotlin compiler, Gradle/JUnit or Windows benchmark was executed on this patch; `fetch_commit_workflow_runs` returned **zero PR workflow runs** for test commit `38e40674` and the combined commit status had **zero reported checks** when queried. Mark **PATCH UNTESTED**, not PASS. The historical active-16 13/16 failure remains unresolved, and this slot-refill fix must not be represented as a proven root-cause fix for it.
+
+**Required exact-SHA verification:** Run `./gradlew --no-daemon --dependency-verification strict :downloader:core:desktopTest :desktop:app:compileKotlin` including both queue tests; then Windows 1/4/16 x 3 installed HTTP concurrency + 63 SHA-256 files + process-tree CPU/RAM and FTP pause/REST resume, using a build of this PR head. Do not relax socket-count assertions or the user's max-concurrent setting. Keep the browser extension in its own repository, exclude Torrent and do not release/merge automatically. No paid API or new workflow was created.
+
+
+## 2026-10-23 — Manual queue start-failure slot recovery (production patch; CI pending)
+
+**Source commit:** `f30f0d56939ff7c01a84ef398bc20bea0e343fbf`
+**Regression test commit:** `db1281f8528abc4047ae705bd13443374a667708`
+**Existing draft PR:** [#3](https://github.com/amroalhamedi2022-hue/personal-download-manager/pull/3), `automation/idm-ftp-cancel-and-category-flush` → `codex/repair-rf00-rf01`. Base SHA reported by PR: `6c386abeae95e8e0460308d17c033558cbd60f15`.
+
+**Observed source-level defect and correction:** `ManualDownloadQueue.downloadAQueueItemIfPossible()` reserved an active concurrency slot before launching suspendable `downloadEvents.startJob(...)`. When that call threw before the manager emitted any lifecycle event, the reserved ID remained in `activeItemsFlow`, preventing the next pending job from starting. The new code catches ordinary `Exception`, removes the failed ID from the manual queue and lets the existing debounced refill admit the next pending task; `CancellationException` is rethrown so scope cancellation is not mistaken for a task failure. No global concurrency bypass, new storage, change of the default cap (3), or automatic retry loop was introduced.
+
+**Regression test:** `ManualDownloadQueueBatchResumeTest.failedAsynchronousStartReleasesItsSlotAndAdmitsTheNextJob` injects an `IOException` from the first start with **no lifecycle event**, asserts the second ID starts under a max-concurrent limit of **1**, asserts no failed-ID spin and no over-admission of the third, then removes the active second ID and checks that the third starts. This is a separate failure mode from the earlier missing removal-slot refill test.
+
+| Verification gate | Status | Evidence |
+|---|---|---|
+| Production + test code committed on isolated PR | PASS | Source `f30f0d5`, test `db1281f8` |
+| GitHub source-level static invariants | PASS (static only) | Re-fetched both files at `db1281f8`; seven targeted source/test presence assertions passed. **Not a compiler/JUnit result.** |
+| Actual `:downloader:core:desktopTest` including new regression | NOT TESTED | No Gradle dependency cache / full project available in this automation environment. |
+| Windows `:desktop:app:compileKotlin` and JUnit XML gate | NOT TESTED | GitHub `fetch_commit_workflow_runs` on exact test SHA `db1281f8` returned **zero** PR workflow runs; existing validation workflow is scoped to the base branch. |
+| Windows installed active 1/4/16 × 3, 63 SHA-256 files and CPU/RAM CSV | FAIL historically / CURRENT NOT TESTED | [39929246748](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/39929246748) on older source: 16-task round 2 only 13/16 in flight. This patch handles one potential stranded-slot cause; it **does not prove** the benchmark fixed. |
+| FTP Pause → REST Resume and GUI Add URL/OK | FAIL historically / CURRENT NOT TESTED | Older [39929246815](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/39929246815) failure; prior FTP cancellation patch on PR #3 still awaits exact-SHA Windows validation. |
+| Single Windows EXE, UI parity, credentials, upgrade and independent full recheck | NOT TESTED on this SHA | No new Windows artifact or GUI/device evidence. |
+
+**Next action:** Obtain an authorized **exact PR-head SHA** Windows test run (without relaxing socket/CRC/SHA assertions or altering normal concurrency settings); first run `:downloader:core:desktopTest` and `:desktop:app:compileKotlin`, then the strict installed FTP and 1/4/16 benchmarks. Inspect any failure-diagnostics file and only then diagnose remaining active-16 discrepancies. Do not merge PR #3 automatically. Browser extension repository untouched, torrent excluded, no API fees or public release.
+
+
+## 2026-10-23 — Pending manual Pause must not start on later queue refill (SOURCE + REGRESSION COMMITTED)
+
+**Production SHA:** [`650f6cd650cf1d8c25e73bb1464c73e740fb4cf1`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/650f6cd650cf1d8c25e73bb1464c73e740fb4cf1)
+**Regression test SHA:** [`62713b1d152a6da845250619aadbd711719d25ac`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/62713b1d152a6da845250619aadbd711719d25ac)
+**PR:** [#3](https://github.com/amroalhamedi2022-hue/personal-download-manager/pull/3), existing draft; no merge or workflow edits.
+
+**Bug and production repair:** `ManualDownloadQueue.pause(id)` used to call `stopJob(id)` without removing an ID that was still **pending** in the manual queue. A pending download may never emit an `OnJobCanceled` event because it has not started, so when another active task vacated its slot the supposedly paused download could start without another user Resume. The fix atomically removes only pending IDs from `totalItemsFlow` under the existing `admissionLock`, schedules the normal debounced refill and then invokes the existing stop path. **Already-active IDs keep their reserved slots until their stop lifecycle event**, preserving the user's concurrency limit. No new permissions, default changes or Torrent code.
+
+**Repository regression:** `ManualDownloadQueueBatchResumeTest.pausingPendingJobPreventsUnexpectedStartAfterSlotIsFreed` queues IDs 71/72/73 under maxConcurrent=1, pauses pending 72 with a manager that emits no stop event, frees active 71, requires 73 (not 72) to start, then explicitly resumes 72 and requires it to start only after 73 leaves.
+
+**Executed verification, carefully scoped:**
+- PASS **isolated Kotlin/JVM behavioral harness** using the installed Kotlin compiler and real bundled kotlinx-coroutines runtime. Reproduced **before** fix: started IDs `[71,72]` (wrong); reproduced **after** fix: `[71,73]` (correct), then explicit Resume started `72` after slot release. This harness reproduces the relevant queue state transitions with minimal shims; **it does not compile the whole actual project and is not JUnit**.
+- PASS **7 GitHub-source static assertions** against the committed production and test files: pending removal under lock, active reservation, ordering before stop, refill, test presence and expected sequences. These are source assertions, not unit-test execution.
+- **NOT TESTED:** project `:downloader:core:desktopTest` and `:desktop:app:compileKotlin`, because this runner cannot clone the repository or download Gradle dependencies. `fetch_commit_workflow_runs` on test SHA `62713b1d` returned **zero PR workflow runs** and combined commit status returned **zero statuses**. Do not mark Windows compile/JUnit PASS.
+- **FAIL historically / CURRENT NOT TESTED:** 16-active Windows benchmark (13/16 in round 2 on [39929246748](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/39929246748)), FTP Pause/REST resume ([39929246815](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/39929246815)), external FTP and GUI, SHA-256 + CPU/RAM matrix, one-EXE packaging and full visual parity. This specific pause fix is **not** claimed to solve the separate active-16 issue.
+
+**Next mandatory gate:** validate PR #3's exact head (including this patch) on authorized Windows CI: `./gradlew --no-daemon --dependency-verification strict :downloader:core:desktopTest :desktop:app:compileKotlin`; then installed FTP pause/resume and strict 1/4/16 × 3 benchmarks with SHA-256 and CPU/RAM artifacts, without weakening assertions. Inspect the actual output and failures before any merge. Keep browser extension in its own repository, and exclude Torrent.
+
+
+## 2026-10-23 — Lowering concurrency must not reuse a slot before asynchronous stop completes
+
+**Production commit:** [`2f542a76`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/2f542a76c28e817fc57d0bc630a61eaf14ded0a2)  
+**Regression test commit:** [`767c2275`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/767c227503a045d841b4ae654929b18c6f03553a)  
+**PR:** [#3](https://github.com/amroalhamedi2022-hue/personal-download-manager/pull/3) (existing Draft, no merge). **Production source changed: YES.**
+
+**Failure mode:** `ManualDownloadQueue.trim()` previously called `removeActiveItem(id)` immediately before launching suspendable `stopJob(id)`. The socket could still be transferring when that slot was declared free. If another active download then finished, `shake()` could admit a new job even though the configured concurrency limit had already been reduced (e.g. 3 → 1). The fix keeps each stop-requested ID in `activeItemsFlow` until a confirmed `OnJobCanceled`/`OnJobCompleted` or explicit removal, and tracks it in `trimmedItems` so repeat shakes do not send duplicate stop requests. It does not change the user's persisted limit or add a new queue implementation.
+
+**Regression:** `ManualDownloadQueueBatchResumeTest.reducingConcurrencyDoesNotReuseSlotsBeforeAsynchronousStopsFinish` starts three jobs at maxConcurrent=3, reduces the limit to 1, records two asynchronous stop requests that intentionally emit **no** cancellation events, removes the only untrimmed job and confirms no fourth job starts while stopping sockets still occupy reservations. After explicit removals confirm the remaining stops, the fourth job may start. The recording fixture now tracks `stopJob` calls.
+
+| Gate | Result | Evidence |
+| --- | --- | --- |
+| Production source + JUnit regression committed to isolated PR | PASS | `2f542a76` + `767c2275` |
+| Re-fetch source/test and check eight exact invariants | PASS — STATIC ONLY | 8/8 checks; confirmed no `removeActiveItem` inside trim request, pending cancellation path still releases reservation |
+| Isolated Kotlin/JVM trim-state behavioral reproduction | PASS — ISOLATED MODEL ONLY | `kotlinc /tmp/idm_trim_regression.kt -include-runtime -d /tmp/idm_trim_regression.jar && java -jar /tmp/idm_trim_regression.jar`: reproduced pre-fix premature admission of ID 84 and verified post-fix no early admission/duplicate stop; **not actual production compilation or JUnit** |
+| `:downloader:core:desktopTest` and `:desktop:app:compileKotlin` on exact PR SHA | NOT TESTED | No full Gradle project/dependency cache here. `fetch_commit_workflow_runs` returned zero PR runs and `get_commit_combined_status` returned zero statuses for `767c2275`. |
+| Installed Windows 1/4/16 × 3 + SHA-256 + CPU/RAM | HISTORICAL FAIL / CURRENT NOT TESTED | Prior [39929246748](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/39929246748) recorded 13/16 in one round; this trim fix **does not prove** that issue resolved. |
+| FTP Pause/REST Resume, external FTP, GUI OK, browser/HTTP/HTTPS/HLS, Liquid Progress and one Windows EXE | CURRENT NOT TESTED | No Windows runner, real transfer, screenshot comparison or packaging performed on new SHA. |
+
+**Research:** Compared with the official Apache-2.0 `kotlinx.coroutines` Semaphore/withPermit model: a permit is held until work actually completes. A wholesale Semaphore replacement is inappropriate for this dynamically resizable existing queue; preserve its architecture and enforce the same lifecycle-based reservation principle.
+
+**Next action:** Authorize/obtain an exact-PR-SHA Windows CI run of `./gradlew --no-daemon --dependency-verification strict :downloader:core:desktopTest :desktop:app:compileKotlin`, then run installed strict 1/4/16 × 3 benchmark and FTP pause/REST resume. Investigate any failed JUnit first. **No workflow edit, paid API, browser repo change, Torrent, merge or release.** Independent Windows recheck remains mandatory.
+
+
+## 2026-10-23 — Revoke queued-but-undispatched starts (production + regression; full CI pending)
+
+**Production SHA:** `562301225517d74f08ba362285da553688e9f529`
+**Regression SHA:** `237ca04e77dcf7586fd613e708731967ac6e099e`
+**PR:** #3, `automation/idm-ftp-cancel-and-category-flush` → `codex/repair-rf00-rf01` (draft; not merged).
+**License/dependency review:** Existing project LICENSE is Apache-2.0; repair uses only its already-installed Kotlin coroutines/StateFlow/collections, with no copied third-party code, new dependency, new paid service, workflow edit or security permission.
+
+**Production defect:** `ManualDownloadQueue` reserves an active slot before dispatching the coroutine that calls `startJob`. If the dispatcher is occupied, a user Pause could call `stopJob` **before** the scheduled start executes; the stale coroutine could then start a supposedly paused download. Similarly, lowering max concurrency while starts are still queued could call `stopJob` on nonexistent jobs, leaving races and phantom stop requests. Existing active jobs must keep their slots until actual lifecycle cancellation; only never-dispatched reservations may be released early.
+
+**Patch:** `scheduledStarts` holds per-admission identity tokens under `admissionLock`. The coroutine claims its own token immediately before `startJob` and skips a revoked/superseded start. Pending Pause revokes the token and removes its never-started reservation; trim revokes undispatched starts without issuing phantom `stopJob`; removal/clear also invalidates tokens. Running transfers still use the existing stop/cancellation lifecycle and user max-concurrent cap. Fresh tokens prevent stale coroutines from stealing a later re-admission of the same ID. This addresses the pre-dispatch race, **not** every possible pause-vs-startJob in-flight race.
+
+**Repository regression tests added:** `ManualDownloadQueueBatchResumeTest.pausingReservedButNotYetDispatchedStartCannotLaunchAfterPause` and `trimmingUndispatchedStartsDoesNotStopPhantomJobsOrResurrectOldTokens`. Both deliberately occupy a single-thread coroutine dispatcher to force the race, then assert which IDs actually start and that undispatched IDs do not receive phantom stops.
+
+| Gate | Status | Evidence |
+| --- | --- | --- |
+| Production and tests committed on existing PR #3 | PASS | Source `56230122`, tests `237ca04e`; GitHub re-fetch returned expected blobs and 10/10 source/test structural checks passed. |
+| Isolated Kotlin/JVM coroutines behavioral harness | PASS (isolated model only) | Executed `kotlinc -cp kotlinx-coroutines-core-jvm.jar /tmp/idm_queue_admission_harness.kt -include-runtime -d /tmp/idm_queue_admission_harness.jar` and `java -cp ... Idm_queue_admission_harnessKt` locally. Before/after: paused ID `[91]` → `[92]`; trim `[101,102,103]` → `[101]`. This model is **not** the full repository source/JUnit. |
+| Repository Gradle/JUnit and desktop compile | NOT TESTED | Runtime lacks GitHub clone/DNS and full Gradle dependency graph; actual new JUnit tests are committed but not executed. |
+| GitHub PR Actions and commit status on test SHA `237ca04e` | NOT TESTED | `fetch_commit_workflow_runs` returned 0 PR runs; `get_commit_combined_status` returned 0 statuses. No exact-SHA Windows build. |
+| Installed 1/4/16 real sockets, 63 SHA-256 files, CPU/RAM | FAIL historically / CURRENT NOT TESTED | Prior Windows [39929246748](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/39929246748) had 13/16 on active-16 round 2. This race patch is **not** proven to fix that result. |
+| FTP Pause → REST Resume, HTTP/HTTPS/HLS, browser integration | FAIL/PARTIAL historically; CURRENT NOT TESTED | Existing FTP and protocol patches require exact-head Windows CI and real network/browser acceptance. Browser extension remains separate and untouched. |
+| Liquid Progress parity, single EXE, Windows install/upgrade and independent recheck | NOT TESTED | No current Windows artifact, screenshots, device/process-tree measurements or final package delivery. |
+
+**Next bounded action:** Execute the two new tests in `:downloader:core:desktopTest` and `:desktop:app:compileKotlin` on PR #3's **exact source SHA** with JUnit XML, then strict Windows installed FTP Pause/REST and 1/4/16 × 3 socket/SHA/CPU/RAM acceptance. Investigate actual failures rather than relaxing limits. Follow with real-browser, visual, upgrade and independent security recheck. Do not mark CANDIDATE/VERIFIED, merge, release or disable this recurring task.
+
+**Scope:** Torrent excluded. No other repository, main branch, ChatGPT Library, paid API or workflow changed.
+
+
+## 2026-10-23 — HyperGet HG-01 display brand, first non-breaking source slice
+
+**Product name:** HyperGet only. **Existing draft PR:** [#3](https://github.com/amroalhamedi2022-hue/personal-download-manager/pull/3), base `codex/repair-rf00-rf01`, head `automation/idm-ftp-cancel-and-category-flush`. **Production source changed: YES.**
+
+- **Source commit:** [`1a84fee4`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/1a84fee483351e4d21dbb0a3857c6facc684bb5e). In `shared/app/build.gradle.kts`, only the generated `APP_DISPLAY_NAME` is now `HyperGet`. This flows through `SharedConstants.appDisplayName` → desktop `AppInfo.displayName` → `HomeWindow` title, tray tooltip and other existing display-name consumers. No storage migration or executable rename was attempted.
+- **Regression source:** [`90668d62`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/90668d6278156dfcaca69233266a773d1bd86ffa) adds `HyperGetBrandingCompatibilityTest` under `shared/app/src/commonTest`. It asserts the visible name and keeps technical runtime/storage IDs distinct from the display brand.
+- **Upstream/license/security:** Existing codebase is derived from AB Download Manager under Apache-2.0 (repository `LICENSE`). Reused the already-present BuildConfig → SharedConstants → AppInfo display-name pipeline; no third-party code copied, no new dependencies, no credential/IPC/registry mutations, no new service or cost.
+
+| HyperGet acceptance gate | Status | Exact evidence / remaining work |
+| --- | --- | --- |
+| HG-01: main Windows window/tray name wiring | **PASS STATIC ONLY; WINDOWS NOT TESTED** | Re-fetched committed build config and `AppInfo`/`HomeWindow`: 10/10 static invariants passed. Actual rendered window/tray/About/settings/notifications need Windows inspection. |
+| HG-02: preserve existing technical identity | **PASS SOURCE DIFF; UPGRADE NOT TESTED** | `APP_NAME`, `PACKAGE_NAME`, `DATA_DIR_NAME`, `getAppName()`, NSIS `upgradeUuid`, installer package name and data-dir configuration unchanged by this round. Existing downloads, credentials, registry and rollback need old→new Windows E2E. |
+| HG-03: HyperGet.exe, installer, shortcuts and separate browser extension | **NOT TESTED / NOT IMPLEMENTED** | Deliberately retained legacy binary, host and registry identities until migration tests; extension repo untouched. |
+| HG-04: original liquid-style HyperGet icon | **NOT IMPLEMENTED** | No icon/image was generated or installed in this round. |
+| HG-05: complete feature/Windows/security/independent double recheck | **NOT TESTED** | Exact PR test SHA `90668d6278156dfcaca69233266a773d1bd86ffa` had **0 PR workflow runs and 0 commit statuses** when checked. No Gradle/JUnit, Windows build, GUI, FTP/HTTP/HLS, 1/4/16 SHA-256 or CPU/RAM measurements were executed on this source. Historical 13/16 benchmark and FTP failures are unresolved for current SHA. |
+
+**Next bounded action:** Run `./gradlew --no-daemon --dependency-verification strict :shared:app:desktopTest :downloader:core:desktopTest :desktop:app:compileKotlin` and inspect JUnit XML on this PR's exact head; then run Windows installed FTP REST and strict 1/4/16 x3 socket/SHA/resource matrix. Proceed with HG-01 Settings/About/notifications and HG-03 NSIS/shortcut/browser compatibility only with old-version upgrade/rollback evidence. Do not mark CANDIDATE or VERIFIED, change `main`, auto-merge, publish a release, rename the repo/IPC/credentials, reintroduce Torrent, or use paid APIs.
+
+
+## 2026-10-23 — HyperGet Windows launcher compatibility + branded dialog titles (SOURCE-ONLY, NO APP BUILD)
+
+**User's latest binding gate:** no full app compile/build, Gradle/Compose packaging, NSIS/MSI/EXE or packaging Actions during development. Source/static tests only until all features, icon, UI, upgrade design, code review and delivery readiness are complete. Historical instructions above to run Windows packaging next are **superseded**. No CI or Windows build was requested/triggered in this round.
+
+**PR:** [#3](https://github.com/amroalhamedi2022-hue/personal-download-manager/pull/3), head `automation/idm-ftp-cancel-and-category-flush`, base `codex/repair-rf00-rf01` (no main write/merge).
+**Production commits:**
+- [`56855f68`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/56855f688043f6cb3fd77d18b475e1fdccc28e1e): added `MainExecutableResolver.kt`. It resolves the main GUI next to legacy CLI/native-messaging helpers, preserves the old main executable when both names exist, accepts `HyperGet` when it is the only GUI, and never mutates disk/registry/IPC/data.
+- [`fc4892ae`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/fc4892ae7dbebc05c2700f7dddcd78dbf318de24): `AppInfo.mainExeFile` uses this resolver on Windows only; other platforms and existing CLI/native-host filenames remain unchanged.
+- [`7a82ffd4`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/7a82ffd410ded102eb080fb782857906c9215664), [`ffe59103`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/ffe59103d9d6d1324a49a1416df312e733c0ed6d), [`93f9f11c`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/93f9f11cdfcc335f0bd7dd746c19bd3133018673): Settings, About and error dialog titles now include the `AppInfo.displayName` HyperGet brand; localized Settings/About labels are retained.
+
+**Regression source:** [`60ab3e0c`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/60ab3e0cb63fea7993d08d75aac5d067fdce2616), `scripts/source-tests/HyperGetExecutableResolverSmoke.kt`. Covers null/relative path, historical fallback, legacy-only, side-by-side preference, direct old/new GUI, new-only install, non-executable directory and case-insensitive launcher name. Uses temporary `.bin` fixtures, **not executable builds**.
+
+| Gate | Status | Evidence / limitation |
+| --- | --- | --- |
+| New production resolver + GUI wiring + branded dialog source | **PASS SOURCE COMMITTED** | Six production commits above; re-fetched on existing PR #3. |
+| Actual isolated Kotlin source regression | **PASS (10 cases, no app build)** | Ran `kotlinc /tmp/hyperget-source-check/MainExecutableResolver.kt /tmp/hyperget-source-check/HyperGetExecutableResolverSmoke.kt -d /tmp/hyperget-source-check/classes && kotlin -classpath /tmp/hyperget-source-check/classes com.abdownloadmanager.desktop.utils.HyperGetExecutableResolverSmokeKt`. Output: `PASS HyperGet executable path source smoke: 10 cases`. Before execution, `git hash-object` on both local copies matched GitHub blob SHAs `cc122d8462bedf0b6d39efededa4963e354b24a5` (production) and `c6eb5f5df6c10248435502c22a39764b8cf4fc03` (test), so these were exact committed sources, not a mock. |
+| GitHub source/static checks | **PASS 13/13 (static only)** | Re-fetched resolver, `AppInfo`, smoke test, three dialogs, native-messaging manifest/host and BuildConfig. Verified brand wiring, safe old/new precedence, Windows-only change, no file mutation, legacy IPC/registry keys. No Gradle/JUnit/Windows assertion. |
+| No packaging during this round | **PASS (actions not invoked)** | Inspected workflow triggers. Existing packaging workflows are push-scoped to `codex/repair-rf00-rf01`/main or manually dispatched, not PR #3 head. No workflows were edited or dispatched. This is **not** a guarantee about external actors/manual triggers. |
+| CI on exact source SHA `93f9f11c` | **NOT TESTED / 0 checks** | `fetch_commit_workflow_runs`: 0 PR runs; combined commit status: 0 statuses. Deliberately did not trigger build workflows. |
+| HG-01 visible dialog titles | **PASS SOURCE ONLY; WINDOWS NOT TESTED** | Settings/About/error now use HyperGet; Windows screenshot/rendered UI inspection deferred. |
+| HG-02 legacy data/credentials/registry/IPC | **PASS NO-MUTATION SOURCE REVIEW; UPGRADE NOT TESTED** | No changes to IDs, storage, native-host names or registry. Actual old-to-new upgrade, rollback and credential preservation still unverified. |
+| HG-03 `HyperGet.exe`/installer/extension | **NOT IMPLEMENTED / NOT TESTED** | This round only prepares runtime path selection; binary rename and packaging intentionally deferred. Separate extension repo main HEAD `491c2d64589e6697c53a6bdb15ccce38a6fc860f`, no open PR at inspection; no cross-repo write. |
+| HG-04 custom icon and Liquid Progress parity | **NOT IMPLEMENTED / NOT TESTED** | Original brand icon, DPI checks and approved screenshot parity remain open. |
+| HG-05 FTP/HTTP(S)/HLS, 1/4/16, SHA-256, CPU/RAM, Windows installed acceptance and independent double recheck | **NOT TESTED on current SHA** | Historical FTP and 13/16 active transfer failures remain unresolved as exact-head Windows tests are intentionally deferred. No final EXE/artifact. |
+
+**Open-source/license/security review:** Inspected existing AB Download Manager-derived source, `AppInfo.calcExecutable`, jpackage path usage, and repo `LICENSE` (Apache-2.0). Adapted existing Java/Kotlin `File` path behavior with no new dependency, no downloaded executable and no third-party code copied. Conservative legacy-first selection prevents silently switching an existing helper to a side-by-side branded executable; final installer/upgrade must explicitly resolve how an old GUI binary is retired while keeping IPC/credentials stable.
+
+**Next source-only round:** Audit remaining user-visible HyperGet strings and Windows installer/shortcut/native-host migration logic without building; add source-level compatibility tests and icon/readiness checks; continue FTP/HTTP/HLS/queue security and logic fixes with unit/static tests. Keep `AUTOMATION_COMPLETE: IN_PROGRESS`. Do not package until all source/readiness gates are met, then do first final build, actual Windows acceptance, independent double recheck and verified delivery. No Torrent, paid API, auto-merge, release or ChatGPT Library access.
+
+
+## 2026-10-24 — HyperGet native-messaging concurrent outbound framing (SOURCE-ONLY; NO APP BUILD)
+
+**Existing PR:** [#3](https://github.com/amroalhamedi2022-hue/personal-download-manager/pull/3), head `automation/idm-ftp-cancel-and-category-flush` → base `codex/repair-rf00-rf01`. **Production source changed: YES.**
+
+- **Production SHA:** [`ec8f5081`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/ec8f5081bde80746e99bf9326bbc9734be661daf). `StdioProtocol.writeMessage` previously wrote a four-byte native-messaging length prefix, then payload, then flush without guarding the three operations. If two callers shared the protocol, the second could write its complete frame after the first header but before its body, corrupting the browser's framing. Introduced a per-instance `outputFrameLock` guarding the full prefix/body/flush sequence. UTF-8 encoding and 1 MiB outbound validation remain outside the lock. The inbound 4 MiB limit and existing framing semantics are unchanged.
+- **Regression SHA:** [`cae20018`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/cae20018a2e9e03ab42c1d6d625db3ef072c2a47), `scripts/tests/HyperGetNativeMessagingConcurrentSmoke.kt`. A gated `OutputStream` pauses the first writer immediately after its prefix and starts a second writer. The test requires the second writer to wait and the final stream to contain two contiguous valid frames.
+- **Actual source-only verification — PASS:** Fetched the pre-patch production blob (`37d3040fd9b02217460354830c9ec689ecca8df5`), matched it with `git hash-object`, compiled it with `kotlinc` and ran the new test: **FAIL reproduced** (`Second sender overtook the first incomplete frame`). Applied the minimal lock fix, compiled **the exact committed production source and committed test** using `kotlinc StdioProtocol.kt NativeMessagingFinished.kt HyperGetNativeMessagingConcurrentSmoke.kt -d after-classes && kotlin -classpath after-classes HyperGetNativeMessagingConcurrentSmokeKt`: **PASS**. `git hash-object` matched GitHub blobs `ee58e3b663671dc9e98cdac8f237ab7be82d03c9` (production) and `fc33bee7748b98e02f648910c2d9ef5dca2f5b9e` (regression). Six source invariants also **PASS** (locking scope, byte limits, strict UTF-8, no new dependencies, unchanged reader).
+- **Open-source/license/security:** Inspected existing repository `LICENSE` (Apache-2.0) and reused the existing Java/Kotlin monitor primitive; no external code copied, no new dependency, API, credential, registry key, IPC name or browser extension change. The lock prevents interleaved stdout frames; it does not claim to repair partial writes caused by OS pipe failure.
+- **CI at regression SHA `cae20018`: NOT TESTED** — `fetch_commit_workflow_runs` returned **0 PR runs** and combined commit status **0 checks**. Deliberately did not dispatch packaging workflows.
+- **Windows/Gradle/Compose desktop, FTP/REST, HTTP(S)/HLS, 1/4/16, SHA-256, CPU/RAM, browser E2E, Liquid Progress, HyperGet.exe, upgrade/installer and independent recheck: NOT TESTED** on this SHA. Historical 13/16 active benchmark and FTP failures remain unproven fixed. No EXE or installer created.
+- **Next bounded source-only action:** Audit `NativeMessagingHost` handling of failed stdout writes (do not attempt to continue a broken frame), and the separate browser extension compatibility without changing its repository from this PR. Continue engine and UI source fixes; run source-only tests, static checks and code review. Full app build and packaging remain **PROHIBITED until feature/readiness gates are complete**, then perform one final build and real Windows acceptance with independent recheck. Keep `AUTOMATION_COMPLETE: IN_PROGRESS`.
+
+No `main` write, auto-merge, Torrent, public release, paid API/service, packaging Action, other-project edit or ChatGPT Library access.
+
+
+## 2026-10-24 — HyperGet browser companion: separate PR #1 (SOURCE-ONLY, NO BUILD)
+
+**Cross-repository work only:** Main HyperGet PR [#3](https://github.com/amroalhamedi2022-hue/personal-download-manager/pull/3) remained at `3ab8526c7bbba79f41e9bcadc3c427c03f97c17c` before this ledger update. No main application production source was modified in this round. The browser companion was changed in its **separate** repository/branch, not copied into this repo.
+
+- **Browser PR:** [HyperGet browser #1](https://github.com/amroalhamedi2022-hue/personal-download-manager-browser-integration/pull/1), draft; branch `automation/hyperget-browser-lifecycle-branding` → `main`, head `4ccec15512cd7b15180d13d0b61daa97d0fdb4ea`.
+- **Production change:** [`49ab03b1`](https://github.com/amroalhamedi2022-hue/personal-download-manager-browser-integration/commit/49ab03b1fed599048da8ebbb33f0e52396fcc72a): reject pending native requests immediately on explicit disconnect; ignore stale disconnect and message events from old ports after reconnect; stop logging arbitrary native payloads. User-visible package/manifest/English locale now say HyperGet. Native host name, Firefox ID, Chrome public key and protocol are preserved.
+- **Source regression:** [`e358ac07`](https://github.com/amroalhamedi2022-hue/personal-download-manager-browser-integration/commit/e358ac07fa38e087c2114911e0732aef691271c1), corrected at [`e405399a`](https://github.com/amroalhamedi2022-hue/personal-download-manager-browser-integration/commit/e405399aeb03c4bcdf6d2e10fab9c158365b0b48): `scripts/tests/HyperGetNativeTransportSourceSmoke.cjs`, Node/TypeScript in-memory source-only test harness.
+- **PASS 8/8 isolated source-model checks:** Fetched the production TypeScript from GitHub, stripped TS-only syntax in memory (no app build), executed with mocked browser native ports; checked explicit disconnect, stale disconnect, stale response, multiple pending requests, timeout, secret-free logging, one-shot request and preserved identities. **Not** an npm test run or TypeScript typecheck.
+- **NOT TESTED:** Node test harness execution with repo dependencies, TypeScript typecheck, Chrome/Edge/Firefox browser runtime, Windows host↔extension E2E, signed links/cookies, HTTP fallback, upgrade, installer, real downloads. Browser PR exact head has **0 workflow runs and 0 commit statuses**.
+- **License/security:** No new dependency; Apache-2.0 license and upstream attribution preserved. No API charges, app/extension build, Vite packaging, EXE/installer, release, main write, merge or auto-merge.
+- **HG-01/HG-03 browser branding:** **PASS source-only; installed extension NOT TESTED**. **HG-02:** legacy extension IDs and host preserved by source review; migration/upgrade NOT TESTED. **HG-04/HG-05:** icon, visual parity, engine acceptance and independent recheck NOT TESTED.
+- **Next:** Continue production engine/Windows UI source fixes on main PR #3 and execute browser source-only Node tests when dependencies are available. Only after all source/readiness gates may final Windows build/real browser acceptance begin. `AUTOMATION_COMPLETE: IN_PROGRESS`.
+
+
+## 2026-10-24 — HyperGet FTP staged-file identity + isolated source-only CI (NO APP BUILD)
+
+**Scope:** FTP data safety and verifiable source-only CI, not a completed Windows product. **Existing draft PR:** [#3](https://github.com/amroalhamedi2022-hue/personal-download-manager/pull/3) on `automation/idm-ftp-cancel-and-category-flush` → `codex/repair-rf00-rf01`; no main write or merge. Browser integration remains in its separate [draft PR #1](https://github.com/amroalhamedi2022-hue/personal-download-manager-browser-integration/pull/1).
+
+**Production commits:** [`eb7ba7a8`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/eb7ba7a8dddf00b169716b2bcf30b27221313ffc) retains a staged file key and verifies the file before/after opening; [`bca6d0c2`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/bca6d0c236e42ffa6431d6333d3ca5e08c8ff768) rejects nonregular, truncated or replaced staged files before final publication; [`44cad80e`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/44cad80e8a9e7d4b76026b723f2fe743fa34b248) passes the opened file key and final downloaded byte count from the actual FTP transport. A replacement of `.ftp-part` after the stream was opened could otherwise publish unrelated data of the same length. Existing no-overwrite final-file policy is preserved.
+
+**Tests and CI:** [`7e0a844e`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/7e0a844e34b8451323d96dcfd1b83b8ddf87b56a) adds isolated Kotlin source smoke; [`089a8604`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/089a8604ac14f2e19cd9df7a7f6f89cd68a7194b) adds 3 repository JUnit regression cases (not executed); [`4dd904f1`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/4dd904f1c583d46c741639c1e670ad0c299f3c4a) adds six Python source contracts; [`9638d1b5`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/9638d1b5fd18d3101d7b9cb49c6841c670a7b996) adds a dedicated **source-only** workflow (Python stdlib, no Gradle/Compose, app compile, EXE, NSIS, MSI or artifact upload). Existing Windows packaging workflows have push filters for `main`/`codex/repair-rf00-rf01`, not this PR head. No packaging workflow was requested or invoked.
+
+| Gate | Status | Evidence / limitation |
+| --- | --- | --- |
+| Production and source/JUnit regressions committed on PR #3 | **PASS — SOURCE PRESENT** | Re-fetched exact GitHub blobs; 18/18 source/license/connection invariants passed. |
+| Isolated Kotlin/JVM stage identity smoke | **PASS — 9/9 LOCAL PATCH-EQUIVALENT** | JDK 21 / kotlinc 1.9.0 compiled standalone `FtpStagedOutput.kt`, `FtpStagedFileCommit.kt` and new smoke; ordinary publish, size mismatch, symlink and same-size replacement checks passed. This is not full app compilation or exact-PR JUnit. |
+| GitHub source-only CI | **PASS — 9/9 PYTHON** | [Run 40065060057](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40065060057) on SHA `9638d1b5fd18d3101d7b9cb49c6841c670a7b996`: 6/6 FTP stage static source contracts plus 3/3 local authenticated FTP fixture protocol tests; both jobs/steps succeeded. No application binary produced. |
+| New repository `FtpStagedIdentityTest` JUnit | **NOT TESTED** | Full Gradle test/build remains prohibited before readiness. |
+| Windows FTP Pause/REST, HTTP/HTTPS/HLS, 1/4/16, SHA-256, CPU/RAM, browser, UI, upgrade and HyperGet.exe | **NOT TESTED ON THIS HEAD** | Historical Windows active-16 failure 13/16 in round 2 and FTP Pause failure are not cleared by this source-only change. |
+| Security and filesystem race completeness | **PARTIAL** | File-key checks only apply when the provider exposes a stable `fileKey`; checks cannot completely eliminate cross-process TOCTOU between validation and publish, nor defend against all malicious hard-link/directory-owner attacks. Independent Windows/NTFS and network-share tests remain mandatory. |
+| License/dependency/cost | **PASS SOURCE REVIEW** | Existing Apache-2.0 project license retained; only JDK/Kotlin/Python stdlib already in project, no new dependency, paid API, installer, merge, release or Torrent. |
+
+**Mandatory next work:** Continue source fixes, original Liquid Progress/UI and HyperGet identity/icon/migration requirements, full protocol/concurrency coverage and license/security review. Do not run any full Gradle compile/build or packaging until all source-readiness gates are met. Then permit the first final Windows build, run installed Windows tests, independent double recheck, and deliver an actual `HyperGet.exe` with SHA-256 before declaring completion or disabling the recurring task.
+
+## 2026-10-24 — HG-HLS-AUTH-01 follow-through: final playlist URL and persisted media identity
+
+**Functional requirement:** A previously completed HLS segment may be reused only when its media resource identity is unchanged. The existing reconciliation compared raw relative URI + duration + sequence, but `clip.ts` in `/a/` is not the same resource as `clip.ts` in `/b/` after a playlist redirect. A size-valid old staged file could otherwise be assembled into a different playlist.
+
+**Production change (this PR head):** resolve each segment URI using OkHttp `HttpUrl.resolve` against the **final playlist response URL**, then persist the canonical absolute media URL as its identity. Keep existing sequence/duration matching and staged-file checks. Strip fragments (not sent to HTTP servers), retain signed query parameters, reject URL-embedded username/password. Existing relative-URI records are conservatively re-downloaded once on refresh; no database migration, deletion of user downloads or change to native messaging/IPC.
+
+**Source regression:** seven Kotlin desktop tests for same-resource reuse, redirected directory, redirected host, absolute CDN segment, old relative records, query/fragment semantics and URL userinfo rejection. Five Python source contract tests guard production wiring and the new cases.
+
+**Milestone build gate (planned, not yet claimed):** Run **only** `:downloader:core:desktopTest --tests '*HlsGuardedRedirect*Test*' --tests '*HlsSegmentIdentityTest*'` on free Windows GitHub Actions; expect three JUnit XML files, at least 19 tests, zero failures/skips. This purpose-specific compilation is necessary because Python static tests cannot validate Kotlin/OkHttp binary API compatibility or actual JUnit execution. It does **not** package HyperGet.exe or test the installed UI. Capture exact SHA and run log before marking PASS. Earlier loopback run 40115692417 succeeded on previous head `08d6ce14`, but that does not validate this patch.
+
+**Remaining:** HLS end-to-end playlist→media download and byte/hash comparison on Windows; same URL with mutated server bytes remains intrinsically unprovable without trusted validators/content hashes; FTP Pause/REST, 1/4/16, HTTP/HTTPS, CPU/RAM, Liquid Progress, icon, browser and upgrade remain open. Status IN_PROGRESS. No main write/merge, Torrent, paid service or release.
+
+**Reference/licensing:** reused existing OkHttp `HttpUrl.resolve` (OkHttp Apache-2.0) and existing project's Apache-2.0 Kotlin architecture, no new dependency or copied third-party source.
+
+### Verified follow-up — 2026-10-24, HG-HLS-AUTH-01 media identity (exact-SHA evidence)
+
+**Functional acceptance:** Resolved absolute media URL is persisted as the segment identity, so a changed final playlist directory/host invalidates completed bytes even when the relative filename, sequence, duration and staged file size match. A stable absolute CDN URL remains reusable. Legacy persisted relative identities deliberately re-download once rather than trust an unknown old base URL. This is a source/targeted-JUnit milestone, **not installed end-to-end HLS completion**.
+
+**Production + regression SHA:** [`691ad625e15553728650d2026ede7b709020e572`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/691ad625e15553728650d2026ede7b709020e572). Source-only workflow wiring SHA: [`f585ab757b432bdc85449087ad6535d2f492b4fc`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/f585ab757b432bdc85449087ad6535d2f492b4fc).
+
+- **PASS — source CI on exact latest source SHA `f585ab75`:** [40119024251](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40119024251). New five-case HLS media identity source contract passed along with the existing fast source/FTP fixture checks. This is not a runtime HLS download.
+- **PASS — Windows Kotlin/JUnit on exact latest source SHA `f585ab75`:** [40119024272](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40119024272). The scoped Gradle desktop test task compiled and ran the guarded redirect and media identity tests; the workflow required **three** JUnit XML suites, **at least 19** executed tests, and **zero** failures/errors/skips. No EXE/installer was produced. Independent prior identical production+test SHA [40119014257](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40119014257) also passed.
+- **Evidence limitation:** Workflow's upload-artifact glob still selects only `HlsGuardedRedirect*Test.xml`; the gate validated all three XML files on-runner but the downloadable JUnit artifact omits `HlsSegmentIdentityTest.xml`. Fix this upload glob with the next functional milestone to avoid another redundant Windows compile solely for metadata. Do not claim artifact has the third suite.
+- **NOT TESTED:** full playlist-to-media bytes download/assembly with SHA-256 on installed Windows; same-URL mutated server content, crash/restart, external FTP, HTTP/HTTPS, 1/4/16 strict active sockets, CPU/RAM, Liquid Progress, icon, single HyperGet.exe, browser extension E2E, old→new upgrade and independent full-product recheck.
+- **Next milestone:** Build a loopback HLS end-to-end fixture (playlist redirect + two distinct .ts payloads + resume/relocation + output SHA-256) against the actual downloader job and then a Windows installed benchmark. Keep current draft PR, no main write/merge/release, no Torrent or paid services.
+
+**Milestone verdict: PASS targeted source and Windows JUnit; overall HyperGet IN_PROGRESS.**
+
+
+## 2026-10-24 — HG-HLS-TRANSFER-02: complete media bytes + loopback assembly (PRE-BUILD GATE)
+
+**Functional milestone:** The actual HLS segment worker must reject unsolicited HTTP 206, HTTP 204, empty media bodies and EOF before a declared Content-Length. It must not mark a partial segment Completed. A redirected local playlist with two valid .ts responses must download using the production OkHttp/worker/destination stack, assemble in playlist order and match an independent SHA-256 of expected bytes.
+
+**Production source:** `HlsSegmentTransferValidation.kt` and `HLSPartDownloader.kt` on draft PR #3. Reuse the existing Apache-2.0 OkHttp and JDK HTTP server; no new runtime dependencies or external code copied. The worker checks response code before reading and validates received byte count before setting `isCompleted`. This does not claim trusted integrity for same-length tampering or signed remote playlists.
+
+**Preflight build question (recorded before any Windows compilation):** Does this exact production worker compile on Windows, reject partial responses, and produce the expected SHA-256 after fetching two .ts files from a redirected playlist? **Expected:** `HlsSegmentTransferLoopbackTest` 4/4 PASS, existing guarded redirect + identity tests remain green; 4 JUnit XML suites, at least 23 tests, zero errors/failures/skips; uploaded XML must include all suites. **Why source tests cannot answer:** Kotlin API compatibility, OkHttp real sockets, coroutine worker lifecycle, Okio staging, playlist parser, byte assembly and hash cannot be established from source-string assertions. **Build scope:** targeted free Windows `:downloader:core:desktopTest` JUnit only, NO installer/EXE/Compose packaging. Avoid repeat runs without relevant changes. No device-installed Windows claim from this gate.
+
+**Before CI:** source contract in `scripts/source-tests/test_hyperget_hls_segment_transfer_source.py`; Windows fixture in `downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/downloaditem/hls/HlsSegmentTransferLoopbackTest.kt`. CI outcome and exact SHA are PENDING at this preflight checkpoint. **Next if FAIL:** inspect test JUnit XML and Gradle log, repair the concrete issue on this PR branch and rerun only after a relevant change. **Remaining acceptance:** installed Windows HLS job resume/relocation, HTTP/FTP strict 1/4/16, CPU/RAM, Liquid Progress, HyperGet icon/executable/upgrade, extension E2E and independent full-product recheck. AUTOMATION_COMPLETE: IN_PROGRESS.
+
+
+### Verified result — 2026-10-24, HG-HLS-TRANSFER-02
+
+**Exact functional source SHA:** `755f288203b70aca6201fe57354bafb362085fdd` (draft PR #3). **PASS — Windows targeted Kotlin/OkHttp/JUnit:** [run 40123431291](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40123431291), Windows 2022, JetBrains Runtime 25, `:downloader:core:desktopTest` with guarded redirect, identity and new `HlsSegmentTransferLoopbackTest` filters. Gradle log reports `BUILD SUCCESSFUL in 1m 13s`. Acceptance step found exactly **4 JUnit suites**, **at least 23 tests**, **zero failures/errors/skips**. The new suite has four cases: real redirected playlist -> two segment worker downloads -> staging assembly -> SHA-256 equality, HTTP 206 rejection, premature EOF length contract and empty/partial response contract. This is **real local Windows loopback network behavior** of the worker, not an installed HyperGet GUI/EXE test.
+
+**PASS — source-only:** [run 40123431288](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40123431288), exact same SHA; all steps green, including five new Python source contracts. **JUnit artifact:** [artifact 12572012154](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40123431291/artifacts/12572012154), name `hyperget-hls-complete-segment-sha256-junit`, size 2,985 bytes, unexpired at inspection. Fixed the earlier upload glob to select all `Hls*Test.xml`; the four-suite gate passed before upload. Artifact contents were not separately downloaded for independent inspection.
+
+**Behavioral limit:** The new byte-count check catches truncated bodies with a declared length and rejects zero-byte segments; when a server omits Content-Length, it can only enforce nonempty data, not cryptographic integrity. Same-length tampering and source identity across remote mutations still need stronger trusted validators. This suite does not cover full `HLSDownloadJob` pause/crash/restart persistence, browser, FTP, HTTP concurrency or an installed Windows binary.
+
+**Automation/build cost note:** Updating individual files on the PR caused several redundant automatically triggered targeted PR checks before the final exact-SHA gate; the final run above is the authoritative evidence. No packaging or EXE build was requested; future work should batch PR commits and avoid repeated compilation when no relevant code changed.
+
+**Milestone verdict:** PASS for the scoped Windows loopback worker/assembly SHA-256 and partial-response rejection; **overall product IN_PROGRESS**. Next milestone: full `HLSDownloadJob` crash/resume + playlist relocation against a deterministic fixture, then installed Windows HTTP/FTP 1/4/16 and performance, UI/identity/icon/browser/upgrade and independent final recheck. No `HyperGet.exe` delivered. Do not disable automation.
+
+
+## VERIFIED — 2026-10-24 HG-HLS-RESUME-03 persisted job relocation and safe assembly
+
+**Code + tests exact SHA:** `4707652d386b621f30fbae33d2d21dd858625d7a` on draft PR #3. **Windows PASS:** [targeted run 40128335181](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40128335181), Windows 2022, JDK 25, targeted `:downloader:core:desktopTest`; log: `BUILD SUCCESSFUL in 1m 33s`, 32 Gradle tasks executed. Acceptance gate verified **six JUnit XML suites**, **at least 27 tests**, **zero failures/errors/skips**. Includes new persisted HLSDownloadJob boot/resume fixture with redirected playlist, previously completed old stages, actual new segment downloads and SHA-256 comparison, plus safe assembly negative tests for missing stages and existing outputs. This is a real Windows loopback network/JVM test, **not** a killed/restarted installed HyperGet.exe.
+
+**Source-only PASS:** [run 40128335196](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40128335196), same exact code SHA; new six-case structural contract and existing FTP/HLS source checks green. **JUnit evidence:** [artifact 12574555538](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40128335181/artifacts/12574555538), six XML files uploaded, 4,176-byte ZIP, artifact digest SHA-256 `836387f97cc63af3b868400b3395e26418a6a3fb87a05314c8f4362164b65ae9` (this is the test ZIP, **not HyperGet.exe**). Artifact content has not been independently re-parsed outside the runner; on-runner XML gate passed.
+
+**Production behavior:** `SegmentedDownloadDestination` revalidates completed staged segments immediately before finalization, assembles into a same-directory temporary file, checks copied lengths, then moves into place without an overwrite flag. On failure it removes the temporary assembly and leaves existing output/staged input intact. `HLSDownloadJob` existing playlist reconciliation now has a real job-level Windows regression confirming relocated segment identity forces fresh bytes rather than old completed stage reuse.
+
+**Remaining/risks:** No true process-kill/restart of installed EXE, NTFS hostile stage replacement, network share ACL/TOCTOU, same-URL mutated media content with trusted validators, FTP Pause/REST and strict active-socket 1/4/16, CPU/RAM, Liquid Progress, icon, extension E2E, upgrade, single HyperGet.exe or independent final-product recheck. Gradle warned about deprecated features before Gradle 10; compilation succeeded. No new dependency or paid service, no Torrent, main write, merge or release. Browser PR #1 remains separate/draft. **Overall: IN_PROGRESS.**
+
+
+
+## 2026-10-24 — HG-HLS-RESUME-03 hardening: reject stage swaps during final assembly
+
+**Same functional milestone, not a new feature:** Safe HLS publication must not accept a completed stage replaced with a different same-length file or modified in place between initial attribute validation and copy. Prior code compared size only and reopened stages with `File.inputStream()`, which follows a symlink introduced after the first NOFOLLOW validation. A replaced stage with identical byte count could be published without detection.
+
+**Production:** `SegmentedDownloadDestination.assemble` now opens stage streams with JDK `Files.newInputStream(path, LinkOption.NOFOLLOW_LINKS)`, and checks the original vs post-copy regular-file flag, length, modification timestamp and `fileKey` (when available). This closes deterministic callback-time same-size replacement/mutation cases; it does not cryptographically authenticate content or eliminate all filesystem races. No new dependency, storage migration or protocol change. References: Oracle JDK Files API (NOFOLLOW_LINKS) and existing Apache-2.0 OkHttp code; no third-party source copied.
+
+**Regression:** two new `HlsSegmentAssemblySafetyTest` cases deterministically replace a stage with a different same-size file or rewrite its bytes during the assembly progress callback, force distinct modification metadata, and require failure with no published output and no leaked .assembling file. Existing safe assembly, redirect, identity, transfer and resume tests must stay green.
+
+**Purposeful Windows compilation gate — recorded before requesting a new manual run:** Does JDK 25/Kotlin compile the NOFOLLOW stream option and does the real NTFS/Windows runner reject same-size stage mutation without publishing an output? **Expected:** 6 HLS JUnit suites, >=29 tests, zero errors/failures/skips; source-only CI green. Python/static checks cannot prove Java NIO provider behavior or Kotlin/JVM API compatibility. **Scope:** free Windows targeted `:downloader:core:desktopTest` only, no EXE/installer/packaging. The PR workflow may automatically trigger for code changes; do not rerun manually until its exact-head result is known.
+
+**Status:** CODE + TEST PUSHED; Windows outcome **NOT TESTED** pending exact-SHA CI. Remaining product gates unchanged: actual OS process kill + installed-app restart, FTP Pause/REST, strict 1/4/16, CPU/RAM, Liquid Progress, icon/identity, browser extension, upgrade and single HyperGet.exe with independent Windows recheck. Keep PR #3 Draft; no main write, auto-merge, Torrent or paid service.
+
+
+### VERIFIED — 2026-10-24 HG-HLS-RESUME-03 staged-file swap hardening
+
+**Code/test/workflow exact SHA:** [`3002e7e8d414361968a113a513d16fb42861be52`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/3002e7e8d414361968a113a513d16fb42861be52) on existing draft PR #3. **PASS — source-only CI:** [run 40132106144](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40132106144) completed successfully, including updated source contracts for NOFOLLOW and two mutation cases. **PASS — Windows Kotlin/JUnit:** [run 40132106153](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40132106153) completed successfully; actual Windows runner compiled the scoped `:downloader:core:desktopTest` target, passed six JUnit XML suites and **at least 29 tests** with zero failures/errors/skips, including both new deterministic same-size stage swap and in-place mutation regressions. The workflow did not build an EXE or installer. **JUnit evidence:** [artifact 12575087747](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40132106153/artifacts/12575087747), 4,222 bytes, reported artifact ZIP digest `sha256:b9a5a1d2cf8006da6bce59ad413fb524baedd9d47be2d87faffdf7843aaefc5b` (**not** an application executable). The workflow verified XML on-runner; artifact ZIP contents were not independently downloaded. **Local JDK 21 smoke:** `Files.newInputStream(path, LinkOption.NOFOLLOW_LINKS)` compiled and opened a regular file; replacement changed `fileKey`. This is supplemental Linux/JDK API evidence, not Windows application testing.
+
+**Measured gate:** HLS safe stage publication against the two tested deterministic same-length mutation paths **PASS**. **Residual risk:** metadata checks do not detect same-length tampering when file identity and timestamps are unchanged, and cannot close every adversarial filesystem TOCTOU/hardlink race. **NOT TESTED:** installed HyperGet process kill/restart, Windows NTFS hostile symlink swap with privileges, FTP REST/Pause and strict 1/4/16 active sockets, HTTP/HTTPS installed E2E, CPU/RAM, Liquid Progress, icon/brand upgrade, browser integration and final single `HyperGet.exe`. Overall IN_PROGRESS; PR stays Draft, no main write/merge, paid service or Torrent.
+
+
+## 2026-10-25 — HG-WIN-ACTIVE-04: installed Windows HTTP 1/4/16 strict-cap benchmark (PRE-BUILD)
+
+**Functional acceptance question, recorded before triggering Windows compilation:** Does the current PR's installed GUI/CLI honor *each* persisted max-concurrent setting (1, 4 and 16), actually sustain that many distinct HTTP tasks on wire, complete three rounds per cap (63 downloads total), verify SHA-256 for every output, collect nine actual Windows process-tree CPU/RAM CSVs, and restore the original user setting even on failure? Historical installed run 39929246748 reported 16/16 in one round but only 13/16 in another; this is NOT considered fixed by queue source changes.
+
+**Expected result:** one NSIS installer compiled from the exact PR head for isolated Windows test installation (not a user release), 63/63 byte/hash-verified outputs, three 1-task rounds, three 4-task rounds and three 16-task rounds with peak and sustained on-wire distinct task counts, nine nonempty CPU/RAM process samples, restored prior setting, and report+diagnostics artifact. Any missing live task, bad hash, invalid sample or failed install is **FAIL**, not partial PASS. No IDM performance comparison is claimed without matched reference measurements.
+
+**Why source tests cannot answer:** Kotlin/Compose/NSIS compilation, installed CLI↔GUI IPC, persisted settings, HTTP Range sockets, concurrent admissions and actual Windows CPU/RAM require an executing Windows app. The targeted source-only contracts are an additional fast gate, not substitute evidence.
+
+**Existing-code reuse and license:** Reuses the repo's Apache-2.0 Windows benchmark, Python standard-library loopback HTTP server and SHA/PowerShell metrics; no new dependency or external code copied. Repairs benchmark correctness: previously all scenarios ran under cap=16; now each scenario applies and separately re-reads its own cap. Fixture now reports bounded synthetic active task names for diagnosis (never URL/headers/credentials). PR workflow checks out the exact head SHA, not the synthetic merge SHA, and runs only on benchmark-related changes; no paid service, main write, auto-merge, release or Torrent.
+
+**Before-run status:** CODE + TEST READY FOR PR CI; source-only test six cases and Windows installation/63 real downloads are **NOT TESTED** until exact-SHA results arrive. If the Windows benchmark fails, retain diagnostic artifacts and repair the actual queue/IPC/root cause before retrying; do not weaken the concurrency or hash gate. Final single `HyperGet.exe`, FTP Pause/REST, HLS installed process-kill restart, browser extension E2E, Liquid Progress screenshots, icon, upgrade and independent final Windows recheck remain **NOT TESTED**. **AUTOMATION_COMPLETE: IN_PROGRESS.**
+
+
+---
+
+## HyperGet — 2026-10-25 HG-HTTP-CONCURRENCY-16 Windows failure and targeted repair
+
+**FAIL — actual installed Windows run [40137103737](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40137103737) at exact SHA `c6a2ef5c48168d396d3c0203dcd21d2142ed3a62`:** NSIS compilation and silent installation PASS (`BUILD SUCCESSFUL in 4m 44s`; installer SHA-256 `c792bb552549bf12cb0c95d4ea258bf4a42d54b27f2b498bf31b036eae589842`). All three 1-task and all three 4-task rounds PASS: 15 completed 32 MiB files SHA-256 verified, six process CPU/RAM samples captured. First 16-task round FAIL: `unique_tasks_seen=16`, `peak_distinct_tasks=15`, `active_distinct_tasks=14`; 16 output files had full 33554432-byte lengths, but no validated 16-way overlap or verified SHA-256. [Failure diagnostics artifact 12577167281](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40137103737/artifacts/12577167281). Original max-concurrent setting 3 restored. This does not prove a production admission defect: all 16 task IDs reached the server, but early transfers completed before all 16 overlapped.
+
+**Focused test repair:** a test-only loopback barrier for the 16-task scenario withholds response bodies until 16 distinct live GET tasks are registered, then releases them. A bounded 25-second timeout leaves an incomplete transfer if real admission stalls; never substitutes historical unique task counts for actual concurrent sockets. The existing 1/4 scenarios, 63 SHA-256 file checks, 9 CPU/RAM CSV requirements and real installed Windows app remain unchanged. Added Python real-loopback regression and source contracts. Fixed the final Windows report's use of synthetic `GITHUB_SHA` instead of exact tested `HYPERGET_TESTED_SHA`.
+
+**Justified Windows compile/run gate (before CI):** Does the installed Windows app now admit 16 simultaneously open task sockets and complete 63 SHA-verified downloads plus nine CPU/RAM runs? Expected PASS requires three rounds of 1/4/16, live-socket overlap throughout measurement, strict SHA-256, exact-head report and no skipped gates. Source-only tests cannot establish installed JVM scheduling, real socket admission, NSIS or process measurements. One existing milestone CI run, not a random Alpha. **New SHA result NOT TESTED until the run completes.** Remaining: HTTPS/FTP, kill/restart resume, UI/Liquid Progress, rebrand, extension, upgrade, single HyperGet.exe, independent Windows acceptance. PR #3 Draft; no main writes, paid services or Torrent.
+
+
+**Windows preflight follow-up on 2026-10-25:** [Run 40144877303](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40144877303) at SHA `56e86ee322e7797186d221a58a69d0446d222a77` failed **before Gradle** in the new Python fixture regression: the port-file path existed before Windows flushed the numeric port (`ValueError: invalid literal for int() with base 10: ''`). The eight source-contract tests passed; Linux source-only [40144877297](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40144877297) passed. Corrected the test's startup readiness loop to require a complete decimal port. This is a Windows test-harness race, not evidence of production transfer failure. New-SHA Windows compile/installed benchmark remains NOT TESTED until rerun completes.
+
+
+## 2026-10-25 — HG-HTTP-CONCURRENCY-16: verified Windows FAIL, aggregate Range pacing repair (PRE-CI)
+
+**Observed installed Windows FAIL:** [run 40144938342](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40144938342) at exact head `17cab2bea4b43ae018170edb7554acc9a902631e`. NSIS compilation, silent install and 1/4 workloads (15 SHA-verified downloads) PASS. First 16-way round PASS (16/16 SHA-verified); second 16-way round FAIL at strict 8-second measurement: `peak_distinct_tasks=16` but `active_distinct_tasks=15`. The server admitted 16 simultaneous distinct task sockets, **so the earlier 15-peak failure is resolved at least once**; however one task completed before the CPU/RAM measurement ended. This does not establish 16-way sustained overlap. Eight CPU/RAM CSVs were collected before failure; the ninth round and final 63-file audit were not reached. [Diagnostic artifact 12580362018](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40144938342/artifacts/12580362018), SHA-256 `f67baaf1bb50de89332bc044c6549bbdf0d316971618a324dd7331fd021c6337` (artifact ZIP, NOT application EXE). Max concurrent setting restored to 3. Source-only [run 40144938316](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40144938316) PASS at same SHA.
+
+**Focused repair:** The fixture's previous 500ms delay was **per HTTP Range connection**, so a single task with many Range connections could complete its 32MiB payload while others were still active. A new stdlib `TaskChunkPacer` reserves 64KiB send slots across *all sockets belonging to one task* only when the strict 16-way admission gate is enabled. With 120ms per task chunk, one 32MiB task requires approximately 61s of scheduled chunk slots regardless of Range fanout, leaving time for the 8s process sample. The existing gate, 1/4 cases, 63 SHA-256 outputs, 9 CPU/RAM files, cap persistence and restoration remain unchanged. The per-task throttle is **test-fixture only**, not a production download speed limiter or evidence of IDM-comparable throughput. Python standard-library threading/monotonic clock reused; no dependency or external code copied.
+
+**Regression:** a real loopback fixture test issues two simultaneous 206 Range sockets for one task plus another task, verifies all bytes, shared pacing and statistics reset; source contracts assert gated-only pacing. **PRE-CI expected:** Python regression and source-only CI PASS; installed Windows 1/4/16 three rounds each, 63/63 SHA-256 and 9/9 CPU/RAM CSVs PASS. **Why another Windows build is justified:** the previous exact-head installed run failed during real Windows process measurement; source tests cannot prove socket overlap throughout the Windows sampler, installer/CLI behavior or all SHA checks. **Before-run status:** code+tests prepared, Windows CI NOT TESTED at new SHA. If FAIL, retain artifact and diagnose without relaxing the sustained-live-socket, SHA or CPU/RAM gates. PR #3 remains Draft; no main write, auto-merge, Torrent, paid runner or release. Overall IN_PROGRESS.
+
+
+## 2026-10-25 — HG-HTTP-CONCURRENCY-16: Windows failure and bounded per-task send pacing (PRE-CI)
+
+**Verified FAIL:** [installed Windows run 40149301688](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40149301688) at exact SHA `27df7792ac99b729a315cb045a0b362df95ed38f`. NSIS build **PASS** (`BUILD SUCCESSFUL in 3m 54s`), silent install **PASS**, all three 1-way and three 4-way rounds **PASS** (15/15 SHA-verified downloads, six process CSVs). In 16-way round 1 the server recorded peak=16 but active=15 after the eight-second CPU/RAM window; **FAIL** strict sustained-live-task criterion. Seventh CSV was collected but 16-way rounds and final 63/63 audit did not complete. Settings cap was restored to 3. Installed NSIS SHA-256 `574f03671e3fb9d47d1b007500ad8ef24ea1e182817c4586b76a24b0e415bb0f` (**not a final HyperGet.exe**). [Diagnostic artifact 12582153292](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40149301688/artifacts/12582153292), artifact SHA-256 `5efaf332d5c5f052dab78d99880740722ba805547cc5aa9ffc6107ebfbcb11d0`. Independently downloaded artifact: seven real CSVs, verified-transfers.csv (15 entries), server-stderr.txt. The server stderr contained repeated Windows `ConnectionAbortedError [WinError 10053]` during HTTP keepalive handling; this does **not** by itself prove a production queue bug. Failure snapshot was not saved by previous benchmark path, preventing attribution to a particular task.
+
+**Targeted fix (fixture-only):** Previously each Range worker could reserve hundreds of future 120ms send slots under a global lock, potentially creating >10-second socket starvation and client read timeouts; now a per-task lock serializes *actual* send+flush and advances its deadline only after a completed write. Other tasks remain independent. Added per-task bytes in bounded synthetic stats and saved full failure diagnostics (active IDs, bytes, CLI statuses) on sustained-overlap failures. New regression runs twelve parallel Range sockets on the same synthetic task, checks body equality, aggregate pacing, per-task bytes and stats reset. The fixture is loopback-only and test-only; production speed and transfer logic unchanged. No dependency beyond Python stdlib (contextlib/threading), no code copied from third parties; Apache-2.0 baseline remains.
+
+**Pre-build question:** Does the installed Windows app now maintain 16 distinct active HTTP tasks across all three eight-second measurement windows and finish 63/63 SHA-256 verified 32MiB downloads, with nine CPU/RAM CSVs and restored setting? **Expected:** 1/4/16 x 3 rounds, 63 hashes, nine samples, zero missing sockets and no skipped audit. **Why compile/installer again:** only the installed app + actual Windows HTTP/Range sockets, persisted CLI setting and Windows process tree can answer; Python/source contracts alone cannot. The preceding installed exact-head run demonstrably failed; one targeted milestone rerun is warranted after this relevant fixture repair. If FAIL, preserve diagnostics and identify real cause without weakening gates. **Status before CI:** CODE + TEST PREPARED; new SHA Windows result NOT TESTED. **Remaining:** FTP Pause/REST, process-kill restart, HTTPS, Liquid Progress, branding/icon, browser E2E, safe upgrade, single HyperGet.exe and independent Windows double-check. PR #3 Draft; no main write, merge, paid runner, Torrent or final release. AUTOMATION_COMPLETE: IN_PROGRESS.
+
+---
+
+## HyperGet — 2026-10-25 HG-WIN-HTTP-1-4-16 installed milestone VERIFIED
+
+**PASS on exact production SHA `d82ecabd09a5d699fbb13435268899fde60ca84a`:** [Windows installed CI 40153251388](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40153251388) built one NSIS installer, installed the real GUI/CLI on Windows Server 2022 and verified three rounds each of 1, 4 and 16 distinct simultaneously transferring HTTP downloads: **63/63 SHA-256 matches**, **9/9 process CPU/RAM CSVs**, nine complete rounds. Internal installer SHA-256 `5b97bc2a3b31b94cd76219a318d1fc15e1326c98c854b3033b2151ca9b3ca53d`. [Evidence artifact 12584301199](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40153251388/artifacts/12584301199) was verified as present (retention seven days). This is **Windows runner evidence**, not the user's laptop and not a final HyperGet.exe release. Peak Working Set across the 16-task rounds was **510.688 MiB**; memory optimization is still open.
+
+**PASS HLS targeted Windows JUnit** on same production SHA: [40153251401](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40153251401), six suites / 29 tests / zero failures or skips; no installed HLS GUI crash/restart validation.
+
+**NOT TESTED:** FTP installed Pause/REST/resume and WinCred recovery at this SHA, HTTPS public E2E, HLS installed kill/restart, URL refresh, scheduler, browser native-host E2E, Liquid Progress visual QA, HyperGet executable/icon and legacy upgrade, independent second Windows recheck and final single `HyperGet.exe`. No IDM baseline measured. Next functional milestone is FTP live Pause/REST with staged-part integrity and SHA-256. Detailed reproducible evidence and resource measurements: [HG_WINDOWS_1_4_16_ACCEPTED_2026-10-25.md](checkpoints/HG_WINDOWS_1_4_16_ACCEPTED_2026-10-25.md). No main write, auto-merge, paid runner or Torrent.
+
+---
+
+## HyperGet — 2026-10-25 HG-FTP-WIN-LOOPBACK-01 pre-build acceptance question
+
+**Milestone question, documented before targeted Windows compilation:** Does the real production `FtpTransferClient` and `FtpDownloadJob` pass Apache FTP localhost integration tests on Windows, including mid-stream Pause leaving a nonempty incomplete `.ftp-part`, verified REST resume with identical bytes, changed remote identity rejection, Windows Credential Manager lookup after persisted-task restart, and destination-file protection? **Expected:** targeted `:downloader:core:desktopTest` compiles, three FTP JUnit suites with at least **29 tests total**, zero errors/failures/skips. Existing 21 FTP integration tests plus five resume-identity and three staged-identity tests are already in source. A clean Windows JUnit run is necessary: static tests do not exercise real Apache FTP sockets, REST, filesystem or Windows WinCred. No installer/EXE or paid runner is required for this bounded gate. **Before run:** NOT TESTED on the new workflow; a failed test is a failure, not permission to weaken assertions.
+
+**Remaining beyond this gate:** installed GUI/CLI FTP pause/restart and an actual killed process; HLS/HTTPS/URL-refresh/scheduler/browser/UI/upgrade/final EXE. This JUnit milestone alone must never be reported as a full installed FTP acceptance.
+
+
+---
+
+## 2026-10-25 — HG-FTP-WIN-LOOPBACK-01: failed Windows gate and portable stage-identity repair (PRE-CI)
+
+**Verified FAIL:** [Windows FTP CI 40156780130](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40156780130) at exact SHA `f2a0bb620cc4285aba24a26ec6213d430f6c952d` successfully compiled and executed targeted Kotlin tests on Windows 2022/JDK25 (`BUILD SUCCESSFUL in 1m 21s`), but the strict acceptance step failed: `FtpTransferClientTest` ran 20 and `FtpResumeIdentityTest` five with zero failures/errors/skips; `FtpStagedIdentityTest` skipped its same-size replacement case because the Windows file provider returned no fileKey. Existing 20+5+3 = 28 cases were below the stated >=29 gate. [JUnit artifact 12584821276](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40156780130/artifacts/12584821276). Do not report FTP PASS. Previous note claiming 21 FTP integration cases was incorrect; observed count is 20.
+
+**Production repair:** Capture staged file creationTime alongside fileKey at open and check it before final FTP publication; also check creationTime before/after opening an existing stage. This best-effort Windows fallback detects same-length stage swaps when fileKey is null, without weakening the original fileKey or destination no-replace checks. A hostile actor can forge timestamps or race the final check; this is not cryptographic authentication. Uses JDK NIO FileTime/BasicFileAttributes and existing Apache-2.0 Commons Net; no new dependency, paid service or Torrent.
+
+**Regression:** remove the platform-specific skip, deterministically change the replacement stage creationTime, and add a fourth staged test forcing the null-fileKey fallback. Required on Windows: **three JUnit XML suites, >=29 tests (20+5+4), zero errors/failures/skips**. Existing FTP REST/cancel/WinCred and destination preservation must remain green.
+
+**Pre-build question:** Does Windows/JDK25 now execute all 29 FTP tests and reject same-size stage swaps even with fileKey=null, while keeping real Apache FTP loopback/WinCred tests passing? Expected: strict XML gate PASS and successful Kotlin compilation; source-only checks cannot exercise Windows file-attribute provider, network REST or Credential Manager. The already configured scoped Windows workflow is justified; no EXE/installer or redundant manual build.
+
+**Other exact-head status:** [installed Windows HTTP benchmark 40156780087](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40156780087) FAIL at `f2a0bb6` (investigate diagnostic artifact; do not retroactively invalidate earlier complete PASS [40153251388](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40153251388) at `d82ecabd`). [HLS Windows 40156780094](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40156780094) PASS; [source-only 40156780091](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40156780091) PASS. New patch exact-SHA results **NOT TESTED until CI**.
+
+**Remaining:** installed GUI/CLI FTP Pause/REST and process-kill restart, current HTTP benchmark regression, HTTPS, HLS installed crash/resume, URL refresh, scheduler, browser E2E, Liquid Progress, branding/icon, upgrade, single HyperGet.exe and independent Windows double-check. PR #3 Draft; no main write, merge, paid runner or release.
+
+
+---
+
+## 2026-10-25 — HG-HTTP-16 exact-head regression triage (socket lifecycle instrumentation)
+
+**Observed exact-head FAIL, not a pass:** installed Windows benchmark [40160785293](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40160785293) at `17f7e9653d0a8c28393aed7f4eb05694a3ccb315`. NSIS installation and 1-way/4-way three rounds each passed; first 16-way round FAILED strict sustained-socket gate: peak distinct=16, active distinct=15 after sample. Seven CPU/RAM CSVs, not nine. Diagnostic [artifact 12585864405](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40160785293/artifacts/12585864405) downloaded and inspected: the missing active task was `active-16-round-1-task-10.bin`, which had only **512 HTTP body bytes** attributed to it; 15 other task IDs remained active, total active HTTP requests=72, 97 GET requests seen. All 16 destination files had 32 MiB allocated lengths, **not proof of SHA-valid completion**. Windows server stderr contained WinError 10053 on idle keepalive sockets, but these exceptions alone do not establish which production transfer failed. Source-only [40160785260](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40160785260), FTP Windows [40160785200](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40160785200), HLS Windows [40160785195](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40160785195) PASS at prior SHA; none rescues failed installed HTTP acceptance. Historical full PASS [40153251388](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40153251388) applies only to `d82ecabd`.
+
+**Focused code + regression (test fixture, not production speed logic):** add per-synthetic-task GET-start, GET-complete, GET-interrupted, and requested-response-byte counters to the existing localhost `/stats` endpoint; reset them atomically with the other counters. This distinguishes a legitimate 512-byte HTTP Range probe that finished normally from an interrupted response; previous aggregate `task_bytes_sent` could not do so. Add hermetic test for 512-byte 206 response, counters and reset. Preserve strict 16 live-task criterion, SHA-256 and 9 CPU/RAM measurements unchanged. This diagnostic is **not a fix** to the missing task and is not grounds to declare 16-way acceptance at the new SHA.
+
+**Build decision:** no Windows EXE/installer rerun on instrumentation alone. Source-only Python regression is sufficient to verify counters and reset; only after evidence identifies a production/fixture correction should a targeted installed Windows milestone rerun be justified. If the source-only CI is not complete, mark new code NOT TESTED. No main writes, auto-merge, paid runner, Torrent or final release.
+
+**Remaining current milestone:** determine why task-10 ceased to have a live GET (normal short probe/Range handoff versus cancellation, timeout, or production queue state), make an evidence-based repair, then rerun strict 1/4/16 installed Windows acceptance on the repaired SHA. FTP installed Pause/REST and killed-process restart remain NOT TESTED; 29 Windows FTP JUnit tests are not equivalent to installed FTP E2E. Overall IN_PROGRESS.
+
+
+---
+
+## 2026-10-25 — HG-HTTP-16 double-throttle correction (PRE-BUILD)
+
+**Observed installed Windows FAIL:** [run 40164114445](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40164114445) at exact PR head `a6dfb16fa763233f3f899e8fb503ad1de897f4d7`. The actual Windows installer compiled and installed; all three 1-way and all three 4-way rounds passed (15/15 SHA-256). First 16-way round reached peak 16 but ended the eight-second CPU/RAM sample with 15 live tasks. Seven CPU/RAM CSVs and a 15-row verified manifest were uploaded; 63/63 and 9/9 **FAIL / NOT COMPLETE** on this SHA. [Failure evidence artifact 12587876437](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40164114445/artifacts/12587876437) was downloaded and inspected: missing live task **active-16-round-1-task-7.bin**, one 32-MiB GET, **65,536 bytes sent, 0 completed GETs, 1 interrupted GET, output length 0**. Other 15 tasks remained active. This is different from prior task-10/512-byte case. Windows server stderr also records WinError 10053 on idle connections, but that is not proof of the client failure's root cause.
+
+**Specific fixture flaw and corrective hypothesis:** In strict gated mode, each 64-KiB chunk is already paced by a 120-ms **aggregate per-task** budget; the fixture additionally applies the legacy **500-ms per-connection** delay to every chunk. This double throttle adds unnecessary latency to each Range socket and may contribute to client-side timeouts/cancellation under 16 tasks and many sockets. Change only the loopback fixture to skip the legacy per-connection delay **when the aggregate gated pacer is active**; preserve the 500-ms delay in 1/4-task ungated runs. Add a hermetic regression proving the two throttle modes are mutually exclusive and keep the real GET/206, Range, bytes, SHA and gate tests unchanged. This is a plausible fixture repair, **not a confirmed production fix**.
+
+**Purposeful Windows build question recorded before the code change:** With no double-throttle on 16-way fixture transfers, does the installed GUI/CLI keep 16 distinct real HTTP tasks live across each eight-second measurement, then complete all **63/63 SHA-256** outputs and collect **9/9 CPU/RAM** files? Expected: 3 rounds each at caps 1, 4, 16, no skipped audits, restored persisted cap, exact PR-head installer SHA and diagnostic artifact. Source-only Python tests cannot establish Windows socket/IPC/client timeouts or process metrics; a single targeted Windows milestone run is justified **only because the preceding installed exact-head run failed and the fixture transfer behavior changes**. Keep strict active-socket, SHA and CPU/RAM criteria unchanged. If FAIL, inspect artifact and production network timeout/Range lifecycle rather than weakening acceptance. No new dependency; Python standard library and existing Apache-2.0 repository source reused.
+
+**Before new CI:** planned code/test change, **NOT TESTED** at new SHA. FTP 29/29 and HLS targeted Windows suites passed on `a6dfb16` in [40164114337](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40164114337) and [40164114333](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40164114333), respectively; these are not installed FTP/HLS restart tests. Full product release remains blocked by installed FTP Pause/REST/restart, HTTPS, URL refresh, scheduler, browser E2E, Liquid Progress, branding/icon/upgrade and independent Windows acceptance. PR #3 Draft, no main write/merge, paid service or Torrent.
+
+---
+
+## 2026-10-25 — HG-HTTP-16: short metadata probes falsely admitted by strict gate (PRE-CI)
+
+**Observed installed Windows FAIL:** [40167917417](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40167917417) at exact SHA `1d165329c45a4ed7c05e1ba7335eb1e2ebee4acf`. NSIS compilation and silent installation PASS; three 1-way and three 4-way rounds PASS (15 SHA-verified downloads, 6 CPU/RAM CSVs). First 16-way round FAIL: `peak_distinct_tasks=16`, but only **12 active distinct tasks** by the end of admission polling. No 16-way SHA audit and no 9/9 metrics; full current-head acceptance FAIL. The test correctly restored the concurrency setting to 3. [Diagnostic artifact 12589047493](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40167917417/artifacts/12589047493), uploaded ZIP SHA-256 `f75e70f8cf98fdddaf9c46d1c70a41eb3ee8e2212e99bf99abe82fa03351aa22`.
+
+**Concrete fixture defect confirmed by diagnostics and code:** four missing live task IDs (3, 4, 8, 13) had **only 256–512 bytes transferred** and successful completed short GET probes. The existing admission gate counted *every* GET, including these metadata probes, as an active download, then released the barrier prematurely. This does not prove a production queue defect; it proves that the old gate's peak=16 was not sufficient evidence of 16 simultaneously transferring file-data tasks.
+
+**Focused repair:** in the existing stdlib localhost Range fixture, when the strict gate is enabled, only GETs requesting >=64 KiB count toward `active_distinct_tasks`, `peak_distinct_tasks` and barrier release. Short 256/512-byte metadata probes complete immediately (do not wait for the data barrier), preventing a probe→data deadlock. Track per-task `task_probe_get_started` and `task_data_get_started` separately in bounded synthetic diagnostics; all GET lifecycle/byte counters remain intact. Ungated 1/4 scenarios remain unchanged. No production downloader code, user settings, speed limits, security identity or third-party dependency changed. Uses existing Python stdlib `threading.Event` / `ThreadingHTTPServer`; repository baseline Apache-2.0.
+
+**Regression:** add a real loopback test that completes a 256-byte probe, starts one blocked >=64KiB data GET, completes another 512-byte probe without releasing the gate, then admits a second long data GET and verifies both exact bodies, distinct-task counts, and counter reset. Source contract asserts the strict probe exclusion. **Before CI:** code and regression prepared, source tests NOT TESTED at new SHA.
+
+**Pre-build question (recorded before triggering the existing PR workflow):** With the metadata probes excluded, does the installed Windows app open 16 distinct long-running data GET streams concurrently, sustain them through all three eight-second CPU/RAM windows, complete **63/63 SHA-256** verified 32MiB downloads and collect **9/9** resource CSVs? Expected: PASS all nine rounds, unchanged SHA gates, restored persisted cap and exact-head evidence. Source tests cannot answer actual Windows queue/HTTP socket lifecycle or process metrics; the prior installed run FAIL plus the proven false-admission defect justifies one milestone-gated Windows installer run. **If FAIL:** preserve the artifact and inspect why particular tasks never advance from metadata probes to long data GETs; investigate production HTTP job startup/scheduling instead of weakening concurrency criteria or blindly changing fixture delays. No paid runner, main write, auto-merge, Torrent or final release. FTP Windows 29/29 [40167917489](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40167917489) PASS at old SHA, but installed FTP pause/restart remains NOT TESTED.
+
+**Remaining:** strict current-head Windows HTTP gate, installed FTP Pause/REST/process kill and WinCred, HTTPS, URL refresh, scheduler, browser E2E, Liquid Progress, HyperGet branding/icon and safe upgrade, one EXE and independent Windows recheck. Overall IN_PROGRESS.
+
+
+---
+
+## 2026-10-25 — HG-HTTP-16: remove fixture-induced host-socket admission deadlock (PRE-CI)
+
+**Verified current-head FAIL:** [Windows installed run 40171611778](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40171611778) at exact SHA `e0512c179bfab392fc48d190bbeb00ce15ee35a5` successfully compiled and silently installed NSIS (installer SHA-256 `09731814958447e756e2d166878549a89dfebb696c40b91de8c0855b37ffd5ee`). All three 1-task and all three 4-task rounds PASS (15/15 SHA-256 outputs; 6/9 CPU/RAM CSVs). First 16-task round FAIL: only **11/16** long-data tasks active after the existing 15-second admission poll; 63/63 and 9/9 were NOT achieved. [Failure evidence artifact 12591195744](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40171611778/artifacts/12591195744), uploaded ZIP SHA-256 `9a73e05221c5f4d8dc8203732ebe12f73cbfcd551476eaf0c3b6c14575c934c1` (NOT EXE). Source-only, FTP Windows JUnit and HLS targeted Windows on that SHA all PASS ([40171611654](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40171611654), [40171611707](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40171611707), [40171611715](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40171611715)).
+
+**Root-cause hypothesis, not yet proved:** The strict fixture waits for 16 simultaneous long-data GETs before releasing ANY data. Under the downloader's shared per-host socket cap, early segmented tasks can consume the available HTTP connections while waiting, starving later tasks of a first long-data GET; a 15s admission poll and 25s fixture wait then fail. This is a potential test-induced deadlock, not evidence that production can never run 16 jobs. Prior fixture changes repeatedly failed on different tasks. Do not infer a downloader production bug or success without the exact-head Windows rerun.
+
+**Focused repair:** Keep the long-data-only counters and strict 16-task overlap requirement, but let GET data flow immediately (no fixture barrier wait). The gate becomes an *observed overlap flag*, not a socket-holding mechanism. Raise 16-way fixture-only aggregate pacing from 120ms to 180ms per 64KiB task chunk (~92s for 32MiB), and extend real-socket admission observation from 15s to 75s. This leaves headroom for late segmented jobs without falsifying overlap: the eight-second process sample still begins only when all 16 distinct data tasks are live, requires 16 live afterward, then all 63 outputs must match SHA-256 and all nine process CSVs must exist. No production downloader logic, user speed settings, security, or external dependencies changed; Python stdlib only, existing Apache-2.0 baseline preserved. No paid services or Torrent.
+
+**Regression:** modify loopback two-task tests to assert that the first real data GET transfers bytes before the second starts, metadata probes never release the observed 2-task overlap, and all bodies/counters still match; source contracts explicitly forbid a blocking `gate_open.wait` and preserve strict installed SHA/CPU-RAM gates. **Before CI:** code+tests prepared, new SHA NOT TESTED. **Purposeful Windows build question:** Can the installed Windows program now start 16 distinct long-data tasks despite shared host connection limits, sustain 16 live tasks throughout each eight-second sample in three rounds, complete 63/63 SHA-256 outputs and produce 9/9 CPU/RAM files? **Expected:** full PASS with restored original setting and exact-SHA installer hash. Source tests cannot reproduce installed Windows HTTP socket-pool behavior, process-tree measurement, IPC or NSIS; a targeted Windows build is justified by the exact-head failure plus a substantive fixture change. **If FAIL:** inspect task-specific diagnostics and investigate production host connection cap/Range startup rather than further speculative fixture delays. PR #3 remains Draft; no main write/auto-merge/release. Installed FTP process-kill/restart, HTTPS, URL refresh, scheduler, browser E2E, Liquid Progress, safe HyperGet rename/upgrade and final EXE remain NOT TESTED. Overall IN_PROGRESS.
+
+## 2026-10-25 — HG-WIN-ACTIVE-04 follow-up: identify per-ID terminal failures (pre-build)
+
+**Previous exact-head evidence:** Installed Windows run [40175373156](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40175373156), source SHA `4fface7a3d4f50240a64996a608dadccb09a0cef`, NSIS build and installation PASS (installer SHA-256 `82d9d13f7f72ee55fdb7151a9816461e7627e463bc8282807b29d1edffc98168`). All 1/4 rounds PASS (15 SHA-verified files); first 16 round PASS (16 files); second 16 round FAIL (12 active of 16). Diagnostic [artifact 12592780753](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40175373156/artifacts/12592780753) was downloaded and inspected: tasks 1, 7, 10 sent only a 256-byte metadata probe, task 13 never reached the fixture, and the CLI table had truncated IDs/status/names. Some statuses were Error/Paused, but the table could not reliably map them to IDs. Thus this is **not merely an overlap-timing failure**; the cause of the failed/paused tasks is still unknown. Seven CPU/RAM CSVs exist; 63/63 and 9/9 are NOT met.
+
+**Functional change:** Add opt-in `download show --status-lines ID...` to the installed CLI. It emits complete `ID<TAB>Status` rows, without truncation, names, paths, URLs, cookies or credentials; existing human-readable table and IPC protocol are unchanged. All three Windows failure paths now capture those rows so the next run can correlate failing job IDs with fixture probe/data counters. Five source-only regression assertions protect the CLI switch, privacy, diagnostics wiring and unchanged strict SHA/concurrency gates. Existing Apache-2.0 Clikt command patterns are reused, with no new dependency.
+
+**Purposeful Windows build question (recorded before trigger):** Does this exact source compile into the installed Windows CLI and, if 16-way overlap fails, produce full per-ID status rows that identify Error/Paused jobs without a truncated table? Expected: Kotlin/NSIS compile and installation PASS, machine status output readable for every requested ID, and ideally 63/63 SHA files plus nine process CSVs; if the 16-way gate still fails, retain the evidence as FAIL and diagnose the specific production lifecycle, not another fixture-only hypothesis. Source-only tests cannot establish Kotlin Clikt binary API, real CLI↔GUI IPC, OS sockets, or runtime job states. Existing PR workflow may start one purposeful Windows benchmark on this changed CLI+benchmark code; do not manually duplicate it.
+
+**Measured milestone status:** 1/4/16 strict installed acceptance remains **IN_PROGRESS / FAIL on prior head**. FTP 29/29 Windows JUnit and HLS 29/29 targeted JUnit on prior SHA `4fface7a` PASS; neither proves installed FTP restart nor a finished HyperGet.exe. **Remaining:** identify and repair actual per-ID Error/Paused cause, re-run 63/63+9/9 exact SHA, installed FTP REST/restart, HLS installed process kill, link refresh, scheduler, browser E2E, Liquid Progress/brand/icon, old-version upgrade, independent Windows release recheck. No main write, auto-merge, paid runner, Torrent, or release.
+
+
+## 2026-10-25 — HG-QUEUE-JUNIT-GATE-01: Windows JUnit PowerShell parser repair
+
+**Verified failure:** [Windows queue lifecycle run 40183486776](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40183486776) on `bb9ed6cfb3e8149a9b3ae5f0859558f1bbb0203a` compiled and ran the targeted Kotlin suites, but the report verification step failed with PowerShell `ParserError`: `$field:` in an interpolated string is parsed as an invalid scoped variable reference. The JUnit XML artifact was uploaded; the workflow itself is FAIL, not PASS. Installed active HTTP run [40183486695](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40183486695) on the same source SHA also FAIL: 15/16 active tasks; 63/63 and 9/9 remain unaccepted.
+
+**Implemented:** Change only the PowerShell error interpolation to `${field}:` in `.github/workflows/hyperget-queue-lifecycle-windows.yml`, preserving exact XML suite requirements, minimum 4+7 tests, and zero failure/error/skip. Commit `11d867d91e3cd30a17bd438f0f089a9a2b17564a`. This fixes the proven parser error, **not** the unresolved production Paused/HTTP concurrency issue.
+
+**Targeted validation question:** Can the unchanged two Kotlin suites now complete the Windows PowerShell JUnit gate, reporting >=11 executed tests with zero failures/errors/skips? **Expected:** workflow PASS on the new SHA. A source inspection alone cannot validate Windows PowerShell runner parsing or XML paths, so a targeted Windows compile/JUnit workflow is justified; do not trigger a duplicate manual build if PR CI starts it automatically. **Status:** CODE PUSHED; exact-SHA Windows CI NOT TESTED at checkpoint creation. Source-only/FTP/HLS on prior SHA PASS; installed FTP kill/restart, browser E2E, Liquid Progress, safe upgrade, final HyperGet.exe remain NOT TESTED. No main write, auto-merge, Torrent or paid runner. Overall IN_PROGRESS.
+
+
+## 2026-10-25 — HG-HTTP-PART-ADMISSION-01: no silent dropped part-start pass (CODE PUSHED; WINDOWS PENDING)
+
+**New evidence from real installed Windows FAIL:** Downloaded and inspected [run 40183486695 evidence artifact 12595159047](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40183486695/artifacts/12595159047), source SHA `bb9ed6cfb3e8149a9b3ae5f0859558f1bbb0203a`. 1/4 workload rounds were complete (15 SHA-verified downloads and six resource CSVs). At 16-way round 1 the fixture recorded **15** distinct live data tasks, 113 simultaneous requests and **only a 256-byte metadata probe for task 9**, while the installed CLI reported all 16 tasks `Downloading` and their output files preallocated to 32 MiB. A preallocated output size is **not** evidence of completed bytes. This is a *part scheduling / pre-network stall hypothesis*, not proof that the fixture or specific coroutine is the sole root cause. Strict 63/63 and 9/9 FAIL on that SHA.
+
+**Concrete production defect addressed:** `HttpDownloadJob.beginDownloadParts()` previously used an early `partLoopLock.isLocked` return and then `tryLock()` inside a fire-and-forget launch. A scheduling request arriving while another pass held the mutex could be **silently dropped**, yet `resumeWithNewScope` would proceed to `onDownloadResumed()` and expose `Downloading` before even scheduling its first part. Replaced this with a **suspending serialized pass** using existing `kotlinx.coroutines.sync.Mutex.withLock` (Apache-2.0; official documentation: https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.sync/-mutex/lock.html). The initial resume now waits until the part-start pass is executed before publishing Downloading; subsequent refill and connection-preference callbacks still dispatch in coroutines. No new dependency, setting, protocol, data migration or fixture relaxation.
+
+**Regression:** `scripts/source-tests/test_hyperget_http_part_admission_source.py` contains four source contracts: no skipped busy mutex, initial scheduling precedes Downloading event, completed-part refill remains asynchronous, preference changes remain cancellable. Wired into source-only CI and targeted Windows Kotlin compile/JUnit workflow. These source contracts **do not** replace actual Windows execution. Commits: production `24691b24dc97c137241d0504ba124afbbf2c1636`, source test `f491d24a786e9ca65558592b35d33e33f0ad460f`, CI wiring `c0f9a13c78da42f9e56a023c3d1e0158cd66251f` and `4bc494c40c4de0e19bee7927f0bfa9ff76f4e284`.
+
+**Purposeful build question (before next exact-head Windows compile):** Does suspending part admission compile on Windows with the current coroutine API, preserve the existing 4+7 lifecycle JUnit suites, and eliminate the possibility that the first resume reports Downloading before the part-start scheduling pass? **Expected:** Windows Kotlin compile/JUnit PASS and source contracts 4/4. A source regex check cannot validate Kotlin suspend/inline call sites. The previously started installed 1/4/16 run `40186712051` is at an **older SHA** and cannot certify this change. **Next required installed Windows milestone:** run exact-head 63/63 SHA + 9/9 CPU/RAM and capture per-ID status/fixture data for any remaining 16-way stall. Do not claim the stall fixed until that run passes. No extra packaging merely for source checks; run an installed build only to test this production concurrency change. Remaining installed FTP process-kill/REST, HLS process-kill, HTTPS, refresh, scheduler, browser E2E, Liquid Progress, HyperGet safe rename/upgrade, final single EXE and independent Windows recheck NOT TESTED. No main write, merge, paid services or Torrent. Overall IN_PROGRESS.
+
+
+## 2026-10-25 — HG-BROWSER-CHROME-02: actual Chrome MV3 extension ↔ installed Windows native host (CI PENDING)
+
+**Milestone:** The prior installed Windows native-host [40215387961](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40215387961) PASS proves Windows registry, executable and stdio protocol, **not** actual Chrome extension loading. The next acceptance requires a real unpacked Chrome MV3 extension from the separate browser PR, a browser-managed native host process, 2/2 correlated ping replies, and a sanitized correlated error through Chrome's `runtime.sendNativeMessage` API. Source-only or synthetic framed stdio is insufficient.
+
+**Production-adjacent E2E work:** Added `scripts/Run-WindowsChromeNativeE2E.mjs` using Node 22 built-ins and Chrome DevTools Protocol to load a real extension options page, check its public-key-derived stable extension ID, and issue the three actual browser native messages. Extended the existing `windows-installed-native-host-e2e.yml` rather than adding another installer build. It installs the real app, verifies HKCU Chrome/Firefox registration, checks out pinned browser PR #1 SHA `0fb5a304cbde07a9758d2b42417e7a8a85cba0f2`, builds the real Chrome MV3 bundle, and requires the browser API to reach the registered installed host. Chrome and Firefox native identities remain unchanged. No new runtime dependencies, paid services, Torrent, main writes, merges or release.
+
+**Purposeful Windows build question (recorded before trigger):** Does real installed Chrome enforce the extension's `nativeMessaging` permission and native host allowlist and still launch HyperGet successfully? **Expected:** one exact-SHA NSIS install, browser PR SHA verified, two correlated browser pings, one safe error, JSON evidence, installer SHA-256. A source test cannot prove Chrome permission/origin enforcement or host process launch. If Chrome headless extension loading is unavailable on the free runner, mark **FAIL/BLOCKED**, inspect logs and use a compatible Windows browser harness; do not report browser E2E PASS.
+
+**Pre-build:** Node 22 `--check` on the new script PASS in development environment; Windows Chrome run **NOT TESTED / CI PENDING** on commit `bac372c70e62010c2cd28c3f667d9d4b92a36868`. The existing source/FTP/HLS/queue/installed HTTP 63/63+9/9 and FTP restart gates previously PASS at `b603484b`; they are not a release recheck. Browser actual link capture, headers/cookies, download SHA, Firefox extension launch, refresh/scheduler, Liquid Progress, icon/rename/upgrade, final EXE and independent Windows check remain NOT TESTED. See `docs/checkpoints/HG_BROWSER_CHROME_EXTENSION_E2E_2026-10-25.md`.
+
+
+## 2026-10-25 — HG-BROWSER-CHROME-04 failed installed add; warm GUI/IPC regression gate
+
+Installed Chrome E2E [40224509940](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40224509940) on `6491f700cfed2b70cf31c253d10dcc30ad34f157` **FAIL** after successful installer, native host registration, real Chrome extension pings/port/reconnect: browser `add` returned non-success. The prior smoke step terminated the GUI, and the previous harness discarded the safe error class, so root cause is **UNCONFIRMED**. This batch makes the installed CLI perform a read-only GUI/IPC boot/readiness check before Chrome's real `add` and captures only a sanitized native error category on rejection. Five source regression assertions and a source CI gate protect the warm-start and strict HTTP GET/SHA checks. **Purposeful build question before triggering CI:** can the installed real Chrome extension add a 2 MiB file through a confirmed-ready GUI/IPC and verify bytes/SHA? Expected one exact-SHA NSIS/Chrome run and sanitized evidence; source tests cannot prove Chrome/Windows IPC/GUI/HTTP. Chrome warm capture is **NOT TESTED until new run**; cold browser-triggered GUI wake remains **NOT TESTED** even if warm capture passes. See `docs/checkpoints/HG_BROWSER_CHROME_CAPTURE_REPAIR_2026-10-25.md`. No main write/merge/final EXE.
+
+
+## 2026-10-25 — HG-BROWSER-FIREFOX-DIAGNOSTICS-01 (exact-head retest pending)
+
+Installed Windows evidence on `05d63ede0590f916db1671fc80ddc07cfdb7fe1d`: HTTP matrix [40233832377](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40233832377) **PASS**, 9 rounds, 63/63 SHA-256-verified downloads and 9/9 resource CSVs; FTP installed pause/restart/REST/SHA [40233832428](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40233832428) **PASS**; source checks [40233832435](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40233832435), HLS [40233832407](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40233832407), and queue lifecycle [40233832402](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40233832402) **PASS**.
+
+Firefox real capture [40233832473](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40233832473) **FAIL** at step 18 with only generic `WEBDRIVER_COMMAND_FAILED`. Cause was not proven because the old harness discarded the W3C error and wrote evidence only on success. Follow-up adds privacy-preserving stage, route-class, status and allowlisted error diagnostics plus failure JSON and three source regressions. The next exact-head Windows run must either pass the real Firefox 2 MiB SHA download or leave an actionable failure artifact; no root-cause claim before that result.
+
+Current observed HTTP peak: about 507 MiB Working Set and 563 MiB Private Bytes at 16-way load; memory optimization remains open. Chrome actual download, HTTP matrix and installed FTP restart are verified; Firefox actual download, cold browser-triggered GUI wake, refresh URL, scheduler, HTTPS remote, HLS process-kill/relaunch, Liquid Progress/visual acceptance, safe rebrand/upgrade, independent Windows release check and final `HyperGet.exe` remain **NOT TESTED / INCOMPLETE**. No merge, release, paid runner or Torrent.
+
+
+## 2026-10-25 — HG-BROWSER-GUI-WARMUP-01 (Chrome preflight blocker; next exact-head retest pending)
+
+Run [40238268700](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40238268700) on `5104b1da9743eea660161c85b159d0fb36f833af` **FAIL** at Chrome step 15, before real Chrome native messaging or Firefox execution. Node syntax checks, eight Firefox source contracts, the internal NSIS build/install (installer SHA-256 `df3084e4267c9ce7042ab83453aac39ba052ed636c7a4296ab53e7698cf6e933`), installed native-host protocol acceptance and Chrome/Firefox extension packaging passed. The Chrome GUI/IPC warmup returned only a generic failure, so the underlying process result was not identifiable; Firefox diagnostic code is still **NOT TESTED**. Evidence artifact [12616365138](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40238268700/artifacts/12616365138), archive SHA-256 `bf5cf66e87de91ad6843002448291275170061ce3ebc47f00b8c282c2021e098`.
+
+Follow-up uses the documented CLI `gui start-if-not-started` command, then performs the non-mutating status-line IPC check, and records only sanitized failure metadata. The Windows HTTP benchmark workflow now has a latest-commit scope gate and no longer cancels a useful in-progress measurement for unrelated browser-only commits. The new build is purposeful: source tests cannot prove installed CLI startup, GUI IPC, Chrome native host launch, or actual browser download. Expected acceptance remains the real 2 MiB SHA-256 download in Chrome and Firefox; no synthetic substitute.
+
+## 2026-10-26 — HG-BROWSER-FIREFOX-NAVIGATION-01 closed: installed Chrome + Firefox capture PASS
+
+**Prior exact failure and artifact:** [Windows browser run 40239666425](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40239666425), source SHA `f15eee4f08ad83d0ed6c45131d757ba35f24a732`, loaded the real Firefox add-on, then failed at extension-page navigation with WebDriver HTTP 500 `UNSUPPORTED_OPERATION`. The artifact proved `addonInstalled=true`, no correlated native ping, zero fixture GETs and no captured download. This was a WebDriver navigation limitation, not evidence of a downloader/native-host failure.
+
+**Reference-checked repair:** Mozilla's official [geckodriver flags documentation](https://firefox-source-docs.mozilla.org/testing/geckodriver/Flags.html) states that Firefox 138+ requires `--allow-system-access` to enable `/session/{sessionId}/moz/context` for browser-UI automation and warns that this grants full browser-UI privileges. The test uses this flag only in an ephemeral CI Firefox profile, opens the temporary extension page through privileged `gBrowser.addTab`, selects its WebDriver window handle, returns to content context, and verifies both context transitions. The harness no longer uses WebDriver Navigate To for `moz-extension://`. Workflow preflight validates Firefox >=138 and that official geckodriver advertises the flag. No production downloader behavior, installed host protocol or browser-repository source was changed.
+
+**Exact tested source SHA:** `ccca6306a93592336e09d18c724641c3526cdaee`.
+
+- Real installed Windows browser E2E [run 40240572251](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40240572251): **PASS**. One internal NSIS installer built and installed; Chrome and Firefox extension packages built from pinned browser PR source SHA `0fb5a304cbde07a9758d2b42417e7a8a85cba0f2`.
+- Chrome: actual MV3 extension loaded; correlated ping and safe-error response passed; connected port delivered 3 correlated replies, reconnect delivered 1; real 2 MiB file downloaded after 5 fixture GETs and final SHA-256 verified. Evidence reports `verified=true`.
+- Firefox 158.0.1 + official geckodriver v0.37.1: temporary add-on installed; correlated native ping and sanitized safe error passed; real 2 MiB file downloaded after 5 fixture GETs and exact SHA-256 `1e075c8d478ad21844e33e830a695ef03a4d2488b69ee275bd8947618bb1be1e` verified. Final report `stage=COMPLETE`, `verified=true`.
+- Browser E2E test-installer SHA-256: `8535232a7c1aa8d4e959a287f75e06b9164713841699b64a15b1901ce0f29adc`. Evidence artifact [12615963651](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40240572251/artifacts/12615963651), downloaded archive SHA-256 `b3e2d842195eefe6617eb8be3c2db8cc451e08ff20abfdf4195dc5f010ae1b79`. This is an internal test installer, **not** the final HyperGet.exe.
+- Installed FTP pause/restart/REST/SHA E2E [run 40240572091](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40240572091): **PASS** on the same SHA; 32 MiB final file SHA verified, pause left 5,767,168 bytes and REST resumed from that exact offset. FTP test-installer SHA-256 `903adfe1556a27e12ac7018052f3fd543fac50b49af889685193cc588408cb4d`; evidence artifact [12617027944](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40240572091/artifacts/12617027944).
+- FTP Windows Kotlin JUnit [run 40240572122](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40240572122): **29/29 PASS**, zero failures/errors/skips.
+- HLS targeted Windows JUnit [run 40240572069](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40240572069): **PASS**, six required suites and >=29 tests, zero failures/errors/skips.
+- Queue/lifecycle Windows JUnit [run 40240572209](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40240572209): **15/15 PASS** (4 lifecycle + 7 batch-resume + 4 response-deadline tests), zero failures/errors/skips.
+- Source-only safety checks [run 40240572070](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40240572070): **PASS**. Browser-run Node syntax and Firefox source contracts also passed before packaging.
+- The latest HTTP matrix workflow [run 40240572211](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40240572211) correctly **skipped the expensive matrix** because the latest commit was outside downloader/benchmark scope; do not count it as a new 1/4/16 measurement. Prior measured evidence remains [run 40233832377](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40233832377) at SHA `05d63ede0590f916db1671fc80ddc07cfdb7fe1d`: 63/63 SHA-verified files and 9/9 resource CSVs; observed peak about 507 MiB Working Set / 563 MiB Private Bytes at 16-way load. Downloader production source has not changed since that measurement, but the matrix has not been re-run at this latest SHA.
+
+**Non-blocking evidence note:** Firefox's successful report retains one transient `UNAVAILABLE` from initial geckodriver readiness polling in its `webdriverFailure` field despite final `stage=COMPLETE` and `verified=true`. This did not affect the successful native-message/download/SHA gates; clearing recovered probe errors is a future diagnostic cleanup, not a release gate for this milestone.
+
+**Remaining NOT TESTED / INCOMPLETE:** cold browser-triggered GUI wake when HyperGet is not running, HTTPS remote endpoint, refresh URL flow, scheduler, installed HLS process-kill/relaunch, real Liquid Progress visual comparison/screenshots, final icon and full HyperGet branding, in-place upgrade/uninstall with preserved old data, independent Windows release recheck, and final single `HyperGet.exe`. HTTP 1/4/16 requires a fresh exact-head matrix before release sign-off. No main write, merge, release, paid service or Torrent.
+
+## 2026-10-26 — HG-BROWSER-COLD-WAKE-01 (EXACT-SHA PASS)
+
+**Exact source SHA:** `386f4751a29d4a7c6e6c8fe10664c4dc50693f18`.
+
+Installed Windows run [40241733195](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40241733195): **PASS**. One internal NSIS test installer was built and installed; Chrome and Firefox real-extension cold-wake checks ran against the installed host.
+
+- Chrome: GUI was stopped before `add`; the browser request woke the GUI; the real 2 MiB fixture was captured after five GETs; final SHA-256 matched `1e075c8d478ad21844e33e830a695ef03a4d2488b69ee275bd8947618bb1be1e`; `guiColdWakeVerified=true`.
+- Firefox 158.0.1 + official geckodriver v0.37.1: same cold-stop/wake/download/SHA gates passed; `stage=COMPLETE`, `verified=true`. A recovered startup probe still appears as normalized `UNAVAILABLE` in diagnostic history; it did not fail the final gate.
+- Native-host registration, framed ping correlation, safe error response, and clean EOF exit passed.
+- Internal test installer SHA-256: `e3cc092cc01e29f13165073caae0311ebba6443626affb4c07dcf1935825d6df`. Evidence ZIP SHA-256 (downloaded for independent inspection): `e994b2297491c627e86c88c834b5a7c700dd2a47887ff11d06037c0fc6deae15`; artifact [12617102984](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40241733195/artifacts/12617102984). This installer is for internal testing, **not** the final release EXE.
+- Source-only checks, FTP Windows Kotlin, HLS Windows Kotlin and queue/lifecycle Windows Kotlin all PASS at this SHA. Installed FTP pause/restart/REST/SHA run [40241733143](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40241733143) also PASS.
+
+## 2026-10-26 — HG-HTTP-EXACT-HEAD-RECHECK-01 (EXACT-SHA PASS; memory follow-up required)
+
+**Exact source SHA:** `dd86e7375e06be9b397a6b3013efc33897bd7de7`.
+
+- Fixed the scope-gate defect: workflow self-change is now recognized, and source regression test prevents a green-but-skipped matrix.
+- Exact-head Windows matrix [40242626125](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40242626125): **PASS**. Installer built and installed, all **63/63** files matched SHA-256, and all **9/9** resource CSVs passed validation. Three rounds each at 1, 4 and 16 concurrent tasks were confirmed by real active distinct-task evidence (peak 1/4/16 respectively); the 16-way fixture reached 128 simultaneous HTTP connections.
+- Test installer SHA-256: `4e2aa04c2f207cbc1a33b6f60dd2fab3a5125e88caf8046ba11a352d6f2682b7`. Evidence artifact [12617872801](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40242626125/artifacts/12617872801); downloaded ZIP SHA-256 `aceb60e1f993ed9ada0792ec55c59aa1c02ce2d16f106e179f35269b75eea21a`. Internal acceptance installer only; not final release.
+- Source-only checks [40242626137](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40242626137): **PASS**, including the new scope regression. FTP Kotlin [40242626094](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40242626094): **PASS**; HLS Kotlin [40242626114](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40242626114): **PASS**; queue/lifecycle [40242626138](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40242626138): **PASS**; installed FTP pause/restart/REST/SHA [40242626099](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40242626099): **PASS**.
+- Browser cold-wake remains proven at immediately prior source SHA `386f4751a29d4a7c6e6c8fe10664c4dc50693f18` by [40241733195](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40241733195): Chrome and Firefox both stopped then woke the installed GUI, downloaded a real 2 MiB file, and verified SHA-256. Current SHA changes only the benchmark scope/test/checkpoint/acceptance files; the browser E2E correctly skipped repackaging for this docs/CI-only change.
+
+**Performance finding — do not call memory optimized:** the fresh exact-head report shows at 16-way round 3 **peak Working Set 527.09 MiB**, **peak Private Bytes 590.309 MiB**, **336 threads**, and **2,229 handles** in the two-process app tree. At 1-way, peak Working Set was 312.117 MiB and Private Bytes 324.797 MiB; at 4-way, 335.957 MiB and 358.293 MiB. This is a correctness acceptance PASS, not a performance/memory target PASS. The report does not include a comparable IDM baseline. The next performance milestone should investigate the per-part blocking copy threads plus OkHttp dispatcher configuration and profile JVM heap/native-thread contribution before choosing a change; do not lower the 16-task or SHA gates.
+
+**Remaining NOT TESTED / INCOMPLETE:** HTTPS remote endpoint, refreshed/expiring URL flow, scheduler, installed HLS process-kill/relaunch, real Liquid Progress visual comparison/screenshots, final HyperGet icon/full branding, in-place upgrade/uninstall with preserved old data, independent Windows release recheck, and final single `HyperGet.exe`. Browser cold-wake and HTTP exact-head gates are now closed for their stated scopes. No main write, merge, release, paid service, or Torrent.
+
+
+## 2026-10-26 — HG-HTTP-DISPATCHER-RESOURCE-BOUND-01 (EXACT-SHA PASS; memory profile next)
+
+**Exact source SHA:** `587fb010973a7a8358d06e10b5c64e2bdd5d1afe`.
+
+- After repairing the brittle source assertion, source-only [40244684980](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40244684980): **PASS**.
+- Exact-head installed HTTP matrix [40244684936](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40244684936): **PASS**, 63/63 SHA-verified 32 MiB files, 9/9 process CSVs, three rounds at 1/4/16 and all distinct-task gates. Artifact [12618717214](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40244684936/artifacts/12618717214); downloaded ZIP SHA-256 `506f9d3393f7ba13ac3f99d70faf29a39896dd98b0689cb00971427496df8483`. Internal installer SHA-256 `77756d9be2e09de85f1395b3e53f58955e8c32c75127a23f3619fe3cfbb87e0c`.
+- FTP Kotlin [40244684972](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40244684972), HLS Kotlin [40244684979](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40244684979), queue/lifecycle [40244684943](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40244684943), and installed FTP pause/restart/REST/SHA [40244684934](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40244684934): **PASS**.
+- Real Chrome+Firefox installed capture/cold-wake [40244684930](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40244684930): **PASS** at the same source SHA.
+
+**Measured effect of 64/64 dispatcher cap:** at 16-way round 3, peak thread count dropped from **336 to 277** (−59, about 17.6%) and handles from **2,229 to 2,003** (−226, about 10.1%). Peak Working Set dropped only from **527.09 to 522.113 MiB** and peak Private Bytes from **590.309 to 582.375 MiB**. This is a useful thread/handle reduction, but only about 0.9% Working Set and 1.3% Private Bytes improvement; **memory optimization is not solved**.
+
+The first attempt [40244507183](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40244507183) failed before build because the source contract assumed two workflow paths were adjacent. That assertion was corrected to check membership independently, and the source-only run then passed. No thresholds were relaxed.
+
+## 2026-10-26 — HG-HTTP-JVM-MEMORY-PROFILE-01 (diagnostic workflow pending)
+
+Because the cap reduced threads/handles but barely changed memory, the next step is a targeted installed Windows JVM profile rather than another blind production rewrite. A new workflow will perform one 1/4/16 round (21 SHA-verified downloads), then capture `jcmd GC.heap_info`, `GC.class_histogram`, `Thread.print`, VM version and a process snapshot from the installed GUI. The profile is diagnostic, not a speed claim or release gate.
+
+**Question defined before build:** is the remaining ~580 MiB Private Bytes primarily committed/used Java heap, retained object classes, native thread stacks, or other JVM/native allocations? Source tests cannot answer this; only an installed Windows process plus the bundled-JDK-compatible attach diagnostics can provide the evidence. Expected: 21/21 hashes and 3/3 metric CSVs, plus diagnostic artifacts. If attach is unavailable, preserve the sanitized failure output and switch to a supported profiling path before changing product code.
+
+Remaining release gates stay open: HTTPS remote endpoint, refresh URL, scheduler, installed HLS kill/relaunch, Liquid Progress visual evidence, final HyperGet branding/icon, safe upgrade/uninstall, independent Windows release recheck, and final single `HyperGet.exe`. No main write, merge, release, paid service, or Torrent.
+
+
+**Profile preflight failure and repair:** initial workflow [40246220683](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40246220683) and source-only [40246220668](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40246220668) exposed a source-test ordering assumption: the script name first appeared in the PowerShell parser/preflight list, before its actual execution step. No installer was built and no memory profile was collected on that attempt. The contract now compares the actual invocation lines, and the profile workflow explicitly reruns when its source contract changes. Exact-head diagnostic result remains pending.
+
+
+**JVM-profile attempt result:** [40246308828](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40246308828) built and installed the test package, and its one-round matrix **PASSed 21/21 SHA-verified files + 3/3 CPU/RAM CSVs**. The profile stage then **FAILed before jcmd** because the benchmark's finally block intentionally terminates its GUI. The uploaded artifact [12618688867](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40246308828/artifacts/12618688867) has transfer evidence and installer SHA `163d2399eb0bebe7272c765f0ab66545c113e032a8edb7004b8673d6333e52a1`, but no JVM snapshot. Root cause is harness lifetime, not an application failure. Added opt-in `-KeepGuiRunning` to the benchmark harness (default cleanup unchanged) and made the profile workflow pass it; source regression checks both the opt-in flag and default cleanup path. A fresh exact-head profile run is pending.
+
+
+**Second JVM-profile attempt result:** [40247117339](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40247117339) passed the one-round transfer gate (**21/21 SHA**, **3/3 metrics**) and preserved the GUI, but failed at the first attach command. The evidence artifact [12619336316](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40247117339/artifacts/12619336316) showed why: `jcmd -l` listed the real JVM as PID 1336, main class `com.abdownloadmanager.desktop.AppKt`, while the NSIS launcher PID 552 had no `jvm.dll`. The script was attaching to the native launcher, not the JVM. Fixed target discovery to parse the actual AppKt PID from `jcmd -l` and use that PID for heap/class/thread commands and process metrics. This is a diagnostic harness bug, not a production transfer failure; another exact-head profile run is pending.
+
+
+**JVM evidence collected (diagnostic commands succeeded; final status metadata failed):** artifact [12619073707](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40247117339/artifacts/12619073707), ZIP SHA-256 `484aaecc6e8d6d5720254f4393aa92b3c854d005cb0c632a38acb3ab6b18f180`. The one-round installed matrix passed **21/21 SHA** and **3/3 CPU/RAM CSVs**. The JVM snapshot after transfers: process PID 4520, **421.441 MiB Working Set / 462.977 MiB Private Bytes**, 71 process threads, 818 handles. `GC.heap_info` showed G1 heap **126,976 KiB committed, 75,859 KiB used**; class histogram totaled **35,410,368 bytes across 649,486 instances**; thread dump showed 55 JVM threads. Thus the post-transfer private-byte footprint is far larger than the committed Java heap and object histogram alone. This suggests native/JVM non-heap allocations or retained OS resources, but the current run did not enable Native Memory Tracking (NMT), so it does not yet identify the category. The workflow's final status line then failed on a stale `$gui.Id` reference after all diagnostics had been written; fixed to `$javaPid`.
+
+The next exact-head profile enables `-XX:NativeMemoryTracking=summary` only for the GUI process, captures `VM.flags` and `VM.native_memory summary`, and restores the environment before CLI commands. It is diagnostic-only; its resource measurements are not compared directly with the non-NMT benchmark. The new profile run remains pending.
+
+
+## 2026-10-26 — HG-HTTP-JVM-MEMORY-PROFILE-01 (NMT profile PASS; baseline comparison next)
+
+Exact source SHA `9f5577a2d557aed3223a04749187f316b2decb88`, installed diagnostic workflow [40249082722](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40249082722): **PASS**. One installed 1/4/16 round passed **21/21 SHA-verified files** and **3/3 CPU/RAM CSVs**; JVM profile captured all six commands including Native Memory Tracking. Internal installer SHA-256 `213de5aad39f985d0c511bc7c075e6ebd18b6d24e43f0219ef9d25e8729e19f1`. Evidence artifact [12619564968](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40249082722/artifacts/12619564968); downloaded ZIP SHA-256 `c52829ffa62d6bdd145dc9cb89c7228657511b02428d25eab61de68f2d4d1848`.
+
+**Measured after one 1/4/16 round (NMT enabled for this diagnostic only):**
+- Process snapshot: **431.551 MiB Working Set**, **473.309 MiB Private Bytes**, 77 OS threads, 826 handles.
+- G1 heap: **122,880 KiB committed**, **70,204 KiB used** at the heap-info snapshot; histogram total **34,716,776 bytes / 636,147 objects**.
+- NMT total committed: **339,598 KiB (~331.6 MiB)**, while process Private Bytes were ~473.3 MiB — roughly **141.7 MiB is outside NMT's committed total** on this sample. NMT categories included Java Heap 120 MiB, Metaspace 76,766 KiB (also reported under Class metadata), Code 46,821 KiB, GC 45,611 KiB, Symbol 19,541 KiB, and Thread 4,949 KiB. Do not add overlapping Class/Metaspace figures twice.
+- NMT showed 71 JVM threads; the process snapshot showed 77 OS threads. The JVM class histogram includes 10,538 Skia `CleanableImpl` wrappers and 10,538 `Managed$CleanerThunk` objects, but one post-load snapshot alone cannot prove a leak.
+
+**Interpretation:** the 4 GiB reserved heap is virtual address space, not 4 GiB committed RAM. Used Java heap is ~69 MiB and committed heap 120 MiB, so simply lowering Xmx is not yet a justified fix. A sizable part of process-private memory is not explained by the NMT total; possible sources include native graphics/JNI allocations or other untracked mappings, but no root cause is claimed yet.
+
+**Next diagnostic:** add an idle baseline snapshot and a post-transfer snapshot from separate fresh GUI processes, both with NMT enabled, so we can compare Skia cleanables, heap, native categories and Private Bytes without conflating startup with the download workload. This remains diagnostic-only; NMT measurements are not used as a speed comparison.
+
+
+## 2026-10-26 — HG-UI-RELATIVE-TIME-CHURN-01 (production optimization + measured acceptance pending)
+
+The NMT baseline/post profile [40250121436](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40250121436) captured an idle GUI and a fresh GUI after 21 verified downloads. Artifact [12620660913](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40250121436/artifacts/12620660913), downloaded ZIP SHA-256 `dfd8711b74420596e8a1bf492aaa047999a3b3f19d66208de2da2c5b7a0cac08`; installer SHA-256 `7042fc2dce5dea1de15131f6dd45889d3293ee2b49c4630d8eb4b799899bbf33`. It passed 21/21 SHA hashes and 3/3 process CSVs.
+
+**Baseline → post-transfer (NMT enabled; diagnostic only):**
+- Private Bytes **247.590 → 501.965 MiB**; Working Set **219.008 → 463.945 MiB**.
+- NMT committed **216,238 → 338,879 KiB**; heap used **45,341 → 90,541 KiB**; heap committed **60 → 120 MiB**.
+- Class histogram **19,831,608 → 35,126,272 bytes**, **327,499 → 636,986 objects**.
+- Skia `CleanableImpl` **1,402 → 9,250**; Compose `LayoutNode` **308 → 1,725**.
+- OS threads **49 → 77**; handles **666 → 842**.
+
+**Actionable code finding:** desktop `DateCell` recomputed and assigned relative-date text every second for every visible row, even when the label had moved from seconds to minutes/hours/days. This does not prove it is the only native-memory cause, but it is avoidable UI work that correlates with Compose/Skia object growth. Implemented a boundary-aware refresh helper (next second/minute/hour/day boundary) and skip state writes when the label is unchanged. Added deterministic Kotlin tests and a source contract.
+
+**Purposeful acceptance question (before build):** does the new cadence preserve unit-boundary delays, pass shared desktop unit tests, and keep 63/63 SHA + 9/9 process metrics while reducing Skia/Compose churn or Private Bytes? Source tests cannot measure Compose/Skia runtime allocations. The dedicated Kotlin unit workflow, full installed Windows matrix and NMT before/after workflow are wired to the production source paths. No fixed memory threshold is claimed until measured.
+
+
+**Unit-test correction:** first targeted desktop test run [40251458528](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40251458528) compiled the new helper and ran 32 tests; 31 passed, with one incorrect expectation in the new test: at age 58 seconds the next seconds label changes in 1 second, not 2. Corrected that assertion and added a half-second boundary case (500 ms). No production compile error was reported; rerun of the targeted test is pending.
+
+
+**CI cost guard:** the NMT profile now has a lightweight latest-commit scope gate. A prior test-only commit re-triggered the diagnostic workflow because GitHub path filters consider the whole PR diff; the gate now skips expensive installer/profile work for docs and test-only commits while preserving manual dispatch and all relevant production/benchmark-script paths. Source-only CI continues to validate the gate.
+
+
+## 2026-10-26 — HG-UI-RELATIVE-TIME-CHURN-01 (runtime results; memory not yet closed)
+
+The relative-time unit workflow [40251917222](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40251917222) passed after correcting one test expectation; source-only [40252516082](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40252516082) also passed. Exact installed matrix on the changed app source [40251458455](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40251458455): **63/63 SHA-256 downloads, 9/9 CPU/RAM CSVs, and real 1/4/16 active tasks — PASS**. Evidence artifact [12621083673](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40251458455/artifacts/12621083673), ZIP SHA-256 `f1ff63ef8447e5d70e4f3d57f9f3b0d5c63aa6228ddb6eff9efdccc0d3b92ea3`. Chrome/Firefox browser E2E, FTP Kotlin/installed REST, HLS Kotlin, and queue/lifecycle gates also reported PASS on the current PR head; see [browser run 40252516104](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40252516104), [FTP run 40252516275](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40252516275), [installed FTP run 40252516098](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40252516098), [HLS run 40252516076](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40252516076), and [queue run 40252516302](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40252516302).
+
+**Measured result is mixed:** relative-time refresh change lowered average CPU in the final 1-way and 4-way rounds (5.355→2.638%, 11.171→6.132%) and 16-way round 3 (24.956→23.042%), but full 16-way peak Private Bytes was **590.879 MiB**, slightly higher than the 582.375 MiB pre-change run. The NMT before/after profile [40251917240](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40251917240) passed 21/21 SHA + 3/3 metrics. Artifact [12620584854](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40251917240/artifacts/12620584854), ZIP SHA-256 `7101fb6c6ba6bf4f879c4f87f2972c1238efbb6d39e7637f08573883b93c3a20`; installer SHA-256 `8ff573cbafdcbfdf765baf824298836754bca7b9ae87b5e75a70d487b7116a52`. In that one-round profile, post-transfer Private Bytes were **462.977 MiB** vs **501.965 MiB** in the prior one-round profile; NMT committed was **317,587 KiB** vs **338,879 KiB**. However Skia CleanableImpl count was higher (20,710 vs 10,538) while total histogram bytes remained close (~35.8 vs 35.4 MB), and the full three-round peak did not improve. Keep the refresh-cadence change as a CPU/recomposition optimization, but do **not** claim the memory problem is solved; repeatable comparison is needed.
+
+**CI scope-gate repair:** the first profile scope-gate workflow [40252512178](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40252512178) had no runnable jobs because its shell scope block was malformed. Rebuilt the jobs block, changed latest-commit detection to shallow-checkout-safe `git show --format= --name-only HEAD`, and strengthened source assertions for complete shell control flow and job dependencies. This repair commit should skip the expensive profile build because it changes only the workflow/tests/docs; the source-only contract validates the gate.
+
+
+**Scope-gate validation repair:** the profile workflow's previous validation run [40253378123](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40253378123) was a push-time workflow-file failure with no jobs. Replaced the custom grep block with the same proven pattern used by the main Windows benchmark: checkout depth 2, `git diff --name-only HEAD^ HEAD`, and a shell `case` allowlist. The profile job remains conditional on the scope output; workflow/test/docs-only commits should skip packaging. Added source assertions for fetch depth and the case allowlist. No product code changed in this repair.
+
+
+**Duplicate-job cleanup:** the scope-gate repair still retained a second copy of `installed-jvm-profile` plus an orphaned shell tail after the first job's artifact upload. This made the workflow invalid, despite the first job block being complete. Removed the duplicate tail; source contract now asserts exactly one installed profile job and that the workflow ends at the artifact retention line. The current commit is workflow/tests/docs only, so the scope gate should skip the expensive installer job.
+
+
+**Source-contract correction:** source-only run [40254048011](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40254048011) failed because the test still expected an `else/fi` conditional after the scope gate had been switched to a `case/esac` allowlist. The workflow itself ran the scope gate successfully and skipped the expensive profile job on a docs/test-only commit. Updated the source contract to assert `case`, `;;`, and `esac`; no production code changed.
+
+
+**CI cost guard:** the new relative-time Gradle test workflow now uses a latest-commit scope gate. This prevents the common PR-path-filter behavior from recompiling the shared desktop tests for every subsequent docs/test-only commit. The production TimeUtil/UI and Kotlin unit-test paths still trigger the targeted test; manual dispatch still runs it.
+
+
+**Stabilization diagnostic added:** after the immediate post-transfer NMT/heap/class/thread snapshot, the installed profile workflow now waits 30 seconds and captures a third snapshot from the same JVM. This will help distinguish immediately retained UI objects from resources that settle/release after idle; the current completed artifact predates this new step, so stabilized values remain NOT TESTED until a relevant future profile run.
+
+
+## 2026-10-26 — HG-UI-LIQUID-PROGRESS-01 (installed visual acceptance pending)
+The previous exact PR head 3581ad1d98c4219bf0725dd07fae170311f222e5 had terminal-success CI for the HTTP 1/4/16 matrix (63/63 SHA-verified downloads, 9/9 process CSVs), installed FTP Pause/REST/resume, Chrome+Firefox browser capture, HLS, queue/lifecycle, and JVM profile collection. The main list still used a flat determinate gradient strip and had no installed screenshot captured during a live download.
+
+The new bounded M06 implementation adds a shared list-level Compose animation State only while a row is Downloading. Rows read that State inside Canvas drawing, avoiding one infinite transition per row and avoiding frame-by-frame row recomposition. The existing status-specific gradient and determinate progress remain; a clipped glossy band and two subtle bubbles move only during active Downloading. No dependency was added.
+
+Acceptance question before Windows build: does this exact source compile/install, capture the actual installed GUI while the CLI reports Downloading and the loopback fixture reports a live data transfer, and finish a 16 MiB file with exact SHA-256? Source tests cannot prove Compose API compatibility, installed IPC, Windows screen capture, real transfer or file integrity, so the existing installed UI workflow now runs this targeted E2E on relevant PR changes. Expected evidence: liquid-progress-active.png, JSON report, active status/task count, and matching expected/actual hashes. Result remains NOT TESTED until the workflow and artifact are inspected.
+
+Checkpoint: docs/checkpoints/HG_LIQUID_PROGRESS_VISUAL_E2E_2026-10-26.md. No main write, merge, release, paid service or Torrent.
+
+
+## 2026-10-26 — HG-UI-LIQUID-PROGRESS-01 follow-up: visual test harness pacing repair
+
+**Exact-head failure:** Windows installed UI run [40257834591](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40257834591) passed Compose compile, NSIS packaging/install and GUI launch, but failed the live-transfer proof in `scripts/Run-WindowsLiquidProgressVisualE2E.ps1:129`. The failure is **FAIL** for visual acceptance; the uploaded visual artifact ID `12624295283` is not a passing screenshot/report. Installer SHA-256: `949283b4eb8450d0ab6ca7f67f6a30f6751ad9166411881f4860f2343198ea8c`.
+
+**Diagnosis:** `--task-chunk-delay-ms` only enables aggregate per-task pacing after the fixture stats endpoint is reset with a positive `gate_tasks` value. The previous visual script did not activate that mode, and launched the CLI status process on every short poll. A segmented 16 MiB download could therefore finish between observations. Evidence supports a visual-test harness race; it does not establish a production rendering or download-engine defect.
+
+**Fix on PR branch:** commit `570cd36f5bb07581c7c5fc2b5a0134233bbf1595` resets `/stats?reset=1&gate_tasks=1`, polls loopback counters cheaply, queries installed CLI status only after payload bytes are moving, and writes sanitized `liquid-progress-diagnostics.json` if the live state is not proven. Commit `0073a746fa0b78ee359bdfb9d63b4cea4b76a4e1` adds source-contract assertions for pacing activation, polling order and diagnostics.
+
+**Expected Windows acceptance on the new exact source SHA:** installed build/install succeeds; screenshot `liquid-progress-active.png` is captured while the CLI reports `Downloading` and fixture counters show active data; 16 MiB output reaches `Finished` and its SHA-256 matches; same-version reinstall/silent uninstall proof completes. This remains **NOT TESTED** until the new run and artifact are inspected. Source-only tests cannot validate the installed GUI, timing, IPC, screenshot, or file bytes.
+
+## 2026-10-26 — HG-UI-LIQUID-PROGRESS-01 screenshot-time proof (pre-build checkpoint)
+
+The repaired visual harness had not yet produced a passing exact-head artifact: the follow-up installed-UI run was cancelled, and subsequent UI/browser/HTTP/memory jobs were scope-skipped on docs-only commits. Do not count a successful scope-gate as an installed GUI test.
+
+Before the next purposeful Windows build, the harness now rate-limits installed CLI status subprocesses to 500 ms intervals, revalidates status immediately before capture, requires an active fixture data task and byte-count advancement during the 900 ms animation window, and records BytesAdvancedBeforeScreenshot plus poll count in the report. The installed-UI workflow preserves an active exact-SHA acceptance run when unrelated follow-up commits arrive; scope gating still avoids builds for unrelated commits.
+
+**Question recorded before build:** can this exact source compile/install, capture a real installed Windows screenshot while Downloading and advancing fixture bytes are proven at capture time, finish the 16 MiB transfer with matching SHA-256, and pass same-version reinstall/uninstall? Expected artifacts: active screenshot, exact-SHA JSON report with equal expected/actual hashes, and installer lifecycle proof. Source tests cannot establish those runtime properties. Status remains **NOT TESTED** until Windows CI and artifacts are inspected.
+
+
+## 2026-10-26 — Liquid Progress E2E status-parser root cause (new Windows run required)
+
+- Exact-head Windows run [40262112549](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40262112549) on `0edcde0598864071adc716d232046a8ec03f3010`: Compose compile, NSIS build/install and GUI launch **PASS**; screenshot gate **FAIL**; reinstall/uninstall step **SKIPPED** because it is gated on the screenshot step.
+- Inspected artifact [12625646344](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40262112549/artifacts/12625646344): real 16 MiB output equals fixture byte-for-byte; both SHA-256 values are `341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1`. No active screenshot or passing report was produced.
+- Root cause: two PowerShell status filters over-escaped the tab delimiter and failed to match actual `ID<TAB>Status` CLI rows. The download completed, but the harness never observed `Downloading`. Fixed to use a literal tab prefix and ordinal `StartsWith`; added source regression coverage.
+- **Current visual acceptance remains NOT TESTED/PENDING exact-head Windows rerun.** The previous successful transfer hash is partial evidence only, not visual acceptance. Installer SHA from this failed run is not being treated as a release artifact. No merge/release/Torrent.
+
+
+## 2026-10-26 — Liquid Progress CLI status observation remains unresolved after first parser repair
+
+- Exact-head run [40266707875](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40266707875) on `5e8266873bda688c0cabd20556f96bc6f0446a74`: Windows Compose compile/package/install and GUI launch **PASS**; six idle/minimized metric CSVs captured; active visual acceptance **FAIL**; installer lifecycle step **SKIPPED**.
+- Artifact [12626702200](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40266707875/artifacts/12626702200) proves the 16 MiB downloaded output is byte-identical to the loopback fixture (SHA-256 `341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1`), but no active screenshot/report was produced.
+- The over-escaped tab regex was removed, but the exact-head rerun still found no parseable status row. Root cause is therefore **not yet established**. Next patch moves the positional ID before `--status-lines` and records exit code plus sanitized status-output preview to distinguish command parsing, IPC/empty-result and timing.
+- Visual acceptance remains **NOT TESTED/PENDING**. No final HyperGet.exe or release artifact claimed.
+
+
+## 2026-10-26 06:23 Asia/Jerusalem — exact-head status CLI ordering repair (Windows recheck required)
+
+**Exact failed run:** [40268376077](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40268376077), source SHA `de210ffdc3c7e112fd9dd6dbe8d9e485dd353bd6`. Compose compile, one NSIS installer build, isolated install and GUI launch **PASS**; the visual gate **FAIL**; installer lifecycle **SKIPPED** because the screenshot gate failed.
+
+**Artifact inspected:** [12627488411](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40268376077/artifacts/12627488411), ZIP digest `sha256:e995c5d42f5968173ac47962ce15fe1d214b3ae4c1781c5d234eb02e36233d85`. The fixture and downloaded output are both 16,777,216 bytes with matching SHA-256 `341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1`. Fixture counters prove a paced transfer occurred (peak distinct tasks 1; 256 paced chunks; about 45.85 seconds in the aggregate pacer). However, no active screenshot/report was produced. The CLI status subprocess exited 0 but no accepted status row was observed; task ID was 0 and the sanitized preview was too generic to distinguish a default table from other output. This is a **FAIL for visual acceptance**, despite successful transfer integrity.
+
+**Source diagnosis and patch:** the visual script used `download show $taskId --status-lines`, while the existing 1/4/16 benchmark and its source contract use the stable option-first form `download show --status-lines <IDs>`. The current evidence does not prove the option-order mismatch is the sole cause, so the next run is a targeted falsification test, not a presumed fix. All three visual status probes now use the option-first form. Failure diagnostics classify status rows, no-downloads output, formatted-table output, and CLI usage/error output without retaining raw table rows or paths; preview arrays are flattened correctly and line counts are recorded. Regression assertions protect both command order and privacy-safe diagnostics.
+
+**Pre-build question:** does this exact source return a parseable `ID<TAB>Status` row from the installed CLI while the fixture is moving, capture the real GUI during `Downloading`, complete the 16 MiB transfer with matching SHA-256, and then pass same-version reinstall/silent uninstall?
+
+**Expected PASS:** screenshot and exact-SHA JSON report; `StatusAtCapture=Downloading`; active fixture task and `BytesAdvancedBeforeScreenshot=true`; final CLI status `Finished`; matching expected/actual hashes; installer lifecycle proof. Source tests cannot prove installed CLI argument parsing, IPC timing, Windows screen capture or actual file bytes, so one more purposeful Windows build is justified. No production rendering change is claimed in this harness-only repair; no main write, merge, release, paid service or Torrent.
+
+
+## 2026-10-26 07:04 Asia/Jerusalem — Liquid Progress status output normalization (Windows recheck required)
+
+**Exact-head failure:** Windows installed GUI run [40269580569](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40269580569) on source SHA `4f5b74ba187c5bedc24393799a24dbbfd9a31a33`. Compose/installer build, isolated silent install, and GUI launch **PASS**; active Liquid Progress screenshot gate **FAIL**; same-version reinstall/silent uninstall **SKIPPED** behind the failed gate. Installer lifecycle evidence was not produced.
+
+**Artifact inspected:** [windows-liquid-progress-visual ZIP](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40269580569/artifacts/12628195357), artifact ZIP SHA-256 `4103acfe10a7019a7b36ad53dcc781aa81bb6654de31808c91b42f3025435a59`. The fixture and downloaded file are both 16,777,216 bytes and byte-identical, SHA-256 `341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1`. Fixture counters prove one paced task, 256 chunks and 45.884 seconds of aggregate pacing. But the report shows task ID 0, 40 status polls, exit code 0, and one output line summarized only as 16 characters; no active screenshot was produced. This is **FAIL for visual acceptance**, not a download-integrity failure.
+
+**Patch on the existing PR branch:** normalize ANSI escapes, BOM and zero-width prefixes before parsing; split the tab-delimited row into columns and validate the requested ID/status instead of relying on a raw prefix; reconstruct only a safe ID/status diagnostic; and classify known generic task-lookup messages without persisting raw output. Source-contract assertions cover normalization, field parsing, all three status probes and redaction. This does **not** assume the hidden 16-character output is the root cause; the next exact-SHA run is the falsification test.
+
+**Pre-build question:** does this exact source recognize the installed CLI's actual status row during a paced transfer, capture the visible GUI while status is `Downloading` and bytes advance, complete the 16 MiB download with matching SHA-256, and then pass same-version reinstall plus silent uninstall? Source tests cannot prove installed CLI output, IPC, Windows screenshot timing, or file bytes. Expected evidence is the active screenshot, exact-SHA JSON report, final `Finished` status, matching hashes, and lifecycle record.
+
+No production renderer change is claimed in this harness-only repair. No main write, merge, release, paid API or Torrent.
+
+**Follow-up CI scope guard:** source-only contract changes remain in the workflow path trigger, but no longer independently trigger an expensive installer/UI build. The workflow-file change in this commit intentionally causes one exact-SHA Windows recheck; future test-only edits continue through fast source CI without rebuilding the app.
+
+**Fast source-gate correction:** the first source-only run on the normalization patch caught a stale contract assertion that still expected a hard-coded `FinalStatus = 'Finished'` after the report was correctly changed to use the parser-derived `$finalStatus`. No PowerShell/Compose compile failure was involved. Updated the contract to require the parsed value and the explicit Finished gate; this is a test-only correction and is excluded from the expensive installer scope.
+
+## 2026-10-26 — latest exact-head CI checkpoint (visual gate still running)
+
+Current branch head before this ledger update: `bdf68673ec28fe44adb6b9b43718ac90d78dd59a`.
+
+- **Source-only contracts:** PASS — [run 40273299476](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40273299476). This includes the corrected Liquid Progress source contract.
+- **Real Windows FTP Kotlin/JUnit:** PASS — [run 40273299464](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40273299464).
+- **HLS guarded redirect/segment SHA milestone:** PASS — [run 40273299535](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40273299535).
+- **Queue lifecycle regression:** PASS — [run 40273299422](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40273299422).
+- **Installed authenticated FTP pause/restart/REST/SHA:** IN PROGRESS — [run 40273299503](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40273299503).
+- **Installed Liquid Progress visual E2E:** IN PROGRESS on the harness-change SHA `d8e8f557693c7db398bc4b3e4cb57d4df8867c58` — [run 40273070311](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40273070311). The Windows installer build is the active step; no screenshot verdict is available yet.
+- **HTTP 1/4/16 matrix and Chrome/Firefox E2E on this docs/test-only head:** scope-skipped — [run 40273299650](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40273299650) and [run 40273299511](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40273299511). These are not new PASS results. Prior exact-head functional evidence remains recorded above.
+- **Installed JVM memory profile:** scope-skipped — [run 40273299427](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40273299427); no new memory improvement is claimed.
+
+The source/test/docs commits do not change the production downloader or Compose renderer. Do not close HG-UI-LIQUID-PROGRESS-01 until the active screenshot, `Downloading` status at capture, byte advancement, final SHA-256 equality, `Finished` status, and reinstall/uninstall proof are all present in an inspected exact-SHA artifact.
+
+## 2026-10-26 — second installed visual result and suffix-normalization repair
+
+**Run:** [40273070311](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40273070311), source SHA `d8e8f557693c7db398bc4b3e4cb57d4df8867c58`. Compose/installer build, silent isolated install and GUI launch **PASS**; screenshot-time status gate **FAIL**; same-version reinstall/uninstall **SKIPPED**.
+
+**Artifact:** [windows-liquid-progress-visual](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40273070311/artifacts/12628404908), ZIP SHA-256 `db7c80523b297810dfeac319dc222fadfd83ef44e7ba64afa124a773784490ab`. The fixture and downloaded output remain byte-identical at 16,777,216 bytes, SHA-256 `341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1`. Fixture counters prove one paced task, 256 chunks and 45.869 seconds aggregate pacing. The parser-normalization patch did not resolve the status row: task ID 0, 23 polls, exit 0, one unclassified 16-character line, and no screenshot/report.
+
+**New targeted change:** the prior normalizer removed invisible Unicode prefixes but not suffixes. Extend trimming to both ends for BOM/zero-width characters, and include a sanitized plain-ASCII message only when output contains letters/spaces (the runner uses a fresh isolated install); all arbitrary rows, names, paths and URLs remain redacted. This is a diagnostic hypothesis, not a confirmed root cause.
+
+**Pre-build question:** does the two-sided normalization recover a valid ID/status row, capture the installed GUI while `Downloading` and fixture bytes advance, verify the completed 16 MiB SHA-256, and pass same-version reinstall plus silent uninstall? The prior artifact proves that source tests alone cannot establish this Windows CLI-output behavior or screenshot timing. The next build is justified because the script changes based on inspected exact-SHA evidence.
+
+## 2026-10-26 — source-contract failure caught and corrected before next UI verdict
+
+Source-only run [40274122171](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40274122171) failed two assertions because the previous generated script blob accidentally duplicated the visual harness body. The assertions correctly caught the duplicate CLI probes (6 instead of 3) and parser calls (4 instead of 2); this was a patch-composition defect, not a product or Windows compile failure.
+
+**Correction:** reconstructed `Run-WindowsLiquidProgressVisualE2E.ps1` from the exact known-good harness source at `d8e8f557693c7db398bc4b3e4cb57d4df8867c58`, then applied only the intended two-sided invisible-character normalization and safe plain-ASCII diagnostic. The expected script shape is again one server start, three CLI status probes, two active probes and one final-status probe. The latest source-only rerun must pass before accepting the next Windows visual result.
+
+The suffix-normalization hypothesis remains unverified until a fresh exact-SHA Windows run produces the screenshot/report or a more specific safe diagnostic.
+
+## 2026-10-26 — latest Liquid Progress harness integrity checkpoint
+
+At exact PR head `f85dd261d98c457bb3d82fdec1c1397a54ed4b44`, source-only safety CI **PASS** ([run 40275128435](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40275128435)). Directly re-fetched static invariants passed 11/11. Source inspection found and repaired a malformed/truncated status-preview function plus an orphaned duplicate script tail; the regression suite now guards against that patch-composition defect. This is test-harness repair only, not a production renderer change.
+
+The installed Windows visual run [40275128473](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40275128473) was pending with no job/artifact verdict at the last poll. **HG-UI-LIQUID-PROGRESS-01 remains NOT ACCEPTED** until the exact-head run proves screenshot-time `Downloading`, advancing fixture bytes, final `Finished`, matching 16 MiB SHA-256, and same-version reinstall/silent uninstall. See [the detailed checkpoint](checkpoints/HG_LIQUID_PROGRESS_VISUAL_E2E_2026-10-26.md). Do not treat source CI or prior transfer-only hashes as visual acceptance.
+
+
+## 2026-10-26 — Liquid Progress harness timing/parser correction (acceptance still OPEN)
+
+- Exact-head Windows run [40279659330](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40279659330) built and installed successfully (internal installer SHA-256 `e0490d801fe6993fde41cac2b51475e36503424b2671901803a73d7c9671361a`), but **failed** the live screenshot gate. Artifact [12631058922](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40279659330/artifacts/12631058922) ZIP SHA-256 `7f14442f5720cc74669100a2e248a0afad29b38c568f5e17a769717b204262c8`; the 16 MiB output matches the fixture SHA-256 `341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1`. No screenshot-time acceptance or lifecycle PASS is claimed.
+- Failure diagnostics showed task ID 0, 39 polls, and a whitespace-delimited `0        Finished` row. The harness had run `download add` synchronously before polling, then parsed status as tab-only. The current patch runs add asynchronously, supports whitespace-delimited status output, handles a paused row with asynchronous resume, and checks process exit/task identity.
+- Source-only contracts **PASS** at [run 40281908013](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40281908013) on `1bd68fa46fb53c4dca630b8b0e44ad4b9ca16c43`. The earlier source failure was an assertion bug in the test's newline parsing and is fixed; it was not a product compile failure.
+- Purposeful Windows question: can the installed app be captured during real `Downloading` with bytes advancing, complete 16 MiB with matching SHA-256 and final `Finished`, then pass same-version reinstall/silent uninstall? Static source tests cannot prove installed CLI timing, Windows GUI capture, IPC or bytes. Current run [40281908053](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40281908053) is preparing the targeted Windows build; acceptance remains OPEN pending inspected exact-head evidence.
+
+
+## 2026-10-26 08:58 Asia/Jerusalem — fix null CLI redirection paths before visual E2E retry
+
+**Exact failed run:** [40281908053](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40281908053), harness source SHA '1bd68fa46fb53c4dca630b8b0e44ad4b9ca16c43'. Windows distribution build, NSIS installer, isolated install, GUI launch, and idle/minimized metrics **PASS**. Active Liquid Progress acceptance **FAIL**; reinstall/uninstall was skipped. The job log ended with 'Cannot bind argument to parameter LiteralPath because it is null.'
+
+**Confirmed harness defect:** the script assigned '$addStdout', '$addStderr', '$resumeStdout', and '$resumeStderr' to valid RUNNER_TEMP paths near the start, then reassigned all four to null immediately before the main try. Consequently the asynchronous CLI process could not get its intended output redirection path, and task-ID collection later reached a null LiteralPath. This is a test-harness defect, not evidence of a product download failure. The artifact had the 16 MiB fixture and fixture-port/log files but no diagnostics JSON or active screenshot.
+
+**Production/test fix on the existing PR branch:** removed the late null assignments, added an explicit non-empty guard for all four redirect paths, and added a Python source-contract regression that verifies each path is assigned exactly once, never reset to null, and validated before the async Start-Process call. The production downloader and renderer are unchanged.
+
+**Pre-build question:** does the exact fixed script retain valid stdout/stderr paths, observe Downloading while fixture bytes advance, capture the installed app window, complete the 16 MiB file with matching SHA-256 and final Finished, and then pass same-version reinstall plus silent uninstall? Expected PASS evidence is the active screenshot, exact-source JSON report, equal hashes, final status and installer-lifecycle record. Source contracts cannot prove Windows process redirection, IPC timing, GUI capture, actual bytes or reinstall/uninstall, so a single targeted Windows rebuild is justified after the fast source gate passes.
+
+**Gate remains OPEN / NOT ACCEPTED** until that exact-head artifact is inspected. No renderer change, main write, merge, release, paid service or Torrent.
+
+
+## 2026-10-26 — exact-head visual retry exposes an Added-only task deadlock
+
+**Run:** [40283377785](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40283377785), source SHA '59b133351a4e13c07463f79bfecd15c2fd333c75'. Windows build, single NSIS installer, isolated installation, GUI launch/window capture, and six idle/minimized CPU/RAM CSVs **PASS**. Active Liquid Progress **FAIL**; reinstall/uninstall was skipped.
+
+**Artifact evidence:** [visual diagnostics ZIP](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40283377785/artifacts/12632944598), ZIP SHA-256 '488dc25d81c67c79cb4d914b31ca394a1a189dc8cef7c90d51edd62359f5916f'. Installer SHA-256 'ed65da8c0760f0f48b5a71403877ee4e712c247aa33ec7707c12b8f540784fee'. The 16 MiB fixture SHA-256 is '341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1'. The artifact contains the fixture and diagnostics but no downloaded output or active screenshot.
+
+**Confirmed second harness defect:** diagnostics show TaskId 0, add process exited with code 0, one task ID was emitted, but fixture counters stayed at zero and status-poll count stayed at zero. The loop polled CLI status only inside the 'fixture has active tasks and bytes sent' branch, so it could never observe an Added-only task in Paused state and send the Resume command that starts its transfer. This is a harness control-flow deadlock, not a renderer failure or evidence that the download bytes are corrupt.
+
+**Repair in the existing PR branch:** resolve the emitted task ID after add exits; poll status at the existing 500 ms cadence independently of fixture activity; issue exactly one asynchronous 'download resume' when the task reports Paused; only accept the screenshot gate when status is Downloading and the fixture confirms active requests plus advancing bytes. Added a source-contract regression for the ordering and safe diagnostics. Product downloader and renderer remain unchanged.
+
+**Pre-build question:** can the installed CLI now transition the Added-only task from Paused to Downloading before the fixture records its first request, then produce an unobstructed active screenshot, finish 16 MiB with matching SHA-256 and final Finished, and pass same-version reinstall/silent uninstall? Source tests cannot prove installed CLI state transitions, socket activity, screenshot timing or final bytes, so the next targeted Windows build is justified once source CI passes. Keep HG-UI-LIQUID-PROGRESS-01 OPEN until exact-head artifact inspection.
+
+## 2026-10-26 — installed Liquid Progress visual gate PASS; lifecycle provenance correction
+
+**Exact PR head:** `2fe6a20e46bfe2f71035a1892951198aaf15cb70`.  
+**Installed Windows run:** [40284825027](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40284825027). The workflow checked out that exact head, compiled Compose, built one NSIS installer, silently installed into an isolated directory, launched the installed GUI, captured the active transfer, and completed same-version reinstall plus silent uninstall.
+
+**Visual/transfer acceptance PASS:** artifact [windows-liquid-progress-visual, 12633633457](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40284825027/artifacts/12633633457), artifact ZIP SHA-256 `1e7fb118cc1495f4a2207beaa4b69b506e920ea55a4b3e9ad0d50572be464d5d`. The downloaded report identifies source SHA `2fe6a20e46bfe2f71035a1892951198aaf15cb70`, screenshot-time status `Downloading`, one active task, 1,376,512 fixture bytes sent and confirmed byte advancement. The 16 MiB output is exactly 16,777,216 bytes; expected and actual SHA-256 both equal `341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1`; final status `Finished`; `Verified=true`. I inspected the PNG: it shows the installed HyperGet window and active row. This closes the live Liquid Progress + local HTTP integrity gate, **not** a claim of full IDM visual parity or optimized memory use.
+
+**Installer evidence:** build log reports installer SHA-256 `b918b3f7249c15ad753923263012a8ab95447685ae9267e89d5779728ae84f4c`. The lifecycle artifact [12634087085](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40284825027/artifacts/12634087085), ZIP SHA-256 `004d695094922994f1793b7b40150b019be5d9231bf99cdde52abc3280552164`, records `ReinstallSameVersion=PASS`, `SilentUninstall=PASS`, and registry removal PASS. It explicitly leaves cross-version upgrade **NOT_TESTED**.
+
+**Evidence metadata defect found after the successful run:** the lifecycle proof's `SourceSha` field is `bca7ac2a913901d579bd9ca18e68e886353fcdac`, the pull-request synthetic merge SHA, because the workflow passed `$env:GITHUB_SHA`. The build log independently confirms checkout of exact head `2fe6a20e46bfe2f71035a1892951198aaf15cb70`, so the test behavior passed, but the artifact's source label is not trustworthy for exact-SHA accounting. This commit corrects the workflow to derive `git rev-parse HEAD`, assert it equals the expected PR head, and pass that exact SHA to the lifecycle script; a targeted Windows rerun is required to validate the corrected provenance. **Pre-build question:** will the corrected lifecycle artifact record the exact checked-out SHA while preserving visual PASS, matching 16 MiB SHA-256, same-version reinstall and silent uninstall? Source tests cannot establish GitHub event-SHA versus checkout-SHA behavior, so this one targeted Windows rebuild is justified.
+
+**Still open:** cross-version upgrade/rollback and existing-user-data migration; HTTPS/external FTP and HLS restart acceptance; full browser-to-host exact-head rerun; CPU/RAM optimization (historical 16-way peak remains high); final HyperGet branding/icon and the single deliverable `HyperGet.exe`; independent final Windows recheck. No merge, release, main write, paid service, or Torrent.
+
+
+## 2026-10-26 — latest verified performance/UI checkpoint (renderer cache)
+
+Production source SHA tested: `869af00b39ba1977321fadb7ffbc8b022bd78148`. The later commit `105512b4020b0e23b620390db0e1d8cadaddab82` updates evidence only; no production source changed after the tests below.
+
+- **Source contracts:** PASS — [run 40303361309](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40303361309).
+- **Installed Liquid Progress / file integrity:** PASS — [Windows UI run 40303361243](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40303361243). Exact-head artifact [12640789718](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40303361243/artifacts/12640789718), ZIP SHA-256 `3659673d0cb11ea66bd9458769242d2df6feb69b79629ab76406fe9bcefa8187`. Inspected screenshot shows installed HyperGet with an active `Downloading` row; bytes advanced before capture. Downloaded 16 MiB output matches fixture byte-for-byte, SHA-256 `341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1`; final `Finished`. Same-version reinstall, silent uninstall and registry removal PASS; cross-version upgrade NOT TESTED. Lifecycle evidence: [artifact 12642191429](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40303361243/artifacts/12642191429); installer SHA-256 `0477986D2D341CC52906380EEE1C8EED968C992EB2C50E6AB6E45EDDD8E0733F`.
+- **Installed HTTP 1/4/16:** PASS — [run 40303361484](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40303361484). Artifact [12641274367](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40303361484/artifacts/12641274367), ZIP SHA-256 `a37ca245d59a579e00c82e755d3ba371c6f49d240ec446e3a5b2e6d47cde9b82). 63/63 32-MiB transfers verified by SHA-256, 9/9 resource CSVs present, distinct-task overlap verified at 1/4/16 (up to 128 HTTP connections at 16 tasks).
+- **Measured resource comparison:** on the third 16-task round, peak Working Set/Private Bytes were 441.617/503.734 MiB versus 515.672/574.410 MiB in the prior same-harness run at `b811f2cd0b25adbc4115376b0db2900b909739ba` (about 14.4%/12.3% lower). The 4-task peaks were about 12% lower; 1-task peaks were nearly flat. This is encouraging run evidence, **not a controlled A/B or proof of causal attribution**. The current 16-task peak CPU was higher than the prior third round, so no overall performance-win claim is made.
+- **JVM profile:** PASS — [run 40303361524](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40303361524), artifact [12641069695](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40303361524/artifacts/12641069695), ZIP SHA-256 `12d1948fee63b9286dbdc736ded65e73b8e60403fb2393e2c75038b70c460ab7`. 21/21 profile transfers hash-verified. Skia CleanableImpl counts: 1,402 baseline, 13,188 during active load, 3,509 after 30-second stabilization; heap use fell from 78.8 to 34.9 MiB but Private Bytes remained ~444 MiB. Snapshots used different JVM PIDs; no leak diagnosis is justified.
+- **Other exact-head PASS:** FTP real Windows JUnit [40303361331](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40303361331) (29 tests); HLS guarded redirect/segment SHA [40303361477](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40303361477); queue/part-I/O lifecycle [40303361199](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40303361199); installed authenticated FTP pause/restart/REST/SHA [40303361314](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40303361314).
+
+**Still NOT TESTED / NOT COMPLETE:** full Chrome/Firefox browser-to-host E2E on this exact renderer SHA (the current workflow's expensive job was scope-skipped); cross-version upgrade/rollback and existing-data migration; HTTPS/external FTP and HLS restart; controlled memory/CPU A/B and IDM parity; final branding/icon and single deliverable `HyperGet.exe`; independent final Windows recheck. The detailed evidence and limitations are in [HG_LIQUID_PROGRESS_DRAW_CACHE_2026-10-26.md](checkpoints/HG_LIQUID_PROGRESS_DRAW_CACHE_2026-10-26.md).
+
+No main-branch write, merge, release, paid service/runner, or Torrent. Keep PR #3 draft until all acceptance gates and independent final Windows verification pass.
+
+## 2026-10-26 — Chrome + Firefox native-host browser E2E (verified)
+
+**Exact PR source SHA:** `0d803d2bcf449cd810f4bfbf4b8e67676159d1ed` on `automation/idm-ftp-cancel-and-category-flush`. PR #3 remains Draft; base `codex/repair-rf00-rf01`.
+
+**Purposeful Windows question:** does the exact installed build register the native host for Chrome and Firefox, accept real extension-origin messages, cold-wake the GUI from a stopped state, download a loopback fixture from each browser, and produce SHA-256-verified output? Source-only tests cannot prove browser APIs, registry launch, native messaging, WebDriver, GUI lifecycle or actual bytes.
+
+**Result: PASS —** [Windows browser E2E run 40313688358](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40313688358). Windows Server 2022 built and installed one internal NSIS test installer; it is not a release package.
+
+- **Installed host registration/protocol:** PASS. Chrome and Firefox HKCU manifests target the installed native host; two framed ping replies, request correlation, sanitized generic error and clean EOF passed.
+- **Chrome MV3:** PASS. Pinned browser integration source `0fb5a304cbde07a9758d2b42417e7a8a85cba0f2`; two ping replies plus safe unknown-action reply correlated; connected port 3/3 replies and reconnect 1/1; GUI cold-wake passed; real browser-origin 2 MiB download SHA-256 verified. Fixture SHA-256: `1e075c8d478ad21844e33e830a695ef03a4d2488b69ee275bd8947618bb1be1`; five GETs observed.
+- **Firefox WebExtension:** PASS. Firefox `158.0.1`, geckodriver `v0.37.1`; add-on installed, native ping/safe error correlated, GUI cold-wake passed, actual browser-origin 2 MiB download SHA-256 verified against the same fixture; five GETs observed.
+- **Artifact:** [hyperget-installed-native-host-evidence, ID 12645862959](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40313688358/artifacts/12645862959), ZIP SHA-256 `596e5ad99319380173730aea4d1bd6cdf1acd956b8136a10bc2a471d066f85ca`. Internal installer SHA-256: `ba29b47f587d773e65284dbf9c21f3530329bedd41b93cba875065619337d2ed`.
+- **Transient diagnostic:** Firefox report preserves one WebDriver status-probe `UNAVAILABLE` event, but final stage is `COMPLETE`, `failureCode=null`, and `verified=true`; actual download and SHA gates passed. Keep the diagnostic visible; do not infer a product failure from it alone.
+
+**Harness defect fixed:** prior run [40312425370](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40312425370) passed installed host smoke and Chrome E2E but failed before Firefox because unauthenticated `api.github.com/repos/mozilla/geckodriver/releases/latest` hit the shared-runner IP rate limit. The workflow now follows the official `https://github.com/mozilla/geckodriver/releases/latest` redirect and validates HTTPS, repository/tag path and the versioned win64 asset; the source contract rejects the old API lookup. Source-only safety checks PASS: [run 40313688214](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40313688214).
+
+**Same-head regression evidence:** FTP Windows Kotlin/JUnit **29/29 PASS** [run 40313688208](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40313688208); HLS guarded redirect/segment/assembly **29 tests PASS, zero failures/skips** [run 40313688228](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40313688228); queue/part-I/O lifecycle regression PASS [run 40313688341](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40313688341).
+
+**Not rerun on this workflow-focused head:** installed HTTP 1/4/16 matrix, JVM memory profile, installed Liquid Progress screenshot and installed FTP pause/restart were scope-skipped. Their earlier accepted evidence remains tied to its documented exact source SHA; no new pass is claimed for those paths.
+
+**Still open:** cross-version upgrade/rollback and user-data migration; HTTPS/external FTP and HLS restart; controlled CPU/RAM A/B; full IDM visual parity; final HyperGet icon/branding and single deliverable `HyperGet.exe`; independent final Windows recheck. Browser integration repository was read at its pinned PR SHA but not modified. No main write, merge, release, paid runner/API, or Torrent.
+
+
+
+## 2026-10-26 — HG-HTTP-RESOURCE-TUNING-01 decision: restore 64/64 (exact-head rerun pending)
+
+The 32/32 trial on `d4dc2dcb121913b9734b5bfaf5279d24b483f49d` passed 63/63 SHA-256 checks, the 1/4/16 active-task gates and all 9 resource CSVs, but the three 16-task rounds took about 166.3/168.3/166.0 seconds versus about 155.7–157.0 seconds on the 64/64 baseline. The third-round peak rose from 441.617/503.734 MiB Working Set/Private Bytes at 64/64 to 480.629/547.379 MiB at 32/32. This is one-run evidence rather than a controlled A/B, but it shows no meaningful resource improvement and a slower workload. The production caps and source contract are therefore being restored to 64/64; do not claim the rollback is verified until exact-head Windows matrix and JVM-profile runs pass. Full evidence and pre-build acceptance criteria: [HG_HTTP_RESOURCE_TUNING_2026-10-26.md](checkpoints/HG_HTTP_RESOURCE_TUNING_2026-10-26.md).
+
+
+## 2026-10-26 — exact-head 64/64 acceptance and next memory experiment
+
+**Tested production SHA:** `915fe579db44b26b485d048e8f00b9487aec0a22`. The 32/32 OkHttp trial was rejected; production is restored to 64/64 and the exact-head Windows matrix now passes.
+
+- **PASS — installed HTTP 1/4/16:** [run 40333126121](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40333126121), artifact [12655724146](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40333126121/artifacts/12655724146), ZIP SHA-256 `24e17186a69c4aec3256fecaa5a5a6f1b32eba95762e98643eb760a2eb523520`. 63/63 32 MiB downloads matched SHA-256 `e09320c5b00b34bb704802136c599a95b3996332ba84d7c7f21112b6231b6bd0`; three rounds each at 1/4/16, 16/16 distinct active tasks and 128 peak HTTP connections at 16 tasks; 9/9 CPU/RAM CSVs validated.
+- **PASS — installed GUI / Liquid Progress:** [run 40333125751](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40333125751). Actual installed GUI captured during `Downloading`, 16 MiB output SHA-256 verified, final `Finished`, same-version reinstall and silent uninstall passed. Internal test installer SHA-256 `af6fb7805d79a933d4d2ca8f32ac3d19184e052a205a330348d21ad3f5bfdc7f`; this is not a deliverable.
+- **PASS — JVM diagnostic profile:** [run 40333126363](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40333126363), artifact [12655992771](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40333126363/artifacts/12655992771), ZIP SHA-256 `d399f29e6dfbde436e544b2e88e35a10c5f0f64f470084b6324fb81c21286834`. 21/21 SHA-verified transfers and 3/3 resource CSVs. Active profile snapshot: 566.922 MiB Working Set / 616.012 MiB Private Bytes, 133 threads / 1,074 handles; after 30-second stabilization: 374.961 / 442.191 MiB, 121 threads / 1,032 handles. Used heap fell 73,995 KiB to 35,384 KiB. Skia CleanableImpl count fell 11,249 to 3,645; Compose LayoutNode remained 1,759. These snapshots are diagnostic only; they do not prove a leak.
+- **PASS — FTP JUnit:** 29/29, [run 40333126023](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40333126023). **PASS — HLS guarded redirect/segment/assembly:** 29 tests, [run 40333125794](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40333125794). **PASS — source contracts:** [run 40333125785](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40333125785).
+
+**Interpretation:** 64/64 functional acceptance is closed on this exact SHA. Memory optimization is not closed: the 16-task HTTP round reached 502.059 MiB Working Set / 562.102 MiB Private Bytes, and the JVM profile remained elevated after idle. Next experiment will bound concurrent blocking part-body copies while preserving the 16-task gate; acceptance requires a new installed Windows build, all 63 SHA checks, all 9 resource CSVs, no regression in part cancellation, and a same-head JVM profile. Official API reference: [Kotlin Dispatchers.IO](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/-i-o.html) and [limitedParallelism](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/-coroutine-dispatcher/limited-parallelism.html). No dependency or upstream implementation is being copied.
+
+**Still NOT TESTED / NOT COMPLETE:** external HTTPS/FTP, HLS kill/restart, old-version upgrade/rollback with preserved data, controlled IDM parity, final single branded `HyperGet.exe`, and independent final Windows recheck. PR #3 stays Draft; no main write, merge, release, paid service/runner, or Torrent.
+
+
+## 2026-10-26 — bounded HTTP body-copy experiment: installed Windows evidence
+
+Production implementation \`Semaphore(48)\` was built and installed at production SHA \`dd27731decbcd8cf1cb67feae42963be42d3bb7a\`. The later test-only commits through \`319c6aa\` do not change the \`PartDownloader.kt\` blob; the current follow-up adds only stronger regression assertions.
+
+- **PASS — installed HTTP 1/4/16:** [run 40339095923](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40339095923), artifact [12659995827](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40339095923/artifacts/12659995827), ZIP SHA-256 \`4c7c1d5b1f7dc2e0179df76a82de7ef737c662a45b8aa4670f79c2774f15e5cf\`. 63/63 distinct 32 MiB outputs passed SHA-256, all 1/4/16 overlap gates passed across three rounds, and 9/9 CPU/RAM CSVs validated.
+- **PASS — installed JVM profile:** [run 40339095875](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40339095875), artifact [12659296456](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40339095875/artifacts/12659296456), ZIP SHA-256 \`6267fdaf8dd01fe95725442af4df1f551276a0a1834fbc08b86efac791c80cc4\`. 21/21 outputs verified; 3/3 resource CSVs and same-JVM before/active/stabilized captures completed. Internal installer SHA-256 \`4d63cbff6010f4d6f0764acfc359fa269efa10bd0caf51478545f079aa36e380\` (test-only, not release).
+- Third 16-task round peaked at 481.914 MiB Working Set / 553.676 MiB Private Bytes, versus 502.059 / 562.102 MiB on the earlier 64/64 acceptance run. JVM thread count after 30-second stabilization was 87 versus 121 in the prior profile; active count was 114 versus 133. These one-run comparisons are encouraging but not controlled A/B evidence. Retained memory remains high, so memory tuning stays OPEN.
+- **PASS — initial Windows lifecycle JUnit:** [run 40339189560](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40339189560), BUILD SUCCESSFUL, \`PartDownloaderIoLifecycleTest\` 3/3. Review then identified that the initial saturation test did not explicitly assert that the 49th contender remained blocked.
+- **PASS — strengthened exact-head lifecycle regression:** [run 40350134896](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40350134896) checked out \`2859588b6056f478b46cd7c189db5164b161b3ad\`, BUILD SUCCESSFUL; \`PartDownloaderIoLifecycleTest\` 3/3, including the explicit 49th-contender wait assertion and permit release after failure. Related lifecycle context 4/4, queue batch resume 7/7, and response deadline 4/4 also passed. Source-contract run [40350134795](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40350134795) PASS. The current PR head moved afterward for documentation only; production source is unchanged from the tested \`dd27731\` blob.
+
+The 48-permit production experiment passes its functional acceptance gates. Keep resource optimization open because the one-run memory comparison is not a controlled A/B.
+
+The internal installer is not a release. Still NOT TESTED/OPEN: cross-version upgrade/rollback and existing-data migration, external HTTPS/FTP, HLS restart, controlled CPU/RAM A/B, full IDM visual comparison, final branded single \`HyperGet.exe\`, and independent final Windows recheck. PR #3 remains Draft; no main write, merge, release, paid service/runner, or Torrent.
+
+
+## 2026-10-26 — Cross-version Windows gate: fixture URL failure and WinCred lifecycle strengthening
+
+**Failed exact-head run:** [40367433598](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40367433598); candidate `91101cfaea25973a7b6979331b2e9710ff18bfa8`, base `6c386abeae95e8e0460308d17c033558cbd60f15`.
+
+- **PASS:** baseline installer build, SHA-256 `4ef3c7fe2cb10b98d62e85de0076b2e19866d372d4d57f6d518de690e2c5135a`.
+- **PASS:** candidate installer build, SHA-256 `07cdce6ee137ac434dd7f4cf8140538ed8dcf90b28ac09133552a2032fb51d60`.
+- **FAIL:** first HTTP add failed before transfer because the harness used an unnecessary query string that `HttpUrlUtils.isValidUrl` rejected. This is a harness fixture defect, not a demonstrated product regression. No upgrade/rollback acceptance was reached.
+- **PASS cleanup:** the test-owned `.personal-download-manager` directory was removed only after ownership-marker verification.
+- Failure proof artifact [12670788928](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40367433598/artifacts/12670788928), ZIP SHA-256 `95322b99a2e7c51f86167ad9f33b6f2e56aab5545dc0edbe48fa05980523cbdd`.
+
+The current follow-up removes the query and strengthens the same milestone with a synthetic UUID-based Windows Credential Manager entry in the existing `PersonalDownloadManager/FTP/` namespace. The harness verifies the credential after baseline creation, HyperGet upgrade, candidate uninstall, baseline rollback, and normal uninstall, then deletes it and verifies absence. Secret bytes are compared in memory and cleared; neither the secret nor the opaque target is written to logs/proof. Source contracts now guard these lifecycle points and redaction.
+
+**Status after this source patch:** the previous run remains **FAIL**; the fix and strengthened test are committed on the existing PR branch, but the new exact-head PowerShell/installer/upgrade run is **PENDING**. Do not mark upgrade/rollback or WinCred persistence PASS until its proof artifact says `Result=PASS`. The internal installers from the failed run are not release deliverables.
+
+
+## 2026-10-26 follow-up — cross-version Windows gate: CLI option order
+
+**Latest exact-head run:** [40369973960](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40369973960) on candidate `1b1b234570a96bee7202353a409f6c599de1f4d4`. **Builds PASS; lifecycle gate FAIL before transfer acceptance.** Both exact snapshots built on Windows. Baseline installer SHA-256: `4e30f106d9d7802a456648b28505c22599fc75cc3483b0d62fc089570723218a`; candidate installer SHA-256: `56cadb857a45e3aabf8cb63e3a39f207a983bfe000c6ed16d95ecfd808560e6a`. The harness then invoked `download show <ID> --status-lines`; the installed Clikt command declares options before positional IDs and rejected the trailing option (`no such option --status-lines`). This is a harness argument-order defect, not a download-engine failure. The root-directory collision and invalid loopback query are already corrected. No upgrade, rollback, WinCred lifecycle, or completed HTTP transfer is counted as PASS from this run.
+
+**Repair in the next source commit:** invoke `download show --status-lines <ID>` and add a source regression contract that locks the option-before-ID order. No production transfer behavior changes. The test-owned data tree was removed after ownership-marker verification. Failure-proof artifact: [12671504967](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40369973960/artifacts/12671504967), archive SHA-256 `97faaa8a0aec0207159ab4409d9f3dbfb0c93d3df486daccb68c088e9c5731ed` (diagnostic only).
+
+**Pre-build question:** after correcting CLI argument order, can the baseline installer complete a real 8 MiB loopback HTTP download with matching SHA-256, then survive baseline → HyperGet upgrade → candidate uninstall → baseline rollback → normal uninstall with task ID/status, max-concurrent=4, user-data sentinel, branding/shortcuts/registry metadata, and a synthetic Windows Credential Manager entry preserved and then safely removed?
+
+**Expected result:** exact-head Windows run produces `Result=PASS`, matching expected/actual download SHA-256, preserved history/settings/sentinel and WinCred at each transition, clean shortcut/registry transitions, and safe cleanup. Source tests alone cannot prove Clikt parsing in the packaged CLI, NSIS replacement, IPC readiness, registry/shortcut behavior, actual bytes, or WinCred persistence. This gate remains **OPEN** until the new Windows proof artifact is inspected.
+
+
+## 2026-10-26 correction — baseline CLI predates machine-readable status option
+
+**Correction to the immediately preceding note:** moving `--status-lines` before the positional ID was not sufficient. Windows run [40374748042](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40374748042) built both exact installers successfully (baseline SHA-256 `ea724188c7ff52c3f52e3d2116dd8c2863c59d45709e826a7681fac0ff1ca1c9`; candidate SHA-256 `60839abd1f780a08df48bec8f8ea843119322ac61efe3c7ffb79fa41afa71cbb`) and failed at the first status poll while the *baseline* app was installed. Inspecting `ShowDownload.kt` at exact base `6c386abeae95e8e0460308d17c033558cbd60f15` confirms it defines only `--watch`, not `--status-lines`. The option is absent in the baseline binary, so option ordering was not the root cause. No accepted transfer, upgrade, rollback or WinCred result is claimed.
+
+**Repair:** the harness now calls the baseline-compatible `download show <ID>` default table, strips ANSI CSI colors and vertical table separators, and matches the ID against the explicit supported status set (`Downloading`, `Finished`, `Error`, `Paused`, `PreparingFile`, `Resuming`, `Retrying`). Source contracts prohibit relying on `--status-lines` and require the sanitizing parser. The base snapshot remains unchanged.
+
+**Pre-build question:** can this baseline-compatible parser observe the real 8 MiB HTTP download reach Finished with exact SHA-256, then preserve task/history, max-concurrent=4, sentinel and synthetic WinCred through baseline → HyperGet upgrade → candidate uninstall → baseline rollback → normal uninstall, including expected branding/shortcut/registry transitions and safe cleanup?
+
+**Expected:** a new exact-head Windows proof with `Result=PASS`, matching expected/actual download SHA-256, preserved task/status and settings, WinCred verified at each stage then removed with absence confirmed. Source tests alone cannot prove packaged table formatting, ANSI handling, real HTTP bytes, NSIS replacement, IPC, registry/shortcuts or WinCred persistence. Previous installer SHA values are internal test evidence only, not a release artifact.
+
+
+## 2026-10-26 — cross-version baseline transfer diagnostic gate
+
+**Exact-head Windows run:** [40376651762](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40376651762), candidate `46da163a6827530b37a5de41c30f27072653ae18`, base `6c386abeae95e8e0460308d17c033558cbd60f15`. Source-contract/PowerShell parsing passed and both installers built successfully. Baseline installer SHA-256: `ef2f88052063922f1ef3eaa966e96ff1355b050cb67ecdfd2305bde7b3de8663`; candidate installer SHA-256: `4e82e513e6fa3df9d2b47f842fd77d0784ce277a0d047923ea910406c526f18c`. Baseline transfer gate **FAIL**ed after 180 seconds: CLI returned download ID `0`, but the harness did not observe `Finished` with the expected 8 MiB file/SHA. No upgrade, rollback, WinCred preservation, or branding transition is accepted from this run. Proof artifact [12678125429](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40376651762/artifacts/12678125429), ZIP digest `df21fe9a597ec4ddae32101755f85fdd0998e8f88741117243749345b78a3a45`. The harness-owned data directory was removed after ownership-marker verification.
+
+**Diagnostic patch:** the next exact-head run will log only sanitized status transitions, distinguish “no matching download row” from a recognized but stalled state, and query the loopback fixture’s `/stats` endpoint for request/byte counters. Failure proof will include the last recognized state, safe file-size/hash outcome, and fixture request/byte totals without URLs, file paths, WinCred targets, or secrets. A 30-second unparseable status or 20-second Paused/Downloading-with-zero-bytes condition will fail fast rather than consume the full timeout.
+
+**Pre-build question:** does the installed baseline CLI expose the task/status row, and does the real transfer send bytes to the loopback fixture? The next Windows run must separate IPC/status parsing, a baseline task stuck Paused, zero network requests, and output-path/hash mismatch. Source tests cannot answer that because the behavior depends on the exact baseline installer, live IPC and socket transfer. Expected result: a precise diagnostic on any failure, then a passing 8 MiB SHA gate before upgrade/rollback proceeds. **Status: OPEN; no functional upgrade/rollback PASS claimed.**
+
+## 2026-10-26 — exact-head baseline CLI row split correction
+
+**Exact-head Windows run:** [40379630588](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40379630588), candidate `5fd509d89b40b02196867a387c94d86e3d96a9d3`, base `6c386abeae95e8e0460308d17c033558cbd60f15`. PowerShell parsing/source contracts and both installer builds passed. Baseline installer SHA-256: `9a912cc3d8ecf6fe8adaa43a4b3b835fa42b95fbd876f87b0f2971830704b829`; candidate installer SHA-256: `eb2f0d7621383a9c66fa07f5b6c38a7565fefd47bd15f8c0729c70595747b981`. The baseline HTTP gate **FAIL**ed before upgrade: status remained unparseable. Fixture evidence shows `requests=10`, `bytesSent=8913152`, `peakRequests=8`, `peakDistinctTasks=1`, so real loopback transfer activity occurred; however, this is not proof that the 8 MiB output matched its expected SHA. No download-hash, upgrade, rollback, WinCred or branding acceptance is claimed. Proof artifact [12679210598](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40379630588/artifacts/12679210598), ZIP SHA-256 `7de476f4ed022d90c751e5892b7ec679ca8b33a5c03b25e01e0f2981990b0361`. The harness-owned data tree was removed after ownership-marker verification.
+
+**Correction:** the baseline CLI table can arrive through PowerShell as a multiline output object. `Read-DownloadStatus` now splits each captured entry into physical lines before ANSI/separator normalization and status matching. The early unparseable-status failure now also reports only safe output-file length/hash-match state plus fixture counters, without printing URL, path, credential target or secret. A source contract guards the explicit line split.
+
+**Pre-build question:** will explicit line splitting expose a recognized status on the installed baseline CLI and let the 8 MiB loopback transfer pass exact size/SHA-256? Expected: status transitions become observable, the output file matches the deterministic fixture, then the full upgrade → candidate uninstall → rollback → normal uninstall sequence verifies settings/history, shortcuts/registry and synthetic WinCred. Source tests cannot prove the installed CLI's native-output shape, actual transfer bytes, file placement/hash or NSIS transitions. **Status: OPEN; exact-head Windows recheck required.**
+
+## 2026-10-26 — exact-head status-row parser failure and correction plan
+
+**Latest exact-head Windows run:** [40381964443](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40381964443), candidate \`1001d3bf3655a8b25e75d1ec5d9a7d5d5cc769a0\`, base \`6c386abeae95e8e0460308d17c033558cbd60f15\`.
+
+- **PASS:** source contracts and PowerShell parse; both exact-snapshot Windows installers built.
+- Baseline installer SHA-256: \`492fe456b15859ffc4ab586e1da587eb715abd57efb59751c150e12bed2c1756\`.
+- Candidate installer SHA-256: \`e0fdcb4bc9d5ae53d7b364a65099d317e72e38ffc1f7f3aea1e73a78979689a9\`.
+- **PASS:** the installed baseline performed real loopback HTTP transfer; fixture reported \`requests=10\`, \`bytesSent=8913152\`, \`peakRequests=8\`, \`peakDistinctTasks=1\`; output was exactly 8,388,608 bytes and its SHA-256 matched the deterministic fixture.
+- **FAIL:** the harness could not parse the baseline CLI's status row within 30 seconds (\`id=0\`, \`lastProbe=matching ID row without recognized status\`). The script then cleaned only the harness-owned data tree. Upgrade, rollback, branding transitions, settings/history preservation, and WinCred lifecycle were **not reached / NOT TESTED**. Do not label this a product transfer failure: the exact file size/hash and fixture counters prove the transfer bytes, but status/history assertions are still required.
+- Proof artifact [12679702562](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40381964443/artifacts/12679702562), ZIP SHA-256 \`a857f76dae3c88cd9cde717e561f83dfda9a788fdc6d494d9d7ed9f89eca14b3\`.
+
+**Diagnosis and repair:** the parser currently requires the numeric ID and status token on the same physical table line. The observed matching-ID-without-status result, despite a verified completed file, is consistent with Mordant's table cells wrapping onto separate lines in the captured Windows CLI output. Replace it with a row-scoped parser: detect the requested ID at the start of a table row, accept a recognized status on that line or following wrapped cell lines, and stop searching when another numeric-ID row begins. Strip ANSI and box separators before parsing. Never infer \`Finished\` from bytes alone and never accept a status belonging to another task.
+
+**Pre-build question:** does the row-scoped parser read the actual packaged baseline CLI's \`Finished\` state, and then allow the full baseline → HyperGet upgrade → candidate uninstall → baseline rollback → normal uninstall flow to pass?
+
+**Expected:** the 8 MiB transfer remains SHA-verified; the same task ID/status and max-concurrency=4, user-data sentinel, registry/shortcut branding, and synthetic WinCred survive every transition; normal uninstall preserves user data; the synthetic credential is deleted and absence verified. Source tests cannot establish the installed CLI's actual table wrapping or Windows NSIS/registry/Credential Manager behavior, so rerun the exact two-snapshot Windows gate after the parser patch. This is an internal acceptance test, not a release build or deliverable.
+
+
+## 2026-10-26 — row-boundary safety guard and exact-head rerun
+
+**Current parser/test commit:** [e235ee2e465e79b2ca2669821a0cc8c616837e95](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/e235ee2e465e79b2ca2669821a0cc8c616837e95).
+
+A follow-up review caught an important false-positive risk in the first row-scoped parser draft: it checked for a status token before checking whether the line began a *different* numeric download row. The order is now corrected so a new row closes the target-row window before any status can be accepted. The source contract explicitly locks that ordering. This is an acceptance-harness correction only; no downloader production behavior changed.
+
+**Exact-head checks observed so far:**
+- **PASS:** source-only safety suite [40392955570](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40392955570).
+- **PASS:** FTP Kotlin/JUnit [40392955073](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40392955073), queue lifecycle [40392955147](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40392955147), and HLS guarded-redirect unit [40392955040](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40392955040).
+- **NOT RERUN (scope-gated/skipped):** installed HTTP 1/4/16 matrix, installed GUI smoke, browser capture, JVM resource profile and installed FTP E2E on this exact commit. Their older successful runs remain historical evidence only.
+- **IN PROGRESS:** [cross-version Windows run 40392955509](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40392955509). PowerShell parsing and all cross-version source contracts passed; the baseline installer build is running. Candidate installer build and real lifecycle have not started at the last check.
+
+**Next gate:** inspect both installer hashes, then the real 8 MiB transfer/status parser and full upgrade → candidate uninstall → rollback → uninstall lifecycle. Do not count the milestone complete until the proof artifact records \`Result=PASS\` and the WinCred preservation/cleanup assertions.
+
+
+## 2026-10-27 — cross-version status parser: reproduce the wrapped outer-border row (PRE-BUILD)
+
+**Last Windows candidate checked:** `e986936bb5ffd7f4fa6183e7cf50a53281b8afd2`; run [40410263260](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40410263260). Both exact-snapshot installers built and the baseline's 8 MiB loopback file matched its expected SHA-256, but the acceptance harness failed to recognize the status because the Windows table border decoded to `?` before ID `0`. Upgrade/rollback and WinCred lifecycle were not reached.
+
+**Current PR head at pre-build review:** `d1cc6e31064facc93ced65380ae8b5ff3f7e41a7`. The harness now trims only the observed edge marker characters `' '` and `'?'` before parsing the row, and the source test includes the outer-border case. The last commit corrected over-escaped whitespace regexes in that test. No new exact-head Windows run is recorded yet.
+
+**Pre-build question:** does the packaged baseline CLI's real wrapped output `? 0 ? Finish?` parse as this task's `Finished` state after the already SHA-verified 8 MiB transfer, without accepting a neighboring task's state?
+
+**Expected result:** source contracts and PowerShell parsing pass; both exact snapshots build; the 8 MiB transfer remains byte/SHA verified; status is recognized as `Finished`; then upgrade → candidate uninstall → baseline rollback → normal uninstall verifies history, max-concurrency=4, sentinel, branding/shortcuts/registry, and synthetic WinCred persistence/cleanup.
+
+**Why source tests are insufficient:** only the packaged baseline process reproduces the actual Windows console encoding and table wrapping, and only an installed Windows run can verify the NSIS, registry, shortcut, IPC, and Credential Manager transitions. This build is justified specifically to test those behaviors, not as a release build.
+
+**Current gate:** OPEN. Do not claim upgrade, rollback, or WinCred lifecycle PASS until a new exact-head proof artifact records `Result=PASS`. No merge, release, final EXE delivery, or Torrent.
+
+
+## 2026-10-27 — cross-version gate reached the branding assertion (PRE-BUILD)
+
+**Exact candidate SHA:** `cd7d70f03662a49b0c4bbf04002ee3eddb58186c`.  
+**Windows run:** [40413377160](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40413377160).  
+**Proof artifact:** [12695775479](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40413377160/artifacts/12695775479), ZIP SHA-256 `0f13b9ca4e4fa6783bdd512de65351640da551f9a453de3ce5b062d0314f37bd`.
+
+### Evidence
+- **PASS:** source-only safety suite and PowerShell parse.
+- **PASS:** both exact-snapshot Windows installers built. Baseline installer SHA-256: `c22802b3201071cadb659bb223279de5a7e0e461ad4b3af61511af2dfceb6e09`; candidate installer SHA-256: `6df50383dd4758b92dd3ba7e9f40183d9499b41d26a385f4675325acd7c601b7`.
+- **PASS:** the baseline CLI status parser now recognized task ID 0 as `Finished`; the loopback fixture served 8,388,864 bytes across 9 requests, and the output was exactly 8,388,608 bytes with matching SHA-256.
+- **PASS:** synthetic WinCred entry was created and verified before upgrade, then safely cleaned after the incomplete run. Test-owned data cleanup passed.
+- **FAIL (production branding):** after installing the candidate, registry `DisplayName` was still `Download Manager`, while the acceptance contract correctly expects `HyperGet`. The lifecycle stopped before upgrade-state assertions, candidate uninstall, rollback, and final uninstall.
+
+### Root cause
+`desktop/app/build.gradle.kts` passes `getPrettifiedAppName()` into packaging as `appDisplayName`; `buildSrc/.../VersionUtil.kt` still returns `"Download Manager"`. The shared runtime `APP_DISPLAY_NAME` is already HyperGet, but the installer metadata/shortcut group uses the legacy prettified name. This is not a download-engine failure.
+
+### Controlled fix before the next build
+Change only the user-visible `getPrettifiedAppName()` value to `"HyperGet"`, add a source regression that links this value to the packaging input and NSIS registry display name, and explicitly assert that the technical app name, data directory `.personal-download-manager`, and package ID `app.personaldownloadmanager` remain unchanged.
+
+**Pre-build question:** does the exact candidate installer now register `HyperGet` and create only HyperGet shortcuts while preserving the legacy technical identity and data, then complete upgrade → candidate uninstall → baseline rollback → normal uninstall with history/settings and synthetic WinCred intact?
+
+**Expected result:** fast source contracts pass; both exact snapshots build; baseline HTTP 8 MiB/SHA passes; candidate DisplayName and shortcuts switch to HyperGet; rollback restores Download Manager metadata/shortcuts; max-concurrency=4, task/history, sentinel and WinCred survive every transition; cleanup removes only harness-owned data and the synthetic credential.
+
+**Why source tests are insufficient:** the value flows through Gradle packaging into the compiled NSIS installer and Windows registry/shortcuts; only the installed Windows lifecycle can prove the branding transition and data/credential preservation. This is a targeted functional build, not a release build.
+
+**Acceptance remains OPEN.** No production identity migration, merge, release, final EXE delivery, or Torrent.
+
+## 2026-10-27 — preserve branch-specific Windows DisplayVersion for upgrade acceptance
+
+**Exact-head Windows run:** [40415228329](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40415228329), candidate `74f5f137ea356e2f39644f75182a8efc4202ef00`, baseline `6c386abeae95e8e0460308d17c033558cbd60f15`.
+
+- **PASS:** PowerShell parse and cross-version source contracts.
+- **PASS:** both exact-snapshot NSIS installers built. Baseline installer SHA-256: `837e43ce3daf84446d1b94ab2f0a727a15ffb480dff0a657d4655f50dd044c06`; candidate installer SHA-256: `3352e2a3d5688985451d9828729bc01bd74175d7b9855fb4734d466148bd2aab`.
+- **PASS:** baseline legacy shortcuts were correct; real loopback HTTP task ID 0 reached `Finished`, with fixture `requests=10`, `bytesSent=8913152`, `peakRequests=8`, `peakDistinctTasks=1`. The synthetic WinCred fixture was created and verified before upgrade, then safely cleaned after this incomplete run.
+- **FAIL (acceptance metadata gate, not transfer):** the lifecycle stopped because baseline and candidate Add/Remove Programs `DisplayVersion` values were identical. No upgrade, candidate uninstall, rollback, post-transition history/settings, or WinCred persistence result is claimed. Proof artifact [12695313597](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40415228329/artifacts/12695313597), ZIP SHA-256 `f593c68b6a46f0287446ec39b7a7b363c80aeda95851ec4e8f0863216839b91c`.
+
+**Root cause:** `desktop/app/build.gradle.kts` passes both `appVersion = getAppVersionStringForPackaging(TargetFormat.Exe)` and `appDisplayVersion = getAppVersionString()`. The former intentionally strips SemVer prerelease text to numeric `major.minor.patch`; the NSIS template incorrectly wrote that numeric value to the uninstall registry `DisplayVersion`, collapsing the baseline and candidate branch snapshots to `1.0.0`. The full branch-specific SemVer value was already available as `APP_DISPLAY_VERSION` but unused for that registry field.
+
+**Fix on this PR branch:** write `APP_DISPLAY_VERSION` only to Add/Remove Programs `DisplayVersion`. Keep `APP_VERSION` for the internal product registry `Version` and numeric PE `VIProductVersion`/file version. Add a source regression asserting this split and that branch builds retain the suffix. No storage path, package ID, IPC/credential target, downloader logic, or baseline snapshot is changed.
+
+**Pre-build question:** do the two installed snapshots now expose distinct branch-specific `DisplayVersion` values while retaining numeric executable version resources, and can the complete baseline → HyperGet upgrade → candidate uninstall with user-data preservation → baseline rollback → normal uninstall lifecycle pass?
+
+**Expected:** exact source/PowerShell checks pass; both installers build; baseline HTTP 8 MiB and SHA gate passes; candidate shows HyperGet and a distinct DisplayVersion; history, max-concurrent=4, user-data sentinel, legacy internal identity and synthetic WinCred survive each transition; rollback restores baseline DisplayVersion/shortcuts; cleanup verifies only harness-owned data and the synthetic credential are removed.
+
+**Why source checks are insufficient:** only a compiled NSIS installer on Windows can prove the registry DisplayVersion values, actual in-place replacement, shortcut transitions, IPC, persisted state, and Windows Credential Manager behavior. The next exact-head Windows run is required. **Gate remains OPEN; no final release EXE or upgrade/rollback PASS claimed.**
+
+
+
+## 2026-10-27 — cross-version upgrade, rollback, and WinCred lifecycle PASS
+
+**Exact candidate SHA:** `f023a0e07d4680cd998fda434c4ca6a21275551f`  
+**Exact baseline SHA:** `6c386abeae95e8e0460308d17c033558cbd60f15`  
+**Windows run:** [40423929210](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40423929210) — terminal **SUCCESS**.  
+**Proof artifact:** [hyperget-cross-version-upgrade-rollback-proof](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40423929210/artifacts/12698389087), ZIP SHA-256 `c812b3b2cf121b0b70e7bf3353b3f5e71ebd4864506bd5dfbb0b071b36c303b1`.
+
+### Exact-head evidence
+
+- **PASS:** both exact-source NSIS installers built. Baseline installer SHA-256: `9247eb10d736af6489dee2ee69902ddccbc3d0c64f745f9ec8b9bc29d962f1d8`; candidate installer SHA-256: `f252c86f7558c46138583194b115679acb168c89fb9fccd33295f941ef851a90`.
+- **PASS:** baseline registry identity is `Download Manager / 1.0.0`; candidate is `HyperGet / 1.0.0-sha.gf023a0e`. The branch-specific display version is now distinguishable while the GUI binary SHA remains the same across snapshots (`58b7f88931871d6bc1f986fa33cd3df34100fc2424d22713973e7f68d581b7ea`).
+- **PASS:** baseline HTTP download completed: 8,388,608 bytes, expected and actual SHA-256 both `7d212b9c884f5c77896de960ae17cc341cda43b14d6a971f34ca29ebd4badf7f`. Fixture recorded 9 requests and 8,388,864 bytes sent.
+- **PASS:** upgrading to HyperGet preserved max-concurrency `4`, task `0` in `Finished`, history/output SHA, and the user-data sentinel (`c3948001b19d4632f560d3aa804db33686560a998af8d25444bd933e407bfc36`).
+- **PASS:** only HyperGet shortcuts existed after upgrade; candidate uninstall preserved user data; rollback restored Download Manager registry metadata and shortcuts; normal uninstall preserved the user-data sentinel.
+- **PASS:** synthetic Windows Credential Manager entry survived baseline, upgrade, candidate uninstall, rollback, and normal uninstall, then was explicitly deleted and absence verified. Secrets and target names were redacted from logs.
+- **PASS:** test-owned `.personal-download-manager` data was removed only after ownership-marker and exact-path checks.
+- Independently downloaded the proof ZIP and recomputed its SHA-256; it matched GitHub's artifact digest exactly. The transcript records the complete successful lifecycle.
+
+### Gate decision
+
+**CROSS-VERSION UPGRADE/ROLLBACK GATE: PASS** for this exact candidate SHA. This closes the specific installer metadata, user-state, shortcut, rollback, and synthetic WinCred lifecycle acceptance gate. The two installer hashes above are test artifacts, **not** the final deliverable.
+
+This does **not** close overall HyperGet release acceptance: final independent Windows recheck, controlled performance/CPU/RAM comparison, full visual parity, external protocol/restart cases, and final single `HyperGet.exe` delivery remain separate gates. No merge, release, or Torrent.
+
+
+## 2026-10-27 — Liquid Progress visible-fill proof (PRE-BUILD)
+
+**Prior exact-head visual run:** [40423929424](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40423929424), source SHA `f023a0e07d4680cd998fda434c4ca6a21275551f`. Its installed GUI and real 16 MiB HTTP transfer passed; artifact [windows-liquid-progress-visual](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40423929424/artifacts/12699058510) recorded identical expected/actual SHA-256 `341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1`. I independently inspected the screenshot: capture occurred at 1,048,832 of 16,777,216 fixture bytes (~6.25%). The production renderer intentionally draws the bubbles only when the filled width exceeds 14 dp, so this image proved a live transfer but did **not** visibly exercise the bubble portion of Liquid Progress.
+
+**Next exact-head test question:** does the installed Windows UI still render during a real transfer and finish the same 16 MiB file byte-for-byte when screenshot capture is gated until at least 25% of the fixture bytes have moved?
+
+**Expected:** source regression verifies the 25% threshold and records the measured fraction; Windows builds/installs the exact PR source; screenshot is taken only while CLI status is `Downloading`, an active fixture task exists, bytes have advanced during the 900 ms observation window, and at least 25% has transferred; final output reaches 16,777,216 bytes and expected/actual SHA-256 match.
+
+**Why source tests are insufficient:** only the installed Windows renderer can show whether the glossy band and two bubbles are actually visible at a sufficient fill width while IPC and real network transfer remain active. This is one purposeful UI acceptance build, not a release build.
+
+**Status before build:** visible-bubble screenshot acceptance is **NOT TESTED**. No production renderer change is assumed until the improved capture is inspected.
+
+
+## 2026-10-27 — Liquid Progress visible-fill Windows E2E PASS
+
+**Exact tested source SHA:** `77f8c7e637b0fc6430484249af148588cc01837f`.  
+**Windows run:** [40425830147](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40425830147) — terminal **SUCCESS**.  
+**Visual artifact:** [windows-liquid-progress-visual, ID 12699952296](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40425830147/artifacts/12699952296), ZIP SHA-256 `110dd6ae8a51bf619b093707a4e3e39fe29784666ee73ba310ab2eb5c2babc3d` (downloaded and independently rehashed).  
+**Source contracts:** [run 40425830410](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40425830410) PASS, including **17/17** Liquid Progress source-contract tests.
+
+### Results
+
+- **PASS:** exact-head Windows Compose build and single NSIS installer build; isolated installation and real GUI launch succeeded.
+- Installer SHA-256: `b8b113af3e7e38b928fda49ca9762a84efcb2b16ffe2ab34bce5d3065dec3bf2`.
+- **PASS:** screenshot report records `StatusAtCapture=Downloading`, one active distinct task, bytes advancing during the observation window, and a minimum threshold of 4,194,304 bytes.
+- **PASS:** screenshot was captured after 5,570,816 of 16,777,216 bytes (`ProgressFractionAtCapture=0.332`, about 33.2%). Final file size was exactly 16,777,216 bytes; expected and actual SHA-256 both `341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1`; final status `Finished`.
+- **PASS:** same-version silent reinstall and uninstall; registry uninstall key removed; no unexpected GUI auto-launch. Lifecycle artifact [12700176654](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40425830147/artifacts/12700176654), ZIP SHA-256 `5f618406ac3031598b0739d52f18d50b765206e8511fdfa4dd64d8d740164ff3`.
+- **Visual inspection:** the 33.2%-fill screenshot now exercises the bubble path. The gloss and bubbles are present, but still low-contrast at normal window scale; this is a visual polish opportunity, not a transfer-integrity failure.
+- **Separate idle profile caveat:** artifact [12700256551](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40425830147/artifacts/12700256551), ZIP SHA-256 `3dcbb0a31a6005dbe3d04538c78375b4dce1646ab52bed0dfa45aeb12511bb53`, contains six 20-sample idle CSVs. Their embedded `SourceSha=09d16d595b8f4166f108f5e4356c0fd4224f51ec` does not match the checked-out PR head, so these samples are **not accepted as exact-head performance evidence** and no performance win is claimed.
+
+**Gate decision:** live-transfer and file-integrity acceptance for Liquid Progress is **PASS** on `77f8c7e`. The visual style itself is not final; the next targeted gate is a higher-contrast gloss/bubble treatment with the same live-transfer and SHA acceptance. The cross-version upgrade/rollback gate separately passed on `f023a0e`; it was not rerun by this UI-only change. No release or merge.
+
+
+## 2026-10-27 — Liquid Progress contrast polish (PRE-BUILD)
+
+**Question:** does a modestly taller track, a stronger cached glossy band, and clearer bubbles improve visible Liquid Progress at normal Windows scale without changing transfer behavior or adding per-row animation loops?
+
+**Expected:** source contracts prove the single list-level clock and cached draw-phase implementation remain intact; the exact-head Windows build/install captures a live screenshot at at least 25% progress; status remains `Downloading`, one fixture task is active, bytes advance during the observation window, and the final 16 MiB output has the same expected/actual SHA-256. Inspect the screenshot at native scale before deciding whether the visual gate is complete.
+
+**Why source tests are insufficient:** they cannot show the actual contrast/shape in Compose rendering or prove that the installed app and transfer still work. The existing screenshot is the baseline; one purposeful Windows visual build is justified for this UI change, not as a release build.
+
+**Status before build:** visual acceptance remains **OPEN** until the new exact-head screenshot and report are inspected.
+
+
+## 2026-10-27 — Liquid Progress contrast recheck (PRE-BUILD)
+
+The current PR branch contains the proposed visual delta from prior passing SHA `77f8c7e637b0fc6430484249af148588cc01837f`: 5dp→7dp track, shimmer alpha 0.30→0.42, 0.16 top-edge gloss, and brighter/larger bubbles (0.42 at 2dp; 0.30 at 1.3dp). The prior Windows screenshot does not verify these newer pixels.
+
+**Question before build:** does the exact current PR head visibly render this treatment at ≥25% of a real 16 MiB transfer while status is `Downloading`, bytes advance, and the final output SHA-256 matches the fixture?
+**Expected:** numeric source thresholds and PowerShell parse pass; the exact-head Windows installer builds/launches; native-scale screenshot shows gloss/shimmer/bubbles; final size is 16,777,216 bytes and expected/actual SHA-256 both equal `341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1`.
+**Why source tests are insufficient:** source assertions cannot prove Compose pixel contrast or that installed GUI, IPC, and transfer remain active during capture.
+**Status:** OPEN; no final visual acceptance or release EXE claim until the exact-head artifact is inspected.
+
+
+## 2026-10-27 — source-gate regression caught a test-parser typo (FIXED BEFORE UI ACCEPTANCE)
+
+The first run after adding numeric contrast bounds failed only in the new Python source test: its raw-regex literal was over-escaped, so the shimmer token was not matched. The production Compose source was not implicated; all other 18 Liquid Progress source-contract tests passed. The fast source job stopped before the installed UI job could be accepted, so this is a **test implementation FAIL**, not a visual or transfer FAIL. Correct the regex literal and rerun the exact-head source and Windows UI gates; do not accept the contrast milestone until both the numeric test and the screenshot/transfer artifact pass.
+
+
+## 2026-10-27 — exact-head contrast + installed visual E2E PASS (resource metadata caveat)
+
+**Exact tested PR source SHA:** `90e8d6eac09d4d84ef3391754778dfb17a70b88d` (`test: parse Liquid Progress contrast thresholds safely`).  
+**Windows run:** [40429083834](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40429083834) — terminal **SUCCESS**.  
+**Source gate:** [40429083802](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40429083802) — **PASS**, including 19/19 Liquid Progress source tests; the new numeric contrast-threshold test passed after removing the over-escaped regex implementation.
+
+### Exact-head evidence
+- **PASS:** Compose/NSIS build, isolated install, real GUI launch, screenshot, active-transfer E2E, same-version silent reinstall and uninstall.
+- Tested installer SHA-256: `7ea2916fdae41e910ec95f0b38d26752cb5eacee9329c7d907e3650450834858` (test installer only, not final delivery).
+- Visual artifact [12701159241](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40429083834/artifacts/12701159241), ZIP SHA-256 `36936a472a0b9dc80e45c3b326bae0aedde286e1d4e2fb021a87282b089f380c`; downloaded locally and independently rehashed to the same digest.
+- Report identifies source SHA `90e8d6eac09d4d84ef3391754778dfb17a70b88d`, status `Downloading`, one active task, advancing bytes, capture at 5,243,136/16,777,216 bytes (31.3%), and final status `Finished`.
+- Final output size: 16,777,216 bytes. Expected and actual SHA-256 both `341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1`; independently recomputed for both the downloaded output and fixture.
+- Native-scale screenshot inspection: 7dp fill and two moving light bubbles are discernible; the gloss remains subtle. **Functional Liquid Progress gate PASS; full IDM visual parity is not claimed.**
+- Lifecycle artifact [12701084518](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40429083834/artifacts/12701084518), ZIP SHA-256 `d7a487de8f9648b984a08d0f5af106c0151199d4805b885b1d608167584780c2`. GUI smoke artifact [12701666874](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40429083834/artifacts/12701666874), ZIP SHA-256 `6333c9bb95849b37487c97f2f139129d8f3446ec08973d40cfdeb66a3de54aac`.
+
+### Evidence not accepted
+The idle metrics artifact [12701507224](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40429083834/artifacts/12701507224), digest `b08fab6c1d89b6c2a762587475e54f0f4fc72c52a35f8eec4faf6174e829222a`, labels samples with `SourceSha=4fe66db27d185f69d2ccbbf01810d35b6f954354`, while the checked-out exact PR head is `90e8d6eac09d4d84ef3391754778dfb17a70b88d`. The workflow passes `$env:GITHUB_SHA` (PR merge ref) into the idle benchmark instead of `git rev-parse HEAD`; **these idle samples are invalid as exact-head performance evidence**. Do not claim a CPU/RAM improvement from them.
+
+### Gate decision and next milestone
+**Liquid Progress functional/visual acceptance: PASS** for the exact tested source SHA above. The earlier cross-version upgrade/rollback proof remains PASS on its recorded source SHA; it was not rerun by this UI-only delta. Next, correct idle-metric source provenance with a regression guard, then run a controlled, comparable resource profile before making any performance claim. Overall HyperGet release acceptance remains OPEN: external/restart cases, controlled performance comparison, final independent Windows recheck and final single `HyperGet.exe` artifact are still required. No merge/release/Torrent.
+
+
+## 2026-10-27 — idle resource-profile provenance repair (PRE-BUILD)
+
+The Liquid Progress visual gate passed on exact source SHA `90e8d6eac09d4d84ef3391754778dfb17a70b88d`, but its idle CPU/RAM artifact is **not accepted**: the CSVs record merge-ref SHA `4fe66db27d185f69d2ccbbf01810d35b6f954354` because `windows-installed-ui-smoke.yml` passes `$env:GITHUB_SHA` to the profile script. The checked-out source is the exact PR head, so the profile must be tagged with `(git rev-parse HEAD).Trim()` and checked against `github.event.pull_request.head.sha || github.sha` before collection.
+
+**Pre-build question:** does a fresh installed Windows run produce all six idle-profile CSVs tagged with the exact checked-out PR head, while preserving the passing Liquid Progress screenshot and 16 MiB SHA gate?
+**Expected:** fast source contracts pass; exact-head Windows Compose/NSIS build and GUI launch pass; the profile script receives the checked-out HEAD SHA, checks it against the event's expected SHA, produces six CSVs with matching SourceSha, and the active transfer still captures at ≥25% with matching expected/actual SHA-256.
+**Why source tests are insufficient:** only the installed Windows run executes the real process-tree profile and can verify the emitted CSV provenance alongside actual GUI/transfer behavior. This is a targeted measurement-integrity build, not a release build.
+**Gate:** OPEN until the new Windows artifacts and every CSV's SourceSha are inspected. Do not use the prior idle artifact for performance claims.
+
+
+## 2026-10-27 — exact-head idle-profile provenance + installed Liquid Progress recheck (PASS; comparative performance OPEN)
+
+**Workflow change tested on exact checked-out source SHA:** `923f715852997b56c7bf6c1229633e2e14e10245`. The current PR head is `d75da841867fb7b7d8e317f5f2f00463079ddbef`; its only delta after that Windows run is the source regression guard `scripts/source-tests/test_hyperget_memory_profile_source.py`. The guard passed on the current head in [source safety run 40430518264](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40430518264). The installed GUI workflow was not rerun on the test-only head because its scope gate correctly skipped the expensive build.
+
+### Installed Windows result
+
+- [Windows installed UI run 40430490546](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40430490546) — terminal SUCCESS on the exact SHA above. Compose/NSIS installer build, isolated install, real GUI launch, live-transfer screenshot, final byte/SHA verification, same-version reinstall and silent uninstall all passed.
+- Test installer SHA-256: `50582da3dcbed91525335a62f842974ce18bb3e2c1922cfd04b2fd10a1d19b0b`. This is a test installer, **not** the final user-delivery EXE.
+- Live-transfer report artifact [12702621353](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40430490546/artifacts/12702621353), ZIP SHA-256 `87e0036644babeeb2ab420b735a036d91c02be9ba248683b86450c37fdb04dda`; independently downloaded and rehashed to the same value.
+- **PASS:** screenshot captured while `Downloading`, one active distinct task, at 5,439,744 / 16,777,216 bytes (32.4%), with bytes advancing. Final output size was 16,777,216 bytes and expected/actual SHA-256 both `341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1`; final status `Finished`. Screenshot visually confirms the HyperGet window and live progress bar; full IDM visual parity is not claimed.
+- Same-version reinstall/uninstall artifact [12702491735](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40430490546/artifacts/12702491735), ZIP SHA-256 `89d4150cbe3e5fdb7b362b55e3d815eed9a61eba45ff5b6042b439ade32a8f93`. Report: `SilentAutoLaunch=false`, reinstall PASS, silent uninstall PASS, uninstall registry key removed. Its explicit `CrossVersionUpgrade=NOT_TESTED` remains accurate for this UI workflow.
+
+### Idle resource provenance is now valid (no improvement claim)
+
+- [Idle metrics artifact 12702316987](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40430490546/artifacts/12702316987), ZIP SHA-256 `cdb526b0fd7e21e8cdf70e01b756899db254bf620013c3b599b23cb4b5556617`; independently downloaded and rehashed to the same value.
+- Inspected all six CSVs: 20 samples per file, 120 rows total; **every row** records `SourceSha=923f715852997b56c7bf6c1229633e2e14e10245`, matching the checked-out source at collection time.
+- Windows Server 2022 runner (4 logical CPUs), idle-warm median: Working Set 223.96 MiB, Private Bytes 247.21 MiB, CPU median 0% (sample max 0.755%). Idle-minimized median: Working Set 225.08 MiB, Private Bytes 242.77 MiB, CPU median 0% (sample max 0.759%). These are **idle-only single-build measurements**, not an A/B comparison and not proof of a performance improvement.
+
+### Current-head status and remaining gates
+
+- [Current-head source checks 40430518264](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40430518264): PASS.
+- Exact-head Windows FTP JUnit run [40430518248](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40430518248): PASS, 29 real Windows Kotlin/JUnit FTP tests and XML artifact [12702340260](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40430518248/artifacts/12702340260), SHA-256 `2e0b30f6e67bc39c90b6547db7b94e8b69a83e26ca1d31a8560483fbf396db67`. HLS JUnit [40430518237](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40430518237) and queue/part lifecycle JUnit [40430518216](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40430518216) also succeeded on the current head.
+- HTTP 1/4/16, JVM profile, installed GUI, browser capture and cross-version workflow jobs were **skipped by scope on the test-only current-head commit**; do not count those run summaries as new execution evidence. Prior HTTP/GUI and cross-version results remain tied to their own recorded SHAs. Cross-version upgrade/rollback + WinCred passed on candidate `f023a0e07d4680cd998fda434c4ca6a21275551f` in run [40423929210](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40423929210); no installer/identity files changed between that candidate and the current head, but a final independent current-head Windows recheck is still required before release.
+
+**Gate decision:** idle-metric source provenance repair = **PASS**; installed Liquid Progress/live transfer = **PASS** on `923f715`; current-head regression guard = **PASS**. **Overall release acceptance remains OPEN**: controlled comparable performance runs (including active 1/4/16 CPU/RAM), external/restart scenarios, final independent Windows recheck, and a verified single final `HyperGet.exe` artifact are still outstanding. No merge, release, Torrent or main-branch write.
+
+## E060 — exact-head installed Windows active-performance recheck (OPEN before run; 2026-10-27)
+
+**Candidate SHA:** `0b4bd363997353cd530a9824625d5baf87f74dca`.
+
+**Pre-build question:** can the exact candidate snapshot, installed once on Windows, complete the existing 63-download HTTP acceptance matrix across concurrency 1/4/16 (three rounds each), with every output matching its expected SHA-256, real concurrent socket overlap meeting the existing gates, and all nine CPU/RAM rounds tagged with the exact source SHA?
+
+**Expected:** the existing workflow's unchanged acceptance gates pass; the generated report and every measurement row identify the actual checked-out candidate SHA; all 63 file hashes match; 1/4/16 active counts meet the workflow's current requirements; CPU, Working Set, Private Bytes, threads and handles are recorded for all nine runs. Any failed threshold remains a failure; no gate will be weakened to obtain green CI.
+
+**Why source tests are insufficient:** this requires compiling and installing the real Windows GUI/CLI, live loopback range requests and socket-overlap counters, complete file bytes/SHA-256, and OS process measurements. Source contracts cannot establish any of those runtime facts. This is a targeted performance-acceptance build, not release packaging.
+
+**Comparison rule:** this run establishes a valid exact-head measurement set only. It does not prove improvement by itself. A performance claim requires a baseline and candidate measured under the same runner/environment, fixture size/delay, rounds, sampling interval and workload, with both reports and source SHAs retained.
+
+**Current status before run:** the prior workflow run [40432508000](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40432508000) skipped the Windows benchmark because the latest commit was documentation-only. Its skipped job is not a PASS. This checkpoint requests a deliberate exact-head run without changing downloader production code.
+
+**Gate:** OPEN until the Windows report and artifact are inspected. No release/merge/Torrent.
+
+## 2026-10-27 — E061 controlled-performance harness fix (pre-run; no result claimed)
+
+- **Defect found:** the PowerShell comparison harness had a malformed transfer SHA-256 guard plus orphaned duplicate lines after the final report gate. It also selected round 1 while iterating all three rounds for both throughput and resource evidence, which would invalidate the paired medians.
+- **Fix:** restored full SHA-256 format + expected-value equality, consistent fixture hash and duplicate-output checks; both per-workload manifest and resource selection now use the active `$round`.
+- **Regression coverage:** `test_hyperget_controlled_benchmark_source.py` now asserts the exact SHA guard, duplicate-name guard, and per-round selectors.
+- **Status:** source repair only; Windows PowerShell parsing, exact baseline/candidate installer builds, 63+63 real SHA-verified downloads, live 1/4/16 overlap, paired CPU/RAM, and 15% regression thresholds remain **NOT TESTED** until the new exact-head run finishes and its artifact/logs are inspected.
+- **Safety:** no downloader production code changed in this checkpoint; no paid runner/API, no main write, no merge/release, no Torrent.
+
+## 2026-10-27 — E061 rerun blocker and correction
+
+- **Observed run:** [40442154203](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40442154203) failed before packaging. The PowerShell parser passed after the harness repair, but Python reported an unterminated string literal in the newly added source-contract test. No installer was built and no performance evidence exists from this run.
+- **Correction:** reconstructed `test_hyperget_controlled_benchmark_source.py` as a complete module and retained regression assertions for SHA-256 equality, duplicate output names, and use of the actual current round.
+- **Next gate:** rerun source contracts + PowerShell parsing, then exact baseline/candidate builds and paired Windows measurements. Do not treat the failed pre-build run as a performance FAIL or PASS; the performance question remains **NOT TESTED**.
+
+ 
+## 2026-10-27 — E061 controlled performance rerun blocked by uninstall registry residue (OPEN)
+
+- Run [40442377970](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40442377970), exact harness source `8eb8af3fe585564a93ad8ede55fb0956970f71c2`: source contracts, PowerShell parse and both installer builds passed.
+- Baseline installer SHA-256: `247df866be8d0c64301f00e0189d70d450a1192fed8b8649c67653693c976964`; candidate installer SHA-256: `eb474ec951a591f2551e90a1d8350b019347632f8ffd2728531d624ee7be50ed`.
+- Baseline round 1 alone completed 21/21 SHA-verified HTTP downloads and produced resource samples for 1/4/16. The run then failed because silent uninstall left `HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\DownloadManager`; no candidate round or paired 15% comparison was completed.
+- Artifact [12707770712](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40442377970/artifacts/12707770712), digest `0c7754001905ae944fee7e53dce946a73ad6c669827cd13fe00a02e07a8ec820`.
+- Harness fix: log registry residue, require ownership proof against the controlled install and absent preflight state, then remove only that test-owned key to isolate later rounds. Preserve the separate residue CSV and explicitly state that this is **not uninstall acceptance**; unknown or mismatched keys remain fatal.
+- Pre-build question: can both exact snapshots complete 3 alternating rounds each, 63 SHA-verified downloads per version, nine resource rounds per version, and the unchanged 15% throughput/peak-memory thresholds?
+- Why source tests are insufficient: compiled installed Windows GUI/CLI, real sockets, file bytes, OS process measurements and registry state must be exercised.
+- **Status: OPEN / performance NOT TESTED as a paired comparison.** No source production change, merge, release, main write, paid runner/API or Torrent.
+
+
+## 2026-10-27 — E061 controlled comparison rerun: installer left an owned Start Menu shortcut (OPEN)
+
+**Observed exact harness SHA:** `1c931ad618810f4439ce59938f44119237464158`.  
+**Windows run:** [40447652721](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40447652721).  
+**Failure-evidence artifact:** [12709134157](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40447652721/artifacts/12709134157), uploaded archive SHA-256 `d95df76a9763240885f682ef2ad936701645d70124a070017017964d94249c9f`.
+
+### Evidence
+- **PASS:** source contracts, PowerShell parsing and both exact-snapshot Windows installer builds.
+- **Installer SHA-256:** baseline `0956f331fefa524a32d2a3f153f3c3aff34c89b424c4e18f4adcdf928c683ec1`; candidate `ab04cc26442ede75de24416690080d515494649ed64775d3c5731b04fa1f18ab`.
+- **PASS for baseline round 1 only:** 1/1, 4/4 and 16/16 HTTP transfers completed with verified SHA-256; 8 process samples per workload were recorded; peak distinct active tasks met the requested 1/4/16 levels. This is 21 verified files, not the full paired matrix.
+- **FAIL / blocker:** after baseline uninstall, the harness safely recorded and cleared two test-owned registry keys, then stopped because the installer left `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Download Manager\Download Manager.lnk`. The log did not yet prove the link's target, so the previous harness correctly refused to delete it blindly. Candidate rounds and the paired 15% comparison did not run; performance remains **NOT TESTED**.
+- The failure artifact retains the transcript, installer hashes, round-1 measurements and cleanup diagnostics. This is not a product uninstall acceptance PASS.
+
+### Controlled correction before the next Windows build
+Add a separate `shortcut-residue.csv` audit. Record whether each known shortcut's parent existed at preflight. After uninstall, use Windows Shell link metadata and permit removal only when the link was absent at preflight and its **absolute target exactly equals the GUI or CLI executable discovered inside this controlled install**. Record link path, target and working directory before removal. Remove a parent directory only if it did not exist at preflight and is empty; never recursively delete Start Menu/Desktop directories. Unknown target or unreadable link remains fatal. Keep shortcut residue separate from registry residue and performance acceptance.
+
+**Pre-build question:** does ownership-checked shortcut cleanup let the same Windows runner finish all six alternating baseline/candidate rounds without touching pre-existing user shortcuts?  
+**Expected:** 63 SHA-verified HTTP downloads per snapshot, nine CPU/RAM rounds per snapshot, real active 1/4/16 overlap on every round, matching source/harness provenance and unchanged throughput/peak Working Set/Private Bytes regression limits of 15%. Any uninstall residue remains explicitly recorded and does not become an uninstall PASS.  
+**Why source tests are insufficient:** only the packaged Windows installer creates the actual `.lnk`; the runner must inspect its Shell target, perform real HTTP transfers, measure processes and observe post-uninstall filesystem/registry state.
+
+**Status: OPEN.** No production downloader source changed in this harness fix. Do not close E061 until a new exact-head artifact contains all 126 verified transfers, 18 resource-round records and `Result=PASS` from the paired comparison. No merge, release or final EXE delivery.
+
+
+## 2026-10-27 — controlled benchmark stopped before measurements: preflight map initialization (OPEN)
+
+**Harness candidate SHA:** `aa4db9ef0569d6a658f80e765603ca99d51fdfc5`.  
+**Windows run:** [40453504060](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40453504060).  
+**Run result:** both exact-snapshot installers built, but the comparison script failed before installing either variant. No HTTP measurements or performance conclusion were produced; the workflow had no evidence artifact to upload.
+
+- **PASS:** source contracts and PowerShell parser gate.
+- **PASS:** baseline installer built; SHA-256 `9f94fcb21512b7801bf648e23d7f27e276ded288a4bae06845225ffd64a0402c`.
+- **PASS:** candidate installer built; SHA-256 `0f54ba71982020eedf5936821bf5d1482afb2baf60bf4ba8acf64dae03d655cf`.
+- **FAIL (harness preflight):** StrictMode reported that `$script:ShortcutParentExistedAtPreflight` had not been set. The preflight loop wrote to the map before its later initialization. This is a test-harness ordering bug, not evidence of an app performance regression.
+
+### Controlled correction before the next Windows build
+
+Initialize the shortcut-parent ownership map before checking the known shortcut paths, record each parent's pre-existing state, and do not reset that map after preflight. Add a source regression requiring the single initialization to precede the first preflight loop.
+
+**Pre-build question:** does the ownership map remain available from preflight through uninstall cleanup, allowing the real installed benchmark to finish without touching any pre-existing shortcut or parent folder?
+
+**Expected:** both exact installers build; each variant completes three rounds across concurrency 1/4/16, with 63 verified 32-MiB downloads per snapshot, nine resource-round summaries per snapshot, matching source/harness provenance, and unchanged 15% throughput/peak-memory gates.
+
+**Why source tests are insufficient:** only a real Windows install creates the shortcuts and parent folders; the benchmark must exercise Shell link inspection, installer/uninstaller behavior, HTTP transfers and OS process measurements.
+
+**Status: OPEN.** This fix changes only the benchmark harness, regression test and evidence logs—not production downloader behavior. Do not mark E061 PASS until a new exact-head Windows artifact contains the full transfer/resource evidence and `Result=PASS`. No merge, release or final EXE delivery.
+
+
+## 2026-10-27 — E061 install-file residue isolation (OPEN; new exact-head CI pending)
+
+**Observed run:** [40459096700](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40459096700), harness SHA `6ab806912382f614491a0ba03825315a990bdca4`.  
+**Evidence artifact:** [12714490990](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40459096700/artifacts/12714490990), archive digest `sha256:c0d056987c2c265a2dcc5f5a3abd79eb2e93018dd0ab58931c72051c8fd6c28e`.
+
+- **PASS:** exact baseline/candidate source checkouts, PowerShell parser and source contracts, and both installer builds. Baseline installer SHA-256: `ed30e704cfed26c1c65ad2ace19df7645156b70cc3567c587ad81e88525f3721`; candidate installer SHA-256: `c170af172f1578fec70e94d0783c7aac03b083fc71cb4a8aa2ab018930ebaaba`.
+- **PASS only for baseline round 1:** 21/21 SHA-verified HTTP outputs and real active 1/4/16 overlap; three resource CSVs. Peak Working Set (MiB): 281.336 / 336.035 / 421.797; peak Private Bytes (MiB): 293.504 / 346.551 / 427.172. These are not paired medians.
+- **FAIL / open uninstall issue:** after uninstall and safe registry/shortcut residue cleanup, `DownloadManager.exe` remained in the isolated install directory. The comparison stopped before baseline rounds 2–3 and before all candidate rounds. This does not establish whether an unobserved process/lock or NSIS uninstall behavior caused the leftover; uninstall acceptance is not PASS.
+- Harness fix commit [`c92a3de`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/c92a3de40a6d800c34f255f32a2dc456a858e08f) now verifies processes under the controlled install path, records every residual install file's relative path, size and SHA-256 in `install-file-residue.csv`, verifies the install directory was absent at preflight plus the active data marker, and clears only that exact unique runner-temp install directory after no process remains. The failure cleanup no longer recursively deletes an install directory while a process under it is still observed.
+- Regression/source-contract commit [`324fec0`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/324fec0c2484116b76636e1cf9da939cb33bcd33) covers ownership, marker, process-termination, hash-inventory, diagnostic separation and the no-blind-delete guard.
+- Checkpoint commit [`b89207a`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/b89207ab1f86f68dffc3d4649f771f22110bbdb5) records the exact evidence, next pre-build question, expected 126 verified transfers / 18 resource rounds, and why installed Windows execution is required.
+- **Next pre-build question:** can the new exact-head runner safely inventory and clear only the owned install-directory residue, then finish the complete 63+63 HTTP matrix while retaining the uninstall residue as a separate non-PASS diagnostic?
+- **Expected:** full exact SHA-256 and live-overlap gates at 1/4/16, nine resource rounds per app snapshot, matching app/harness SHAs, and unchanged 15% throughput / peak Working Set / Private Bytes gates. Any recorded residue remains a separate uninstall issue.
+- **Why source tests are insufficient:** the issue depends on Windows process lifetime, file locks, installed binaries, NSIS behavior, real HTTP bytes and OS resource samples.
+- **Current status: OPEN; exact-head CI for the fix is pending.** Do not infer benchmark success from the previous source checks or from a successful installer build. No merge, release, main write, paid runner/API, or Torrent.
+
+
+
+## 2026-10-27 — E061 inventory TOCTOU race after baseline round 1 (OPEN)
+
+- **Exact harness SHA:** 97de7973a2be4bac84db83d02a3f2cb944fe2d96.
+- **Windows run:** [40466299367](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40466299367).
+- **Evidence artifact:** [12716968288](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40466299367/artifacts/12716968288), archive SHA-256 6dae9a2764f1ee85f281d85af207c0fe14471bb8c63cb2099620a5fc62e6468c (downloaded and independently re-hashed; digest matched).
+
+### Results
+
+- **PASS:** exact baseline/candidate source snapshots, source-contract tests, PowerShell parser, and both installer builds.
+- **Installer SHA-256:** baseline 44bf25f26b3424117078913c6470d739770a4a84fc946dc959fd939ddbe58a4c; candidate 9d713d2649b29eda66eeed1454d0d3896a04fc5b670c00565240ba6ec52d6704.
+- **PASS for baseline round 1 only:** 21/21 32-MiB HTTP outputs matched expected size and SHA-256; live distinct-task overlap reached 1/1, 4/4 and 16/16; three resource CSVs were recorded.
+- Baseline round-1 peak Working Set: **281.434 / 383.492 / 467.449 MiB** at 1/4/16; peak Private Bytes: **293.395 / 455.875 / 465.727 MiB**. Aggregate transfer rates were **0.893 / 3.588 / 3.785 MiB/s**. These are one baseline round, not paired medians or an optimization claim.
+- **FAIL — harness race:** after uninstall, the harness recorded and safely cleared two test-owned registry keys and two test-owned shortcuts. The install-directory preflight check had passed, but the path disappeared during the process-quiescence/inventory window; Get-ChildItem then raised a path-not-found error for the controlled install directory. The workflow stopped before baseline rounds 2–3 and all candidate rounds.
+- **Uninstall remains OPEN:** registry and shortcut residue were observed. Harness cleanup is not product uninstall acceptance. No paired performance result or 15% gate result exists.
+
+### Pre-build question for the next run
+
+Can the harness safely handle the controlled install directory disappearing after process quiescence—or between the final path check and file enumeration—without masking access/ownership errors or deleting any path that is not the exact test-owned runner-temp directory?
+
+**Expected:** if the path is absent after stopping processes, record a clear diagnostic and continue; if it disappears during enumeration, tolerate only a confirmed Test-Path = false; if the directory still exists, rethrow the original enumeration error. All six alternating rounds must complete with 63 SHA-verified 32-MiB downloads per snapshot, nine resource rounds per snapshot, strict live 1/4/16 overlap, exact app/harness provenance and unchanged 15% throughput/peak Working Set/Private Bytes gates.
+
+**Why source tests are insufficient:** only the packaged Windows installer/uninstaller can reproduce the timing of NSIS self-removal, process exit, file locks, real transfer bytes and OS resource samples. The new source regression checks ordering and the disappearance-only exception, but Windows execution is still required to prove the race is resolved.
+
+**Status: OPEN.** No production downloader source changed in this correction. Do not claim performance acceptance or uninstall acceptance from the baseline round. No merge, release, main write or Torrent.
+
+
+## 2026-10-27 — E061 parser gate blocked before packaging; correction queued (OPEN)
+
+**Exact PR head:** `c2e237fb287301d2cda17b4f324fb5fa967cc5ab`.  
+**Windows run:** [40475434465](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40475434465).  
+**Observed result:** source-contract gate failed before JDK setup or installer builds. The PowerShell parser identified a malformed line in `scripts/Run-WindowsControlledBenchmarkComparison.ps1` at line 375: the `Invoke-VariantRound` parameter/body had been spliced into the transfer-output regex literal. No installers, HTTP transfers, resource samples, comparison report, or artifact were produced by this run.
+
+### Correction to be validated before the next build
+
+- Reconstruct `Set-ControlledRoundMetadata` as a bounded function: validate all 21 local-round transfer records, verify size and SHA-256 before rename, rename outputs only to their enclosing round label, re-hash after rename, and update manifest metadata.
+- Normalize all three resource CSVs (`active-1/4/16`) and the three-row `round-summary.csv`, preserving exact app/harness SHA and rejecting unexpected local round labels or overwrite targets.
+- Add a source regression for the full regex terminator and unique function boundaries.
+- Keep path ownership fail-closed and refuse cleanup of a shortcut with an empty target.
+
+**Pre-build question:** do the source-contract suite and PowerShell parser accept the corrected runner, allowing the two fixed app snapshots to build and the paired installed Windows matrix to execute with truthful round-1/2/3 provenance?
+
+**Expected:** both exact installers build; 63 SHA-verified 32-MiB transfers per app snapshot; nine resource rounds per snapshot; strict live 1/4/16 overlap; exact app/harness provenance; official paired throughput and peak Working Set/Private Bytes deltas within the predeclared 15% gates, or a genuine regression is reported. Any uninstall residue remains a separate diagnostic and is not converted into uninstall PASS.
+
+**Why source tests are insufficient:** only the installed Windows binaries can establish real byte transfer, socket overlap, process-tree resource measurements, NSIS behavior, shortcut targets and uninstall residue. This correction must pass source/PowerShell gates before packaging; only then is a new Windows run justified.
+
+**Status: OPEN.** The prior matrix's preliminary deltas are not official acceptance because the comparator rejected round metadata. No build or performance result is claimed from run 40475434465. No merge, release, main write or Torrent.
+
+
+## 2026-10-27 — E061 source-contract gate blocked before build (OPEN)
+
+**Exact harness SHA:** `72c283b93884509e1a6b48d4882d420698d1daea`.  
+**Windows comparison run:** [40478758287](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40478758287).  
+**Source-only CI:** [40478758144](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40478758144) completed; the benchmark-specific Python suite failed one structural assertion. The PowerShell parser passed, but no JDK setup, installer build, HTTP transfer, resource sampling or comparison occurred.
+
+### Failure and correction
+
+The normalizer combined source/harness/verification validation and the local `Round=1` check into one condition. The regression suite deliberately requires the local-round contract to be explicit, so it could assert that untrusted outer labels are rejected before rewriting. Split the guard into separate source-provenance validation and `if ([int]$record.Round -ne 1)` validation; behavior remains fail-closed and no evidence is relabeled unless the inner run is confirmed as round 1.
+
+**Pre-build question:** do the PowerShell parser and all benchmark source contracts pass on the same exact head, so the workflow can proceed to the purpose-built Windows installer/transfer test?
+
+**Expected:** parser + source tests PASS before any build; then both exact app snapshots build and the full 126-transfer/18-resource-round matrix executes, with strict 1/4/16 overlap, verified SHA-256 and unchanged 15% regression gates.
+
+**Why source tests are insufficient:** only the installed Windows binaries can prove actual transfer bytes, socket overlap, OS process measurements and installer/uninstaller behavior. This source assertion must pass first; the previous run did not build anything.
+
+**Status: OPEN.** No performance or uninstall acceptance is claimed from run 40478758287. No merge, release, main write or Torrent.
+
+
+## 2026-10-27 — E061 source-contract gate found missing normalizer call (OPEN)
+
+**Exact harness SHA:** `78644f615e2b5ea2cea1b1202223453638c85c60`.  
+**Windows comparison run:** [40478984763](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40478984763).  
+**Result:** the PowerShell parser passed, but the benchmark-specific source suite failed before build because `Set-ControlledRoundMetadata` was defined and tested yet its invocation had been lost while the malformed splice was removed. No installer was built and no transfer/resource measurements were produced.
+
+### Correction before the next build
+
+Restore the invocation immediately after the one-round summarizer and before stopping the installed process/uninstalling. This ordering means the normalizer can verify the completed local-round manifest, rename only the 21 verified output files, update all resource/summary round labels, and preserve evidence before the controlled installation is removed. The source regression explicitly checks summary → normalization → uninstall order.
+
+**Pre-build question:** do the parser and all 14 benchmark source tests pass with the normalizer invoked at the required point, before any installer build?
+
+**Expected:** parser + source contracts PASS; only then build both exact snapshots and run the full 126-transfer matrix, 18 resource rounds, strict 1/4/16 overlap, exact source provenance and 15% paired throughput/peak-memory gates.
+
+**Why source tests are insufficient:** the normalizer's file renames and re-hashes, real HTTP output, Windows resource sampling and NSIS lifecycle require the installed Windows run. The previous run did none of those because it failed before build.
+
+**Status: OPEN.** No performance or uninstall acceptance is claimed from run 40478984763. No merge, release, main write or Torrent.
+
+
+## 2026-10-27 — E061 controlled A/B result: reject 48-copy body cap; test 60 (OPEN)
+
+- Windows run [40485436333](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40485436333) built both exact installers and completed 126 SHA-256-verified 32-MiB transfers, nine resource rounds per version, and real 1/4/16 overlap.
+- Artifact [12727621253](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40485436333/artifacts/12727621253), ZIP SHA-256 `339eb61ee276cedae563cc4524c5702a3cc04d5943b727814433dc1c0065a267`.
+- Baseline installer SHA-256 `1d42856193165247582f31ddac5d4e464e903813444d54e3a05b992983ca075d`; `Semaphore(48)` candidate installer SHA-256 `e6b53a1cd5a664795d2cebc07c0e83df7de3a029d17bf0eaf953f6e638daba0d`.
+- Results: 1-way throughput `-0.44%` (PASS); 4-way `+1.11%` (PASS); 16-way `-22.45%` (FAIL vs the unchanged 15% limit). Peak Working Set and Private Bytes fell 5.57% and 5.36% at 16-way, but that does not compensate for failed throughput acceptance.
+- Corrective trial: production commit `c99b6f627de5f1ef1cba9e79f4f8e1baba20ffe1` raises the global body-copy permit count to 60. JUnit/source contracts were updated to test the 61st waiter and release-on-failure. This is **NOT YET TESTED** by installed Windows A/B.
+- **Pre-build question:** does cap 60 pass the same 126-transfer matrix and all unchanged 15% throughput/peak-memory gates? Source tests cannot prove real Windows transfer scheduling, throughput or process-tree metrics.
+- E061 remains **OPEN**. Do not merge, release or deliver final `HyperGet.exe` until a new exact-head controlled Windows report passes and independent release gates are rechecked. Uninstall residue cleanup is diagnostic, not uninstall PASS.
+
+
+## 2026-10-27 — E061 cap-60 Windows comparison PASS; uninstall gate OPEN
+
+- Windows run [40494020066](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40494020066) built both exact-snapshot installers and completed the 1/4/16 active HTTP comparison.
+- Artifact [12733115213](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40494020066/artifacts/12733115213), ZIP SHA-256 `546166059a6ca224ece94399c84b63981f81e958d0296c148f6f43ad9e8919a0`; digest was independently recomputed after download.
+- Baseline installer SHA-256: `31e27e95174ecf845eea1a58c05a8873824da0c33808044527b096270f505728`.
+- Candidate cap-60 installer SHA-256: `16fba3c8e8d3c1cb7e6df4910ee3c1fb53c10ba624b661cd7dcf79e6f461b485`.
+- Source snapshots: baseline `d6ea54a885277cb5b8fd545eb3f3fb0e185b6aa5`; candidate `c99b6f627de5f1ef1cba9e79f4f8e1baba20ffe1`; harness `1d9536fe69a9f886fffc4b389a5f7dfcd7fb73c5`.
+- Artifact inspection independently recomputed SHA-256 for every output against its round's included fixture: **126/126 PASS**, 33,554,432 bytes each. Nine resource summaries per variant were present and actual 1/4/16 overlap was recorded.
+- Official paired regression result: workload 1 throughput 0.00%, peak WS -0.93%, peak Private -0.96% (**PASS**); workload 4 throughput -0.03%, peak WS -0.38%, peak Private -0.59% (**PASS**); workload 16 throughput +3.00%, peak WS -1.39%, peak Private -3.54% (**PASS**). All predeclared ≤15% gates passed. This is a HyperGet version-to-version comparison, not a claim versus IDM.
+- Separate uninstall diagnostic: 12 test-owned registry residue records, 12 test-owned shortcut residue records, zero install-file residue records. Harness cleanup is not uninstall acceptance.
+- Corrective installer change: commit [`62467e9`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/62467e92d0790d4cd05db76a7a53663b5bc7989b) moves shortcut and registry cleanup before `clearFiles`, leaving self-removal last. Regression source test [`8332de3`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/8332de37ae00805c6415c061627588e093a56c79) guards ordering; source workflow wiring [`baaa2e4`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/baaa2e452a30a850f40e880f1716f6adc0939259).
+- **Next acceptance question:** does the built NSIS uninstaller remove those owned registry/shortcut entries without harness cleanup, while leaving user data intact by default? Source tests cannot prove real installer behavior; Windows cross-version upgrade/rollback and other relevant PR workflows have been queued by the installer-template change.
+
+**Status:** E061 performance comparison **PASS**. Uninstall acceptance and independent release recheck remain **OPEN**. Do not deliver final `HyperGet.exe`, merge, release, or disable the scheduled developer yet.
+
+
+## 2026-10-27 — NSIS per-user context fix; Windows uninstall proof pending
+
+Production installer template commit [`fbc5b69`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/fbc5b695253a9ecd3d9a8eef357ad28f17f0b179) now sets `SetShellVarContext current` in installer `.onInit` and the uninstaller section. It also performs shortcut/registry cleanup before `clearFiles` removes the running uninstaller and install files. This matches the per-user `$LOCALAPPDATA`/HKCU design and the [NSIS documented rule](https://nsis.sourceforge.io/Reference/SetShellVarContext) that shell context must be set separately in installer and uninstaller code.
+
+- New uninstaller source contract: [`0572c67`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/0572c679559d74a30feba73899d9da4a0cd57996).
+- Source-only CI [40520016914](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40520016914): **PASS**, including the new uninstaller cleanup-order/context tests.
+- Windows cross-version upgrade/rollback run [40519751066](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40519751066): source contracts and PowerShell parser **PASS**; exact baseline installer build **IN PROGRESS** at last inspection.
+
+**Required before uninstall acceptance:** the real Windows run must show no owned uninstall registry keys or Start Menu/Desktop shortcuts immediately after both candidate and baseline uninstaller exits, before cleanup; it must also prove the user-data sentinel, completed download and history, max-concurrent setting, and synthetic WinCred survive normal uninstall. The earlier performance harness's 12 registry/12 shortcut cleanup records remain evidence of the defect, not a pass.
+
+E061 cap-60 performance gate is **PASS**; uninstall acceptance and independent final release recheck remain **OPEN**. No final EXE delivery, merge or release.
+
+
+## 2026-10-27 — Start Menu user-content safety PASS; final executable milestone remains open
+
+**Exact tested PR source:** `068e2ff9b66d47764d4d76bae59361a1cf983c9d`. The source was tested by Windows jobs at this SHA; this commit changes only acceptance/checkpoint documentation, not production code.
+
+### Current milestone — PASS
+
+- **Source-only contracts:** [run 40528393345](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40528393345) **PASS**. Includes the new non-recursive NSIS macro/harness contracts plus the broader source safety suite.
+- **HLS Windows JUnit:** [run 40528393465](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40528393465) **PASS 29/29**, zero failures/skips.
+- **FTP + Windows Credential Manager JUnit:** [run 40528393231](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40528393231) **PASS 29/29**, zero failures/skips.
+- **Installed Windows UI/Liquid Progress:** [run 40528393112](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40528393112) **PASS**. Test installer SHA-256 `310692913f1afb2873709d87d214fd12f16f19072fb2682d1d16bfc5eeade47b`. Active visual artifact [12745446957](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40528393112/artifacts/12745446957), archive SHA-256 `d964b753cf1c05b6a8675af85a2fad412fb8c6496e25caa807bac05fc2f2cc90`; independently downloaded and rehashed. The report proves `Downloading`, one active task, advancing bytes, capture at 5,308,672/16,777,216 bytes (31.6%), final output 16,777,216 bytes, and expected/actual SHA-256 both `341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1`. Native-scale screenshot inspected: the colored Liquid Progress fill/bubbles are visible. Same-version reinstall, silent uninstall and registry removal passed; silent install did not auto-launch the GUI.
+- Other installed UI artifacts from that run: lifecycle ZIP [12745357251](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40528393112/artifacts/12745357251), SHA-256 `cb8dc1d6a54378471c09d5509fd47913609ce815634aa9a95fc5a5dc242ff374`; idle metrics [12746760032](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40528393112/artifacts/12746760032), SHA-256 `4ff17a759b0281fb87ba3cdea461edbb24a297e2bbce1c5d0dfba670a635517d`; GUI screenshot [12745292399](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40528393112/artifacts/12745292399), SHA-256 `c1a1d6553d2d9491bc77f9c39c1f0fd22b76e40fda97c3fcdbf03785f432c04c`. All three ZIP digests independently matched the GitHub artifact metadata.
+- **Cross-version installer upgrade → candidate uninstall → rollback → normal uninstall:** [run 40528393289](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40528393289) **PASS**. Baseline installer SHA-256 `06f562cb2c6558a729f2a34718a8e7c9a233052487d5a1d801862b555a2f1a5d`; candidate installer SHA-256 `8908a03c81c04896b1aaf693899bc69d4930c421a9c6259aaae3eb5f69f8415c`. Proof artifact [12744944789](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40528393289/artifacts/12744944789), archive SHA-256 `10672fded4edc52c3911551aa12b0b47d6145ee305db44b096fed3096d8ec2a4`; independently downloaded and rehashed. Proof file records `Result=PASS`, baseline SHA `6c386abeae95e8e0460308d17c033558cbd60f15`, candidate SHA `068e2ff9b66d47764d4d76bae59361a1cf983c9d`, and real 8-MiB HTTP expected/actual SHA-256 both `7d212b9c884f5c77896de960ae17cc341cda43b14d6a971f34ca29ebd4badf7f`. Max concurrency 4, task/history, user-data sentinel and synthetic WinCred survived upgrade, candidate uninstall, rollback and normal uninstall.
+- **New safety assertion:** unrelated Start Menu content sentinel SHA-256 `90bf149b878c69fa46b07c4c2e5f2bba7619a9f644b9030dce966ba3c27b3ca9` survived pre-upgrade, HyperGet install, candidate uninstall, rollback and normal baseline uninstall. Logs confirm registry keys/product shortcuts were absent immediately after uninstall before harness cleanup. The harness then removed only the test-owned sentinel after exact content+SHA verification and removed the folder non-recursively only when empty.
+- **Proof archive SHA verification:** downloaded ZIP hash `10672fded4edc52c3911551aa12b0b47d6145ee305db44b096fed3096d8ec2a4` matched GitHub artifact metadata exactly.
+
+### What this does NOT close
+
+- The installed GUI/browser capture workflow [40528393091](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40528393091) and active HTTP benchmark [40528393494](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40528393494) were **scope-skipped** for this installer-only commit; do not count them as fresh browser or throughput evidence.
+- E061 cap-60 controlled performance remains PASS at its exact tested source [40494020066](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40494020066); no new performance comparison was needed for this NSIS-only production change.
+- The installer still launches `DownloadManager.exe`; the real user-facing `HyperGet.exe` packaging/name migration and final Liquid Glass icon are **NOT COMPLETE**.
+- Independent final release recheck and final deliverable SHA/Artifact are **NOT TESTED**. The installer hashes above are test installers, not a release.
+
+**Decision:** the uninstall user-content safety milestone is closed PASS on exact source `068e2ff9...`. Next milestone is safe executable/identity + icon migration with compatibility tests, followed by independent Windows release acceptance. No merge, main write, release, paid runner/API or Torrent.
+
+
+## 2026-10-27 — HG-03 packaging blocker: NSIS StrCmp syntax
+
+Windows GUI smoke run [40545095153](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40545095153) checked out exact PR head `01c1342ac5a12bc58e7b3b0ec797a5a5fbc0e41a`. Kotlin compilation and `createReleaseDistributable` succeeded, but NSIS packaging failed at `:desktop:app:createInstallerNsis`:
+
+`StrCmp expects 3-4 parameters, got 5.`
+
+The offending line used `StrCmp /I ...`. NSIS `StrCmp` has no `/I` option and is already case-insensitive (official reference: https://nsis.sourceforge.io/Reference/StrCmp). This is a packaging syntax failure; it is not evidence of a download-engine failure, nor a successful current-head installer test.
+
+- Remove the unsupported `/I` token while preserving the case-insensitive directory comparison that prevents the installer from terminating itself when setup and target share a directory.
+- Add a source regression that rejects `StrCmp /I` inside `closeProcess` and requires the valid four-operand command.
+- Keep the executable/package/data/CLI/native-messaging identities unchanged. Do not change `settings.gradle.kts` root project identity.
+
+## Pre-build acceptance question
+
+Does the corrected NSIS template compile on Windows and allow the candidate installer to install, expose exactly one `HyperGet.exe` (no `DownloadManager.exe` in the candidate install), preserve the legacy CLI/native host names, launch the GUI, and complete the existing real HTTP/Liquid Progress and upgrade/rollback gates?
+
+**Expected:** source contracts and PowerShell parser pass; `createReleaseFolderForCi` emits one installer; installed-tree assertions and GUI launch pass; installer lifecycle and cross-version tests retain their data/shortcut/WinCred protections.
+
+**Why source tests are insufficient:** only `makensis.exe` and the actual Windows installer can prove NSIS syntax, launcher layout, icon embedding, shortcut targets and self-removal behavior.
+
+**Status:** source fix committed; wait for exact-head Windows packaging/runtime proof. The run above failed before producing an installer and must not be counted as a pass. The current final EXE/release gate remains OPEN.
+
+
+## 2026-10-27 — HG-03 identity harness follow-up (exact source `b63114d0c2fee6e667175302c9bc16a5da414c61`)
+
+### Actual Windows result
+
+The corrected NSIS script compiled and the installer installed successfully in [Windows GUI smoke run 40546589588](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40546589588). The installed tree contained exactly `HyperGet.exe`, no `DownloadManager.exe`, and the stable `DownloadManagerCli.exe`; the installer SHA-256 was `bf9f01d881c03fd067944f8682ca203238fcb95d3b1b538d947f152694132b39`. The GUI became visible and produced screenshot artifact [12753841163](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40546589588/artifacts/12753841163), whose uploaded SHA-256 digest was `eb2cd4e4ea412bafda80bd8e4da6a99ed7585de9dba5b3018ba32e14fabfef26`.
+
+The GUI smoke then **failed** at the idle CPU/RAM sample because its harness still searched for process `DownloadManager`; the actual renamed GUI process is `HyperGet`. The screenshot and install evidence show the app did launch; this is a stale acceptance-harness identity, not a compile/NSIS or download-engine failure. Liquid Progress and the same-version lifecycle steps were skipped after this failure and are not counted as new passes.
+
+The separate real browser run [40546589599](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40546589599) **PASS** on the same exact source: real Chrome/Firefox extension packaging and native-messaging protocol, with Firefox capturing a real 2 MiB transfer through the installed HyperGet host and verifying SHA-256. Evidence artifact [12754145299](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40546589599/artifacts/12754145299), SHA-256 digest `28fe2b0a3ccbcde654dd0101e4061c9eee789a0d5804e09cfc646749e8ab7714`. The source-only contract run [40546589656](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40546589656) also passed; FTP and HLS JUnit gates [40546589446](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40546589446) and [40546589605](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40546589605) passed, as did queue lifecycle [40546589576](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40546589576). Those results are exact-head evidence for `b63114d0c2fee6e667175302c9bc16a5da414c61`, not a final release.
+
+### Fix in this checkpoint
+
+- Change idle sampling to target `HyperGet`.
+- Make the 1/4/16 process sampler derive the root process name from its supplied GUI executable, while explicitly allowing only the legacy baseline `DownloadManager` and branded candidate `HyperGet`.
+- Update installed active benchmark, JVM profile, HTTP E2E and authenticated FTP E2E to require exactly one `HyperGet.exe`, reject a leftover `DownloadManager.exe`, and retain `DownloadManagerCli.exe` / `DownloadManagerNativeMessagingHost.exe` names.
+- Add PR path triggers and exact-PR-head checkout to installed HTTP E2E; make FTP scope gating rerun on installer/identity/workflow changes.
+- Add a source contract for all these identity assumptions. The next Windows run must prove actual process sampling and transfers, not merely that the scripts mention the new name.
+
+### Acceptance question before the next build
+
+Does each installed Windows harness now discover the branded `HyperGet.exe`, sample the correct visible GUI process, preserve legacy CLI/native-host names, and complete real HTTP pause/resume, authenticated FTP REST resume, Liquid Progress, 1/4/16 throughput/memory sampling, and cross-version data/shortcut/WinCred checks?
+
+**Why source tests are insufficient:** only the Windows installer and actual process tree can establish the launcher name, window process identity, installed shortcuts, real transfers and resource samples.
+
+**Status:** identity-harness patch committed on the existing PR branch; exact-head reruns pending. Final independent release recheck and final `HyperGet.exe` artifact/SHA remain OPEN.
+
+
+---
+
+## 2026-10-27 — HG-03 Pause/Resume follow-up (exact parent SHA `4979ee80145d0f77ce646a6088c0f08cededc53f`)
+
+- Installed HTTP E2E [40563418358](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40563418358): installer build and initial 16 MiB SHA-256 transfer **PASS**; live HTTP Pause/socket closure/Resume **FAIL** because the fixture still reported active response bodies. The artifact's initial expected/actual SHA matched; it is not a successful Pause/Resume proof.
+- Installed FTP E2E [40563418659](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40563418659): installer built, partial stage reached 3,735,552 bytes, but the loopback fixture crashed while atomically replacing its stats JSON with `PermissionError [WinError 5]`. FTP socket closure is **INCONCLUSIVE**, not counted as a production failure or pass.
+- New repair: explicitly attach `Call.cancel()` to the shared HTTP `Connection.close()` path, add a Kotlin lifecycle regression and source contract, and make FTP fixture stats publication retry only transient Windows `PermissionError` failures with bounded attempts.
+- The next build is justified because source-only checks cannot establish that a real installed OkHttp exchange closes its live response bodies or that the FTP server observes its data socket closing. Expected evidence: HTTP Pause → active_requests=0 → bytes stable → Resume exact 32 MiB SHA; FTP active_retrievals=0 → GUI restart → positive REST offset equal to paused bytes → exact final SHA and credential cleanup.
+- **Acceptance remains OPEN** until fresh exact-head Windows runs prove both paths. No merge/release is inferred from parent-source CI; final independent recheck and final `HyperGet.exe` artifact/SHA remain NOT COMPLETE.
+
+
+## 2026-10-27 checkpoint — deterministic HTTP fixture readiness (OPEN)
+
+On exact PR head 8e74203ded3ca0177238d0a8fe24a702f885d0fc, installed HTTP run [40571810012](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40571810012) built/installed but failed before transfer with url is not valid; the Pause/Resume assertions were skipped, so no HTTP pause result is claimed. The same-head installed FTP REST-resume/SHA/WinCred [40571810155](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40571810155), Chrome/Firefox capture [40571810035](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40571810035), GUI launch [40571810241](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40571810241), and cross-version upgrade/rollback [40571810080](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40571810080) passed.
+
+The HTTP harnesses waited only for port-file existence, then parsed the content. A visible-but-empty/truncated port file could produce port 0 and an invalid URL. The failing log did not record the actual port, so this is a harness-race hypothesis until the guarded rerun confirms it—not a production HTTP engine defect.
+
+The cohesive patch introduces scripts/Wait-WindowsLoopbackHttpPort.ps1 and wires it into installed HTTP/Pause-Resume, Liquid Progress, cross-version upgrade/rollback, and the 1/4/16 benchmark/memory-profile path. The waiter requires a live server and a complete decimal port in 1..65535; the inline HTTP workflow additionally validates a loopback URI. A Python source-contract test locks shared usage and workflow trigger/scope behavior.
+
+**Pre-build question:** can the exact-head installed HTTP flow obtain a valid endpoint, verify the 16 MiB initial SHA, close all requests on Pause, keep bytes stable, and Resume to exact 32 MiB SHA? Source tests cannot establish file-publication timing, installed IPC or real sockets, so the exact-head Windows build/E2E is required. No performance thresholds are relaxed; current-head performance, independent release recheck, and final HyperGet.exe SHA/artifact remain OPEN.
+
+
+## 2026-10-27 — Exact-head runtime acceptance for HTTP/FTP lifecycle and E061 (source b3ff66a82a5f0cf5264184b849cf4624f0eb289a)
+
+This checkpoint supersedes earlier pending statements for the tested application source SHA above. Older failures remain useful history; the following fresh runs close the corresponding gates for this exact source.
+
+### Runtime and regression evidence — PASS
+- Source-only contracts: [40583870798](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40583870798) PASS.
+- Queue/part-I/O lifecycle: [40583870917](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40583870917) PASS.
+- HLS redirect/segment milestone: [40583870806](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40583870806) PASS.
+- FTP Windows JUnit: [40583870839](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40583870839) PASS.
+- Installed HTTP: [40583870842](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40583870842) PASS. Real 16-MiB transfer matched SHA-256; Pause closed the active sockets, bytes stayed stable while paused, Resume completed with matching SHA-256. Evidence artifact [12770991472](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40583870842/artifacts/12770991472), archive SHA-256 `f20668763c4942d3c0791723a878566ebd1852a6a1dfe6b7b38ad1d824f879b3`.
+- Installed authenticated FTP: [40583870673](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40583870673) PASS. Paused at 4,521,984 bytes, restarted the GUI, resumed with REST and matched final SHA-256 `e09320c5b00b34bb704802136c599a95b3996332ba84d7c7f21112b6231b6bd0`. Evidence artifact [12770544718](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40583870673/artifacts/12770544718), archive SHA-256 `a70556a996c39b88c6b94fcb91c2930a2d7e99c1aec62c1bce881d41f58c0715`.
+- Installed GUI/Liquid Progress: [40583870818](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40583870818) PASS; screenshot captured during a real 16-MiB SHA-verified download. Visual artifact [12771396740](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40583870818/artifacts/12771396740), archive SHA-256 `700466a221b17f1d26db5efaf8d0e1e9d5ba7e24b08aae84de7b254b965ec5cb`.
+- Chrome + Firefox installed integration: [40583870771](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40583870771) PASS. Chrome captured a real SHA-verified download; Firefox completed a 2-MiB download through the installed native host and matched SHA-256. Evidence artifact [12772195563](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40583870771/artifacts/12772195563), archive SHA-256 `1761840400df109ec1217c663ae97f4e307824dcce16bee486baaff0d8425de4`.
+- Cross-version upgrade → candidate uninstall → rollback → normal uninstall: [40583870829](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40583870829) PASS. User data, completed download/history, max concurrency, WinCred fixture and unrelated Start Menu content survived. Evidence artifact [12771606553](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40583870829/artifacts/12771606553), archive SHA-256 `af667c27c1367997e13dc172bd557c83fa9f3bafb3684d1e259bea057bed856a`.
+
+### Controlled performance — PASS
+Run [40583870848](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40583870848) completed three alternating baseline/candidate rounds: 63 SHA-256-verified HTTP outputs per version and nine real CPU/RAM measurement sets per version, with true 1/4/16 concurrency.
+- 1 task: throughput 0%; peak Working Set -1%; peak Private Bytes -0.97% — PASS.
+- 4 tasks: throughput +0.25%; peak Working Set +5.64%; peak Private Bytes +6.53% — PASS.
+- 16 tasks: throughput -0.7%; peak Working Set +0.18%; peak Private Bytes +0.15% — PASS.
+All predeclared gates (no throughput regression worse than 15%, and no resource increase worse than 15%) passed. This is a HyperGet version-to-version comparison, not a performance claim against IDM.
+Performance artifact [12772153616](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40583870848/artifacts/12772153616), archive SHA-256 `ec518537a9a7b979031674fd61bc5360a1f1307e85daf38842c26edff3650553`.
+
+### Build, identity and remaining gates
+- Windows installer build: [40583870824](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40583870824) PASS. Test installer SHA-256 `410d3367022112c5252fd949a91f134ecdcd441821664572c3dbe73ab302598d`; artifact [12771261125](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40583870824/artifacts/12771261125), archive SHA-256 `b21aba99c143edf49fd12aa5cf6d68fdb3c079d6282ee98efdeef6b85c617913`. This is a test installer, not the final user deliverable.
+- The app icon source contract passes on this source; `icon.ico` has six 32-bit-alpha entries at 256/128/64/48/32/16 px and is wired to both Windows packaging and NSIS. The installed GUI screenshot shows the branded icon at small size. Full independent inspection of desktop/taskbar and installer icon resources is still OPEN.
+- aria2 standalone spike: official 1.37.0 binary hash verified; single and segmented 16-MiB HTTP transfers matched SHA-256. Its enabled-features report includes BitTorrent, so that stock binary is **not** eligible for inclusion in HyperGet. No Torrent support is added and no core migration decision is made from this spike.
+- An independent second Windows acceptance pass has been queued by rerunning the source, HTTP, FTP, HLS, queue, GUI, browser, cross-version and controlled-performance jobs on the tested source. These reruns are pending and are not counted as passes until they finish.
+
+**Current decision:** the HTTP resource-replacement/handle-lifecycle milestone, installed HTTP/FTP Pause/Resume, browser integration, upgrade/rollback, Liquid Progress and E061 performance gates are PASS for source `b3ff66a82a5f0cf5264184b849cf4624f0eb289a`. Final independent release recheck, full HG-04 native-size icon acceptance, final deliverable `HyperGet.exe` SHA/artifact, and task disable remain OPEN. Do not merge or release.
+
+
+## 2026-10-28 — HG-E063 Stop All late part-worker dispatch regression
+
+Exact-head run [40606764242](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40606764242) exposed one real failing test among 203: `stopAllWaitsForActualHttpResumingThenLeavesNoLateWorker` observed a second HTTP request after Stop All had drained (expected 1, actual 2; JUnit artifact [12781531198](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40606764242/artifacts/12781531198)). The previous loop predicate `coroutineContext.isActive || !stop` allowed an active-but-already-stopped worker to enter `download()` when dispatch raced with Stop.
+
+Production fix: route the worker loop through `shouldContinuePartWorker(coroutineContext.isActive, stop)`, defined as `coroutineActive && !stopRequested`. Added a Kotlin predicate regression, improved the real Stop All/HTTP test diagnostic, and extended the source contract to forbid the old OR condition. The exact-head Windows JUnit and installed 1/4/16 benchmark must rerun after this source change; the prior in-progress benchmark targets the pre-fix SHA and is not acceptance evidence for this patch. Do not claim PASS until the failing test and full required suite pass with zero failures/errors/skips and the paired benchmark reports exact candidate SHA, 63 verified downloads/version, nine resource sets/version, true 1/4/16 concurrency, and unchanged 15% gates. HTTPS/signed-link refresh, final icon-resource audit, independent final pass and final user-facing HyperGet.exe artifact/SHA remain OPEN.
+
+
+## 2026-10-28 — HG-E064 controlled benchmark GUI identity correction
+
+The controlled Windows comparison [40606763940](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40606763940) built both installers and completed baseline round 1, but failed before candidate measurements because its harness searched only for `DownloadManager.exe`; the branded candidate installs `HyperGet.exe` (`GUI=0, CLI=1`). This is a **benchmark harness identity failure**, not a candidate performance result. The runner now selects the legacy GUI for the baseline and `HyperGet.exe` for the candidate, rejects any opposite-name GUI residue, and retains the stable CLI name. A source regression locks the selection. A fresh exact-head Windows comparison must still prove 63 SHA-256-correct downloads/version, nine resource sets/version, true 1/4/16 concurrency and the unchanged 15% gates. See [HG-E064](https://github.com/amroalhamedi2022-hue/personal-download-manager/blob/HEAD/docs/checkpoints/HG_E064_CONTROLLED_BENCHMARK_GUI_IDENTITY_2026-10-28.md).
+
+## 2026-10-28 — HG-E065 Stop All in-flight Resume gate
+
+The first worker-loop repair did not close the race: exact-head Windows run [40609757642](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40609757642) ran 204 downloader-core tests with 203 PASS and one FAIL. `stopAllWaitsForActualHttpResumingThenLeavesNoLateWorker` still observed a late HTTP request (expected 1, actual 2; report artifact [12782437181](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40609757642/artifacts/12782437181)). Root cause: an in-flight Resume continued from metadata validation into part admission after Stop All had raised its gate. The manager now exposes a volatile Stop All state and cancellation check; HTTP and HLS resume paths check it after metadata validation and immediately before part-worker admission, and avoid racing Stop All with a second asynchronous pause. Fresh exact-head JUnit/installed HTTP and paired benchmark results are required; no PASS is claimed from the failed run. See [HG-E065](https://github.com/amroalhamedi2022-hue/personal-download-manager/blob/HEAD/docs/checkpoints/HG_E065_STOP_ALL_INFLIGHT_RESUME_2026-10-28.md).
+
+## 2026-10-28 — HG-E070: exact-head Windows 1/4/16 performance PASS; HG-E071 HLS restart gate opened
+
+**Exact tested application and harness SHA:** `e273a001d254125f1443a7d3ca92f9121c5dc13b` (existing PR #3 head at this checkpoint; no main write/merge).
+
+### HG-E070 — accepted controlled Windows comparison
+
+- Windows run [40626221330](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40626221330), job “Paired exact-snapshot HTTP throughput and memory regression check”: SUCCESS.
+- The job checked out the exact baseline and candidate snapshots, ran source contracts before building both installers, installed each variant in alternating order, and completed three rounds at real concurrency 1/4/16.
+- **63 SHA-256-verified 32 MiB outputs per version** (126 download files across the paired evidence ZIP) and **nine resource measurement sets per version**. The artifact includes per-round download files, verification ledgers, CSV measurements and reports.
+- Artifact [12792141357](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40626221330/artifacts/12792141357), downloaded and independently hashed in this run: `c8744c2f2df96a6fba1e936fc1b35b8205b4ff3209fc91e552de18bf288c387f`.
+- Baseline SHA: `d6ea54a885277cb5b8fd545eb3f3fb0e185b6aa5`; candidate SHA: `e273a001d254125f1443a7d3ca92f9121c5dc13b`; shared measurement harness SHA equals candidate SHA.
+- Candidate median throughput deltas: **+0.33% at 1**, **-0.14% at 4**, **+28.53% at 16**. Peak Working Set deltas: **-1.07%, +3.12%, -0.72%**. Peak Private Bytes deltas: **-0.01%, +3.11%, -2.81%**. All predeclared 15% regression gates PASS.
+- This is a same-runner version-to-version regression comparison, **not** a claim of superiority over Internet Download Manager (IDM). The workflow's separate “Install once; 63 SHA256-verified downloads and 9 real CPU/RAM runs” job was skipped by its scope gate and is not counted as evidence; the paired comparison job above did run the complete three-round matrix.
+- The harness reported candidate-round-3 uninstall registry/shortcut residue and removed those test-owned entries to isolate the next round. This warning is not counted as a clean-uninstall acceptance result.
+
+### Exact-head Windows evidence additionally closed on `e273a00`
+
+- Full downloader/desktop JUnit and installer build: [40626221310](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40626221310) — **248 tests, 0 failures, 0 errors, 0 skips**; test installer SHA-256 `d9294f87897a8eb05b5a7b23efadec189c7b558194ae06f4524fb611e70d68e2`.
+- Installed HTTP Pause/socket-close/Resume/SHA: [40626221413](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40626221413) — PASS.
+- Installed authenticated FTP Pause/REST-after-GUI-restart/WinCred/SHA: [40626221360](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40626221360) — PASS.
+- HLS redirect/segment/JUnit: [40626221317](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40626221317) — PASS; this is not yet installed process-kill/relaunch evidence.
+- Chrome + Firefox installed native-host downloads with SHA verification: [40626221340](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40626221340) — PASS.
+- Installed GUI/Liquid Progress and PE resource audit: [40626221366](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40626221366) — PASS. Actual GUI launcher and setup installer both contain 16/32/48/64/128/256 px 32-bit-alpha icon resources; Liquid Progress reached 32% during a real SHA-verified transfer.
+- Cross-version upgrade/rollback: [40626221354](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40626221354) — PASS.
+- Idle metrics artifact is available from [40626221366](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40626221366); it is idle-only and must not be represented as active-transfer memory acceptance.
+
+### HG-E071 — pre-build contract for installed HLS process-kill/relaunch
+
+**Acceptance question:** After a real installed HyperGet HLS download has completed and persisted at least one segment while other segments are still active, can the GUI process be force-killed, all segment sockets drain and bytes stop changing, then the same persisted task be resumed after GUI relaunch and assemble the exact original bytes without requesting the already-completed first segment again?
+
+**Expected:** playlist is fetched again after relaunch; segment 1 is requested/completed exactly once; segments 2–4 each finish; no active segment sockets remain; the final assembled file size and SHA-256 match the deterministic local fixture. Any lost task, late writes, repeated completed-segment request, wrong output or timeout is FAIL, not a skip.
+
+**Why source/JUnit checks are insufficient:** they cannot establish Windows process termination, durable task/segment state, installed GUI/CLI IPC, real HTTP socket closure, filesystem staging after a crash, or final assembly across a process boundary. The next targeted Windows installer build is therefore purposeful. Its source contract and PowerShell/Python syntax checks must pass before the build step; no paid runner/API, external service, main write, auto-merge, release or Torrent is involved.
+
+### Still OPEN after E070
+
+- HG-E071 installed HLS process-kill/relaunch acceptance (new targeted E2E gate).
+- Behavioral scheduled-start/stop acceptance.
+- Independent external HTTPS signed-link endpoint acceptance; local verified-TLS/JUnit coverage already passes, but is not an external endpoint test.
+- Independent second full Windows release recheck on the final source SHA.
+- Final user-facing standalone `HyperGet.exe` delivery with verified SHA-256 and a verified artifact link. The current installer artifact is a test build, not that deliverable.
+
+
+## 2026-10-28 — HG-E072 HLS process-restart resume harness correction (rerun required)
+
+
+## Milestone and acceptance question
+After a real installed HyperGet HLS transfer completes and persists segment 1, force-kill the GUI while segments 2–4 are active, relaunch the GUI, explicitly resume the persisted task, and require the playlist and incomplete segments to be requested again. Segment 1 must not be requested twice; segments 2–4 must each finish after restart; sockets must drain; final assembled bytes and SHA-256 must match the deterministic fixture.
+
+## Exact-head result before this fix
+- Tested source/harness SHA: `15b0c72ec3ba7f3b335f1bcc3d70e8b0419dab86`.
+- Windows run [40637465788](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40637465788): guarded HLS Kotlin/JUnit job PASS (29+ tests, zero failure/skip), installer packaging PASS, installed process-kill/relaunch E2E FAIL.
+- Test installer SHA-256: `5c20c8e1ca50888830224e86f87e4940de19b4d1954b6bef42a91ea6810bd8ce`.
+- Evidence artifact [12794708540](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40637465788/artifacts/12794708540), archive SHA-256 `4d1aab124f9cbf68865e08ca59b1a5b63cb98937ac5879e4ea1a8c40f2734d85`.
+- Fixture counters after failure: playlist requested only once; segment 1 completed exactly once; segments 2–4 each requested once and aborted once; zero active sockets. This is consistent with no post-relaunch Resume command being sent.
+- Root cause identified in the acceptance harness: it inferred live worker activity from the persisted status label `Downloading` and skipped explicit Resume. A process-kill test must not treat a stale persisted status as proof that worker coroutines survived.
+
+## Cohesive change
+- Always invoke the existing CLI `download resume <taskId>` after the relaunched GUI exposes the persisted task, regardless of its stored status label.
+- Persist post-relaunch status, resume exit/output, and fixture counters into the failure artifact.
+- Add a bounded 30-second request gate so a missing playlist/segment restart fails with counters instead of waiting four minutes for an output file.
+- Require each incomplete segment (2–4) to have at least two requests across the kill boundary; segment 1 must still be requested/completed exactly once.
+- Extend the source contract to prevent reintroducing status-label-based Resume suppression.
+
+## Pre-build test declaration
+**Question:** does the installed GUI + CLI, after a forced process termination, explicitly resume the persisted HLS job and refetch the playlist/re-request unfinished segments while reusing the completed segment?
+
+**Expected:** source contract and HLS JUnit gate pass; the targeted Windows installer builds; fixture shows playlist requests >= 2, segment 1 request/completion exactly 1, each segment 2–4 request count >= 2 and completion >= 1, no active sockets, exact final byte count and SHA-256.
+
+**Why source tests are insufficient:** only an installed Windows run can exercise process termination, persisted DB/staged segment files, real HTTP sockets, GUI/CLI IPC and final file assembly across process restart. This build is purpose-bound to that acceptance question, not a release build.
+
+## Scope and status
+- No production downloader logic or dependencies changed in this patch; it corrects the installed acceptance sequence and strengthens regression diagnostics.
+- No Torrent, paid API/runner, main write, auto-merge, or release.
+- **Current status before rerun: OPEN / NOT YET VERIFIED.** The next exact-head Windows run must prove the change; source-contract success alone is not acceptance.
+- Other release gates remain open: behavioral scheduled start/stop, external HTTPS signed-link acceptance, independent final Windows recheck, and final standalone user-facing `HyperGet.exe` with verified SHA-256/artifact.
+
+
+
+## 2026-10-28 — HG-E072 source-guard syntax correction
+
+The first HG-E072 patch triggered source-only workflow [40641209772](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40641209772), which correctly failed before any app build because the newly added Python guard contained an unterminated string literal. This was a regression in the acceptance test itself, not a product or HLS result. The next patch reconstructs the guard cleanly, asserts the stale-status conditional is absent without embedding a fragile quote sequence, and keeps the installed HLS job gated behind source/Python/PowerShell syntax checks. The HLS installer run on the earlier patch is not acceptance evidence; rerun the exact new head and require source PASS before packaging.
+
+
+## 2026-10-28 — HG-E071/HG-E072 installed HLS process-kill/relaunch PASS
+
+Exact source/harness SHA: `89cfb72f0ffeaf5f58d7b609d18c63999a949d71`. Windows run [40641435306](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40641435306) passed all 29 guarded HLS JUnit tests (0 failures/errors/skips), source and PowerShell pre-build contracts, targeted installer build, and installed process-kill/relaunch acceptance. Installer SHA-256: `7318eb3bced7ddd0aff6299069d6936134a719e6879d3a0b071b44c68231001f`. Evidence artifact [12796480062](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40641435306/artifacts/12796480062), archive SHA-256 `e5c574b0587e65ae3f69ff3b8d7453f83a17dab3a0abf3055f4055fc9a6b0933`. Final output was 25,296,896 bytes with expected=actual SHA-256 `ea79f691986481e8983f41728fdf61174c54b548c3afcc5dedd05f9d0d5b25bb`; playlist requests=2; segment 1 requests/completed=1/1; segments 2–4 requests/completed=2/1 each; active sockets=0. The initial harness defect was the stale persisted `Downloading` label suppressing Resume after process kill; unconditional CLI Resume plus captured diagnostics fixed the test sequence. The intermediate malformed Python guard failure on `083728f` was corrected, and source-only run [40641435300](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40641435300) passed on the exact tested SHA.
+
+**Closed:** installed HLS process-kill/relaunch milestone on `89cfb72`. **Still open:** behavioral scheduled start/stop; independent external HTTPS signed-link acceptance; independent final Windows recheck; final standalone user-facing `HyperGet.exe` artifact and SHA. No merge/release/main write; Torrent remains excluded.
+
+
+## 2026-10-28 — HG-E073 scheduled queue start/stop acceptance (pre-test)
+
+
+## Milestone
+Prove the existing HyperGet queue schedule is behavioral, not just persisted UI settings: with one queued task and both schedule switches enabled, the queue must emit the scheduled-start event at the next start time, start the task exactly once, emit the scheduled-stop event at the next end time, stop the task exactly once, and finish inactive.
+
+## Pre-test declaration
+**Question:** does `DownloadQueue` execute its configured start and end timers against the current local wall clock and transition the actual queue/task lifecycle in the expected order?
+
+**Expected:** Windows Gradle/JUnit compiles the new `ScheduledQueueWindowTest`; within a bounded 18-second window, start and stop events each occur exactly once, the task's start/stop callbacks are each recorded exactly once, the start event observes an inactive queue, the stop event observes an active queue, and the queue is inactive afterward.
+
+**Why source tests are insufficient:** static assertions cannot prove coroutine delay scheduling, local-time conversion, queue admission, event ordering, or stop callbacks under an actual runtime clock. This milestone requires the targeted Windows JUnit run, but does not require an installer because no production code or Windows packaging identity is changed.
+
+## Change
+- Added a bounded wall-clock integration test using the existing `QueueManager`, file-backed queue persistence, and a recording `DownloadManagerMinimalControl`.
+- Wired the test into the existing Windows queue-lifecycle workflow and its JUnit artifact/count gate.
+- No production code, dependencies, browser repo, paid service, Torrent, main write, or auto-merge.
+
+## Status before test
+OPEN / NOT YET TESTED. The next exact-head Windows run must pass the new test and existing queue/part lifecycle suites with zero failures/errors/skips. If it fails, use the exact event order and callback evidence to repair the scheduler rather than weakening the assertions.
+
+
+
+## 2026-10-28 — HG-E073 test synchronization hardening before result
+
+The first scheduled-window test draft waited for both timer events but asserted start/stop callbacks immediately afterward. Because `DownloadQueue.stop()` dispatches shutdown asynchronously, that assertion could race the actual stop callback. The test now waits under the same bounded timeout for both events, one start callback, one stop callback, and the queue to be inactive before asserting exact-once behavior. This is test determinism hardening; no production behavior or acceptance threshold was changed. The prior run, if any, on `5f03629` is not final evidence; require the new exact-head queue workflow to pass.
+
+## 2026-10-28 — HG-E073 scheduled queue start/stop acceptance PASS
+
+**Functional code/test SHA:** `9f7c489055330119f818a1a146b26d7bf12009d6` (the subsequent checkpoint-only commit does not change source).
+
+- First attempt at parent `9d762b4` failed compilation in the newly added `ScheduledQueueWindowTest`: wrong Clock import and invalid time-based `LocalDateTime.plus` overload. This was a test compilation defect, not a scheduler behavior result.
+- Corrected in [`9f7c489`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/9f7c489055330119f818a1a146b26d7bf12009d6) by using `kotlin.time.Clock`, adding durations to `Instant`, and then converting to the local time zone. Assertions were not weakened.
+- **PASS:** targeted Windows queue/part-I/O run [40644326650](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40644326650). Gradle succeeded; `ScheduledQueueWindowTest` **1/1 PASS**; JUnit XML gate confirmed zero failures/errors/skips in the selected lifecycle/schedule suites. The real queue emitted one scheduled-start and one scheduled-stop event; task 73 received exactly one start and one stop callback; state was inactive before start, active before stop, and inactive at the end.
+- JUnit artifact [12796742980](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40644326650/artifacts/12796742980), ZIP SHA-256 `ee81e7b7913333e9b23c03ec55a20a7c9447092d7b185d8c53b846973bec150e`.
+- Source safety [40644326843](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40644326843) and relative-time tests [40644326736](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40644326736) PASS. FTP Kotlin/WinCred suite [40644326681](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40644326681) PASS.
+
+**Remaining/open:** installed HLS restart and cross-version upgrade/rollback are still running on this code SHA; external HTTPS signed-link acceptance, independent final Windows recheck, and final standalone `HyperGet.exe` with verified SHA/artifact remain OPEN. Do not infer final release readiness from this one milestone. No production scheduler code or thresholds changed; no merge, main write, release, paid service, or Torrent.
+
+
+
+## 2026-10-28 — HG-E074 pre-build contract: external HTTPS + Range acceptance
+
+**Question before the targeted Windows build:** can the exact PR-head installed HyperGet use normal HTTPS certificate validation against a public range-test endpoint, accept a query-bearing URL with a real 206 Range response, and download exactly 10,485,760 bytes matching an independent reference SHA-256?
+
+**Expected:** source contract and PowerShell syntax PASS before packaging; one test installer built from the exact PR head; external Range probe returns 206 with `Content-Range: bytes 0-1023/10485760` and matching first-1-KiB bytes; installed HyperGet output matches the independent 10-MiB reference hash and remains stable after completion. The evidence artifact contains source/installer hashes and sanitized diagnostics.
+
+**Why source tests are insufficient:** public DNS/TLS trust, external Range behavior, JVM HTTPS negotiation, installed GUI/CLI IPC, Windows file publication and exact bytes require a real Windows network run.
+
+**Interpretation boundary:** the public endpoint is not a signed-URL issuer; the query value is synthetic. This gate tests external HTTPS transport and Range only. Provider-specific signed-token expiry remains NOT TESTED; controlled old-token rejection/new-token resume is covered by the local verified-TLS JUnit test. The build is test-only, not a release. Status before run: OPEN / NOT YET RUN. No production source, main, merge, release, paid service/runner, browser repo or Torrent changes.
+
+
+### HG-E074 first preflight attempt — FAIL before build (2026-10-28)
+
+The first source-only and external-HTTPS workflow attempts stopped before any Gradle build or Windows runtime test. One source contract falsely treated the explanatory comment mentioning `-SkipCertificateCheck` as executable use of the TLS-bypass option. This is a **test-contract false positive**, not a downloader or TLS failure. The contract now ignores full-line PowerShell comments while still rejecting the bypass option in executable lines. No Windows build was performed in the failed attempt; the external HTTPS gate remains OPEN until a new exact-head run completes.
+
+
+### HG-E074 second preflight attempt — FAIL before build (2026-10-28)
+
+The corrected source test then failed on a second contract-only mismatch: it required the literal phrase `default TLS validation`, while the harness accurately described `normal HTTPS certificate validation` and named its stage `fetch-external-reference-with-default-tls-validation`. The test now asserts the actual reference-fetch command instead of prose wording. The PowerShell byte-prefix allocation was also changed to the unambiguous `[byte[]]::new(1024)` form before runtime execution. This attempt again stopped before Gradle packaging and before any external endpoint or installed-app test; E074 remains OPEN.
+
+
+## 2026-10-28 — HG-E075 external HTTPS fixture failover (test-harness repair; acceptance OPEN)
+
+Two exact-head Windows attempts at HG-E074 built the installer but failed before app installation at `fetch-external-reference-with-default-tls-validation` while requesting the public reference from `httpbin.io`; both raised PowerShell `HttpResponseException`, and neither produced a reference SHA or reached HyperGet's download stage. Attempt 1 evidence artifact [12799511871](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40648777183/artifacts/12799511871), ZIP SHA-256 `9972f72ce9f9e140c95d9ff2a2d4fef728b19d573458ef592e6abcf53797a297`; attempt 2 artifact [12800962533](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40648777183/artifacts/12800962533), ZIP SHA-256 `fde07b61b2519ea5ff7c8a3504360b05344a442a876458c52525f718d00f9e12`. Installer SHAs were `e93bdac79e0b45f45dae977a3d81d533a1a744a0cfed9e8e1271711410b6f54f` and `bb8827ee57b6653249bd1997046610d1ce295aa2e8e2b720ea40a8cc5138e3aa`; neither is a release artifact.
+
+The harness now tries two allow-listed public HTTPS Range hosts, validates the full 10 MiB reference and exact 206/Content-Range/prefix SHA before selecting one, cleans partial fixture files between attempts, and records sanitized `host:status-or-exception-type` diagnostics. The source contract covers fallback and diagnostics. This changes acceptance infrastructure only, not the production downloader. Require exact-head source/PowerShell checks and a new Windows installed run; if both endpoints fail, keep HG-E075 OPEN and inspect the reported status rather than claiming product failure or success. Signed-token provider expiry remains NOT TESTED. No merge/main write/release/Torrent/paid runner/browser-repo change.
+
+
+## 2026-10-28 — HG-E076 bounded external HTTPS fixture and canonical endpoint fallback (acceptance OPEN)
+
+HG-E074 attempts 1 and 2 failed before app installation at the reference fetch with `HttpResponseException`. HG-E075 then tried `httpbingo.org` and `httpbin.io`; both returned HTTP 400 for the 10 MiB reference, as recorded in artifact [12802001432](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40655328610/artifacts/12802001432), ZIP SHA-256 `085c894eebb136e6c0f0693629dbdda7fc005a91c8720ab99de5c6eddc923422`. The failure happened before HyperGet was installed/launched and is not a product download result. The exact server rejection reason was not captured; a response-size ceiling is only a hypothesis.
+
+HG-E076 changes the fixture to 8,388,608 bytes and tries `httpbin.org`, `httpbingo.org`, then `httpbin.io`. A candidate is selected only after the full reference length and query-bearing HTTP 206/Content-Range/prefix-SHA checks pass. The sanitized evidence records host and status/type for each attempt; TLS validation remains default. Source tests and PowerShell parsing must pass before the purposeful Windows installer build. The installed HyperGet download must still match the independent reference SHA and remain stable after completion. This is test infrastructure only; production code and performance thresholds are unchanged. Provider-specific signed-token expiry remains NOT TESTED. No merge/main write/release/Torrent/paid runner/browser-repo change.
+
+
+## 2026-10-28 — HG-E077 static HTTPS fixture result and HG-E078 external HTTPS acceptance PASS
+
+### HG-E077 — Static HTTPS endpoint reached, final read exposed a harness race
+
+- Exact tested source SHA: `32da786bb7bfe4388d89f1c7149bb225cb1accf5`; Windows run [40657023659](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40657023659) built and installed the test app, selected `bom.proof.ovh.net`, verified the 1 MiB reference, received HTTP 206 for the query-bearing Range request, and matched the 1 KiB prefix SHA-256.
+- The installed output's recorded SHA-256 already equalled the reference (`30e14955ebf1352266dc2ff8067e68104607e750abb9d3b36582b8af909fcb58`), but a single final file read raised `IOException`. Evidence artifact [12802058569](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40657023659/artifacts/12802058569), ZIP SHA-256 `5ab8772b4cd751b88032e874d3c8541a686296f44ca0f22687b53b819ab974fa`. This was a final-read stability/harness failure, not a byte/hash mismatch. No production downloader logic changed.
+
+### HG-E078 — Bounded final-read retry; E074 external HTTPS + Range PASS
+
+**Pre-build question:** after the independent HTTPS reference and Range probe pass, can installed HyperGet download the exact same 1 MiB resource and keep it readable with the exact SHA-256 across two samples separated by two seconds?
+
+**Why source tests alone are insufficient:** this requires default Windows TLS validation, a real external 206 response, an installed GUI/CLI transfer, and file publication/readability after completion.
+
+**Fix:** at source SHA `8bfa11c0d6eac78efb73ed7c9b6939c254f98f9d`, the harness now retries transient final file-read exceptions for at most 30 seconds, requires two consecutive samples with the exact expected size and SHA-256, and records read attempts/last exception type/stable sample count. It does not accept an IO error as success or weaken byte/hash assertions. The follow-up source-contract guard is test-only commit `968524a80e67bb6b879eb161a27ff070b916d779`; it does not change the tested PowerShell harness or production app.
+
+**PASS:** Windows run [40658785902](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40658785902) on exact source SHA `8bfa11c0d6eac78efb73ed7c9b6939c254f98f9d`. Evidence artifact [12803022839](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40658785902/artifacts/12803022839), ZIP SHA-256 `1670f0654de894a289e9983cdd70a1442d816933eeeddd7027a35ebdbc51b0ae`. Sanitized evidence: endpoint `bom.proof.ovh.net`; HTTPS; `RangeStatus=206`; `RangeBytes=1024`; range-prefix SHA equals range SHA `5f70bf18a086007016e948b04aed3b82103a36bea41755b6cddfaf10ace3c6ef`; full output expected/actual bytes `1048576`; expected/actual SHA-256 both `30e14955ebf1352266dc2ff8067e68104607e750abb9d3b36582b8af909fcb58`; `FinalReadAttempts=4`; last transient read type `IOException`; `StableReadSamples=2`; `Result=PASS`. The purpose-built test installer SHA-256 was `e42ffd235c69f0667a4f3d2ba393f677225087bb2e562b3307f1bf056bd919b0`.
+
+### Other exact-head evidence and remaining gates
+
+- **PASS:** current HyperGet regression/build run [40658786072](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40658786072): 249 JUnit tests, zero failures/errors/skips; installer EXE SHA-256 `c5fab9b46a58a5eb0697f54a396e496c67d304fafea732d9ea302d1a31203227`. Artifact [12803352067](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40658786072/artifacts/12803352067), ZIP SHA-256 `cde0942e1f0ef86f204e90a0e194b09f241d35484149d806c4c26ba5569e2663`. This remains a **test installer**, not the final standalone user-facing `HyperGet.exe` deliverable.
+- **PASS:** installed HLS process-kill/relaunch and exact assembled SHA [40658785929](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40658785929); authenticated FTP pause/restart/REST resume and SHA [40658786068](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40658786068); installed HTTP Pause/Resume and SHA [40658785980](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40658785980); Chrome + Firefox browser capture [40658785919](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40658785919); queue/part-I/O lifecycle [40658785871](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40658785871); source-only safety [40658785948](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40658785948); relative-time refresh [40658785928](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40658785928).
+- **aria2 status:** standalone HTTP smoke passes as recorded in `docs/ARIA2_CORE_MIGRATION_PLAN_2026-10-27.md`, but the stock binary enables BitTorrent. Torrent is prohibited by the latest user requirement; do not ship this binary. Comparative Stage 2, no-Torrent custom build, RPC/adapter parity, and GPL distribution review remain OPEN. The smoke test is not a GO decision.
+- **Still OPEN / NOT TESTED:** independent final Windows recheck; final standalone user-facing `HyperGet.exe` with verified SHA/artifact; provider-specific signed-token expiry (the local verified-TLS old-token/new-token JUnit test is not a provider-issued expiry test); the 1/4/16 active benchmark and memory profile runs that were still queued/running at this checkpoint. Do not merge, write to main, auto-merge, or publish a release.
+
+
+## 2026-10-28 — HG-ARIA2-S1 workflow gate wiring (exact-head Windows run pending)
+
+A workflow audit found that the Stage 1 PowerShell harness existed but was not called by the Windows evaluation workflow; the prior single/segmented HTTP smoke therefore did not validate the advertised Stage 1 cases. The current PR-branch patch adds an exact-SHA preflight, Python fixture/source tests, PowerShell parser checks, the real Windows viability invocation after pinned archive verification, and a separate sanitized evidence artifact.
+
+**Pre-build question:** can the pinned stock aria2 binary pass all ten Stage 1 HTTP/FTP/RPC/resume checks with exact output hashes and no secret leakage? **Expected:** 10/10 runtime assertions PASS; the source and PowerShell preflight must pass first. **Why source tests are insufficient:** Windows process interruption, real sockets, resume-control state, FTP login/RETR and RPC listener/shutdown behavior require runtime evidence.
+
+Status before the new run: basic HTTP smoke 2/2 PASS on the earlier tested SHA; comprehensive Stage 1 runtime 0/10 verified; stock binary bundling FAIL/BLOCKED because BitTorrent is enabled; SFTP actual transfer NOT TESTED; Stage 2 paired 1/4/16 comparison NOT STARTED. No production engine switch, main write, merge, release or Torrent feature.
+
+
+## 2026-10-28 — HG-ARIA2-S1 first wired Windows runtime attempt — FAIL (harness defect)
+
+Exact PR source SHA: f661703efa08c5e9f7ace316b5bbbcea7385d646. Source/fixture preflight and PowerShell parsing **PASS**; pinned upstream aria2 archive verification **PASS**; basic HTTP single/segmented smoke **2/2 PASS** with SHA-256 287507f403176f1f5b22b9a4d9cb49f7d7f88ac19e406b5ae87ce109564846bd. Stage 1 redirect **1/10 PASS** with SHA-256 341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1.
+
+The run then **FAILed in the test harness before HTTP 404/429/500 assertions** because PowerShell parsed the URL fragment $status?task as a variable. This is not evidence of aria2 protocol failure. Ignored-Range, real interrupted resume, FTP, and RPC cases were not reached and remain **NOT TESTED**. Incomplete evidence artifacts: [basic smoke](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40670133507/artifacts/12806888836) (SHA-256 f5254e9050d30b86935de1b8b1d1cbaf4368c52ff91d3a4ca1550ef6d97b2cb5) and [Stage 1 diagnostic bundle](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40670133507/artifacts/12807627862) (SHA-256 969df994ea7178aa493239fcf24e3b10827dfaf05d778c72616ac61705865a1b).
+
+The harness now brackets the status variable as $($status), with a source regression rejecting the ambiguous expression. Exact-head Windows rerun is pending. Stock aria2 has BitTorrent enabled and remains ineligible for bundling; no production engine switch or Torrent feature is permitted.
+
+
+## 2026-10-28 — HG-ARIA2-S1 resume evidence and checkpoint-timing repair
+
+Exact PR SHA 18d25c4eb7ae5956d0192d65cd67ce4b031d32c5: source/fixture/PowerShell preflight **PASS**; basic HTTP smoke **2/2 PASS**; Stage 1 HTTP redirect, 404, 429, 500 and ignored-Range **5/5 PASS**. The restart produced a byte-correct 16 MiB output, but **resume acceptance FAILed** because the server recorded 16 MiB requested after restart and no honored nonzero Range offset. This must not be counted as resume success.
+
+The interrupted process was killed at roughly 896 KiB, below the default 1 MiB piece length. The official aria2 manual documents a 60-second default control-file save interval. This suggests—but does not yet prove—the harness killed before useful progress was checkpointed. The repair sets the save interval to one second, waits for at least 2 MiB and a fresh control-file timestamp before hard interruption, and records first/restart Range telemetry for exact diagnosis. The next Windows run must demonstrate an honored nonzero offset and less than the full 16 MiB requested after restart.
+
+Evidence: [Stage 1 artifact 12808540829](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40670419404/artifacts/12808540829), ZIP SHA-256 6224d07ccb14a46cbac3068b34b06a878c7ae25f95f5d5a678066f622ac6a763. FTP/RPC remain NOT TESTED; stock aria2 bundling remains blocked by enabled BitTorrent; Stage 2 comparison is still NOT STARTED.
+
+
+## 2026-10-28 — Resume gate metric correction
+
+The Stage 1 artifact on SHA 010bca3354c894f1b1245d2dd829e81ddf8d28d3 shows a true resumed Range at offset 2,310,144 with the server marking it honored, and the restarted process served 14,532,608 actual bytes (<16,777,216) while producing the exact final SHA-256. The gate incorrectly used declared request lengths (31,244,288 total), counting an initial non-Range GET that was aborted after roughly 64 KiB as if the full 16 MiB body had been sent. The harness now uses the fixture's actual task_bytes_sent counter for the reduced-transfer condition while preserving the requested-byte metric as diagnostic evidence. Exact-head rerun pending; resume is **not yet accepted** until the corrected gate passes.
+
+
+## 2026-10-28 — HG-ARIA2-S1 current-head runtime checkpoint
+
+On PR #3 source `38b6f57a481c0d606fad90a97d121a0dd5ecda3a`, Windows run [40675748124](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40675748124) passed the pinned archive SHA, 2/2 basic HTTP SHA smoke, and 7/10 expanded runtime checks (redirect; 404/429/500; ignored Range; honored nonzero-offset restart/resume with exact SHA; authenticated FTP with exact SHA). It failed while waiting for the local JSON-RPC readiness probe. Because the previous harness omitted its last response details, RPC auth/lifecycle is **NOT TESTED**, and the failure is not classified as an aria2 engine defect yet. Artifact [12809908767](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40675748124/artifacts/12809908767), ZIP SHA-256 `bc4c7893a15af660ff9a0bb02f67395c62937280c69fd51ddc0b09ed722692fa`.
+
+The same exact-SHA app regression/build job passed **249 JUnit tests with zero failures/errors/skips** and built one test installer (not the final standalone `HyperGet.exe`): SHA-256 `10b0bc3e36ed5312c5169c587b5807cc621a88347fd8db99f316a778a4686b86`; artifact ZIP SHA-256 `119fd8290713074b6b32dbcb3c170b84ae31ffd2ddc8b4c6f23afd5036238c4f`.
+
+The follow-up adds secret-redacted diagnostics for the final RPC readiness probe and a source regression. **Remaining:** rerun Stage 1 and resolve RPC; verify actual SFTP transfer (not covered by this milestone); create/verify a no-BitTorrent aria2 build before any packaging consideration; complete paired 1/4/16 comparison, security/license review, and adapter parity before any engine decision. Torrent remains prohibited; no production engine switch or bundling from the stock archive.
+
+
+## 2026-10-28 — HG-ARIA2-S1 RPC response-shape follow-up
+
+Run [40678234198](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40678234198), exact source `6c30f1fc1596e51f35ffa69a6ba90ef423192a63`: 7/10 Stage 1 runtime checks passed (HTTP fault/Range handling, real restart/resume with exact SHA, authenticated FTP). The last RPC readiness probe returned HTTP 200 with no parsed JSON-RPC result/error and no transport exception; response-body metadata was missing, so root cause remains unresolved. The follow-up replaces the wrapper with .NET `HttpClient`, explicitly disables proxies for the loopback-only RPC request, and records sanitized content length/type/parse error/body preview with token redaction. RPC and Stage 1 remain **OPEN** pending a new exact-head Windows result. No Stage 2 comparison or production engine switch.
+
+
+## 2026-10-28 — HG-ARIA2-S1 runtime PASS; paired Stage 2 gate prepared
+
+Exact source a78df67d1e25be85a2f18939a15b40268b39144b; Windows run [40679541630](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40679541630).
+
+- **PASS:** all 10 defined Stage 1 aria2 runtime assertions. HTTP redirect/fault/Range safety, true interrupted resume (offset 2,768,896; actual post-restart bytes 14,073,856; exact SHA-256), authenticated FTP, JSON-RPC readiness/authentication, malformed-input recovery, shutdown/listener closure and stale-session rejection passed.
+- **PASS:** current HyperGet source tests/build gate, 249 JUnit tests with zero failures/errors/skips; installer SHA-256 6ffb89b7775dd1c38a1816a6d5df4e125b1d796cac27a01aaae9f6a1aba3bf91; installer artifact ID 12812257820.
+- **PASS:** current-vs-previous HyperGet benchmark [40679541742](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40679541742): 63 exact-hash transfers per snapshot and nine CPU/RAM samples each. Throughput +0.22%/+0.82%/+2.54% for 1/4/16 tasks; Working Set +2.51%/+1.20%/-4.16%; Private Bytes +1.96%/+1.29%/-4.06%. This is not evidence that aria2 beats HyperGet.
+- **NOT TESTED:** actual SFTP transfer. Stock aria2 advertises BitTorrent and remains evaluation-only; Torrent is prohibited and no stock binary will be bundled. A custom no-BitTorrent build, GPL/security review and adapter parity are still required before any production migration.
+- **Stage 2 prepared, runtime pending:** same-runner, three paired rounds with alternating order; 1/4/16 tasks; 32 MiB deterministic HTTP fixture; 63 SHA-256-verified outputs per engine; real socket overlap; CPU/Working Set/Private Bytes; supplemental 1/4/8 segmentation sweep. Decision thresholds: no workload throughput regression worse than 10%, memory regression at most 15%, and median throughput gain at least +5% for STAGE2_PERFORMANCE_GO; otherwise keep the current HyperGet engine. The job reuses the exact-head installer artifact and runs only after Stage 1 plus current HyperGet build/regression pass.
+- The Windows evaluation workflow now filters to relevant application/engine/harness changes; docs-only checkpoint edits use source-only validation and do not trigger packaging. Stage 2 remains **NOT YET RUN** until the new commit's CI finishes.
+
+
+## 2026-10-28 — HG-E079 aria2 range-handler drain gate (repair committed; exact-head rerun pending)
+
+- The exact-head Windows evaluation [40689694857](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40689694857) built/installed HyperGet and passed 21/21 HTTP SHA-256 outputs at 1/4/16 with three resource CSVs. This does not establish aria2 superiority.
+- aria2 produced one correct 32 MiB file, but the final fixture snapshot saw 8 still-active server GET handlers after the client process exited. The artifact diagnostics show one initial full GET and seven Range requests; the immediate snapshot cannot prove which range bodies completed. No Stage 2 performance result is accepted from that run.
+- Checkpoint: [HG-E079](checkpoints/HG_E079_ARIA2_RANGE_HANDLER_DRAIN_2026-10-28.md). The harness now waits for handler drain and requires reconciled GET lifecycle counts, exact served bytes, completed range requests and honored Range count. The existing SHA, real 1/4/16 overlap, CPU/RAM sampling and Stage 2 decision thresholds are unchanged.
+- **Pre-build question:** can the exact-head Windows rerun prove completed Range transfers and complete the full paired 63-output comparison plus 1/4/8 segmentation sweep? Source-only tests cannot prove socket teardown or actual range behavior, so the Windows build/installed workload is justified.
+- **Status:** harness repair submitted; source and Windows PowerShell parser checks pending. Paired Stage 2 decision and final `HyperGet.exe` delivery remain **NOT TESTED**. Torrent remains prohibited and the stock aria2 binary remains evaluation-only.
+
+
+## 2026-10-28 — HG-E080 aria2 segmented HTTP accounting (repair submitted; exact-head rerun pending)
+
+Date: 2026-10-28  
+PR: [#3](https://github.com/amroalhamedi2022-hue/personal-download-manager/pull/3)  
+Base: `codex/repair-rf00-rf01`  
+Working head: `automation/idm-ftp-cancel-and-category-flush`  
+Parent SHA: `b91ee130a77f79068d3c2a0c4d1915ae3345e7d2`
+
+## Purposeful Windows test question
+
+**Can the exact-head Windows run complete the full paired HyperGet-versus-aria2 comparison (three alternating rounds at 1/4/16, 63 SHA-256-verified outputs per engine) and the 1/4/8 single-file segmentation sweep without rejecting a correct aria2 transfer because the local fixture's socket-write counter is not a peer-delivery counter?**
+
+Expected: all full data Range responses complete and are honored; lifecycle counters reconcile; output size and SHA-256 match; true concurrent-task overlap is proved; resource CSVs are present; the unchanged throughput/memory thresholds yield a defensible GO or NO-GO.
+
+Source-only tests cannot prove Windows socket teardown, HTTP Range response completion, final downloaded bytes, actual task overlap, or process CPU/memory. A fresh Windows build/install/run is therefore justified; it is not a release build.
+
+## Exact-head evidence that exposed the defect
+
+Windows evaluation run [40695776974](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40695776974) tested source `b91ee130a77f79068d3c2a0c4d1915ae3345e7d2`.
+
+- **PASS:** pinned aria2 archive verification and Stage 1 runtime gate.
+- **PASS:** exact-head HyperGet desktop/downloader regression suites, JUnit XML gate (zero failures/errors/skips), and Windows installer build. Installer SHA-256: `194d0303f190ee44e5fdb1bc6ea08ce7f33c27e6826beb0ec32ba472dbfd26b3`. This is a test installer, not the final standalone deliverable.
+- **PASS:** HyperGet's first paired round produced 21/21 expected-size/SHA-256 HTTP outputs at 1/4/16.
+- **FAIL — acceptance harness metric, not a proven engine defect:** aria2 produced the exact 32 MiB file with fixture SHA-256 `e09320c5b00b34bb704802136c599a95b3996332ba84d7c7f21112b6231b6bd0`, but the script rejected `33,619,968` socket-write bytes against an exact `33,554,432` payload expectation. The difference is exactly one 64-KiB chunk. The fixture observed eight GETs: one initial non-Range full GET that was interrupted and seven honored Range requests; seven GETs completed and one was interrupted. The artifact shows the requested Range bytes overlap the initial full GET, which is expected while aria2 switches to segmented transfer.
+- The fixture increments `bytes_sent` after `wfile.write/flush`; on Windows, a final chunk can be accepted into the local socket buffer even after the client has canceled that response. That counter is therefore **socket-writer accounting**, not proof that the peer consumed every counted byte. Exact byte equality was an invalid gate. The failed run stopped in round 1 at concurrency 1, so it produced no accepted paired performance result and did not complete the 1/4/8 sweep.
+
+Evidence artifact [hyperget-aria2-stage2-comparison](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40695776974/artifacts/12819633427), archive digest `sha256:d606a8204ae2bcae45eed4053d1783558358143d9fa183161db7bf9c524d9f1d`. The installer artifact is separate: [hyperget-windows-x64-installer](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40695776974/artifacts/12819727691), archive digest `sha256:9713496acba7b2ee72db1744184925d00717504f52a0901668e8238499b3e8a6`.
+
+## Controlled repair in this commit
+
+- The loopback fixture records per-request `data_transfer`, `completed`, and local socket-write bytes, so tiny metadata probes cannot count as completed data segments.
+- The PowerShell gate requires the expected number of **completed and honored data Range** requests and rejects any incomplete data Range response.
+- The byte counter now permits at most one 64-KiB buffered-write overcount per interrupted GET; undercount or larger unexplained overfetch still fails. Final file size/SHA, active overlap, lifecycle reconciliation, CPU/RAM sampling, and the existing performance thresholds are unchanged.
+- Source regression tests assert these semantics. No production download engine was changed.
+
+## Remaining acceptance
+
+- Re-run the exact-head Windows workflow. The required outcome is all three paired rounds, all 63 verified outputs per engine, and the 1/4/8 segmentation sweep with resource data.
+- Apply the existing decision policy: no workload throughput regression worse than 10%, memory regression at most 15%, and median throughput gain at least +5% for `STAGE2_PERFORMANCE_GO`; otherwise retain HyperGet's current engine.
+- aria2's stock evaluation binary has BitTorrent capability, but no Torrent workload is invoked and the binary is not bundled. **Torrent is prohibited in HyperGet.** No production migration until a no-BitTorrent build, GPL-2.0-or-later distribution review, security review, and adapter parity are separately verified.
+- Final standalone `HyperGet.exe`, independent Windows recheck, SHA-256, and release-quality delivery remain **NOT TESTED**.
+
+
+Current exact-head parallel gates on `b91ee130a77f79068d3c2a0c4d1915ae3345e7d2`: HLS process-restart/SHA [40695777195](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40695777195), cross-version upgrade/rollback [40695777397](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40695777397), FTP Pause/REST/WinCred [40695777477](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40695777477), installed Chrome/Firefox capture [40695776809](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40695776809), external HTTPS/Range [40695777106](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40695777106), real HTTP [40695776823](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40695776823), queue lifecycle [40695776961](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40695776961), and source-only contracts [40695777308](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40695777308) are reported successful. The independent installed HTTP throughput/memory workflow [40695776936](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40695776936) was still running at checkpoint time; its result must be checked separately. These gates do not replace the failed aria2 Stage 2 comparison.

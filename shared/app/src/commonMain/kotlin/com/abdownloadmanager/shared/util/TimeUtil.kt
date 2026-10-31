@@ -43,6 +43,21 @@ fun formatTime(
     }
 }
 
+/**
+ * Milliseconds until a relative-date label can change its displayed unit.
+ * Month/year labels conservatively refresh daily rather than waking every second.
+ */
+fun relativeTimeRefreshDelayMillis(ageMillis: Long): Long {
+    val age = ageMillis.coerceAtLeast(0L)
+    val unitMillis = when {
+        age < 60_000L -> 1_000L
+        age < 3_600_000L -> 60_000L
+        age < 86_400_000L -> 3_600_000L
+        else -> 86_400_000L
+    }
+    return (unitMillis - (age % unitMillis)).coerceAtLeast(1L)
+}
+
 fun prettifyRelativeTime(
     duration: DateTimePeriod,
     count: Int = 1,

@@ -35,7 +35,7 @@ class NativeMessagingRouter(
                 try {
                     handler.handle(request.content)
                 } catch (e: Exception) {
-                    logger.e(e) { "Error while handling native messaging request" }
+                    logger.e { "HyperGet native messaging request handler failed" }
                     NativeMessagingMessage.Content.error(throwable = e)
                 }
             }

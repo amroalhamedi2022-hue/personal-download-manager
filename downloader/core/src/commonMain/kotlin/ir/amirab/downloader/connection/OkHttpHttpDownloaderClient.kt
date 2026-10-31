@@ -4,6 +4,7 @@ import ir.amirab.downloader.connection.proxy.*
 import ir.amirab.downloader.connection.response.HttpResponseInfo
 import ir.amirab.downloader.downloaditem.http.IHttpBasedDownloadCredentials
 import ir.amirab.downloader.downloaditem.http.IHttpDownloadCredentials
+import ir.amirab.downloader.downloaditem.http.HttpDownloadCredentials
 import ir.amirab.downloader.utils.await
 import okhttp3.*
 import java.net.InetSocketAddress
@@ -47,6 +48,18 @@ class OkHttpHttpDownloaderClient(
         }
         .build()
 
+    // Authenticated HLS playlist/segment requests carry explicitly supplied
+    // credentials. Do not silently attach ambient cookies from a shared client
+    // CookieJar: the origin policy must cover *all* cookies on these requests.
+    // This client also refuses every redirect, including same-origin redirects.
+    // Ordinary HTTP downloads and anonymous HLS requests retain the supplied
+    // client's CookieJar and existing redirect behavior.
+    private val noRedirectClient = singleAttemptClient.newBuilder()
+        .cookieJar(CookieJar.NO_COOKIES)
+        .followRedirects(false)
+        .followSslRedirects(false)
+        .build()
+
     private fun newCall(
         downloadCredentials: IHttpBasedDownloadCredentials,
         start: Long?,
@@ -56,7 +69,10 @@ class OkHttpHttpDownloaderClient(
         val rangeHeader = start?.let {
             createRangeHeader(start, end)
         }
-        return singleAttemptClient
+        val requestClient = if (
+            downloadCredentials is HttpDownloadCredentials && !downloadCredentials.followRedirects
+        ) noRedirectClient else singleAttemptClient
+        return requestClient
             .applyProxy(downloadCredentials)
             .newCall(
                 Request.Builder()
@@ -203,25 +219,28 @@ class OkHttpHttpDownloaderClient(
         start: Long?,
         end: Long?,
     ): Connection<HttpResponseInfo> {
-        val response = newCall(
+        val call = newCall(
             downloadCredentials = credentials,
             start = start,
             end = end,
             extraBuilder = {
                 get()
             }
-        ).await()
+        )
+        val response = call.await()
         val body = runCatching {
             requireNotNull(response.body) {
                 "body is null"
             }
         }.onFailure {
+            call.cancel()
             response.close()
         }.getOrThrow()
         return Connection(
             source = body.source(),
             contentLength = body.contentLength(),
-            responseInfo = createFileInfo(response)
+            responseInfo = createFileInfo(response),
+            cancelTransport = { call.cancel() }
         )
     }
 }

@@ -2,6 +2,8 @@ package ir.amirab.downloader
 
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
+import com.sun.net.httpserver.HttpsConfigurator
+import com.sun.net.httpserver.HttpsServer
 import ir.amirab.downloader.connection.OkHttpHttpDownloaderClient
 import ir.amirab.downloader.connection.UserAgentProvider
 import ir.amirab.downloader.connection.proxy.AutoConfigurableProxyProvider
@@ -19,6 +21,7 @@ import ir.amirab.downloader.downloaditem.hls.HLSDownloadItem
 import ir.amirab.downloader.downloaditem.hls.HLSDownloader
 import ir.amirab.downloader.downloaditem.http.HttpDownloadItem
 import ir.amirab.downloader.downloaditem.http.HttpDownloader
+import ir.amirab.downloader.downloaditem.http.sameHttpResourceLocation
 import ir.amirab.downloader.queue.ManualDownloadQueue
 import ir.amirab.downloader.queue.DownloadQueue
 import ir.amirab.downloader.queue.ScheduleTimes
@@ -50,14 +53,22 @@ import kotlinx.datetime.DayOfWeek
 import kotlinx.datetime.LocalTime
 import okhttp3.OkHttpClient
 import java.io.File
+import java.io.FileInputStream
 import java.net.InetSocketAddress
 import java.net.ProxySelector
+import java.security.KeyStore
+import java.security.SecureRandom
+import javax.net.ssl.KeyManagerFactory
+import javax.net.ssl.SSLContext
+import javax.net.ssl.TrustManagerFactory
+import javax.net.ssl.X509TrustManager
 import java.time.ZonedDateTime
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
@@ -67,6 +78,114 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class ActualRestoredRetryJobTest {
+
+    @Test
+    fun httpResourceIdentityIgnoresRefreshQueryButNotPathOrOrigin() {
+        assertTrue(
+            sameHttpResourceLocation(
+                "https://EXAMPLE.test/download/file.bin?token=old#part",
+                "https://example.test/download/file.bin?token=new",
+            ),
+        )
+        assertFalse(
+            sameHttpResourceLocation(
+                "https://example.test/download/old.bin?token=old",
+                "https://example.test/download/new.bin?token=new",
+            ),
+        )
+        assertFalse(
+            sameHttpResourceLocation(
+                "https://one.example.test/download/file.bin?token=old",
+                "https://two.example.test/download/file.bin?token=new",
+            ),
+        )
+    }
+
+    @Test
+    fun httpsSignedLinkRefreshPreservesPartialStateAndUsesNewToken() = withHttpsRetryServer { fixture ->
+        runBlocking {
+            val output = createTempDir("https-signed-refresh-output-")
+            val data = createTempDir("https-signed-refresh-data-")
+            val expectedBytes = fixture.fileBytes(93)
+            val item = HttpDownloadItem(
+                link = "${fixture.baseUrl}/file/93.bin?token=old",
+                id = 93,
+                folder = output.path,
+                name = "signed-link-refresh.bin",
+                dateAdded = 93,
+                preferredConnectionCount = 1,
+            )
+            val manager = createHttpManager(listOf(item), fixture.client, data)
+
+            try {
+                manager.boot()
+                manager.resume(item.id)
+                val job = manager.downloadJobs.single()
+                withTimeout(10_000) {
+                    while (
+                        job.getDownloadedSize() <= 0L ||
+                        job.getDownloadedSize() >= expectedBytes.size.toLong()
+                    ) {
+                        delay(5)
+                    }
+                }
+
+                manager.pause(item.id)
+                withTimeout(5_000) {
+                    while (fixture.activeTransferCount() != 0) delay(5)
+                }
+                val pausedBytes = job.getDownloadedSize()
+                assertTrue(
+                    pausedBytes > 0L && pausedBytes < expectedBytes.size.toLong(),
+                    "expected a real partial HTTPS file before refresh; paused=$pausedBytes",
+                )
+
+                fixture.expireOldToken()
+                manager.updateDownloadItem(item.id, null) { updated ->
+                    updated.link = "${fixture.baseUrl}/file/93.bin?token=new"
+                }
+
+                val completed = CompletableDeferred<Unit>()
+                val completionJob = manager.scope.launch(start = CoroutineStart.UNDISPATCHED) {
+                    manager.listOfJobsEvents
+                        .filterIsInstance<DownloadManagerEvents.OnJobCompleted>()
+                        .first { it.downloadItem.id == item.id }
+                    completed.complete(Unit)
+                }
+                try {
+                    manager.resume(item.id)
+                    withTimeout(20_000) { completed.await() }
+                } finally {
+                    completionJob.cancel()
+                }
+
+                assertContentEquals(
+                    expectedBytes,
+                    File(item.folder, item.name).readBytes(),
+                    "HTTPS signed-link refresh must preserve the exact resource bytes",
+                )
+                assertTrue(
+                    fixture.requestsForToken("new") > 0,
+                    "the refreshed HTTPS token was never used",
+                )
+                assertEquals(
+                    0,
+                    fixture.expiredOldTokenRequests(),
+                    "no request may use the expired signed URL after refresh",
+                )
+                assertTrue(
+                    fixture.newTokenPartRangeStarts().any { it > 0L },
+                    "refresh must resume from a saved non-zero range; paused=$pausedBytes, " +
+                        "new-token ranges=${fixture.newTokenPartRangeStarts()}",
+                )
+                assertEquals(0, manager.hostLimitRegistry.activeConnections("127.0.0.1"))
+            } finally {
+                closeManager(manager)
+                output.deleteRecursively()
+                data.deleteRecursively()
+            }
+        }
+    }
 
     @Test
     fun httpPartFailuresExhaustExactlyTwoRetriesWithoutProgress() = withRetryServer { fixture ->
@@ -524,7 +643,11 @@ class ActualRestoredRetryJobTest {
 
                 assertTrue(job.status.value is DownloadJobStatus.Canceled)
                 assertFalse(job.isDownloadActive.value)
-                assertEquals(requestsAfterStop, fixture.requestsFor("/file/101.bin"))
+                assertEquals(
+                    requestsAfterStop,
+                    fixture.requestsFor("/file/101.bin"),
+                    "Stop All must not allow a part worker to issue a late request after it drains in-flight Resume",
+                )
                 assertEquals(0, manager.hostLimitRegistry.activeConnections("127.0.0.1"))
             } finally {
                 fixture.releaseBlockedInfoRequest()
@@ -1610,7 +1733,7 @@ class ActualRestoredRetryJobTest {
     private fun <T> withRetryServer(block: (RetryServerFixture) -> T): T {
         val executor = Executors.newCachedThreadPool()
         val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
-        val fixture = RetryServerFixture(server)
+        val fixture = RetryServerFixture(server.address.port)
         server.executor = executor
         server.createContext("/") { exchange -> fixture.respond(exchange) }
         server.start()
@@ -1622,10 +1745,99 @@ class ActualRestoredRetryJobTest {
         }
     }
 
+    private fun <T> withHttpsRetryServer(block: (RetryServerFixture) -> T): T {
+        val tls = createLocalHttpsMaterial()
+        val executor = Executors.newCachedThreadPool()
+        val server = HttpsServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        server.httpsConfigurator = HttpsConfigurator(tls.serverContext)
+        val fixture = RetryServerFixture(server.address.port, "https", tls.client)
+        server.executor = executor
+        server.createContext("/") { exchange -> fixture.respond(exchange) }
+        server.start()
+        return try {
+            block(fixture)
+        } finally {
+            server.stop(0)
+            executor.shutdownNow()
+            tls.tempDirectory.deleteRecursively()
+        }
+    }
+
+    private data class LocalHttpsMaterial(
+        val serverContext: SSLContext,
+        val client: OkHttpClient,
+        val tempDirectory: File,
+    )
+
+    private fun createLocalHttpsMaterial(): LocalHttpsMaterial {
+        val tempDirectory = createTempDir("hyperget-local-https-")
+        val keyStoreFile = File(tempDirectory, "localhost.p12")
+        val keytoolName = if (System.getProperty("os.name").contains("win", ignoreCase = true)) {
+            "keytool.exe"
+        } else {
+            "keytool"
+        }
+        val keytool = File(File(System.getProperty("java.home"), "bin"), keytoolName)
+        check(keytool.isFile) { "JDK keytool is unavailable at ${keytool.absolutePath}" }
+        val keytoolLog = File(tempDirectory, "keytool.log")
+        val process = ProcessBuilder(
+            keytool.absolutePath,
+            "-genkeypair",
+            "-alias", "hyperget-test",
+            "-keyalg", "RSA",
+            "-keysize", "2048",
+            "-storetype", "PKCS12",
+            "-keystore", keyStoreFile.absolutePath,
+            "-storepass", "changeit",
+            "-keypass", "changeit",
+            "-dname", "CN=localhost",
+            "-ext", "SAN=dns:localhost,ip:127.0.0.1",
+            "-validity", "3650",
+            "-noprompt",
+        ).redirectErrorStream(true).redirectOutput(keytoolLog).start()
+        if (!process.waitFor(30, TimeUnit.SECONDS)) {
+            process.destroyForcibly()
+            error("keytool timed out while preparing the local HTTPS test certificate")
+        }
+        check(process.exitValue() == 0) {
+            "keytool failed to create the local HTTPS certificate: ${keytoolLog.readText()}"
+        }
+
+        val password = "changeit".toCharArray()
+        val keyStore = KeyStore.getInstance("PKCS12").apply {
+            FileInputStream(keyStoreFile).use { load(it, password) }
+        }
+        val keyManagers = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm()).apply {
+            init(keyStore, password)
+        }
+        val trustStore = KeyStore.getInstance("PKCS12").apply {
+            load(null, null)
+            setCertificateEntry("hyperget-test", keyStore.getCertificate("hyperget-test"))
+        }
+        val trustManagers = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm()).apply {
+            init(trustStore)
+        }
+        val context = SSLContext.getInstance("TLS").apply {
+            init(keyManagers.keyManagers, trustManagers.trustManagers, SecureRandom())
+        }
+        val trustManager = trustManagers.trustManagers.filterIsInstance<X509TrustManager>().single()
+        val client = OkHttpClient.Builder()
+            .sslSocketFactory(context.socketFactory, trustManager)
+            .readTimeout(10, TimeUnit.SECONDS)
+            .build()
+        return LocalHttpsMaterial(context, client, tempDirectory)
+    }
+
     private class RetryServerFixture(
-        private val server: HttpServer,
+        private val serverPort: Int,
+        private val scheme: String = "http",
+        clientOverride: OkHttpClient? = null,
     ) {
-        val baseUrl: String get() = "http://127.0.0.1:${server.address.port}"
+        val baseUrl: String get() = "$scheme://127.0.0.1:$serverPort"
+        private val expiredOldToken = AtomicBoolean(false)
+        private val expiredOldTokenRequestCount = AtomicInteger()
+        private val tokenRequests = ConcurrentHashMap<String, AtomicInteger>()
+        private val refreshedTokenPartRangeStarts = CopyOnWriteArrayList<Long>()
         val peakTransfers = AtomicInteger()
         private val activeTransfers = AtomicInteger()
         private val requests = ConcurrentHashMap<String, AtomicInteger>()
@@ -1639,7 +1851,7 @@ class ActualRestoredRetryJobTest {
         private val blockedInfoRelease = CountDownLatch(1)
 
         val client = OkHttpHttpDownloaderClient(
-            okHttpClient = OkHttpClient.Builder()
+            okHttpClient = clientOverride ?: OkHttpClient.Builder()
                 .readTimeout(10, TimeUnit.SECONDS)
                 .build(),
             customUserAgentProvider = object : UserAgentProvider {
@@ -1658,6 +1870,16 @@ class ActualRestoredRetryJobTest {
 
         fun partRequestsFor(path: String): Int = partRequests[path]?.get() ?: 0
 
+        fun expireOldToken() {
+            expiredOldToken.set(true)
+        }
+
+        fun requestsForToken(token: String): Int = tokenRequests[token]?.get() ?: 0
+
+        fun expiredOldTokenRequests(): Int = expiredOldTokenRequestCount.get()
+
+        fun newTokenPartRangeStarts(): List<Long> = refreshedTokenPartRangeStarts.toList()
+
         fun peakPartTransfers(): Int = peakPartTransferCount.get()
 
         fun peakPartTransfersFor(path: String): Int = peakPartTransfersByPath[path]?.get() ?: 0
@@ -1675,7 +1897,7 @@ class ActualRestoredRetryJobTest {
         fun fileBytes(id: Long): ByteArray = ByteArray(
             when (id) {
                 71L, 72L -> 2 * 1024 * 1024
-                41L, 61L, 91L, 92L, 101L, 102L, 103L, 104L -> 512 * 1024
+                41L, 61L, 91L, 92L, 93L, 101L, 102L, 103L, 104L -> 512 * 1024
                 else -> 4_096
             }
         ) { index ->
@@ -1696,6 +1918,29 @@ class ActualRestoredRetryJobTest {
             val isPartRequest = path.startsWith("/file/") && range != null && range != "bytes=0-255"
             if (isPartRequest) {
                 partRequests.computeIfAbsent(path) { AtomicInteger() }.incrementAndGet()
+            }
+            if (path == "/file/93.bin") {
+                val token = Regex("(?:^|&)token=([^&]+)")
+                    .find(exchange.requestURI.rawQuery.orEmpty())
+                    ?.groupValues
+                    ?.get(1)
+                if (token != null) tokenRequests.computeIfAbsent(token) { AtomicInteger() }.incrementAndGet()
+                if (token == "old" && expiredOldToken.get()) {
+                    expiredOldTokenRequestCount.incrementAndGet()
+                    respondFailure(exchange, 403)
+                    return
+                }
+                if (token != "old" && token != "new") {
+                    respondFailure(exchange, 403)
+                    return
+                }
+                if (token == "new" && isPartRequest) {
+                    RANGE_PATTERN.matchEntire(range.orEmpty())
+                        ?.groupValues
+                        ?.get(1)
+                        ?.toLongOrNull()
+                        ?.let(refreshedTokenPartRangeStarts::add)
+                }
             }
             if (path == "/file/101.bin" && range == "bytes=0-255") {
                 blockedInfoEntered.countDown()
@@ -1859,7 +2104,7 @@ class ActualRestoredRetryJobTest {
                         val length = minOf(chunkSize, bytes.size - offset)
                         output.write(bytes, offset, length)
                         output.flush()
-                        Thread.sleep(2)
+                        Thread.sleep(if (path == "/file/93.bin") 10 else 2)
                         offset += length
                     }
                 }

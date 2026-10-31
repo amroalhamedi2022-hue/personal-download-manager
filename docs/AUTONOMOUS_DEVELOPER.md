@@ -1,3 +1,13 @@
+## Purposeful build/compile gate (latest user policy, 2026-10-24)
+
+Do not build for every line-level change, but a targeted compile, Windows executable, installer, or runtime build is permitted whenever it answers a named functional acceptance question that source checks cannot establish (for example: Windows startup/IPC, install/upgrade/uninstall, real HTTP/FTP/HLS transfer, browser integration, UI rendering, or OS resource measurement). Before a build, record the question, expected result, and why source tests are insufficient in a committed checkpoint. Afterward record the actual outcome, exact source SHA, logs, installer/app SHA-256, artifact digest, runtime evidence, and any failure/blocker. Keep quick source CI distinct from packaging and installed-runtime proof; trigger expensive packaging only through a purposeful milestone gate, not for every small edit. Do not use paid services/runners/APIs, write to main, auto-merge, publish a release, or add Torrent support.
+
+The final `HyperGet.exe` delivery is reserved for completion of all mandatory acceptance and an independent Windows recheck. Earlier test builds are allowed when needed to close a real milestone; they must not be presented as release artifacts or random alpha deliveries. Preserve legacy app/data/IPC/registry identity unless an explicit compatibility migration is tested.
+
+## Canonical brand decision: HyperGet (2026-10-23)
+
+The user approved **HyperGet** as the only current and future user-visible name for this project. **READ [HYPERGET_REBRAND_PLAN.md](HYPERGET_REBRAND_PLAN.md) BEFORE ALL NEW WORK, PR TITLES, ACCEPTANCE WRITING, UI CHANGES AND FINAL DELIVERABLES.** Use HyperGet consistently in all future feature tickets and outputs. “IDM” refers only to the original comparison target or historical source naming. Main repo/branch/PR IDs stay unchanged; browser extension changes must happen in its separate repo without breaking IPC/data. Brand HG-01–HG-05 is future work and cannot be marked done until real Windows upgrade and exact-SHA tests. This note modifies documentation only, not source code.
+
 # Autonomous Developer Contract — Personal Download Manager
 Project repo: amroalhamedi2022-hue/personal-download-manager
 Authoritative working base: `codex/repair-rf00-rf01`

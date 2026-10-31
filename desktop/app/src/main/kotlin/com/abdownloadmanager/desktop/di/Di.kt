@@ -655,9 +655,12 @@ val appModule = module {
         OkHttpClient
             .Builder()
             .dispatcher(Dispatcher().apply {
-                //bypass limit on concurrent connections!
-                maxRequests = Int.MAX_VALUE
-                maxRequestsPerHost = Int.MAX_VALUE
+                // Bound asynchronous response setup so segmented-download bursts do not
+                // create an unbounded OkHttp callback-thread burst. Keep headroom
+                // above the required 16-task workload; the installed 1/4/16 matrix
+                // is the runtime gate for fairness and resource impact.
+                maxRequests = 64
+                maxRequestsPerHost = 64
             })
             .sslSocketFactory(
                 appSSLFactoryProvider.createSSLSocketFactory(),
