@@ -295,7 +295,13 @@ abstract class PartDownloader<
 //                "read count $readCount is bigger than homMuchReadFromBuffer $homMuchReadFromBuffer"
 //            }
             if (readCount == -1L) {
-                onFinish()
+                // A prematurely closed ranged response is not a completed download:
+                // keep the persisted byte offset and let the existing retry flow resume.
+                if (part is RangedPart && part.to != null && !part.isCompleted) {
+                    onCanceled(java.io.EOFException("Range ended at byte ${part.current}; expected end ${part.to}"))
+                } else {
+                    onFinish()
+                }
                 break
             }
             destWriter.write(buffer, readCount)

@@ -663,6 +663,68 @@ class DownloadCoreBaselineTest {
     }
 
     @Test
+    fun prematurelyClosedRangedResponseMustNotFinishOrLoseResumeOffset() = runBlocking {
+        val file = java.nio.file.Files.createTempFile("hyperget-early-eof-main-", ".bin").toFile()
+        val handle = FileSystem.SYSTEM.openReadWrite(file.toOkioPath())
+        val part = RangedPart(from = 0L, to = 255L)
+        val premature = AtomicReference<Throwable?>(null)
+        val completed = AtomicInteger()
+        val responseInfo = object : ir.amirab.downloader.connection.IResponseInfo {
+            override val isSuccessFul = true
+            override val requiresAuth = false
+            override val requireBasicAuth = false
+            override val resumeSupport = true
+            override val isWebPage = false
+            override val unsuccessFullException: Throwable? = null
+        }
+        val downloader = object : PartDownloader<RangedPart>(
+            part = part,
+            getDestWriter = { DestWriter(part.getID(), file, part.current, handle) },
+        ) {
+            override fun howMuchCanRead(maxAllowed: Long): Long =
+                minOf(maxAllowed, (part.to!! - part.current + 1L).coerceAtLeast(0L))
+
+            override suspend fun connectAndVerify() =
+                ir.amirab.downloader.connection.Connection(Buffer().write(ByteArray(64)), 64L, responseInfo)
+
+            override fun onCanceled(e: Throwable) {
+                if (e is java.io.EOFException) {
+                    premature.compareAndSet(null, e)
+                    stop() // Prevent another attempt from racing the recorded resume offset.
+                }
+                super.onCanceled(e)
+            }
+
+            override fun onFinish() {
+                completed.incrementAndGet()
+                super.onFinish()
+            }
+        }
+        downloader.onTooManyErrors = { /* cancellation is expected; no terminal retry budget */ }
+        try {
+            downloader.start()
+            withTimeout(5.seconds) {
+                while (premature.get() == null) {
+                    delay(10)
+                }
+            }
+            downloader.stop()
+            withTimeout(5.seconds) { downloader.join() }
+
+            assertTrue(premature.get() is java.io.EOFException)
+            assertEquals(64L, part.current, "64 valid bytes must remain resumable")
+            assertFalse(part.isCompleted, "short response must never publish completion")
+            assertEquals(0, completed.get(), "short response cannot signal successful completion")
+            assertEquals(64L, file.length(), "only received bytes should be written")
+        } finally {
+            downloader.stop()
+            withTimeoutOrNull(5.seconds) { downloader.join() }
+            handle.close()
+            file.delete()
+        }
+    }
+
+    @Test
     fun threeRealHttpPartsAssembleTheExpectedFile() = withHttpFixture(
         rangeMode = RangeMode.Supported,
     ) { fixture ->
