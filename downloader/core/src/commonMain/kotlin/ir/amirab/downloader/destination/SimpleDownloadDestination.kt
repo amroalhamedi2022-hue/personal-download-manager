@@ -8,6 +8,28 @@ import okio.FileHandle
 import okio.FileSystem
 import okio.Path.Companion.toOkioPath
 import java.io.File
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+
+/**
+ * Publish a staged HTTP result without destroying an earlier completed download first.
+ *
+ * On Windows an in-use target can reject replacement. Failed publication must
+ * preserve the old result instead of deleting it before the move.
+ * Existing targets require atomic replacement; never fall back to copy/delete.
+ */
+internal fun publishCompletedStagedFile(incomplete: File, complete: File) {
+    if (complete.exists()) {
+        Files.move(
+            incomplete.toPath(),
+            complete.toPath(),
+            StandardCopyOption.ATOMIC_MOVE,
+            StandardCopyOption.REPLACE_EXISTING,
+        )
+    } else {
+        incomplete.tryAtomicMove(complete)
+    }
+}
 
 class SimpleDownloadDestination(
     file: File,
@@ -71,12 +93,8 @@ class SimpleDownloadDestination(
                 return
             }
             val completeFile = outputFile
-            // delete old file if exists to override with new one!
-            if (completeFile.exists()) {
-                completeFile.delete()
-            }
             try {
-                incompleteFile.tryAtomicMove(completeFile)
+                publishCompletedStagedFile(incompleteFile, completeFile)
             } catch (e: Exception) {
                 // prevent remove the part file if it can't be moved by us!
                 throw IllegalStateException(

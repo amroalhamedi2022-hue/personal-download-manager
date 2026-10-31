@@ -21,6 +21,8 @@ on:
       - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/queue/DownloadQueue.kt"
       - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/queue/ScheduleTimes.kt"
       - "downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/queue/ScheduledQueueWindowTest.kt"
+      - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/destination/SimpleDownloadDestination.kt"
+      - "downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/destination/SimpleDownloadDestinationPublicationTest.kt"
   workflow_dispatch:
 permissions:
   contents: read
@@ -56,7 +58,7 @@ jobs:
       - name: Compile and run targeted Kotlin lifecycle and schedule suites
         shell: pwsh
         run: |
-          & ./gradlew.bat --no-daemon --stacktrace --dependency-verification strict :downloader:core:desktopTest --tests '*DownloadManagerLifecycleContextTest*' --tests '*ManualDownloadQueueBatchResumeTest*' --tests '*PartResponseDeadlineTest*' --tests '*PartDownloaderIoLifecycleTest*' --tests '*ScheduledQueueWindowTest*'
+          & ./gradlew.bat --no-daemon --stacktrace --dependency-verification strict :downloader:core:desktopTest --tests '*DownloadManagerLifecycleContextTest*' --tests '*ManualDownloadQueueBatchResumeTest*' --tests '*PartResponseDeadlineTest*' --tests '*PartDownloaderIoLifecycleTest*' --tests '*ScheduledQueueWindowTest*' --tests '*SimpleDownloadDestinationPublicationTest*'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify exact JUnit XML counts and zero failures
         shell: pwsh
@@ -67,7 +69,8 @@ jobs:
             @{Name='ir.amirab.downloader.queue.ManualDownloadQueueBatchResumeTest';Min=7},
             @{Name='ir.amirab.downloader.part.PartResponseDeadlineTest';Min=4},
             @{Name='ir.amirab.downloader.part.PartDownloaderIoLifecycleTest';Min=1},
-            @{Name='ir.amirab.downloader.queue.ScheduledQueueWindowTest';Min=1}
+            @{Name='ir.amirab.downloader.queue.ScheduledQueueWindowTest';Min=1},
+            @{Name='ir.amirab.downloader.destination.SimpleDownloadDestinationPublicationTest';Min=3}
           )
           foreach ($suite in $suites) {
             $path = Join-Path $dir "TEST-$($suite.Name).xml"
@@ -92,5 +95,6 @@ jobs:
             downloader/core/build/test-results/desktopTest/TEST-ir.amirab.downloader.part.PartResponseDeadlineTest.xml
             downloader/core/build/test-results/desktopTest/TEST-ir.amirab.downloader.part.PartDownloaderIoLifecycleTest.xml
             downloader/core/build/test-results/desktopTest/TEST-ir.amirab.downloader.queue.ScheduledQueueWindowTest.xml
+            downloader/core/build/test-results/desktopTest/TEST-ir.amirab.downloader.destination.SimpleDownloadDestinationPublicationTest.xml
           if-no-files-found: warn
           retention-days: 7
