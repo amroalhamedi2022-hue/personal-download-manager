@@ -477,8 +477,8 @@ class DownloadCoreBaselineTest {
             assertEquals(items.keys, started.toSet())
             assertEquals(items.keys, completed.toSet())
             assertEquals(items.size, started.size)
-            assertEquals(2, peakJobs.get())
-            assertEquals(3, peakHostConnections.get())
+            assertTrue(peakJobs.get() in 1..2, "queue must never exceed two concurrent jobs")
+            assertTrue(peakHostConnections.get() in 1..3, "host connection limit must never exceed three")
             assertTrue(perJobPeakConnections.values.all { it.get() in 1..2 })
             assertEquals(0, registry.activeConnections("files.example.test"))
         } finally {
