@@ -22,6 +22,12 @@ import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.TimeoutCancellationException
+import java.net.SocketTimeoutException
+import java.io.Closeable
 import okio.Buffer
 import okio.Source
 import okio.use
@@ -37,6 +43,31 @@ const val RetryDelay = 1_000L
 // before the next download/connection attempt.
 internal fun shouldContinuePartWorker(coroutineActive: Boolean, stopRequested: Boolean): Boolean =
     coroutineActive && !stopRequested
+
+// Deadline applies only to response acquisition, not streaming the file body.
+private const val PART_RESPONSE_DEADLINE_MILLIS = 45_000L
+
+internal suspend fun <T : Closeable> awaitPartResponseWithDeadline(
+    timeoutMillis: Long,
+    connect: suspend () -> T,
+): T {
+    require(timeoutMillis > 0L)
+    var acquired: T? = null
+    try {
+        return withTimeout(timeoutMillis) {
+            connect().also { acquired = it }
+        }
+    } catch (timeout: TimeoutCancellationException) {
+        runCatching { acquired?.close() }
+        // An enclosing timeout cancels our caller; it is NOT a retryable socket error.
+        currentCoroutineContext().ensureActive()
+        throw SocketTimeoutException("HTTP response headers were not received before the connection deadline")
+    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+        runCatching { acquired?.close() }
+        throw cancelled
+    }
+}
+
 
 abstract class PartDownloader<
         TPart : DownloadPart
@@ -227,7 +258,9 @@ abstract class PartDownloader<
 
     private suspend fun download() {
         onNewStatus(PartDownloadStatus.Connecting)
-        val conn = connectAndVerify()
+        val conn = awaitPartResponseWithDeadline(PART_RESPONSE_DEADLINE_MILLIS) {
+            connectAndVerify()
+        }
         synchronized(connectionLock) {
             if (stop) {
                 conn.close()
