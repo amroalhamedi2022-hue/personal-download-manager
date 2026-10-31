@@ -159,6 +159,58 @@ class PartDownloaderIoLifecycleTest {
         assertEquals(PART_BODY_COPY_PARALLELISM, peak.get())
     }
 
+
+    @Test
+    fun primaryRangesCannotBeStarvedByEarlierMultiPartDownloads() = runBlocking {
+        assertEquals(16, PART_PRIMARY_COPY_RESERVE)
+        val secondaryCapacity = PART_BODY_COPY_PARALLELISM - PART_PRIMARY_COPY_RESERVE
+        val secondaryEntered = CountDownLatch(secondaryCapacity)
+        val primaryEntered = CountDownLatch(PART_PRIMARY_COPY_RESERVE)
+        val extraSecondaryEntered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+
+        coroutineScope {
+            val secondaries = List(secondaryCapacity) {
+                launch(Dispatchers.Default) {
+                    withFairPartBodyCopyPermit(isPrimaryPart = false) {
+                        secondaryEntered.countDown()
+                        release.await()
+                    }
+                }
+            }
+            val primaries = mutableListOf<kotlinx.coroutines.Job>()
+            var extraSecondary: kotlinx.coroutines.Job? = null
+            try {
+                assertTrue(secondaryEntered.await(5, TimeUnit.SECONDS))
+                repeat(PART_PRIMARY_COPY_RESERVE) {
+                    primaries += launch(Dispatchers.Default) {
+                        withFairPartBodyCopyPermit(isPrimaryPart = true) {
+                            primaryEntered.countDown()
+                            release.await()
+                        }
+                    }
+                }
+                assertTrue(
+                    primaryEntered.await(5, TimeUnit.SECONDS),
+                    "all 16 first ranges must start despite 44 occupied secondary slots",
+                )
+                extraSecondary = launch(Dispatchers.Default) {
+                    withFairPartBodyCopyPermit(isPrimaryPart = false) {
+                        extraSecondaryEntered.complete(Unit)
+                    }
+                }
+                assertFalse(
+                    withTimeoutOrNull(250L) { extraSecondaryEntered.await(); true } ?: false,
+                    "a 45th secondary must not consume a first-range reservation",
+                )
+            } finally {
+                release.complete(Unit)
+            }
+            (secondaries + primaries).joinAll()
+            extraSecondary?.join()
+        }
+    }
+
     @Test
     fun connectionAdmissionWaitsForSharedPermit() = runBlocking {
         val releaseHolders = CompletableDeferred<Unit>()

@@ -76,10 +76,10 @@ class PartDownloaderIoLifecycleContract(unittest.TestCase):
         download = self.part.split("private suspend fun download()", 1)[1].split("protected open fun onCanceled", 1)[0]
         self.assertRegex(
             download,
-            r"withPartBodyCopyPermit\s*\{\s*downloadWithReservedConnectionSlot\(\)",
+            r"withFairPartBodyCopyPermit\(part\.getID\(\) == 0L\)\s*\{\s*downloadWithReservedConnectionSlot\(\)",
         )
         self.assertLess(
-            download.index("withPartBodyCopyPermit {"),
+            download.index("withFairPartBodyCopyPermit(part.getID() == 0L) {"),
             download.index("val conn = awaitPartResponseWithDeadline"),
         )
         self.assertRegex(
@@ -89,6 +89,13 @@ class PartDownloaderIoLifecycleContract(unittest.TestCase):
         self.assertIn("copyDataSync(connection.source, writer)", download)
         self.assertIn("connectionAdmissionWaitsForSharedPermit", self.test)
         self.assertIn("a waiting part must not open an HTTP socket", self.test)
+
+    def test_first_ranges_keep_sixteen_reserved_connection_slots(self):
+        self.assertIn('internal const val PART_PRIMARY_COPY_RESERVE = 16', self.part)
+        self.assertIn('Semaphore(PART_BODY_COPY_PARALLELISM - PART_PRIMARY_COPY_RESERVE)', self.part)
+        self.assertIn('withFairPartBodyCopyPermit(part.getID() == 0L)', self.part)
+        self.assertIn('primaryRangesCannotBeStarvedByEarlierMultiPartDownloads', self.test)
+        self.assertIn('all 16 first ranges must start', self.test)
 
     def test_runtime_regression_uses_source_that_ignores_thread_interrupts(self):
         self.assertIn("class PartDownloaderIoLifecycleTest", self.test)
