@@ -35,3 +35,7 @@
 ## Real Windows preference disk probe
 - On the isolated 1024×728 Windows CI fixture, the visual E2E captures the **On Completion** tab, verifies its blue selected underline and the actual switch color, then clicks only **Show Download Completion Dialog** twice. It reads the transactional per-download JSON after both actions, checks the nullable override was written with each new Boolean value, and restores the original UI choice. The **Shutdown System On Completion** switch is never touched.
 - The JSON result reports `CompletionPreferenceDiskTested` and a bounded explanation. The probe is skipped rather than risk guessed clicks when geometry or pixels differ. Even an on-disk roundtrip is **not** a full app restart test; that remains open until separately run.
+
+## Startup safety follow-up
+- Restore the per-file Boolean override synchronously during the desktop component's initialization, before the asynchronous storage observation, so a very short download cannot finish under the global default before the stored per-file choice is loaded.
+- Harden the Windows switch pixel guard against mistaking a pure-white background for a disabled grey switch before issuing a coordinate click.

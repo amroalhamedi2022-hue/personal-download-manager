@@ -678,7 +678,10 @@ public static class HyperGetLiquidProgressNative {
                         $toggleSample = $preview.GetPixel(($preview.Width - 55), 150)
                         $tabIsSelected = ($selectedLine.B -gt ($selectedLine.R + 90))
                         $toggleIsBlue = ($toggleSample.B -gt ($toggleSample.R + 45))
-                        $toggleIsGray = ([Math]::Abs([int]$toggleSample.B - [int]$toggleSample.R) -le 16)
+                        $toggleIsGray = (
+                            [Math]::Abs([int]$toggleSample.B - [int]$toggleSample.R) -le 16 -and
+                            [int]$toggleSample.R -ge 60 -and [int]$toggleSample.R -le 225
+                        )
                         if ($tabIsSelected -and ($toggleIsBlue -or $toggleIsGray)) {
                             $safeToProbe = $true
                             $initialEnabled = $toggleIsBlue

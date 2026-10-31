@@ -68,10 +68,11 @@ class DesktopSingleDownloadComponent(
     }
 
     init {
-        // Restore the per-file completion-dialog choice from the same
-        // transactional settings storage that already persists power actions.
-        // Keep the base component's completion decision synchronized when the
-        // value changes externally or the settings file is reloaded.
+        // The completion decision may be needed immediately (for a very short
+        // download), before an asynchronous Flow collector can run.
+        itemShouldShowCompletionDialog.value =
+            extraDownloadItemSettingsFlow.value.showCompletionDialogOverride
+        // Keep subsequent updates synchronized with the transactional storage.
         extraDownloadItemSettingsFlow
             .map { it.showCompletionDialogOverride }
             .distinctUntilChanged()

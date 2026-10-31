@@ -421,6 +421,7 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("$tab.Name -eq 'on-completion'", SCRIPT)
         self.assertIn("GetPixel(175, 61)", SCRIPT)
         self.assertIn("GetPixel(($preview.Width - 55), 150)", SCRIPT)
+        self.assertIn("[int]$toggleSample.R -le 225", SCRIPT)
         self.assertIn("extra_download_settings", SCRIPT)
         self.assertIn("showCompletionDialogOverride", SCRIPT)
         self.assertIn("foreach ($expected in @((-not $initialEnabled), $initialEnabled))", SCRIPT)
@@ -459,6 +460,7 @@ class LiquidProgressSourceContract(unittest.TestCase):
     def test_completion_dialog_choice_is_backward_compatible_and_persisted_per_download(self):
         self.assertIn("@Serializable", EXTRA_DOWNLOAD_SETTINGS_MODEL)
         self.assertIn("val showCompletionDialogOverride: Boolean? = null", EXTRA_DOWNLOAD_SETTINGS_MODEL)
+        self.assertIn("extraDownloadItemSettingsFlow.value.showCompletionDialogOverride", DOWNLOAD_WINDOW_COMPONENT)
         self.assertIn(".map { it.showCompletionDialogOverride }", DOWNLOAD_WINDOW_COMPONENT)
         self.assertIn(".distinctUntilChanged()", DOWNLOAD_WINDOW_COMPONENT)
         self.assertIn("itemShouldShowCompletionDialog.value = it", DOWNLOAD_WINDOW_COMPONENT)
