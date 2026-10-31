@@ -16,6 +16,8 @@ on:
       - "scripts/source-tests/test_hyperget_http_part_deadline_source.py"
       - "scripts/source-tests/test_hyperget_http_part_admission_source.py"
       - "downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/DownloadManagerLifecycleContextTest.kt"
+      - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/queue/QueueManager.kt"
+      - "downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/queue/RestartPersistenceTest.kt"
       - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/queue/ManualDownloadQueue.kt"
       - "downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/queue/ManualDownloadQueueBatchResumeTest.kt"
       - "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/queue/DownloadQueue.kt"
@@ -58,7 +60,7 @@ jobs:
       - name: Compile and run targeted Kotlin lifecycle and schedule suites
         shell: pwsh
         run: |
-          & ./gradlew.bat --no-daemon --stacktrace --dependency-verification strict :downloader:core:desktopTest --tests '*DownloadManagerLifecycleContextTest*' --tests '*ManualDownloadQueueBatchResumeTest*' --tests '*PartResponseDeadlineTest*' --tests '*PartDownloaderIoLifecycleTest*' --tests '*ScheduledQueueWindowTest*' --tests '*SimpleDownloadDestinationPublicationTest*'
+          & ./gradlew.bat --no-daemon --stacktrace --dependency-verification strict :downloader:core:desktopTest --tests '*DownloadManagerLifecycleContextTest*' --tests '*ManualDownloadQueueBatchResumeTest*' --tests '*RestartPersistenceTest*' --tests '*PartResponseDeadlineTest*' --tests '*PartDownloaderIoLifecycleTest*' --tests '*ScheduledQueueWindowTest*' --tests '*SimpleDownloadDestinationPublicationTest*'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify exact JUnit XML counts and zero failures
         shell: pwsh
@@ -67,6 +69,7 @@ jobs:
           $suites = @(
             @{Name='ir.amirab.downloader.DownloadManagerLifecycleContextTest';Min=4},
             @{Name='ir.amirab.downloader.queue.ManualDownloadQueueBatchResumeTest';Min=7},
+            @{Name='ir.amirab.downloader.queue.RestartPersistenceTest';Min=3},
             @{Name='ir.amirab.downloader.part.PartResponseDeadlineTest';Min=4},
             @{Name='ir.amirab.downloader.part.PartDownloaderIoLifecycleTest';Min=1},
             @{Name='ir.amirab.downloader.queue.ScheduledQueueWindowTest';Min=1},
@@ -92,6 +95,7 @@ jobs:
           path: |
             downloader/core/build/test-results/desktopTest/TEST-ir.amirab.downloader.DownloadManagerLifecycleContextTest.xml
             downloader/core/build/test-results/desktopTest/TEST-ir.amirab.downloader.queue.ManualDownloadQueueBatchResumeTest.xml
+            downloader/core/build/test-results/desktopTest/TEST-ir.amirab.downloader.queue.RestartPersistenceTest.xml
             downloader/core/build/test-results/desktopTest/TEST-ir.amirab.downloader.part.PartResponseDeadlineTest.xml
             downloader/core/build/test-results/desktopTest/TEST-ir.amirab.downloader.part.PartDownloaderIoLifecycleTest.xml
             downloader/core/build/test-results/desktopTest/TEST-ir.amirab.downloader.queue.ScheduledQueueWindowTest.xml
