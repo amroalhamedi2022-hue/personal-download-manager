@@ -17,7 +17,7 @@ import ir.amirab.util.desktop.poweraction.PowerActionConfig
 import ir.amirab.util.flow.mapTwoWayStateFlow
 import ir.amirab.util.flow.mapStateFlow
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.*
 import org.koin.core.component.get
 import kotlin.getValue
 
@@ -67,6 +67,18 @@ class DesktopSingleDownloadComponent(
         }
     }
 
+    init {
+        // Restore the per-file completion-dialog choice from the same
+        // transactional settings storage that already persists power actions.
+        // Keep the base component's completion decision synchronized when the
+        // value changes externally or the settings file is reloaded.
+        extraDownloadItemSettingsFlow
+            .map { it.showCompletionDialogOverride }
+            .distinctUntilChanged()
+            .onEach { itemShouldShowCompletionDialog.value = it }
+            .launchIn(scope)
+    }
+
     sealed interface Effects : BaseSingleDownloadComponent.Effects.Platform {
         data object BringToFront : Effects
     }
@@ -107,7 +119,12 @@ class DesktopSingleDownloadComponent(
                     map = {
                         it ?: globalShowCompletionDialog.value
                     },
-                    unMap = { it }
+                    unMap = { selected ->
+                        extraDownloadItemSettingsFlow.value = extraDownloadItemSettingsFlow.value.copy(
+                            showCompletionDialogOverride = selected,
+                        )
+                        selected
+                    }
                 ),
                 describe = {
                     when (it) {

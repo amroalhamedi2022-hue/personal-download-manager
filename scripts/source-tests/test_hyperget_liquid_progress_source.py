@@ -16,6 +16,7 @@ DOWNLOAD_COMMAND = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/de
 OPEN_COMMAND = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/cli/download/open/OpenDownload.kt").read_text(encoding="utf-8")
 DOWNLOAD_WINDOW_STATE = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/singleDownloadPage/SingleDownloadPageStateToPersist.kt").read_text(encoding="utf-8")
 DOWNLOAD_WINDOW_COMPONENT = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/singleDownloadPage/DesktopSingleDownloadPageComponent.kt").read_text(encoding="utf-8")
+EXTRA_DOWNLOAD_SETTINGS_MODEL = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/storage/DesktopExtraDownloadItemSettings.kt").read_text(encoding="utf-8")
 TABS_WIDGET = (ROOT / "shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/ui/widget/Tabs.kt").read_text(encoding="utf-8")
 THEME_MANAGER = (ROOT / "shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/ui/theme/ThemeManager.kt").read_text(encoding="utf-8")
 THEME_RENDERER = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/ui/configurable/comon/renderer/ThemeConfigurableRenderer.kt").read_text(encoding="utf-8")
@@ -444,8 +445,22 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("list = visibleParts,", section)
         self.assertNotIn("list = listToShow,", section)
 
+    def test_completion_dialog_choice_is_backward_compatible_and_persisted_per_download(self):
+        self.assertIn("@Serializable", EXTRA_DOWNLOAD_SETTINGS_MODEL)
+        self.assertIn("val showCompletionDialogOverride: Boolean? = null", EXTRA_DOWNLOAD_SETTINGS_MODEL)
+        self.assertIn(".map { it.showCompletionDialogOverride }", DOWNLOAD_WINDOW_COMPONENT)
+        self.assertIn(".distinctUntilChanged()", DOWNLOAD_WINDOW_COMPONENT)
+        self.assertIn("itemShouldShowCompletionDialog.value = it", DOWNLOAD_WINDOW_COMPONENT)
+        self.assertIn("extraDownloadItemSettingsFlow.value = extraDownloadItemSettingsFlow.value.copy(", DOWNLOAD_WINDOW_COMPONENT)
+        self.assertIn("showCompletionDialogOverride = selected", DOWNLOAD_WINDOW_COMPONENT)
+        self.assertIn("selected", DOWNLOAD_WINDOW_COMPONENT)
+        self.assertIn("it ?: globalShowCompletionDialog.value", DOWNLOAD_WINDOW_COMPONENT)
+        self.assertIn("powerActionTypeOnFinish = when (it)", DOWNLOAD_WINDOW_COMPONENT)
+
     def test_graph_hide_reclaims_height_without_clipping_settings(self):
-        self.assertIn("val panelHeight = if (selectedTab == Info && !showSpeedGraph) 196.dp else 232.dp", PAGE)
+        self.assertIn("val panelHeight = when (selectedTab)", PAGE)
+        self.assertIn("Info -> if (showSpeedGraph) 232.dp else 196.dp", PAGE)
+        self.assertIn("Settings, OnCompletion -> 144.dp", PAGE)
         self.assertIn(".height(panelHeight)", PAGE)
         self.assertIn("Color(0xFF122AEF)", PAGE)
         self.assertIn("Color(0xFF00DFEB)", PAGE)

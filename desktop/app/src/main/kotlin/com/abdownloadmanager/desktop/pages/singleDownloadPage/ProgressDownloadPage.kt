@@ -199,9 +199,13 @@ fun ProgressDownloadPage(
         // The information panel always starts at its own top when changing tabs.
         LaunchedEffect(selectedTab) { scrollState.scrollTo(0) }
         val panelShape = RoundedCornerShape(10.dp)
-        // A hidden graph should give the reclaimed height back to the parts table.
-        // Keep full height on the settings and completion tabs for their controls.
-        val panelHeight = if (selectedTab == Info && !showSpeedGraph) 196.dp else 232.dp
+        // Info keeps room for the live chart. Speed and On Completion have only
+        // two controls each; reclaim their unused space for the parts table.
+        // The scrolling content still protects long labels and higher DPI.
+        val panelHeight = when (selectedTab) {
+            Info -> if (showSpeedGraph) 232.dp else 196.dp
+            Settings, OnCompletion -> 144.dp
+        }
         Column(
             Modifier
                 .padding(horizontal = 12.dp, vertical = 4.dp)

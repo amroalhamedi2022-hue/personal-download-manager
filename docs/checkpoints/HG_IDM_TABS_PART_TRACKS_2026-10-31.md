@@ -26,3 +26,8 @@
 ## Installed-tab visual evidence
 - The Windows Liquid Progress E2E now records three additional screenshots when the runner presents the known 1024x728 dialog: `liquid-progress-tab-speed.png`, `liquid-progress-tab-on-completion.png`, and `liquid-progress-tab-info-restored.png`.
 - These are real on-screen mouse interactions. Merely saving screenshots **does not** certify that the correct tab was clicked or that IDM parity was met. Review the screenshots manually and state any missing source comparison image explicitly.
+
+## Final pass: compact settings panels and per-file preference retention
+- The real Windows screenshots show that **Speed** and **On Completion** have two controls each but were forced into the same 232dp panel as the chart-heavy **Info** tab. The new tab-aware panel is 144dp for those two compact tabs, preserving a scrollable container for accessibility/large fonts and expanding the connections table instead of leaving blank space.
+- **Show Download Completion Dialog** formerly only changed `itemShouldShowCompletionDialog` in memory. A nullable `showCompletionDialogOverride` is now stored with `DesktopExtraDownloadItemSettings`. `null` remains backward-compatible and inherits the global setting; explicit true/false is persisted per download. The already persisted shutdown power action is untouched.
+- Source and Windows compile/installed UI checks are required on the exact new HEAD; disk reload/restart behavior should not be marked manually verified unless a runtime test demonstrates it.
