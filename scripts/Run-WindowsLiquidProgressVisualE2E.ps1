@@ -616,6 +616,63 @@ public static class HyperGetLiquidProgressNative {
     }
     Write-Host "Graph toggle interaction: $graphToggleResult"
 
+    # Capture the two other REAL IDM-style tabs for later visual comparison.
+    # This deliberately records evidence rather than claiming pixel-perfect
+    # parity with historical IDM screenshots that are not in this repository.
+    # Positions are restricted to the known 1024x728 Windows CI fixture;
+    # never click at guessed coordinates on other display layouts/DPI.
+    $tabCaptureResult = 'not captured (different window size or foreground)'
+    $tabCaptureFiles = @()
+    if ($captureWidth -ge 980 -and $captureWidth -le 1080 -and
+        $captureHeight -ge 680 -and $captureHeight -le 770 -and
+        [HyperGetLiquidProgressNative]::GetForegroundWindow() -eq $windowHandle) {
+        function Save-TabCapture {
+            param([string]$Destination)
+            $shot = [System.Drawing.Bitmap]::new($captureWidth, $captureHeight)
+            $g = [System.Drawing.Graphics]::FromImage($shot)
+            try {
+                $g.CopyFromScreen(
+                    [System.Drawing.Point]::new($captureLeft, $captureTop),
+                    [System.Drawing.Point]::Empty,
+                    [System.Drawing.Size]::new($captureWidth, $captureHeight)
+                )
+                $shot.Save($Destination, [System.Drawing.Imaging.ImageFormat]::Png)
+            } finally {
+                $g.Dispose()
+                $shot.Dispose()
+            }
+        }
+        try {
+            $tabClickY = $captureTop + 47
+            $tabClicks = @(
+                @{ Name = 'speed'; OffsetX = 81 },
+                @{ Name = 'on-completion'; OffsetX = 174 },
+                @{ Name = 'info-restored'; OffsetX = 28 }
+            )
+            foreach ($tab in $tabClicks) {
+                if ([HyperGetLiquidProgressNative]::GetForegroundWindow() -ne $windowHandle) {
+                    throw 'Details window lost foreground during tab screenshot capture.'
+                }
+                $tabClickX = $captureLeft + [int]$tab.OffsetX
+                if (-not [HyperGetLiquidProgressNative]::SetCursorPos($tabClickX, $tabClickY)) {
+                    throw 'Could not position mouse to capture a download details tab.'
+                }
+                [HyperGetLiquidProgressNative]::mouse_event([uint32]0x0002, 0, 0, 0, [UIntPtr]::Zero)
+                [HyperGetLiquidProgressNative]::mouse_event([uint32]0x0004, 0, 0, 0, [UIntPtr]::Zero)
+                Start-Sleep -Milliseconds 450
+                $tabImage = Join-Path $root ("liquid-progress-tab-{0}.png" -f $tab.Name)
+                Save-TabCapture -Destination $tabImage
+                $tabCaptureFiles += [IO.Path]::GetFileName($tabImage)
+            }
+            $tabCaptureResult = 'real Windows click screenshots recorded for human IDM tab review'
+        } catch {
+            # Screenshots are evidence for review, not an acceptance test that
+            # could mask or invalidate the already verified data transfer.
+            $tabCaptureResult = 'tab screenshot probe failed (not visually accepted)'
+        }
+    }
+    Write-Host "IDM tab screenshot capture: $tabCaptureResult"
+
     $completed = $false
     $finalStats = $null
     $actualSha = ''
@@ -722,6 +779,8 @@ public static class HyperGetLiquidProgressNative {
         GraphToggleResult = $graphToggleResult
         GraphHiddenScreenshot = if ($graphHiddenScreenshot) { [IO.Path]::GetFileName($graphHiddenScreenshot) } else { $null }
         GraphRestoredScreenshot = if ($graphRestoredScreenshot) { [IO.Path]::GetFileName($graphRestoredScreenshot) } else { $null }
+        TabCaptureResult = $tabCaptureResult
+        TabScreenshotFiles = @($tabCaptureFiles)
         FinalStatus = $finalStatus
         Verified = $true
     } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $root 'liquid-progress-report.json') -Encoding utf8

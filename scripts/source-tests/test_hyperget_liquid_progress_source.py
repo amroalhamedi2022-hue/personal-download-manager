@@ -415,6 +415,16 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn(".height(42.dp)", PAGE)
         self.assertIn("bubbleCount = 3", PAGE)
 
+    def test_installed_windows_captures_other_idm_tabs_without_claiming_false_parity(self):
+        self.assertIn("liquid-progress-tab-{0}.png", SCRIPT)
+        self.assertIn("@{ Name = 'speed'; OffsetX = 81 }", SCRIPT)
+        self.assertIn("@{ Name = 'on-completion'; OffsetX = 174 }", SCRIPT)
+        self.assertIn("@{ Name = 'info-restored'; OffsetX = 28 }", SCRIPT)
+        self.assertIn("GetForegroundWindow() -ne $windowHandle", SCRIPT)
+        self.assertIn("TabScreenshotFiles = @($tabCaptureFiles)", SCRIPT)
+        self.assertIn("real Windows click screenshots recorded for human IDM tab review", SCRIPT)
+        self.assertNotIn("TabVisualTested = $true", SCRIPT)
+
     def test_idm_tabs_are_text_only_selected_and_reset_their_scroll(self):
         self.assertIn("showIcon = false", PAGE)
         self.assertIn("showSelectionUnderline = true", PAGE)

@@ -22,3 +22,7 @@
 - Never replace or redo verified commits from other workers. Compare the latest SHA before pushing.
 - Continue only on `experiment/liquid-reference-match-20261030` / Draft PR #4, leaving `main` and PR #3 untouched.
 - Windows CI must compile and capture installed actual GUI on the exact commit; source assertions alone are not visual acceptance.
+
+## Installed-tab visual evidence
+- The Windows Liquid Progress E2E now records three additional screenshots when the runner presents the known 1024x728 dialog: `liquid-progress-tab-speed.png`, `liquid-progress-tab-on-completion.png`, and `liquid-progress-tab-info-restored.png`.
+- These are real on-screen mouse interactions. Merely saving screenshots **does not** certify that the correct tab was clicked or that IDM parity was met. Review the screenshots manually and state any missing source comparison image explicitly.
