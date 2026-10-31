@@ -178,6 +178,10 @@ public static class HyperGetLiquidProgressNative {
     public static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")]
     public static extern bool GetWindowRect(IntPtr handle, out RECT rect);
+    // GetWindowRect includes the invisible resize border of a maximized
+    // window. DWM exposes the actual visible frame for screenshot cropping.
+    [DllImport("dwmapi.dll")]
+    public static extern int DwmGetWindowAttribute(IntPtr handle, int attribute, out RECT rect, int rectSize);
     [DllImport("user32.dll")]
     public static extern bool SetWindowPos(IntPtr handle, IntPtr insertAfter, int x, int y, int cx, int cy, uint flags);
     [DllImport("user32.dll")]
@@ -421,6 +425,17 @@ public static class HyperGetLiquidProgressNative {
     $windowRect = [HyperGetLiquidProgressNative+RECT]::new()
     if (-not [HyperGetLiquidProgressNative]::GetWindowRect($windowHandle, [ref]$windowRect)) {
         throw 'Could not obtain installed HyperGet window bounds.'
+    }
+    # DWM's extended frame bounds omit invisible maximized-window borders.
+    # Keep the GetWindowRect fallback if the DWM attribute is unavailable.
+    $dwmVisibleWindowRect = [HyperGetLiquidProgressNative+RECT]::new()
+    $dwmResult = [HyperGetLiquidProgressNative]::DwmGetWindowAttribute(
+        $windowHandle, 9, [ref]$dwmVisibleWindowRect, 16
+    )
+    if ($dwmResult -eq 0 -and
+        $dwmVisibleWindowRect.Right -gt $dwmVisibleWindowRect.Left -and
+        $dwmVisibleWindowRect.Bottom -gt $dwmVisibleWindowRect.Top) {
+        $windowRect = $dwmVisibleWindowRect
     }
     $windowWidth = $windowRect.Right - $windowRect.Left
     $windowHeight = $windowRect.Bottom - $windowRect.Top

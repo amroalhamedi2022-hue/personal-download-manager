@@ -79,6 +79,9 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("$windowRect.Right -gt $displayBounds.Right", SCRIPT)
         self.assertIn("$windowRect.Bottom -gt $displayBounds.Bottom", SCRIPT)
         self.assertIn("outside display bounds", SCRIPT)
+        self.assertIn("DwmGetWindowAttribute", SCRIPT)
+        self.assertIn("$dwmVisibleWindowRect", SCRIPT)
+        self.assertIn("$windowRect = $dwmVisibleWindowRect", SCRIPT)
         self.assertIn("$maxInvisibleFrame = 12", SCRIPT)
         self.assertIn("$outsideRight -gt $maxInvisibleFrame", SCRIPT)
         self.assertIn("$captureWidth = $captureRight - $captureLeft", SCRIPT)
@@ -358,7 +361,8 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("val glassTop = Brush.verticalGradient(", PAGE)
         self.assertIn("Color.White.copy(alpha = 0.48f)", PAGE)
         self.assertIn("Color.White.copy(alpha = 0.86f)", PAGE)
-        self.assertIn("// Glass bubbles have translucent cores", PAGE)
+        self.assertIn("drawCircle(Color(0xFFB1F9FF).copy(alpha = 0.12f)", PAGE)
+        self.assertIn("style = Stroke(width = (bubbleRadius * 0.13f)", PAGE)
 
     def test_parts_table_fits_visible_width_without_losing_resizable_columns(self):
         section = PAGE.split("private fun RenderPartInfo(", 1)[1].split("private fun prettifyStatus(", 1)[0]
