@@ -667,6 +667,76 @@ class DownloadCoreBaselineTest {
     }
 
     @Test
+    fun nonStrictBlindWebPageAcceptsKnownContentLengthWithoutFakeRangeFailure() = runBlocking {
+        val url = "https://example.test/page.html"
+        val response = HttpResponseInfo(
+            statusCode = 200,
+            message = "OK",
+            requestUrl = url,
+            responseHeaders = mapOf("content-length" to "5", "content-type" to "text/html"),
+        )
+        val client = object : ir.amirab.downloader.connection.HttpDownloaderClient() {
+            override suspend fun actualHead(
+                credentials: ir.amirab.downloader.downloaditem.http.IHttpDownloadCredentials,
+                start: Long?,
+                end: Long?,
+            ) = response
+
+            override suspend fun actualConnect(
+                credentials: ir.amirab.downloader.downloaditem.http.IHttpBasedDownloadCredentials,
+                start: Long?,
+                end: Long?,
+            ) = ir.amirab.downloader.connection.Connection(Buffer().writeUtf8("hello"), 5L, response)
+        }
+        fun makeDownloader(strict: Boolean) = HttpPartDownloader(
+            credentials = HttpDownloadCredentials(url),
+            getDestWriter = { error("verification test should not open a file writer") },
+            part = RangedPart(from = 0L, to = null),
+            client = client,
+            speedLimiters = emptyList(),
+            strictMode = strict,
+            partSplitLock = Any(),
+            minPartProvider = MinPartSizeProvider { 1L },
+        )
+
+        makeDownloader(strict = false).connectAndVerify().use { connection ->
+            assertEquals(5L, connection.contentLength)
+            assertEquals("hello", Buffer().also { buffer ->
+                while (connection.source.read(buffer, 8192) != -1L) {}
+            }.readUtf8())
+        }
+        // Strict mode must continue rejecting mismatched unknown range metadata.
+        assertFailsWith<ir.amirab.downloader.exception.ServerPartIsNotTheSameAsWeExpectException> {
+            makeDownloader(strict = true).connectAndVerify()
+        }
+    }
+
+    @Test
+    fun signedUrlRefreshCannotReusePartialDataForAnotherQuerySelectedFile() {
+        val base = "https://files.example.test/download"
+        assertTrue(ir.amirab.downloader.downloaditem.http.sameHttpResourceLocation(
+            "$base?file=photo.jpg&token=old",
+            "$base?token=new&file=photo.jpg",
+        ))
+        assertTrue(ir.amirab.downloader.downloaditem.http.sameHttpResourceLocation(
+            "$base?X-Amz-Date=20261031&X-Amz-Signature=old",
+            "$base?X-Amz-Date=20261101&X-Amz-Signature=new",
+        ))
+        assertFalse(ir.amirab.downloader.downloaditem.http.sameHttpResourceLocation(
+            "$base?file=photo.jpg&token=old",
+            "$base?file=private.pdf&token=new",
+        ))
+        assertFalse(ir.amirab.downloader.downloaditem.http.sameHttpResourceLocation(
+            "$base?id=100",
+            "$base?id=101",
+        ))
+        assertFalse(ir.amirab.downloader.downloaditem.http.sameHttpResourceLocation(
+            "https://files.example.test/a?token=same",
+            "https://files.example.test/b?token=same",
+        ))
+    }
+
+    @Test
     fun threeRealHttpPartsAssembleTheExpectedFile() = withHttpFixture(
         rangeMode = RangeMode.Supported,
     ) { fixture ->

@@ -47,22 +47,44 @@ internal fun validateRemoteFileIdentity(
 }
 
 internal fun sameHttpResourceLocation(firstUrl: String, secondUrl: String): Boolean {
-    fun resourceLocation(url: String): String {
+    // Signed URLs commonly rotate credentials, but arbitrary query values can
+    // select a *different file* behind the same path. Never reuse a partial
+    // download when an identity-bearing query parameter changed.
+    fun isEphemeralCredentialParameter(name: String): Boolean {
+        val key = name.lowercase(java.util.Locale.ROOT)
+        return key.startsWith("x-amz-") || key.startsWith("x-goog-") ||
+            key in setOf(
+                "token", "access_token", "signature", "sig", "expires",
+                "expiry", "expiration", "policy", "key-pair-id", "googleaccessid",
+            )
+    }
+
+    fun resourceIdentity(url: String): Pair<String, List<String>> {
         val withoutFragment = url.substringBefore('#')
         val withoutQuery = withoutFragment.substringBefore('?')
         val schemeSeparator = withoutQuery.indexOf("://")
-        if (schemeSeparator < 0) return withoutQuery
-
-        val scheme = withoutQuery.substring(0, schemeSeparator).lowercase()
-        val authorityAndPath = withoutQuery.substring(schemeSeparator + 3)
-        val pathStart = authorityAndPath.indexOf('/')
-        val authority = if (pathStart < 0) authorityAndPath else authorityAndPath.substring(0, pathStart)
-        val path = if (pathStart < 0) "" else authorityAndPath.substring(pathStart)
-        return "$scheme://${authority.lowercase()}$path"
+        val location = if (schemeSeparator < 0) {
+            withoutQuery
+        } else {
+            val scheme = withoutQuery.substring(0, schemeSeparator).lowercase(java.util.Locale.ROOT)
+            val authorityAndPath = withoutQuery.substring(schemeSeparator + 3)
+            val pathStart = authorityAndPath.indexOf('/')
+            val authority = if (pathStart < 0) authorityAndPath else authorityAndPath.substring(0, pathStart)
+            val path = if (pathStart < 0) "" else authorityAndPath.substring(pathStart)
+            "$scheme://${authority.lowercase(java.util.Locale.ROOT)}$path"
+        }
+        val persistentQuery = withoutFragment.substringAfter('?', "")
+            .split('&')
+            .filter { parameter ->
+                parameter.isNotEmpty() &&
+                    !isEphemeralCredentialParameter(parameter.substringBefore('='))
+            }
+            .sorted()
+        return location to persistentQuery
     }
-    return resourceLocation(firstUrl) == resourceLocation(secondUrl)
-}
 
+    return resourceIdentity(firstUrl) == resourceIdentity(secondUrl)
+}
 internal suspend fun persistProgressAfterFlush(
     flushDestination: () -> Unit,
     persistSnapshot: suspend () -> Unit,
