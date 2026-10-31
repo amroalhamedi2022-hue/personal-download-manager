@@ -8,8 +8,17 @@ import kotlinx.coroutines.withTimeout
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class ImmediateCancellationRestartTest {
+    @Test
+    fun partWorkersMustNotContinueAfterCancellationOrStop() {
+        assertTrue(shouldContinuePartWorker(coroutineActive = true, stopRequested = false))
+        assertFalse(shouldContinuePartWorker(coroutineActive = true, stopRequested = true))
+        assertFalse(shouldContinuePartWorker(coroutineActive = false, stopRequested = false))
+        assertFalse(shouldContinuePartWorker(coroutineActive = false, stopRequested = true))
+    }
+
     @Test
     fun immediatelyCancelledPartWorkersReleaseActiveStateAndCanRestart() = runBlocking<Unit> {
         val part = RangedPart(from = 0L, to = 4095L)

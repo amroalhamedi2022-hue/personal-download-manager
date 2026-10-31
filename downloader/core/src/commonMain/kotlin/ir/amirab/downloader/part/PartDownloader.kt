@@ -33,6 +33,11 @@ import kotlin.time.Duration.Companion.seconds
 const val PART_MAX_TRIES = 10
 const val RetryDelay = 1_000L
 
+// A cancelled coroutine must not retry, and a requested stop takes effect
+// before the next download/connection attempt.
+internal fun shouldContinuePartWorker(coroutineActive: Boolean, stopRequested: Boolean): Boolean =
+    coroutineActive && !stopRequested
+
 abstract class PartDownloader<
         TPart : DownloadPart
         >(
@@ -78,7 +83,7 @@ abstract class PartDownloader<
             lastCriticalException = null
             lastException = null
             val result = runCatching {
-                while (coroutineContext.isActive || !stop) {
+                while (shouldContinuePartWorker(coroutineContext.isActive, stop)) {
                     if (tries > 0) {
                         delay(RetryDelay.milliseconds)
 //                        println("#${part.from}retrying $tries")
