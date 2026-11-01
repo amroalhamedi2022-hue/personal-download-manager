@@ -166,6 +166,7 @@ jobs:
           $scripts = @(
             'scripts/Wait-WindowsLoopbackHttpPort.ps1',
             'scripts/Run-WindowsLiquidProgressVisualE2E.ps1',
+            'scripts/Run-WindowsMultiFileDropE2E.ps1',
             'scripts/Run-WindowsInstallerLifecycleE2E.ps1'
           )
           foreach ($scriptPath in $scripts) {
