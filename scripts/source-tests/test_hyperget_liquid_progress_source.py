@@ -720,6 +720,18 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("ClipboardShortcutsTested = $clipboardShortcutsTested", SCRIPT)
         self.assertIn("'-Sta'", SCRIPT)
 
+    def test_windows_drop_re_reads_transfer_payload_at_actual_drop(self):
+        # A file list might be advertised on drag-start yet unavailable
+        # for reading until the OS delivers the drop event.
+        drop_handler = HOME_PAGE.split("override fun onDrop(event: DragAndDropEvent): Boolean", 1)[1].split(
+            "return true", 1
+        )[0]
+        self.assertIn("onDraggedIn(event)", drop_handler)
+        self.assertIn("component.onDropped()", drop_handler)
+        self.assertIn("component.onDragExit()", drop_handler)
+        self.assertLess(drop_handler.index("onDraggedIn(event)"), drop_handler.index("component.onDropped()"))
+        self.assertNotIn("if (Platform.isMac())", drop_handler)
+
     def test_windows_drag_uses_file_list_before_text_fallback(self):
         # Windows Explorer can advertise javaFileListFlavor and stringFlavor
         # simultaneously. A text-first branch silently skips actual .url/.txt

@@ -276,10 +276,13 @@ fun HomePage(component: HomeComponent) {
 
                         override fun onDrop(event: DragAndDropEvent): Boolean {
                             isDragging = false
-                            if (Platform.isMac()) {
-                                onDraggedIn(event)
-                            }
+                            // Re-read the Transferable at the actual drop on ALL
+                            // desktops. Windows drag sources may advertise files
+                            // on start but only supply their payload at drop time.
+                            // Keep the hover-time parse solely for preview counts.
+                            onDraggedIn(event)
                             component.onDropped()
+                            component.onDragExit()
                             return true
                         }
                     }
