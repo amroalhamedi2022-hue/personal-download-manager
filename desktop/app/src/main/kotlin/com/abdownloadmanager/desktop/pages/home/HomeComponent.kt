@@ -27,6 +27,7 @@ import com.abdownloadmanager.shared.pagemanager.FileChecksumDialogManager
 import com.abdownloadmanager.shared.pagemanager.NotificationSender
 import com.abdownloadmanager.shared.pagemanager.QueuePageManager
 import com.abdownloadmanager.shared.pages.home.BaseHomeComponent
+import com.abdownloadmanager.shared.pages.home.readDroppedLinkFiles
 import com.abdownloadmanager.shared.util.*
 import com.abdownloadmanager.shared.util.FileIconProvider
 import com.abdownloadmanager.shared.util.category.CategoryManager
@@ -325,14 +326,11 @@ class HomeComponent(
     }
 
     fun onExternalFilesDraggedIn(getFilePaths: () -> List<File>) {
-        val filePaths = kotlin.runCatching { getFilePaths() }
-            .getOrNull()?.filter { it.length() <= 1024 * 1024 } ?: return
-        onExternalTextDraggedIn {
-            filePaths
-                .firstOrNull()
-                ?.readText()
-                .orEmpty()
-        }
+        // Unlike the old firstOrNull() path, combine URLs from multiple files.
+        // The helper bounds filesystem reads, skips directories/unreadable files,
+        // and never reads more than 1 MiB of dropped data on the UI thread.
+        val paths = runCatching { getFilePaths() }.getOrDefault(emptyList())
+        onExternalTextDraggedIn { readDroppedLinkFiles(paths) }
     }
 
     fun onDragExit() {

@@ -187,3 +187,10 @@ Continue HyperGet from the latest actual HEAD of experiment/liquid-reference-mat
 - Discovered existing `HomeComponent.shortcutManager` registered **two** `"$metaKey F"` keystrokes: `focusHomeSearch` then `openFolderAction`. `ShortcutManager.register` uses `MutableMap` overwrite semantics, so the latter shadowed the former. Compose direct Ctrl+F handler already ensured the search worked, but the internal binding was objectively inconsistent and could regress.
 - **Fix:** keep Ctrl/Meta+F exclusively for the existing Search action, move `Open Folder` to Ctrl/Meta+Shift+O. Other shortcuts untouched; no engine or Liquid UI modifications. Add regression source contract extracting all modified HOME shortcut keys, requiring **no duplicates** and the correct action for Ctrl+F.
 - Exact-SHA Windows source/Kotlin/GUI/install/HTTP acceptance pending. Avoid moving or duplicating other shortcut actions.
+
+
+## 2026-11-01 — Multi-file dropped link-list import (N19/P7-10)
+- Existing `onExternalFilesDraggedIn` silently read **only first** dropped file. Now accepts URLs from up to **16** small dropped text files, combined in order and fed to the **existing** `DefaultDownloadCredentialsExtractor` and `distinctBy { link }` import logic. No new download task model, parser, data migration or duplicate import path.
+- New shared `readDroppedLinkFiles` caps aggregate bytes at **1 MiB**, skips directories, missing/unreadable files, binary NUL files and duplicates; uses bounded byte reads to reject a file growing between `length()` and read. It does not follow directories, log contents or read unbounded files. Existing drag text/URLs still use the old unchanged path.
+- Four actual Kotlin desktop unit tests cover multi-file order/dedup, invalid/binary entries, total bytes limit, max-file limit and zero budget; CI executes tests on Windows. A source contract asserts bounded file reads and existing de-dup.
+- **Status:** code committed; exact-SHA Windows acceptance pending. No changes to main/PR3, Liquid/14dp parts or download engine.

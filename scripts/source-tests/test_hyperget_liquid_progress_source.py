@@ -7,6 +7,7 @@ ROOT = Path(__file__).resolve().parents[2]
 HOME_TOOLBAR = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/Actions.kt").read_text(encoding="utf-8")
 WINDOWS_UI_WORKFLOW = (ROOT / ".github/workflows/windows-installed-ui-smoke.yml").read_text(encoding="utf-8")
 HOME_COMPONENT = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/HomeComponent.kt").read_text(encoding="utf-8")
+DROPPED_FILE_READER = (ROOT / "shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/pages/home/DroppedLinkFiles.kt").read_text(encoding="utf-8")
 HOME_PAGE = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/HomePage.kt").read_text(encoding="utf-8")
 HOME_WINDOW = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/HomeWindow.kt").read_text(encoding="utf-8")
 FILTERS = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/Filters.kt").read_text(encoding="utf-8")
@@ -693,6 +694,15 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn('"$metaKey shift O" to downloadActions.openFolderAction', HOME_COMPONENT)
         self.assertNotIn('"$metaKey F" to downloadActions.openFolderAction', HOME_COMPONENT)
         self.assertIn("keyEvent.key == Key.F", HOME_WINDOW)
+
+    def test_multi_dropped_link_files_are_bounded_and_use_existing_import_parser(self):
+        self.assertIn("onExternalTextDraggedIn { readDroppedLinkFiles(paths) }", HOME_COMPONENT)
+        self.assertIn("maxFiles: Int = 16", DROPPED_FILE_READER)
+        self.assertIn("maxTotalBytes: Long = 1024L * 1024L", DROPPED_FILE_READER)
+        self.assertIn("if (!file.isFile || !file.canRead())", DROPPED_FILE_READER)
+        self.assertIn("input.readNBytes(maxRead + 1)", DROPPED_FILE_READER)
+        self.assertIn("raw.any { it == 0.toByte() }", DROPPED_FILE_READER)
+        self.assertIn(".distinctBy { it.link }", HOME_COMPONENT)
 
 if __name__ == "__main__":
     unittest.main()
