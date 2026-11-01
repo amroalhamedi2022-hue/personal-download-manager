@@ -243,3 +243,8 @@ Continue HyperGet from the latest actual HEAD of experiment/liquid-reference-mat
 - Fixed extraction to process **each line** independently: preserve a whole valid URL line (critical for FTP filename spaces/brackets); on other lines scan validated embedded URL matches; deduplicate in stable original order. Existing FTP validation still rejects credentials and unsupported paths; curl/JSON extractors retain their existing precedence.
 - Added **four** Kotlin desktop tests for mixed `.url`/plain/inline links, FTP whitespace preservation, duplicate removal, and FTP credential rejection. Windows workflow's Kotlin suite and change-scope now cover the new extractor and tests.
 - No transfer engine, Liquid animation, settings or data migration changes. Same-SHA Windows build, local HTTP output SHA and installer acceptance pending. OS drag-and-drop gesture still pending manual test.
+
+
+### 2026-11-01 — Real-file combined importer/extractor integration regression
+- Added a **fifth new** test in `DroppedLinkFilesTest`: creates an actual Windows-style UTF-16LE BOM `[InternetShortcut]/URL=...` file and a regular UTF-8 list containing another full URL and a duplicate; pipes their bounded text via `readDroppedLinkFiles` into the real `StringUrlExtractor` and asserts **both unique links in stable input order**. This catches a regression that separate text and parser tests cannot.
+- Exact-SHA Windows test/build/HTTP lifecycle still must pass. This is a real temp-files-to-parser test, NOT a simulated Windows file drag gesture.

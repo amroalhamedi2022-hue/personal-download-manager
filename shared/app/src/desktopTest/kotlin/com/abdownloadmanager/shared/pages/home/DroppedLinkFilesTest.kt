@@ -1,6 +1,7 @@
 package com.abdownloadmanager.shared.pages.home
 
 import java.nio.file.Files
+import com.abdownloadmanager.shared.util.extractors.linkextractor.StringUrlExtractor
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -75,6 +76,24 @@ class DroppedLinkFilesTest {
         }
         val valid = dir.resolve("ok.txt").apply { writeText("https://valid.example") }
         assertEquals("https://valid.example", readDroppedLinkFiles(listOf(malformed, nul, valid)))
+    }
+
+    @Test fun endToEndCombinesUtf16ShortcutAndPlainUrlListsWithoutLoss() = withTempDir { dir ->
+        val shortcut = dir.resolve("legacy.url").apply {
+            writeBytes(byteArrayOf(0xFF.toByte(), 0xFE.toByte()) +
+                "[InternetShortcut]\r\nURL=https://legacy.example/archive.zip\r\n"
+                    .toByteArray(Charsets.UTF_16LE))
+        }
+        val plain = dir.resolve("direct.txt").apply {
+            writeText("https://direct.example/book.pdf\r\nURL=https://legacy.example/archive.zip")
+        }
+        val extracted = StringUrlExtractor.extract(readDroppedLinkFiles(listOf(shortcut, plain)))
+        assertEquals(
+            listOf(
+                "https://legacy.example/archive.zip",
+                "https://direct.example/book.pdf",
+            ), extracted
+        )
     }
 
     @Test fun limitsNumberOfFilesAndRejectsZeroBudgets() = withTempDir { dir ->
