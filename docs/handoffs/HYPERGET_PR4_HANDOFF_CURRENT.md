@@ -61,17 +61,18 @@
 ## Suggested first message in the new conversation
 Continue HyperGet from the latest actual HEAD of experiment/liquid-reference-match-20261030 / Draft PR #4. Read docs/handoffs/HYPERGET_PR4_HANDOFF_CURRENT.md and docs/checkpoints/HG_IDM_TABS_PART_TRACKS_2026-10-31.md. Check GitHub Actions BEFORE edits, avoid duplicate Codex/automation commits, and work only on remaining priorities. Never touch main or PR #3. Deliver real Windows tests/screenshots and a precise status; do not merely write a plan.
 
-## 2026-11-01 follow-up implementation — Windows restart persistence (UNVERIFIED until exact-SHA CI)
-- This changeset extends `scripts/Run-WindowsLiquidProgressVisualE2E.ps1` only within the safe isolated Windows fixture, without altering the visual implementation, main, or PR #3.
-- The On Completion UI probe now writes both Boolean states and deliberately leaves the inverse of the initial UI state before ending the already-verified HTTP transfer.
-- After full transfer and SHA-256 validation, the installed GUI is forcibly terminated, relaunched from the installed EXE, and the same *completed* download is reopened with the installed CLI.
-- It captures a new actual Windows screenshot `liquid-progress-tab-on-completion-after-restart.png`, verifies the selected tab underline and the per-file override's inverse switch color, then toggles the safe completion-dialog switch back to its original value and checks the restored JSON.
-- The shutdown-on-completion switch is never operated. If the known geometry or pixel probes cannot be confirmed, the probe reports untested or fails instead of claiming a false pass.
-- Report keys: `CompletionPreferenceRestartTested` and `CompletionPreferenceRestartResult`. Source assertions cover the new gate.
-- **CI status at commit creation: not yet run.** Mark as Windows verified only after inspecting the new exact-SHA run and screenshot; do not infer from preexisting green runs.
+## 2026-11-01 — PR #4 verified restart-persistence Windows milestone
 
-### 2026-11-01: corrected Windows restart fixture before acceptance
-- Source review confirmed `DesktopOnDownloadCompletionActionProvider` runs `CleanExtraSettingsOnDownloadFinish` for **finished** tasks. Therefore comparing a completed task after restart would be an invalid persistence claim.
-- The updated Windows harness now adds a second **paused** HTTP task after verifying the original 16 MiB file, safely selects its On Completion tab, captures `liquid-progress-tab-on-completion-before-restart.png`, flips only the completion-dialog switch, and verifies its JSON.
-- It then terminates and relaunches the actual installed Windows GUI, reopens the **same paused task** (not the completed download), captures `liquid-progress-tab-on-completion-after-restart.png`, checks its inverted switch color, confirms JSON restoration after a safe click, and restores the verified original task ID in the transfer report.
-- Do not change post-completion cleanup semantics or claim this test passed before a green exact-SHA run.
+### Scope and exact evidence
+- **Last fully Windows-verified code SHA:** `3dc06bf073a736d77e96594cd7d47c0f0d08e86f` (previous `c545031` remains verified baseline). GitHub Actions run **41304965325** passed, including source contracts, Kotlin theme palette tests, Windows NSIS build, silent install, GUI screenshot, real 16 MiB range download and SHA-256 comparison, graph visibility clicks, completion preference and reboot UI probes, and installer lifecycle checks.
+- Exact-SHA proof: https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/41304965325
+- Downloadable real Windows evidence: **windows-liquid-progress-visual**, artifact **13083182003**, https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/41304965325/artifacts/13083182003
+- `liquid-progress-report.json` shows `SourceSHA=3dc06bf...`, `Verified=true`, `TaskId=0`, `FinalStatus=Finished`, `ExpectedBytes=ActualBytes=16777216`, identical expected/actual SHA-256 `341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1`, `GraphToggleTested=true`, `CompletionPreferenceDiskTested=true`, `CompletionPreferenceRestartTested=true`, `CompletionPreferenceRestartTaskId=1`.
+- Real UI before/after screenshots `liquid-progress-tab-on-completion-before-restart.png` and `liquid-progress-tab-on-completion-after-restart.png` show same paused download (`hyperget-preference-restart.bin`), selected **On Completion** tab, enabled-to-disabled completion dialog choice after restart; the **Shutdown System On Completion** switch remained disabled. The runner then restored the initial choice in its JSON.
+- **Important:** task 1 was created separately and kept **Paused/unfinished**. The normal completed-task cleanup removes per-download JSON on completion, so a completed task cannot be used as a valid persistence fixture. Neither cleanup semantics nor any production Kotlin file was altered.
+- At this handoff update the diagnostic string is being corrected from the earlier misleading "completed task reopened" to "paused task reopened"; this diagnostic-only change is a NEW code SHA and is not yet Windows-verified. Keep `3dc06bf` as the last independently verified code until newer exact-SHA CI succeeds.
+
+### Scope preservation and open items
+- No changes to the download dialog, segmented 14dp bars, main Liquid Bar, transfer engine, power-action behavior, main branch, PR #3, or other feature branches. Existing selectors and 16 modern Light/Dark palette variants remain present; full 96 theme/icon/size combinations have NOT been visually accepted.
+- Still open: exact original-IDM comparison screenshots `IDM_Repair_Handoff_2026-10-21.zip` (not located), native Windows visual acceptance at 125/150/200% DPI, long URLs and RTL, speed-setting full restart and safe On Completion actions, broader main screen menu/sidebar/toolbar/table parity and column UI, end-user visual approval.
+- Do not mark overall IDM pixel parity as passed; source comparison references unavailable. Source shows `TableState.load/save` persists main list configuration; avoid implementing the same persistence mechanism again before checking UI acceptance.

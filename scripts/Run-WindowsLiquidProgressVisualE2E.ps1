@@ -1025,7 +1025,7 @@ public static class HyperGetLiquidProgressNative {
             Start-Sleep -Milliseconds 250
         }
         if ($restartDetail -eq [IntPtr]::Zero) {
-            throw 'Completed download details did not reopen after GUI restart.'
+            throw 'Paused download details did not reopen after GUI restart.'
         }
         [HyperGetLiquidProgressNative]::ShowWindow($restartDetail, 3) | Out-Null
         [HyperGetLiquidProgressNative]::SetWindowPos(
@@ -1133,7 +1133,7 @@ public static class HyperGetLiquidProgressNative {
         $completionPreferenceRestartTested = $true
         $taskId = $verifiedDownloadId
         $completionPreferenceRestartResult =
-            'Installed Windows GUI was terminated/restarted; completed task reopened, opposite switch restored from per-file JSON, original choice restored on disk'
+            'Installed Windows GUI restarted; paused task reopened with saved per-file switch state, then original preference restored on disk'
         Write-Host 'PASS: completion-dialog override survives a real installed GUI restart.'
     } else {
         $completionPreferenceRestartResult = 'not tested: safe disk toggle prerequisite unavailable'

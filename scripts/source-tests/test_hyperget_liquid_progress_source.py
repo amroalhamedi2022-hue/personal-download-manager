@@ -432,6 +432,8 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("Start-Process -FilePath $guiPath -PassThru", SCRIPT)
         self.assertIn("download open $taskId", SCRIPT)
         self.assertIn("Restart fixture must remain paused", SCRIPT)
+        self.assertIn("Paused download details did not reopen after GUI restart.", SCRIPT)
+        self.assertIn("paused task reopened with saved per-file switch state", SCRIPT)
         self.assertIn("liquid-progress-tab-on-completion-before-restart.png", SCRIPT)
         self.assertIn("$taskId = $verifiedDownloadId", SCRIPT)
         self.assertIn("$switchBlue -ne (-not $initialEnabled)", SCRIPT)
