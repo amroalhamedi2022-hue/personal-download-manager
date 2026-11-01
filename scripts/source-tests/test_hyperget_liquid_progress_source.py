@@ -8,6 +8,7 @@ HOME_TOOLBAR = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/deskto
 WINDOWS_UI_WORKFLOW = (ROOT / ".github/workflows/windows-installed-ui-smoke.yml").read_text(encoding="utf-8")
 HOME_COMPONENT = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/HomeComponent.kt").read_text(encoding="utf-8")
 HOME_PAGE = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/HomePage.kt").read_text(encoding="utf-8")
+HOME_WINDOW = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/HomeWindow.kt").read_text(encoding="utf-8")
 FILTERS = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/Filters.kt").read_text(encoding="utf-8")
 TEXT_FIELD = (ROOT / "shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/ui/widget/MyTextField.kt").read_text(encoding="utf-8")
 TABLE_WIDGET = (ROOT / "shared/app/src/desktopMain/kotlin/com/abdownloadmanager/shared/ui/widget/table/customtable/Table.kt").read_text(encoding="utf-8")
@@ -665,6 +666,14 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("externalFocusRequester = externalFocusRequester", FILTERS)
         self.assertIn("externalFocusRequester ?: remember { FocusRequester() }", TEXT_FIELD)
         self.assertIn("focusRequester.requestFocus()", TEXT_FIELD)
+
+    def test_ctrl_f_has_compose_key_handler_for_jbr_without_awt_event(self):
+        self.assertIn("keyEvent.type == KeyEventType.KeyDown", HOME_WINDOW)
+        self.assertIn("keyEvent.key == Key.F", HOME_WINDOW)
+        self.assertIn("keyEvent.isCtrlPressed || keyEvent.isMetaPressed", HOME_WINDOW)
+        self.assertIn("homeComponent.focusHomeSearch()", HOME_WINDOW)
+        self.assertIn("homeComponent.shortcutManager.handle(keyEvent)", HOME_WINDOW)
+        self.assertIn("fun focusHomeSearch()", HOME_COMPONENT)
 
     def test_windows_gui_smoke_checks_keyboard_search_with_real_typing_and_image(self):
         self.assertIn("installed-gui-ctrl-f-search.png", WINDOWS_UI_WORKFLOW)

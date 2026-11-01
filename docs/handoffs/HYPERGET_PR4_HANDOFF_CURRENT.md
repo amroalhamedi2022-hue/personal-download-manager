@@ -163,3 +163,9 @@ Continue HyperGet from the latest actual HEAD of experiment/liquid-reference-mat
 ### 2026-11-01 — Genuine active-download URL search Windows E2E (await CI)
 - E2E screenshots the busy main list, invokes `Ctrl+F`, types loopback host `127.0.0.1` (not part of `hyperget-liquid-progress.bin` filename), captures `hyperget-main-search-by-source-url.png`, verifies search glyphs changed **and** the actual row's filename pixels remain visibly present. Clears the probe input without altering tasks. This is stronger than a source-only or empty-list check.
 - Report adds `SourceUrlSearchTested` / `SourceUrlSearchScreenshot`. Bounds and foreground are guarded, other DPI modes remain untested. This CI is an *acceptance gate*; do not claim success unless exact-SHA Windows pipeline and artifact both confirm.
+
+
+### 2026-11-01 — Ctrl+F Windows acceptance failure and event fallback
+- On `7e2f155`, Windows built/installed successfully, but genuine `SendKeys Ctrl+F + hgfocusprobe` yielded an **identical screenshot**; the keyboard acceptance step failed (`changed search glyph pixels=0`). This is **not accepted** regardless of source contracts.
+- Source review found `DesktopShortcutManager.getKeyStrokeFromEvent` depends on `KeyEvent.awtEventOrNull`, which may be absent on some JBR/Compose key paths. HomeWindow now handles Ctrl/Meta+F using Compose's own KeyDown/key/modifier fields directly, while keeping ShortcutManager for all other existing bindings.
+- CI also captures a bounded direct-mouse-click + typed-text diagnostic if Ctrl+F still fails, to distinguish an actual shortcut bug from Windows runner keyboard injection failure. The diagnostic never substitutes for passing Ctrl+F. Follow exact-SHA CI and inspect real images; do not claim pass prematurely.

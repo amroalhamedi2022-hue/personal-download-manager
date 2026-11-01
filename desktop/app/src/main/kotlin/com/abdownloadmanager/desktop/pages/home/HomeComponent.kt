@@ -162,7 +162,7 @@ class HomeComponent(
     // One-shot UI request, not a persisted setting or search-term mutation.
     // The home search subscribes only while its window is composed.
     val requestSearchFocus = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
-    private fun focusHomeSearch() {
+    fun focusHomeSearch() {
         requestSearchFocus.tryEmit(Unit)
     }
 

@@ -283,6 +283,8 @@ jobs:
               [DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr handle);
               [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
               [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr handle, out RECT rect);
+              [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+              [DllImport("user32.dll")] public static extern void mouse_event(uint flags, uint x, uint y, uint data, UIntPtr extra);
               [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr handle, IntPtr insertAfter, int x, int y, int cx, int cy, uint flags);
           }
           '@
@@ -361,7 +363,45 @@ jobs:
                   }
                 }
                 if ($changedTextPixels -lt 85) {
-                  throw "Ctrl+F did not focus the existing Search input and type probe text (changed search glyph pixels=$changedTextPixels)."
+                  # Diagnose keyboard injection independently: first click the
+                  # visible search box with native mouse and then type text.
+                  # The direct-click probe is NOT a substitute for Ctrl+F.
+                  if (-not [HyperGetUiSmokeNative]::SetCursorPos(
+                    ($windowRect.Left + [int]($windowWidth * 0.75)), ($windowRect.Top + 23)
+                  )) { throw 'Could not position direct-click keyboard diagnostic.' }
+                  [HyperGetUiSmokeNative]::mouse_event([uint32]2, 0, 0, 0, [UIntPtr]::Zero)
+                  [HyperGetUiSmokeNative]::mouse_event([uint32]4, 0, 0, 0, [UIntPtr]::Zero)
+                  [System.Windows.Forms.SendKeys]::SendWait('clickedprobe')
+                  Start-Sleep -Milliseconds 300
+                  $directBitmap = [System.Drawing.Bitmap]::new($windowWidth, $windowHeight)
+                  $directGraphics = [System.Drawing.Graphics]::FromImage($directBitmap)
+                  try {
+                    $directGraphics.CopyFromScreen(
+                      [System.Drawing.Point]::new($windowRect.Left, $windowRect.Top),
+                      [System.Drawing.Point]::Empty,
+                      [System.Drawing.Size]::new($windowWidth, $windowHeight)
+                    )
+                    $directBitmap.Save(
+                      (Join-Path $PWD 'build/ci-release/installed-gui-direct-click-search-diagnostic.png'),
+                      [System.Drawing.Imaging.ImageFormat]::Png
+                    )
+                    $directChangedPixels = 0
+                    for ($y = 14; $y -lt [Math]::Min(33, $windowHeight); $y++) {
+                      for ($x = $xStart; $x -lt $xEnd; $x++) {
+                        $p = $bitmap.GetPixel($x, $y)
+                        $q = $directBitmap.GetPixel($x, $y)
+                        if (([Math]::Abs([int]$p.R - [int]$q.R) +
+                          [Math]::Abs([int]$p.G - [int]$q.G) +
+                          [Math]::Abs([int]$p.B - [int]$q.B)) -ge 45) {
+                          $directChangedPixels++
+                        }
+                      }
+                    }
+                    throw "Ctrl+F search input did not change (glyph pixels=$changedTextPixels). Direct mouse-click + typing diagnostic changed=$directChangedPixels pixels."
+                  } finally {
+                    $directGraphics.Dispose()
+                    $directBitmap.Dispose()
+                  }
                 }
                 Write-Host "PASS: real Windows Ctrl+F focused Search; typed probe changed $changedTextPixels search glyph pixels."
               } finally {
@@ -459,5 +499,6 @@ jobs:
           path: |
             build/ci-release/installed-gui-smoke.png
             build/ci-release/installed-gui-ctrl-f-search.png
+            build/ci-release/installed-gui-direct-click-search-diagnostic.png
           if-no-files-found: ignore
           retention-days: 7
