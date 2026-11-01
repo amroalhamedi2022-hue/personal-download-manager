@@ -12,6 +12,18 @@ $ErrorActionPreference='Stop'
 Add-Type -AssemblyName System.Windows.Forms
 
 if ($AsSource) {
+ # Hide ONLY the child PowerShell console. -WindowStyle Hidden also hides
+ # its WinForms OLE source on some Windows runner sessions.
+ Add-Type -Namespace HyperGetNativeSource -Name ConsoleWindow -MemberDefinition @'
+ [System.Runtime.InteropServices.DllImport("kernel32.dll")]
+ public static extern System.IntPtr GetConsoleWindow();
+ [System.Runtime.InteropServices.DllImport("user32.dll")]
+ public static extern bool ShowWindow(System.IntPtr h,int cmd);
+'@
+ $consoleHandle=[HyperGetNativeSource.ConsoleWindow]::GetConsoleWindow()
+ if($consoleHandle -ne [IntPtr]::Zero){
+   [HyperGetNativeSource.ConsoleWindow]::ShowWindow($consoleHandle,0)|Out-Null
+ }
  $form=[System.Windows.Forms.Form]::new()
  $form.Text='HyperGetFileDragFixture'
  $form.StartPosition=[System.Windows.Forms.FormStartPosition]::Manual
@@ -116,9 +128,9 @@ try {
  $argsText='-NoProfile -NonInteractive -Sta -File "'+$PSCommandPath+'" -AsSource -One "'+$one+'" -Two "'+$two+'" -EffectPath "'+$effectPath+'"'
  $sourceOut=Join-Path $root 'source-stdout.log'
  $sourceErr=Join-Path $root 'source-stderr.log'
- $source=Start-Process -FilePath $ps -ArgumentList $argsText -WindowStyle Hidden -PassThru -RedirectStandardOutput $sourceOut -RedirectStandardError $sourceErr
+ $source=Start-Process -FilePath $ps -ArgumentList $argsText -PassThru -RedirectStandardOutput $sourceOut -RedirectStandardError $sourceErr
  $sourceH=[IntPtr]::Zero
- for($n=0;$n -lt 80;$n++) {
+ for($n=0;$n -lt 150;$n++) {
   Start-Sleep -Milliseconds 100
   $source.Refresh()
   if($source.HasExited){throw 'Native OLE file source exited before drag.'}
