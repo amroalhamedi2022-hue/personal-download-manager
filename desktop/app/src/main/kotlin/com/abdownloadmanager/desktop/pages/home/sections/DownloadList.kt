@@ -90,19 +90,22 @@ fun DownloadList(
     ShowDownloadOptions(
         downloadOptions, onRequestCloseOption
     )
+    // One set per selection update avoids quadratic membership checks for
+    // 10k visible rows and thousands of selected items.
+    val selectedIds = remember(selectionList) { selectionList.toHashSet() }
     val isALlSelected by derivedStateOf {
         val list = downloadList
         if (list.isEmpty()) {
             false
         } else {
             list.map { it.id }.all {
-                it in selectionList
+                it in selectedIds
             }
         }
     }
 
     val listToBeDragged by rememberUpdatedState(
-        downloadList.filter { it.id in selectionList }
+        downloadList.filter { it.id in selectedIds }
     )
 
     val tableInteractionSource = remember { MutableInteractionSource() }
@@ -126,6 +129,7 @@ fun DownloadList(
         val itemHorizontalPadding = 16.dp
         Table(
             tableState = tableState,
+            showColumnConfigButton = true,
             listState = lazyListState,
             key = { it.id },
             list = downloadList,
@@ -163,7 +167,7 @@ fun DownloadList(
                 MyStyledTableHeader(itemHorizontalPadding = itemHorizontalPadding, content = it)
             },
             wrapItem = { _, item, rowContent ->
-                val isSelected = selectionList.contains(item.id)
+                val isSelected = item.id in selectedIds
                 var shouldWaitForSecondClick by remember {
                     mutableStateOf(false)
                 }
