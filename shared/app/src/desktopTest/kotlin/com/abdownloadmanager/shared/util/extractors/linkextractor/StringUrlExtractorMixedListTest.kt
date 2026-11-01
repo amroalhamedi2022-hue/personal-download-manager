@@ -40,6 +40,29 @@ class StringUrlExtractorMixedListTest {
         )
     }
 
+    @Test fun tenThousandMixedListLinksRetainOrderAndQueryIdentity() {
+        // Bounded parser-only stress; this is NOT a 10k-item download/GUI test.
+        val total = 10_000
+        val input = buildString(total * 85) {
+            repeat(total) { index ->
+                if (index % 2 == 0) append("URL=")
+                append("https://batch.example/file?id=")
+                append(index)
+                append("&token=")
+                append(index % 17)
+                append('\n')
+            }
+        }
+        val startNanos = System.nanoTime()
+        val links = StringUrlExtractor.extract(input)
+        val elapsedMs = (System.nanoTime() - startNanos) / 1_000_000
+        assertEquals(total, links.size)
+        assertEquals("https://batch.example/file?id=0&token=0", links.first())
+        assertEquals("https://batch.example/file?id=9999&token=3", links.last())
+        assertEquals(total, links.toSet().size)
+        println("HyperGet 10k mixed URL extractor (parser only): ${elapsedMs} ms")
+    }
+
     @Test fun doesNotExtractUnsupportedOrCredentialBearingFtpLinks() {
         val input = """
             ftp://user:password@host.test/private.zip
