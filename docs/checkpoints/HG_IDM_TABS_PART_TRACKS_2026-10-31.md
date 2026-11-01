@@ -58,3 +58,11 @@
 - Filename **or URL** search proven for a real ongoing loopback task: query `127.0.0.1` only matches the URL, yet the filename row remains visible while Downloading. Evidence `hyperget-main-search-by-source-url.png` and verified 16 MiB HTTP/SHA-256 report in Windows artifact **13095456141**.
 - Four Kotlin matcher tests also pass for filenames, completed URL/domain/query, mixed Arabic/Latin and empty search. `Tools > Search in the list` and Ctrl+F share one action.
 - Other IDM N18/N19/N20 menu actions and pixel parity remain **PARTIAL**, not full acceptance. Required original IDM P01–P27 screenshots still missing; do not invent comparison images.
+
+
+## 2026-11-01 — Latest PR #4 Windows verification and shareable EXE
+- **Fully green code:** `fb9163b55a9782446858b22ac73d40155d41982b`, Actions [41337403929](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/41337403929). All Windows installed GUI, 16 MiB SHA-256, Liquid graph, Columns menu, search URL, per-download completion preference restart and NSIS lifecycle accepted on this SHA. Screenshots and report artifacts 13096276650 and 13095903645.
+- **Windows EXE delivery:** [GitHub Actions artifact 13095794001](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/41337403929/artifacts/13095794001), containing one `HyperGet_1.0.0-sha.gfb9163b_windows_x64.exe` (79,936,855 bytes, SHA-256 `8ee364b3706efd986effed464079d28ea6cf66d102964564c44b747096a92874`). Verified development candidate, NOT production-IDM parity; artifact retention seven days.
+- **N19 shortcuts:** Ctrl/Cmd+F unique binding; Ctrl/Cmd+Shift+O opens selected file folder. Escape clears active home search; Ctrl/Cmd+C/V within focused search no longer route through the global download commands. Unit/source and Windows suite verified, separate physical clipboard typing on a user's device still open.
+- **Link-list import:** now reads up to 16 dropped files with 1 MiB aggregate cap instead of only the first. Four Kotlin real-file tests passed in verified Windows run. GUI drag gesture acceptance remains open; do not mark it done.
+- **Still open:** original IDM pixel-reference archive, full DPI/RTL/icon/theme matrix, stress/long-running performance, other P3/P5/P6/P7 gaps. Main/PR #3 unchanged.
