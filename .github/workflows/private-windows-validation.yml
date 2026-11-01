@@ -16,6 +16,9 @@ on:
       - "downloader/**"
       - "integration/**"
       - "shared/**"
+      - "scripts/Run-WindowsSafeUninstallE2E.ps1"
+      - "scripts/source-tests/test_uninstall_shortcut_safety.py"
+      - "scripts/source-tests/test_hyperget_main_branding.py"
 
 permissions:
   contents: read
