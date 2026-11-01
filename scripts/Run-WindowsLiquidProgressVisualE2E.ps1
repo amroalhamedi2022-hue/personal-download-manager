@@ -657,25 +657,40 @@ public static class HyperGetLiquidProgressNative {
         }
 
         $clipboardProbe = '127.0.0.1'
-        Set-ClipboardFixture -Text $clipboardProbe
-        [HyperGetLiquidProgressNative]::SetForegroundWindow($mainWindowHandle) | Out-Null
-        Start-Sleep -Milliseconds 150
-        if ([HyperGetLiquidProgressNative]::GetForegroundWindow() -ne $mainWindowHandle) {
-            throw 'Clipboard shortcut acceptance cannot focus the installed Home window.'
+        $copiedSearchText = ''
+        # Foreground/focus can race with a freshly started Compose window.
+        # Use a bounded real keyboard retry: NEVER accept an attempt unless
+        # clipboard data copied by Ctrl+C equals the actual pasted probe.
+        for ($clipboardAttempt = 1; $clipboardAttempt -le 3; $clipboardAttempt++) {
+            Set-ClipboardFixture -Text $clipboardProbe
+            if ((Get-ClipboardFixture) -cne $clipboardProbe) {
+                throw 'Failed to verify the synthetic Windows clipboard probe before paste.'
+            }
+            [HyperGetLiquidProgressNative]::SetForegroundWindow($mainWindowHandle) | Out-Null
+            Start-Sleep -Milliseconds 200
+            if ([HyperGetLiquidProgressNative]::GetForegroundWindow() -ne $mainWindowHandle) {
+                throw 'Clipboard shortcut acceptance cannot focus the installed Home window.'
+            }
+            [System.Windows.Forms.SendKeys]::SendWait('^f')
+            Start-Sleep -Milliseconds 300
+            [System.Windows.Forms.SendKeys]::SendWait('^a')
+            [System.Windows.Forms.SendKeys]::SendWait('^v')
+            Start-Sleep -Milliseconds 450
+            Set-ClipboardFixture -Text 'HYPERGET-COPY-NOT-YET-TESTED'
+            [HyperGetLiquidProgressNative]::SetForegroundWindow($mainWindowHandle) | Out-Null
+            Start-Sleep -Milliseconds 200
+            [System.Windows.Forms.SendKeys]::SendWait('^a')
+            [System.Windows.Forms.SendKeys]::SendWait('^c')
+            Start-Sleep -Milliseconds 250
+            $copiedSearchText = Get-ClipboardFixture
+            if ($copiedSearchText -ceq $clipboardProbe) { break }
+            if ($clipboardAttempt -lt 3) {
+                Write-Host "Clipboard keyboard focus race on attempt $clipboardAttempt; repeating actual keypress validation."
+                Start-Sleep -Milliseconds 350
+            }
         }
-        [System.Windows.Forms.SendKeys]::SendWait('^f')
-        Start-Sleep -Milliseconds 150
-        [System.Windows.Forms.SendKeys]::SendWait('^v')
-        Start-Sleep -Milliseconds 250
-        Set-ClipboardFixture -Text 'HYPERGET-COPY-NOT-YET-TESTED'
-        [HyperGetLiquidProgressNative]::SetForegroundWindow($mainWindowHandle) | Out-Null
-        Start-Sleep -Milliseconds 100
-        [System.Windows.Forms.SendKeys]::SendWait('^a')
-        [System.Windows.Forms.SendKeys]::SendWait('^c')
-        Start-Sleep -Milliseconds 150
-        $copiedSearchText = Get-ClipboardFixture
         if ($copiedSearchText -cne $clipboardProbe) {
-            throw "Ctrl+V/Ctrl+C real HomeSearch regression: copied search text does not match the known loopback-host probe."
+            throw "Ctrl+V/Ctrl+C real HomeSearch regression: copied search text does not match the known loopback-host probe after 3 bounded attempts."
         }
         $clipboardShortcutsTested = $true
         Write-Host 'PASS: real Windows Ctrl+F, Ctrl+V, Ctrl+A and Ctrl+C preserve focused search text.'
