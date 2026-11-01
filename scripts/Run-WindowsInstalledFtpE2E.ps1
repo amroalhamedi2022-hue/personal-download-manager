@@ -26,8 +26,8 @@ foreach ($required in @($guiPath, $cliPath, $fixtureScript)) {
         throw "Required program or fixture missing: $required"
     }
 }
-if ([IO.Path]::GetFileName($guiPath) -cne 'HyperGet.exe') {
-    throw 'Installed FTP E2E GUI must be the branded HyperGet.exe; CLI/native-host names remain legacy-compatible.'
+if ([IO.Path]::GetFileName($guiPath) -cne 'DownloadManager.exe') {
+    throw 'Installed FTP E2E requires the existing main binary DownloadManager.exe; the rebrand is out of scope.'
 }
 if (Test-Path -LiteralPath $root) {
     if (@(Get-ChildItem -LiteralPath $root -Force).Count -gt 0) {
