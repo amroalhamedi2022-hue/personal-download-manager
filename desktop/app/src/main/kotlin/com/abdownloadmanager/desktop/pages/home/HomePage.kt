@@ -239,18 +239,26 @@ fun HomePage(component: HomeComponent) {
                 target = remember {
                     object : DragAndDropTarget {
                         private fun onDraggedIn(event: DragAndDropEvent) {
-                            if (event.awtTransferable.isDataFlavorSupported(DataFlavor.stringFlavor)) {
-                                component.onExternalTextDraggedIn {
-                                    (event.awtTransferable.getTransferData(
-                                        DataFlavor.stringFlavor
-                                    ) as String)
+                            // Windows Explorer may expose BOTH file-list and text
+                            // flavors for one drag. Prefer the real files so an entire
+                            // multi-file link list is imported, not a text fallback.
+                            if (event.awtTransferable.isDataFlavorSupported(DataFlavor.javaFileListFlavor)) {
+                                component.onExternalFilesDraggedIn {
+                                    (event.awtTransferable.getTransferData(DataFlavor.javaFileListFlavor) as? List<*>)
+                                        ?.filterIsInstance<File>().orEmpty()
                                 }
                                 return
                             }
 
-                            if (event.awtTransferable.isDataFlavorSupported(DataFlavor.javaFileListFlavor)) {
-                                component.onExternalFilesDraggedIn {
-                                    (event.awtTransferable.getTransferData(DataFlavor.javaFileListFlavor) as List<*>).filterIsInstance<File>()
+                            if (event.awtTransferable.isDataFlavorSupported(DataFlavor.stringFlavor)) {
+                                runCatching {
+                                    component.onExternalTextDraggedIn {
+                                        event.awtTransferable.getTransferData(DataFlavor.stringFlavor) as? String ?: ""
+                                    }
+                                }.onFailure {
+                                    // Advertised flavors can still fail to resolve
+                                    // when a drag source closes; never crash the home UI.
+                                    component.onDragExit()
                                 }
                                 return
                             }
