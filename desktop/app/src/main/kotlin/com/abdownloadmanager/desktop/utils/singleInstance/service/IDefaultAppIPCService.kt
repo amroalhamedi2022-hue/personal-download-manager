@@ -15,6 +15,7 @@ interface IDefaultAppIPCService {
     // download
     suspend fun addDownloadByGui(request: AddDownloadsFromIntegration)
     suspend fun addDownload(request: NewDownloadTask): Long
+    suspend fun addFtpDownload(request: AddFtpDownloadIPC): Long
 
     suspend fun pauseDownload(ids: List<Long>)
     suspend fun resumeDownload(ids: List<Long>)
@@ -26,6 +27,17 @@ interface IDefaultAppIPCService {
 
     suspend fun listQueues(): List<ApiQueueModel>
 }
+
+/** Password is transient local IPC only; never include it in persisted downloads or logs. */
+@Serializable
+data class AddFtpDownloadIPC(
+    val link: String,
+    val username: String,
+    val password: String,
+    val folder: String,
+    val name: String,
+    val startImmediately: Boolean,
+)
 
 @Serializable
 data class ShowDownloadIPC(

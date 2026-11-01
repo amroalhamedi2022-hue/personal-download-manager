@@ -8,6 +8,8 @@ import com.abdownloadmanager.desktop.pages.category.DesktopCategoryDialogManager
 import com.abdownloadmanager.desktop.pages.checksum.DesktopFileChecksumComponent
 import com.abdownloadmanager.desktop.pages.editdownload.DesktopEditDownloadComponent
 import com.abdownloadmanager.desktop.pages.enterurl.DesktopEnterNewURLComponent
+import ir.amirab.downloader.ftp.FtpDownloadItem
+import ir.amirab.downloader.ftp.WindowsFtpCredentialVault
 import com.abdownloadmanager.desktop.pages.home.HomeComponent
 import com.abdownloadmanager.desktop.pages.perhostsettings.DesktopPerHostSettingsComponent
 import com.abdownloadmanager.desktop.pages.poweractionalert.PowerActionComponent
@@ -579,8 +581,21 @@ class AppComponent(
     init {
         downloadSystem
             .downloadEvents
-            .onEach {
-                onNewDownloadEvent(it)
+            .onEach { event ->
+                if (event is DownloadManagerEvents.OnJobRemoved) {
+                    val removed = event.downloadItem as? FtpDownloadItem
+                    removed?.credentialRef?.let { reference ->
+                        val stillInUse = runCatching {
+                            downloadSystem.getDownloadItemsBy {
+                                it is FtpDownloadItem && it.credentialRef == reference
+                            }.isNotEmpty()
+                        }.getOrDefault(true)
+                        if (!stillInUse) withContext(Dispatchers.IO) {
+                            runCatching { WindowsFtpCredentialVault().delete(reference) }
+                        }
+                    }
+                }
+                onNewDownloadEvent(event)
             }
             .launchIn(scope)
 //        IntegrationPortBroadcaster.cleanOnClose()
