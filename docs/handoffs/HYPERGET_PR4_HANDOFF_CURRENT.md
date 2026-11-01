@@ -1,4 +1,4 @@
-# HyperGet — PR #4 cross-chat handoff (2026-11-01)
+> **CURRENT PR #4 HANDOFF — 2026-11-01, VERIFIED WINDOWS:** Exact last verified **code SHA `9ce2fc6a61e2a495d9f9a2294e3a84bac253ea1e`**, Windows Actions **[41306279017](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/41306279017)** `success`. This file's own follow-up commit is **documentation-only**; do not mistake it for new untested production code. Stay on `experiment/liquid-reference-match-20261030` / Draft PR #4; never touch main or PR #3.\n\n# HyperGet — PR #4 cross-chat handoff (2026-11-01)
 
 > This is a durable project checkpoint. GitHub HEAD and Actions are authoritative; refresh them before starting work. A documentation-only commit after the verified SHA does NOT mean new code was tested.
 
@@ -77,8 +77,20 @@ Continue HyperGet from the latest actual HEAD of experiment/liquid-reference-mat
 - Still open: exact original-IDM comparison screenshots `IDM_Repair_Handoff_2026-10-21.zip` (not located), native Windows visual acceptance at 125/150/200% DPI, long URLs and RTL, speed-setting full restart and safe On Completion actions, broader main screen menu/sidebar/toolbar/table parity and column UI, end-user visual approval.
 - Do not mark overall IDM pixel parity as passed; source comparison references unavailable. Source shows `TableState.load/save` persists main list configuration; avoid implementing the same persistence mechanism again before checking UI acceptance.
 
-### 2026-11-01 — main toolbar typography refinement (pending exact-SHA Windows screenshot)
+### 2026-11-01 — main toolbar typography refinement (VERIFIED Windows)
 - Only `desktop/.../home/Actions.kt`: home toolbar **labeled** icons increased 16dp → 20dp, labels use `myTextSizes.base` instead of tiny `sm` (10sp→12sp), spacing adjusted from 2dp→4dp, and labeled tap-target padding set to 9dp horizontal / 8dp vertical. Unlabeled actions keep the 24dp icon and 12dp padding.
 - Horizontal scrolling behavior is preserved so narrow Windows layouts remain usable; no changes to menu callbacks, downloader logic, global typography, progress dialog, liquid rendering, themes or stored settings.
 - The source test added to `scripts/source-tests/test_hyperget_liquid_progress_source.py` guards the toolbar text/icon geometry and existing horizontal scroll.
-- Acceptance requires: exact-SHA Windows source tests, installer, real GUI screenshot and prior liquid/restart acceptance; **not yet verified at commit time**. Review the new main screenshot alongside the prior `installed-gui-smoke.png` before calling it visually accepted.
+- **VERIFIED on exact code SHA `9ce2fc6a61e2a495d9f9a2294e3a84bac253ea1e`:** Windows run `41306279017` succeeded including source tests, theme contrast tests, NSIS packaging/installed GUI smoke and new `installed-gui-smoke.png`, real 16 MiB transfer/SHA256, Liquid graph switch tests, and completion preference persistence across actual installed-GUI restart. See `windows-installed-gui-smoke` artifact 13082764407 and `windows-liquid-progress-visual` artifact 13083278591. The new image confirms the toolbar is readable and not clipped at the tested 1024px desktop width; this is not full original-IDM parity.
+
+### 2026-11-01 final batch verification ledger (carry across chats)
+| Deliverable | Exact evidence | Status |
+|---|---|---|
+| Main Windows toolbar readable labels/icons | `Actions.kt`, labels 10sp → 12sp, icons 16dp → 20dp; installed 1024px screenshot in artifact [13082764407](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/41306279017/artifacts/13082764407) | **Windows success** |
+| Installed download fixture | `TaskId=0`; 16,777,216 bytes; expected/actual SHA-256 `341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1` | **verified=true** |
+| Completion-dialog preference disk + app restart | `CompletionPreferenceDiskTested=true`, `CompletionPreferenceRestartTested=true`, `CompletionPreferenceRestartTaskId=1`; same paused task reopened, switch inverse in real before/after Windows screenshots, original JSON restored | **Windows success** |
+| Liquid visual graph switch and thin connection rows | `GraphToggleTested=true`; actual screenshot/report in artifact [13083278591](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/41306279017/artifacts/13083278591); production liquid window code untouched | **regression clear** |
+| Installed Windows lifecycle | NSIS install/reinstall/uninstall evidence artifact `13082904172` | **Windows success** |
+| Main branch / PR #3 | No code writes, ref updates, merges or new development branches | **preserved** |
+
+**Still NOT verified/unfinished:** final pixel-perfect IDM layout parity with original reference image archive; complete action parity of main menus/toolbar/context/shortcuts/tray; full 96 visual theme/icon-size combinations; 125%/150%/200% DPI, RTL, long URL state/window stress tests, 30-minute load stability and full resource regression; remaining software features from original broader roadmap. Do not treat those as done because this GUI smoke test passed. Progress on only these outstanding items from fresh HEAD, not from older handoffs or repeat commits.
