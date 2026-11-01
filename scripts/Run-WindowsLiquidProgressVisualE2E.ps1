@@ -620,6 +620,70 @@ public static class HyperGetLiquidProgressNative {
         }
     }
 
+
+    # Real installed-Windows clipboard acceptance: Ctrl+V into HomeSearch,
+    # followed by Ctrl+A/Ctrl+C back out of the same focused text editor.
+    # A sentinel replaces the clipboard BETWEEN paste and copy, so a missed
+    # copy cannot produce a false pass from the original clipboard value.
+    $clipboardShortcutsTested = $false
+    if ($mainWidth -ge 980 -and $mainWidth -le 1080 -and
+        $mainHeight -ge 680 -and $mainHeight -le 770) {
+        $windowsPowerShell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+        if (-not (Test-Path -LiteralPath $windowsPowerShell -PathType Leaf)) {
+            throw 'Real clipboard acceptance requires Windows PowerShell STA.'
+        }
+        function ConvertTo-ClipboardCommand {
+            param([string]$Command)
+            [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($Command))
+        }
+        function Set-ClipboardFixture {
+            param([string]$Text)
+            # The Windows Forms clipboard requires STA; the outer pwsh test
+            # runner's apartment state is not assumed to be STA.
+            $escaped = $Text.Replace("'", "''")
+            $cmd = "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Clipboard]::SetText('$escaped')"
+            $encoded = ConvertTo-ClipboardCommand -Command $cmd
+            $p = Start-Process -FilePath $windowsPowerShell -ArgumentList @(
+                '-NoProfile', '-NonInteractive', '-Sta', '-EncodedCommand', $encoded
+            ) -WindowStyle Hidden -Wait -PassThru
+            if ($p.ExitCode -ne 0) { throw 'Failed to seed isolated Windows test clipboard.' }
+        }
+        function Get-ClipboardFixture {
+            $cmd = 'Add-Type -AssemblyName System.Windows.Forms; [Console]::Out.Write([System.Windows.Forms.Clipboard]::GetText())'
+            $encoded = ConvertTo-ClipboardCommand -Command $cmd
+            $lines = @(& $windowsPowerShell -NoProfile -NonInteractive -Sta -EncodedCommand $encoded)
+            if ($LASTEXITCODE -ne 0) { throw 'Failed to read isolated Windows test clipboard.' }
+            return ($lines -join "`n").Trim()
+        }
+
+        $clipboardProbe = '127.0.0.1'
+        Set-ClipboardFixture -Text $clipboardProbe
+        [HyperGetLiquidProgressNative]::SetForegroundWindow($mainWindowHandle) | Out-Null
+        Start-Sleep -Milliseconds 150
+        if ([HyperGetLiquidProgressNative]::GetForegroundWindow() -ne $mainWindowHandle) {
+            throw 'Clipboard shortcut acceptance cannot focus the installed Home window.'
+        }
+        [System.Windows.Forms.SendKeys]::SendWait('^f')
+        Start-Sleep -Milliseconds 150
+        [System.Windows.Forms.SendKeys]::SendWait('^v')
+        Start-Sleep -Milliseconds 250
+        Set-ClipboardFixture -Text 'HYPERGET-COPY-NOT-YET-TESTED'
+        [HyperGetLiquidProgressNative]::SetForegroundWindow($mainWindowHandle) | Out-Null
+        Start-Sleep -Milliseconds 100
+        [System.Windows.Forms.SendKeys]::SendWait('^a')
+        [System.Windows.Forms.SendKeys]::SendWait('^c')
+        Start-Sleep -Milliseconds 150
+        $copiedSearchText = Get-ClipboardFixture
+        if ($copiedSearchText -cne $clipboardProbe) {
+            throw "Ctrl+V/Ctrl+C real HomeSearch regression: copied search text does not match the known loopback-host probe."
+        }
+        $clipboardShortcutsTested = $true
+        Write-Host 'PASS: real Windows Ctrl+F, Ctrl+V, Ctrl+A and Ctrl+C preserve focused search text.'
+        [HyperGetLiquidProgressNative]::SetForegroundWindow($mainWindowHandle) | Out-Null
+        [System.Windows.Forms.SendKeys]::SendWait('{BACKSPACE}')
+        Start-Sleep -Milliseconds 150
+    }
+
     $openOutput = @(& $cliPath download open $taskId 2>&1)
     if ($LASTEXITCODE -ne 0) {
         throw 'Installed CLI could not open the active HyperGet download-details window.'
@@ -1393,6 +1457,7 @@ public static class HyperGetLiquidProgressNative {
         MainDownloadListScreenshot = [IO.Path]::GetFileName($mainDownloadListScreenshot)
         MainDownloadListStatusAtCapture = $mainDownloadListStatusAtCapture
         SourceUrlSearchTested = $sourceUrlSearchTested
+        ClipboardShortcutsTested = $clipboardShortcutsTested
         SourceUrlSearchScreenshot = if ($sourceUrlSearchTested) { [IO.Path]::GetFileName($sourceUrlSearchScreenshot) } else { $null }
         ColumnsMenuTested = $columnsMenuTested
         ColumnsMenuResult = $columnsMenuResult
