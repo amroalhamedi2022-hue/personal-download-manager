@@ -35,6 +35,48 @@ class DroppedLinkFilesTest {
         assertEquals("https://ok.example", result)
     }
 
+    @Test fun limitsInspectionOfInvalidPathsAsWellAsAcceptedFiles() = withTempDir { dir ->
+        val invalid = (0..31).map { n -> dir.resolve("missing$n.txt") }
+        val valid = dir.resolve("last.txt").apply { writeText("https://never.example") }
+        assertEquals("", readDroppedLinkFiles(invalid + valid, maxFiles = 16))
+        assertEquals(
+            "https://never.example",
+            readDroppedLinkFiles(invalid.take(2) + valid, maxFiles = 3)
+        )
+    }
+
+    @Test fun acceptsUtf16LittleAndBigEndianBomAndUtf8Bom() = withTempDir { dir ->
+        val le = dir.resolve("old-notepad-LE.txt").apply {
+            writeBytes(byteArrayOf(0xFF.toByte(), 0xFE.toByte()) +
+                "https://utf16le.example/ملف".toByteArray(Charsets.UTF_16LE))
+        }
+        val be = dir.resolve("old-notepad-BE.txt").apply {
+            writeBytes(byteArrayOf(0xFE.toByte(), 0xFF.toByte()) +
+                "https://utf16be.example/file".toByteArray(Charsets.UTF_16BE))
+        }
+        val utf8bom = dir.resolve("utf8bom.txt").apply {
+            writeBytes(byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte()) +
+                "https://utf8.example".toByteArray(Charsets.UTF_8))
+        }
+        val result = readDroppedLinkFiles(listOf(le, be, utf8bom))
+        assertTrue(result.contains("https://utf16le.example/ملف"))
+        assertTrue(result.contains("https://utf16be.example/file"))
+        assertTrue(result.contains("https://utf8.example"))
+        assertFalse(result.contains("\uFEFF"))
+    }
+
+    @Test fun rejectsOddUtf16AndDecodedNulContent() = withTempDir { dir ->
+        val malformed = dir.resolve("odd.txt").apply {
+            writeBytes(byteArrayOf(0xFF.toByte(), 0xFE.toByte(), 0x68))
+        }
+        val nul = dir.resolve("nul-utf16.txt").apply {
+            writeBytes(byteArrayOf(0xFF.toByte(), 0xFE.toByte()) +
+                "a\u0000b".toByteArray(Charsets.UTF_16LE))
+        }
+        val valid = dir.resolve("ok.txt").apply { writeText("https://valid.example") }
+        assertEquals("https://valid.example", readDroppedLinkFiles(listOf(malformed, nul, valid)))
+    }
+
     @Test fun limitsNumberOfFilesAndRejectsZeroBudgets() = withTempDir { dir ->
         val files = (0..18).map { n ->
             dir.resolve("f$n.txt").apply { writeText("https://item$n.example") }
