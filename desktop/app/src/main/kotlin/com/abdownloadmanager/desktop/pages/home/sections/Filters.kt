@@ -36,6 +36,7 @@ fun SearchBox(
     placeholder: String = myStringResource(Res.string.search_in_the_list),
     modifier: Modifier,
     externalFocusRequester: FocusRequester? = null,
+    onEscape: (() -> Unit)? = null,
 ) {
     val shape = myShapes.defaultRounded
     val textSize = myTextSizes.base
@@ -47,6 +48,7 @@ fun SearchBox(
         textPadding = textPadding,
         interactionSource = interactionSource,
         externalFocusRequester = externalFocusRequester,
+        onEscape = onEscape,
         start = {
             WithContentAlpha(
                 animateFloatAsState(if (text.isBlank()) 0.9f else 1f).value

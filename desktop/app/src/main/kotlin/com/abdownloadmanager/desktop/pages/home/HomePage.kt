@@ -927,6 +927,7 @@ fun HomeSearch(
             textPadding = textPadding,
             interactionSource = searchBoxInteractionSource,
             externalFocusRequester = searchFocusRequester,
+            onEscape = { component.filterState.textToSearch = "" },
             modifier = modifier
                 .width(
                     animateDpAsState(

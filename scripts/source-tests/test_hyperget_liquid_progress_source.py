@@ -655,6 +655,13 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("tableState.setVisibleCells", TABLE_WIDGET)
         self.assertIn("tableState::reset", TABLE_WIDGET)
 
+    def test_escape_clears_only_home_search_not_every_text_field(self):
+        self.assertIn("onEscape: (() -> Unit)? = null", TEXT_FIELD)
+        self.assertIn("if (it.type == KeyEventType.KeyDown) onEscape?.invoke()", TEXT_FIELD)
+        self.assertIn("onEscape = onEscape", FILTERS)
+        self.assertIn('onEscape = { component.filterState.textToSearch = "" }', HOME_PAGE)
+        self.assertIn("SendKeys]::SendWait('{ESC}')", WINDOWS_UI_WORKFLOW)
+
     def test_main_search_ctrl_f_uses_existing_text_field_without_mutating_filters(self):
         self.assertIn('"$metaKey F" to ::focusHomeSearch', HOME_COMPONENT)
         self.assertIn("item(Res.string.search_in_the_list.asStringSource())", HOME_COMPONENT)
@@ -681,7 +688,7 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("SendKeys]::SendWait('^f')", WINDOWS_UI_WORKFLOW)
         self.assertIn("SendKeys]::SendWait('hgfocusprobe')", WINDOWS_UI_WORKFLOW)
         self.assertIn("$changedTextPixels -lt 85", WINDOWS_UI_WORKFLOW)
-        self.assertIn("SendKeys]::SendWait('{BACKSPACE}')", WINDOWS_UI_WORKFLOW)
+        self.assertIn("SendKeys]::SendWait('{ESC}')", WINDOWS_UI_WORKFLOW)
 
     def test_all_home_shortcuts_have_unique_keystrokes_and_search_is_not_shadowed(self):
         import re

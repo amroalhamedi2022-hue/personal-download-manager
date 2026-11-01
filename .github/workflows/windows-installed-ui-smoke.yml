@@ -413,8 +413,10 @@ jobs:
                 $searchGraphics.Dispose()
                 $searchBitmap.Dispose()
                 # Do not leave a synthetic search/filter in this runner.
-                [System.Windows.Forms.SendKeys]::SendWait('^a')
-                [System.Windows.Forms.SendKeys]::SendWait('{BACKSPACE}')
+                # Escape should clear the Home search AND return focus
+                # to the download list, without affecting other text fields.
+                [System.Windows.Forms.SendKeys]::SendWait('{ESC}')
+                Start-Sleep -Milliseconds 220
               }
 
               # Collect an actual process-tree CPU/RAM baseline while the

@@ -194,3 +194,9 @@ Continue HyperGet from the latest actual HEAD of experiment/liquid-reference-mat
 - New shared `readDroppedLinkFiles` caps aggregate bytes at **1 MiB**, skips directories, missing/unreadable files, binary NUL files and duplicates; uses bounded byte reads to reject a file growing between `length()` and read. It does not follow directories, log contents or read unbounded files. Existing drag text/URLs still use the old unchanged path.
 - Four actual Kotlin desktop unit tests cover multi-file order/dedup, invalid/binary entries, total bytes limit, max-file limit and zero budget; CI executes tests on Windows. A source contract asserts bounded file reads and existing de-dup.
 - **Status:** code committed; exact-SHA Windows acceptance pending. No changes to main/PR3, Liquid/14dp parts or download engine.
+
+
+## 2026-11-01 — Home search keyboard Escape consistency (pending CI)
+- After typing via Ctrl+F, pressing **Escape** now clears just the main downloads search term and releases focus to the list. This uses an optional `onEscape` callback at the *end* of `MyTextField` and `SearchBox` signatures; all other text fields preserve their existing Escape-to-blur behavior. Callback runs only on `KeyDown` to avoid duplicate clear.
+- The installed-Windows keyboard smoke now uses a real `Escape` to clean up its Ctrl+F text instead of Ctrl+A/Backspace; original pixel check still proves Ctrl+F typing before cleanup.
+- Source contract asserts opt-in behavior. **Exact-SHA Windows compile and real key interaction pending.** Main, PR #3, transfer logic and Liquid untouched.
