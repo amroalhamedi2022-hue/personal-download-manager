@@ -463,6 +463,17 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("A changing", SCRIPT)
         self.assertIn("Liquid progress fill must NOT falsely satisfy this gate", SCRIPT)
 
+    def test_windows_paused_restart_allows_only_invisible_os_border_and_rejects_real_overflow(self):
+        self.assertIn("function Get-ValidatedVisibleDownloadRect", SCRIPT)
+        self.assertIn("$outsideLeft -le 12 -and $outsideTop -le 12", SCRIPT)
+        self.assertIn("$outsideRight -le 12 -and $outsideBottom -le 12", SCRIPT)
+        self.assertIn("$visible.Left = [Math]::Max($raw.Left, $screen.Left)", SCRIPT)
+        self.assertIn("$visible.Right = [Math]::Min($raw.Right, $screen.Right)", SCRIPT)
+        self.assertIn("window never settled into the known 1024x728 visible CI layout", SCRIPT)
+        self.assertIn("Get-ValidatedVisibleDownloadRect -Handle $probeHandle", SCRIPT)
+        self.assertIn("Get-ValidatedVisibleDownloadRect -Handle $restartDetail", SCRIPT)
+        self.assertNotIn("Paused fixture geometry was not safe for on-screen switch interaction.", SCRIPT)
+
     def test_installed_windows_captures_other_idm_tabs_without_claiming_false_parity(self):
         self.assertIn("liquid-progress-tab-{0}.png", SCRIPT)
         self.assertIn("@{ Name = 'speed'; OffsetX = 81 }", SCRIPT)

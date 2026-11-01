@@ -39,3 +39,11 @@
 ## Startup safety follow-up
 - Restore the per-file Boolean override synchronously during the desktop component's initialization, before the asynchronous storage observation, so a very short download cannot finish under the global default before the stored per-file choice is loaded.
 - Harden the Windows switch pixel guard against mistaking a pure-white background for a disabled grey switch before issuing a coordinate click.
+
+
+## 2026-11-01 — PR #4 IDM parity evidence update (live Windows)
+- **Main UI columns:** existing `TableState` support for visibility/order/sort/width/reset remains in use; now a visible 28dp Columns control is opt-in for the downloads table, right-click header unchanged. Verified installed on Windows `a43cf58` [run 41308254173](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/41308254173).
+- **Persistence corruption tolerance:** `TableState.load` safely rejects removed/non-sortable sort IDs and non-finite/fixed saved widths; clamps out-of-range sizes; three Kotlin roundtrip tests. Exact Windows success `694092d`, [run 41308826679](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/41308826679).
+- **Main UI during transfer:** genuine `hyperget-main-list-active-download.png` evidence from Windows while CLI reports Downloading, plus verified 16 MiB SHA-256. `4d2cd76`, [run 41309137539](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/41309137539).
+- **Menu click verified visually** from real installed Windows `02c62a2`: `hyperget-main-columns-menu-open.png` screenshot and log reporting 400+ changed pixels under the live download row. That run FAILED afterward at restart geometry, so it is not accepted as whole-workflow regression success.
+- **Still OPEN:** original IDM screenshot side-by-side pixel parity (original `IDM_Repair_Handoff_2026-10-21.zip` unavailable), DPI 125–200%, RTL, multi-theme/icon pack matrix, speed preference after restart, power-action safety checks beyond completion-dialog switch. Do NOT conflate verified 1024px GUI parity with full IDM acceptance.

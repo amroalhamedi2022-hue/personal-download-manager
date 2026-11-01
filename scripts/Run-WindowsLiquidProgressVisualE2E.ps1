@@ -1050,26 +1050,54 @@ public static class HyperGetLiquidProgressNative {
         if ([HyperGetLiquidProgressNative]::GetForegroundWindow() -ne $probeHandle) {
             throw 'Paused preference fixture was not foreground before click.'
         }
-        $probeRect = [HyperGetLiquidProgressNative+RECT]::new()
-        if (-not [HyperGetLiquidProgressNative]::GetWindowRect($probeHandle, [ref]$probeRect)) {
-            throw 'Paused fixture window geometry unavailable.'
+
+    # Window frame geometry from GetWindowRect can extend by <=12 physical
+    # pixels beyond the display when Compose requests SW_MAXIMIZE on Windows.
+    # DWM frame bounds usually remove that margin but can be unavailable.
+    # Use VISIBLE pixels for coordinate interactions. Reject genuine overflow.
+    function Get-ValidatedVisibleDownloadRect {
+        param([IntPtr]$Handle, [string]$ProbeName)
+        $screen = [System.Windows.Forms.Screen]::FromHandle($Handle).Bounds
+        $lastRaw = ''
+        for ($attempt = 0; $attempt -lt 15; $attempt++) {
+            $raw = [HyperGetLiquidProgressNative+RECT]::new()
+            if (-not [HyperGetLiquidProgressNative]::GetWindowRect($Handle, [ref]$raw)) {
+                throw "$ProbeName window geometry unavailable."
+            }
+            $dwm = [HyperGetLiquidProgressNative+RECT]::new()
+            if ([HyperGetLiquidProgressNative]::DwmGetWindowAttribute(
+                    $Handle, 9, [ref]$dwm, 16
+                ) -eq 0 -and $dwm.Right -gt $dwm.Left -and
+                $dwm.Bottom -gt $dwm.Top) {
+                $raw = $dwm
+            }
+            $outsideLeft = [Math]::Max(0, $screen.Left - $raw.Left)
+            $outsideTop = [Math]::Max(0, $screen.Top - $raw.Top)
+            $outsideRight = [Math]::Max(0, $raw.Right - $screen.Right)
+            $outsideBottom = [Math]::Max(0, $raw.Bottom - $screen.Bottom)
+            $lastRaw = "window=($($raw.Left),$($raw.Top))..($($raw.Right),$($raw.Bottom)), display=($($screen.Left),$($screen.Top))..($($screen.Right),$($screen.Bottom)), overflow=$outsideLeft/$outsideTop/$outsideRight/$outsideBottom"
+            if ($outsideLeft -le 12 -and $outsideTop -le 12 -and
+                $outsideRight -le 12 -and $outsideBottom -le 12) {
+                $visible = [HyperGetLiquidProgressNative+RECT]::new()
+                $visible.Left = [Math]::Max($raw.Left, $screen.Left)
+                $visible.Top = [Math]::Max($raw.Top, $screen.Top)
+                $visible.Right = [Math]::Min($raw.Right, $screen.Right)
+                $visible.Bottom = [Math]::Min($raw.Bottom, $screen.Bottom)
+                $visibleWidth = $visible.Right - $visible.Left
+                $visibleHeight = $visible.Bottom - $visible.Top
+                if ($visibleWidth -ge 980 -and $visibleWidth -le 1080 -and
+                    $visibleHeight -ge 680 -and $visibleHeight -le 770) {
+                    return $visible
+                }
+            }
+            Start-Sleep -Milliseconds 200
         }
-        $probeDwm = [HyperGetLiquidProgressNative+RECT]::new()
-        if ([HyperGetLiquidProgressNative]::DwmGetWindowAttribute(
-            $probeHandle, 9, [ref]$probeDwm, 16
-        ) -eq 0 -and $probeDwm.Right -gt $probeDwm.Left -and
-            $probeDwm.Bottom -gt $probeDwm.Top) {
-            $probeRect = $probeDwm
-        }
+        throw "$ProbeName window never settled into the known 1024x728 visible CI layout: $lastRaw"
+    }
+
+        $probeRect = Get-ValidatedVisibleDownloadRect -Handle $probeHandle -ProbeName 'Paused preference fixture'
         $probeWidth = $probeRect.Right - $probeRect.Left
         $probeHeight = $probeRect.Bottom - $probeRect.Top
-        $probeScreen = [System.Windows.Forms.Screen]::FromHandle($probeHandle).Bounds
-        if ($probeWidth -lt 980 -or $probeWidth -gt 1080 -or
-            $probeHeight -lt 680 -or $probeHeight -gt 770 -or
-            $probeRect.Left -lt $probeScreen.Left -or $probeRect.Top -lt $probeScreen.Top -or
-            $probeRect.Right -gt $probeScreen.Right -or $probeRect.Bottom -gt $probeScreen.Bottom) {
-            throw 'Paused fixture geometry was not safe for on-screen switch interaction.'
-        }
         if (-not [HyperGetLiquidProgressNative]::SetCursorPos(
             ($probeRect.Left + 174), ($probeRect.Top + 47)
         )) { throw 'Could not select paused-task On Completion tab.' }
@@ -1195,30 +1223,9 @@ public static class HyperGetLiquidProgressNative {
             throw 'Restarted download details were not foreground for safe pixel verification.'
         }
 
-        $restartRect = [HyperGetLiquidProgressNative+RECT]::new()
-        if (-not [HyperGetLiquidProgressNative]::GetWindowRect($restartDetail, [ref]$restartRect)) {
-            throw 'Restarted download window geometry unavailable.'
-        }
-        $dwmRestartRect = [HyperGetLiquidProgressNative+RECT]::new()
-        $dwmRestartResult = [HyperGetLiquidProgressNative]::DwmGetWindowAttribute(
-            $restartDetail, 9, [ref]$dwmRestartRect, 16
-        )
-        if ($dwmRestartResult -eq 0 -and
-            $dwmRestartRect.Right -gt $dwmRestartRect.Left -and
-            $dwmRestartRect.Bottom -gt $dwmRestartRect.Top) {
-            $restartRect = $dwmRestartRect
-        }
+        $restartRect = Get-ValidatedVisibleDownloadRect -Handle $restartDetail -ProbeName 'Restarted preference fixture'
         $restartWidth = $restartRect.Right - $restartRect.Left
         $restartHeight = $restartRect.Bottom - $restartRect.Top
-        $restartScreen = [System.Windows.Forms.Screen]::FromHandle($restartDetail).Bounds
-        if ($restartWidth -lt 980 -or $restartWidth -gt 1080 -or
-            $restartHeight -lt 680 -or $restartHeight -gt 770 -or
-            $restartRect.Left -lt $restartScreen.Left -or
-            $restartRect.Top -lt $restartScreen.Top -or
-            $restartRect.Right -gt $restartScreen.Right -or
-            $restartRect.Bottom -gt $restartScreen.Bottom) {
-            throw 'Restarted download window differs from the known safe 1024x728 CI layout.'
-        }
 
         # Click ONLY the On Completion tab; the lower switch is read before
         # any further interaction. Saving a screenshot alone does not count.

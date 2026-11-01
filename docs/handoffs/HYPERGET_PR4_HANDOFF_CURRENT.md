@@ -124,3 +124,13 @@ Continue HyperGet from the latest actual HEAD of experiment/liquid-reference-mat
 ### Windows maximized invisible-frame pixel guard refinement
 - Real Windows main GUI screenshot can include the OS's 8px invisible resize border; DWM-cropped screenshots omit it. Updated Columns E2E to scan a **bounded icon region** instead of requiring one exact pixel and click safely within the 28dp button for either frame origin.
 - No production code changes. The first `aebff76` exact-SHA Windows run must be read on its own merits; this follow-up requires independent verification on its new SHA. Do not mislabel a failed pixel guard as a product feature regression.
+
+
+### 2026-11-01 — Exact-SHA CI & visible Columns acceptance update
+- Windows run **41308254173** on `a43cf58` PASSED: discoverable Columns button integrated, installed screenshot, transfer and restart acceptance.
+- Windows run **41308826679** on `694092d` PASSED: Kotlin `TableStatePersistenceTest` (3 cases), NSIS install + real GUI + 16 MiB HTTP/SHA-256 + Liquid + completion preference restart.
+- Windows run **41309137539** on `4d2cd76` PASSED: screenshot `hyperget-main-list-active-download.png` with real task status `Downloading` + later byte-for-byte verified completion.
+- Run **41309432602** (`aebff76`) FAILED in new Columns test's single-pixel icon guard; no product feature failure.
+- Run **41309701816** (`02c62a2`) FAILED later on strict paused download-window geometry. **However**, its real Windows log explicitly states `Windows Columns menu interaction: real mouse click opened Columns menu; 400+ changed pixels verified below dynamic download row`. Captured authentic screenshot `hyperget-main-columns-menu-open.png` visually shows the complete Customize Columns popover and all checkboxes, reordering grips and Reset. Graph hide/show passed afterward. No claim of full regression success for this SHA.
+- New correction uses one `Get-ValidatedVisibleDownloadRect` for paused and restarted windows, waits for stable geometry, allows **at most 12px invisible Windows maximized frame**, clips only that frame to display bounds and rejects any larger overflow or unrecognized window size. On failure, includes sanitized geometry for diagnosis. No unsafe click without validated bounds. Requires exact-SHA Windows acceptance.
+- **Last fully green Windows application SHA until next success:** `4d2cd76055b712a2cbcdfde885ddfabfdf0a786c` (41309137539). Current HEAD contains test harness refinements not yet fully green. Main and PR #3 untouched.
