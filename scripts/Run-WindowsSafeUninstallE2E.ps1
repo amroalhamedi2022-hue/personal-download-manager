@@ -18,8 +18,8 @@ $runnerTemp = [IO.Path]::GetFullPath($env:RUNNER_TEMP).TrimEnd([char[]]@('\','/'
 $installDir = Join-Path $runnerTemp "hyperget-uninstall-safety-$env:GITHUB_RUN_ID"
 $installer = [IO.Path]::GetFullPath($InstallerExecutable)
 $proof = [IO.Path]::GetFullPath($ProofFile)
-$startMenu = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Download Manager'
-$shortcut = Join-Path $startMenu 'Download Manager.lnk'
+$startMenu = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\HyperGet'
+$shortcut = Join-Path $startMenu 'HyperGet.lnk'
 $sentinel = Join-Path $startMenu 'keep-unrelated-user-file.txt'
 $registry = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\DownloadManager'
 
@@ -33,7 +33,7 @@ if ((Test-Path -LiteralPath $installDir) -or (Test-Path -LiteralPath $registry) 
     (Test-Path -LiteralPath $startMenu)) {
     throw 'Runner already has installer-owned directories or registry: refusing destructive test.'
 }
-if (@(Get-Process -Name 'DownloadManager' -ErrorAction SilentlyContinue).Count -ne 0) {
+if (@(Get-Process -Name 'HyperGet','DownloadManager' -ErrorAction SilentlyContinue).Count -ne 0) {
     throw 'DownloadManager is already running on runner.'
 }
 
@@ -48,18 +48,25 @@ try {
     if ($install.ExitCode -ne 0) { throw "Silent install failed ($($install.ExitCode))." }
     $installed = $true
     Start-Sleep -Seconds 2
-    if (@(Get-Process -Name 'DownloadManager' -ErrorAction SilentlyContinue).Count -ne 0) {
+    if (@(Get-Process -Name 'HyperGet','DownloadManager' -ErrorAction SilentlyContinue).Count -ne 0) {
         throw 'Silent /S install unexpectedly started the desktop GUI.'
     }
-    $gui = Join-Path $installDir 'DownloadManager.exe'
+    $gui = Join-Path $installDir 'HyperGet.exe'
+    $legacyGui = Join-Path $installDir 'DownloadManager.exe'
     $uninstaller = Join-Path $installDir 'uninstall.exe'
-    if (-not (Test-Path -LiteralPath $gui -PathType Leaf)) { throw 'Installed GUI executable missing.' }
+    if (-not (Test-Path -LiteralPath $gui -PathType Leaf)) { throw 'Installed HyperGet.exe missing.' }
+    if (Test-Path -LiteralPath $legacyGui -PathType Leaf) { throw 'Obsolete DownloadManager.exe remained installed.' }
     if (-not (Test-Path -LiteralPath $uninstaller -PathType Leaf)) { throw 'Installed uninstaller missing.' }
     if (-not (Test-Path -LiteralPath $shortcut -PathType Leaf)) {
         throw 'Start Menu shortcut missing; cannot test safe deletion.'
     }
     if (-not (Test-Path -LiteralPath $registry)) {
         throw 'Uninstall registration missing; cannot test cleanup.'
+    }
+    $installedRegistration = Get-ItemProperty -LiteralPath $registry
+    if ($installedRegistration.DisplayName -ne 'HyperGet' -or
+        $installedRegistration.DisplayIcon -notmatch 'HyperGet\\.exe') {
+        throw 'Windows Add/Remove Programs still displays a legacy product name or executable.'
     }
     Set-Content -LiteralPath $sentinel -Value 'keep this unrelated file' -Encoding UTF8
     $sentinelCreated = $true
@@ -87,6 +94,8 @@ try {
     @(
         "SourceSha=$env:GITHUB_SHA"
         "InstallerSha256=$((Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash)"
+        "BrandedGuiExecutable=HyperGet.exe"
+        "WindowsProductName=HyperGet"
         "SilentInstall=PASS"
         "NoUnexpectedGui=PASS"
         "SilentUninstall=PASS"

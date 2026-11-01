@@ -152,8 +152,8 @@ nucleus {
                 modules("jdk.security.auth")
             }
             packageVersion = getAppVersionStringForPackaging()
-            packageName = getAppName()
-            vendor = "Personal Download Manager"
+            packageName = if (Platform.isWindows()) getPrettifiedAppName() else getAppName()
+            vendor = "HyperGet"
             appResourcesRootDir.set(project.layout.projectDirectory.dir("resources"))
             val menuGroupName = getPrettifiedAppName()
             licenseFile.set(rootProject.file("LICENSE"))
@@ -197,15 +197,16 @@ installerPlugin {
         appVersion = getAppVersionStringForPackaging(TargetFormat.Exe)
         appDisplayVersion = getAppVersionString()
         appDataDirName = getAppDataDirName()
-        inputDir = project.file("build/compose/binaries/main-release/app/${getAppName()}")
-        outputFileName = getAppName()
+        inputDir = project.file("build/compose/binaries/main-release/app/${if (Platform.isWindows()) getPrettifiedAppName() else getAppName()}")
+        outputFileName = "${getPrettifiedAppName()}Setup"
         licenceFile = rootProject.file("LICENSE")
         iconFile = project.file("icons/icon.ico")
         nsisTemplate = project.file("resources/installer/nsis-script-template.nsi")
         extraParams = mapOf(
+            "main_binary_name" to getPrettifiedAppName(),
             "native_messaging_host_binary_name" to nativeMessagingHostBinaryName,
             "cli_binary_name" to cliBinaryName,
-            "app_publisher" to "Personal Download Manager",
+            "app_publisher" to "HyperGet",
             "app_version_with_build" to "${getAppVersionStringForPackaging(TargetFormat.Exe)}.0",
             "source_code_url" to "https://github.com/amroalhamedi2022-hue/personal-download-manager",
             "project_website" to "github.com/amroalhamedi2022-hue/personal-download-manager",

@@ -29,4 +29,7 @@ assert all(p >= 0 for p in locations), f"Missing uninstall step(s): {locations}"
 assert locations == sorted(locations), "Uninstaller must be removed last"
 assert "Function .onInstSuccess" not in text, "Silent install must not force-open GUI"
 assert "!define MUI_FINISHPAGE_RUN_FUNCTION RunMainBinary" in text, "Keep interactive Run option"
+assert '!define MAIN_BINARY_NAME "{{ main_binary_name }}"' in text
+assert '!define LEGACY_MAIN_BINARY_NAME "${APP_NAME}"' in text
+assert '!insertmacro RemoveKnownBrandShortcuts' in text
 print("PASS: safe per-user uninstall and unattended setup without GUI launch")

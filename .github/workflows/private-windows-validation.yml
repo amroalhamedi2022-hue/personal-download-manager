@@ -53,7 +53,9 @@ jobs:
 
       - name: Guard non-destructive Windows uninstall
         shell: pwsh
-        run: python scripts/source-tests/test_uninstall_shortcut_safety.py
+        run: |
+          python scripts/source-tests/test_uninstall_shortcut_safety.py
+          python scripts/source-tests/test_hyperget_main_branding.py
 
       - name: Run downloader tests and compile desktop app
         shell: bash
@@ -79,7 +81,7 @@ jobs:
           # The PowerShell script is terminating-error based and already throws
           # on all failed checks. Do not compare nullable $LASTEXITCODE to zero:
           # PowerShell can evaluate $null -ne 0 as true after successful scripts.
-          & ./scripts/Run-WindowsSafeUninstallE2E.ps1 -InstallerExecutable 'desktop/app/build/custom-installer/DownloadManager.exe' -ProofFile 'build/ci-release/windows-safe-uninstall-proof.txt'
+          & ./scripts/Run-WindowsSafeUninstallE2E.ps1 -InstallerExecutable 'desktop/app/build/custom-installer/HyperGetSetup.exe' -ProofFile 'build/ci-release/windows-safe-uninstall-proof.txt'
 
       - name: Upload safe-uninstall acceptance proof
         if: always()
@@ -93,7 +95,7 @@ jobs:
       - name: Upload Windows package
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: personal-download-manager-windows-x64
+          name: hyperget-windows-x64
           path: build/ci-release/binaries/**
           if-no-files-found: error
           retention-days: 7
