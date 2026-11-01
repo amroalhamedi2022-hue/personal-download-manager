@@ -256,11 +256,13 @@ abstract class BaseHomeComponent(
         snapshotFlow { filterState.queueFilter },
     ) { textToSearch, activeDownloads, completeDownloads, categoryFilter, statusFilter, queueFilter ->
         val searchTerm = textToSearch.trim()
-        val allowedList = categoryFilter?.items ?: queueFilter?.queueItems
+        // Category/queue items are lists: convert once per recomputation,
+        // rather than scanning up to 10k IDs for every visible row.
+        val allowedIds = (categoryFilter?.items ?: queueFilter?.queueItems)?.toHashSet()
         (activeDownloads + completeDownloads)
             .filter {
                 val statusAccepted = filterState.statusFilter.accept(it)
-                val itemIsInAllowedList = allowedList?.contains(it.id) ?: true
+                val itemIsInAllowedList = allowedIds?.contains(it.id) ?: true
                 val searchAccepted = matchesDownloadSearch(it, searchTerm)
                 itemIsInAllowedList && statusAccepted && searchAccepted
             }
@@ -294,11 +296,7 @@ abstract class BaseHomeComponent(
         downloadList,
     ) { selectionList, downloadList ->
         val ids = selectionList
-        ids.mapNotNull { id ->
-            downloadList.find {
-                it.id == id
-            }
-        }
+        findVisibleSelectedItems(ids, downloadList)
     }
 
     val selectionContentSize = selectionListItems.mapStateFlow { items ->
@@ -472,4 +470,14 @@ internal fun retainVisibleSelections(
     val visibleIds = HashSet<Long>(visible.size)
     visible.forEach { visibleIds.add(it.id) }
     return selected.filter { it in visibleIds }
+}
+
+/** Reuse the currently visible item objects, without an O(N x M) scan. */
+internal fun findVisibleSelectedItems(
+    selectedIds: List<Long>,
+    visible: List<IDownloadItemState>,
+): List<IDownloadItemState> {
+    if (selectedIds.isEmpty() || visible.isEmpty()) return emptyList()
+    val byId = visible.associateBy { it.id }
+    return selectedIds.mapNotNull { id -> byId[id] }
 }

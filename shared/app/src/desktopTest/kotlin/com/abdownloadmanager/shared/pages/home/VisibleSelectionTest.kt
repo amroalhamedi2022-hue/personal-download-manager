@@ -29,6 +29,28 @@ class VisibleSelectionTest {
         assertTrue(retainVisibleSelections(emptyList(), visible).isEmpty())
     }
 
+    @Test fun selectionContentLookupPreservesSelectionOrderAndVisibleItems() {
+        val visible = listOf(item(3L), item(10L), item(1L))
+        val selected = listOf(10L, 99L, 1L)
+        val result = findVisibleSelectedItems(selected, visible)
+        assertEquals(listOf(10L, 1L), result.map { it.id })
+        assertTrue(result[0] === visible[1])
+        assertTrue(result[1] === visible[2])
+        assertTrue(findVisibleSelectedItems(selected, emptyList()).isEmpty())
+        assertTrue(findVisibleSelectedItems(emptyList(), visible).isEmpty())
+    }
+
+    @Test fun tenThousandSelectedItemLookupsKeepItemIdentityAndOrder() {
+        val visible = (0L until 10_000L).map { item(it) }
+        val selected = (9_999L downTo 0L).toList() + listOf(11_000L)
+        val result = findVisibleSelectedItems(selected, visible)
+        assertEquals(10_000, result.size)
+        assertEquals(9_999L, result.first().id)
+        assertEquals(0L, result.last().id)
+        assertTrue(result[0] === visible[9999])
+        assertTrue(result.last() === visible[0])
+    }
+
     @Test fun tenThousandRowsAndSelectionsDoNotNeedNestedMembershipScans() {
         // List/selection membership only: NOT a 10k live-download GUI test.
         val visible = (0 until 10_000).map { item(it.toLong()) }
