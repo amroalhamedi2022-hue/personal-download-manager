@@ -100,3 +100,10 @@ Continue HyperGet from the latest actual HEAD of experiment/liquid-reference-mat
 - `shared/.../customtable/Table.kt` now has **opt-in** `showColumnConfigButton: Boolean = false`: a compact 28dp header-end Columns button with a localized accessible label and tooltip. The Home downloads table opts in, while all unrelated tables retain their existing UI.
 - Clicking the button opens the already-implemented `ShowColumnConfigMenu`; existing right-click header still works. No new persistence schema or separate menu. Existing `TableState` controls visibility/order/sort/default reset, and `HomeComponent` continues to save/load the same state. No transfer engine, download-window Liquid, or theme modifications.
 - Source-contract regression asserts visible launcher, existing context menu, reordering, visibility, reset. Requires Kotlin compile/installer, actual Windows screenshot review and exact-commit Actions before marking accepted. The button may overlap a rightmost table heading on narrow windows: inspect Windows evidence before claiming visual acceptance.
+
+
+### 2026-11-01 — Saved table column configuration hardening (needs exact-SHA Windows acceptance)
+- `TableState.load` now ignores removed/fixed saved width IDs, rejects non-finite widths, and clamps out-of-range widths to the active column's supported bounds. A persisted sort ID referring to a non-sortable/removed column safely falls back to no sort rather than throwing `ClassCastException`. Valid column size/order/visibility/sort IDs remain round-trippable.
+- Three real Kotlin Desktop unit tests in `TableStatePersistenceTest.kt` cover non-sortable sort/fixed width, non-finite/removed values and valid cross-instance roundtrip.
+- Windows workflow includes the exact tests in its theme/Kotlin phase and triggers on changed model/test paths. Does not modify any download engine, transfer settings, completion logic, themes, or Liquid visuals.
+- Status: implementation committed, acceptance pending **exact-SHA Windows workflow**. This work is complementary to the visible Columns launcher and is not an excuse to re-implement `TableState` persistence or overwrite user data.
