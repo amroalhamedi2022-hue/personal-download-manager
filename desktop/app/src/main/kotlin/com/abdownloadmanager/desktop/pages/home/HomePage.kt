@@ -266,7 +266,13 @@ fun HomePage(component: HomeComponent) {
 
                         override fun onStarted(event: DragAndDropEvent) {
                             isDragging = true
-                            onDraggedIn(event)
+                            // Only the actual OS drop needs to decode file contents.
+                            // On Windows 16 x 1 MiB untrusted file candidates could
+                            // otherwise block the Compose UI twice per mouse drag.
+                            // Text-only drags keep the lightweight hover preview.
+                            if (!event.awtTransferable.isDataFlavorSupported(DataFlavor.javaFileListFlavor)) {
+                                onDraggedIn(event)
+                            }
                         }
 
                         override fun onEnded(event: DragAndDropEvent) {

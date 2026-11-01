@@ -738,6 +738,16 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("ClipboardShortcutsTested = $clipboardShortcutsTested", SCRIPT)
         self.assertIn("'-Sta'", SCRIPT)
 
+    def test_external_file_drop_defers_filesystem_reads_until_mouse_release(self):
+        start = HOME_PAGE.split("override fun onStarted(event: DragAndDropEvent)", 1)[1].split(
+            "override fun onEnded", 1
+        )[0]
+        self.assertIn("!event.awtTransferable.isDataFlavorSupported(DataFlavor.javaFileListFlavor)", start)
+        self.assertIn("onDraggedIn(event)", start)
+        on_drop = HOME_PAGE.split("override fun onDrop(event: DragAndDropEvent): Boolean", 1)[1]
+        self.assertIn("onDraggedIn(event)", on_drop)
+        self.assertIn("component.onDropped()", on_drop)
+
     def test_windows_drop_re_reads_transfer_payload_at_actual_drop(self):
         # A file list might be advertised on drag-start yet unavailable
         # for reading until the OS delivers the drop event.
