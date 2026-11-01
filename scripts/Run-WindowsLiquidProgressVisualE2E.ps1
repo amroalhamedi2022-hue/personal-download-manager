@@ -1242,6 +1242,22 @@ public static class HyperGetLiquidProgressNative {
                     return $visible
                 }
             }
+            # Windows/JBR can report a stale maximized size (e.g. 978x673)
+            # for a secondary Compose window on a 1024x768 CI desktop. Do
+            # one genuine resize/restore in this *isolated test fixture* only.
+            # Never relax the pixel/geometry checks or use this fallback at a
+            # different physical resolution.
+            if ($attempt -eq 7 -and $screen.Width -eq 1024 -and $screen.Height -eq 768) {
+                Write-Host "Restoring and resizing $ProbeName into verified 1024x768 test bounds."
+                [HyperGetLiquidProgressNative]::ShowWindow($Handle, 9) | Out-Null
+                if (-not [HyperGetLiquidProgressNative]::SetWindowPos(
+                    $Handle, [IntPtr](-1),
+                    ($screen.Left + 8), ($screen.Top + 8), 1004, 728,
+                    [uint32]0x0040
+                )) { throw "$ProbeName could not be resized for known CI fixture." }
+                [HyperGetLiquidProgressNative]::BringWindowToTop($Handle) | Out-Null
+                [HyperGetLiquidProgressNative]::SetForegroundWindow($Handle) | Out-Null
+            }
             Start-Sleep -Milliseconds 200
         }
         throw "$ProbeName window never settled into the known 1024x728 visible CI layout: $lastRaw"
