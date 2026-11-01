@@ -119,3 +119,8 @@ Continue HyperGet from the latest actual HEAD of experiment/liquid-reference-mat
 - Windows E2E now clicks the new header-end Columns button in the known 1040x744 isolated GUI layout, with foreground and actual icon-pixel guards (never blind or unknown-DPI clicks).
 - Records `hyperget-main-columns-menu-open.png` and uses a real pixel-difference gate **below** the animated transfer row to distinguish a substantial popup from a changing Liquid transfer bar. Closes the popup by clicking empty list space without mutating saved columns.
 - Report fields `ColumnsMenuTested`, `ColumnsMenuResult`, `ColumnsMenuScreenshot`. Acceptance requires exact-SHA Windows run and screenshot review; icon/layout differences in other DPI remain to test. No production code changes.
+
+
+### Windows maximized invisible-frame pixel guard refinement
+- Real Windows main GUI screenshot can include the OS's 8px invisible resize border; DWM-cropped screenshots omit it. Updated Columns E2E to scan a **bounded icon region** instead of requiring one exact pixel and click safely within the 28dp button for either frame origin.
+- No production code changes. The first `aebff76` exact-SHA Windows run must be read on its own merits; this follow-up requires independent verification on its new SHA. Do not mislabel a failed pixel guard as a product feature regression.

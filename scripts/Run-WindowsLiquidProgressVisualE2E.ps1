@@ -466,9 +466,20 @@ public static class HyperGetLiquidProgressNative {
         $mainHeight -ge 680 -and $mainHeight -le 770) {
         $beforeColumns = [System.Drawing.Bitmap]::FromFile($mainDownloadListScreenshot)
         try {
-            $columnsIconPixel = $beforeColumns.GetPixel(($mainWidth - 30), 114)
-            if ($columnsIconPixel.R -lt 85 -or $columnsIconPixel.G -lt 90) {
-                throw 'Columns button icon was not visually present at the guarded Windows header position.'
+            # DWM cropping can remove an invisible 8px maximized-window
+            # frame. Search the small button region, not one brittle pixel.
+            $brightIconSamples = 0
+            for ($sampleY = 102; $sampleY -le 123; $sampleY += 2) {
+                for ($sampleX = ($mainWidth - 41); $sampleX -le ($mainWidth - 15); $sampleX += 2) {
+                    $columnsIconPixel = $beforeColumns.GetPixel($sampleX, $sampleY)
+                    if ($columnsIconPixel.R -ge 90 -and
+                        $columnsIconPixel.G -ge 100 -and $columnsIconPixel.B -ge 110) {
+                        $brightIconSamples++
+                    }
+                }
+            }
+            if ($brightIconSamples -lt 3) {
+                throw 'Columns button icon was not visually present inside the guarded header region.'
             }
         } finally {
             $beforeColumns.Dispose()
@@ -476,8 +487,9 @@ public static class HyperGetLiquidProgressNative {
         if ([HyperGetLiquidProgressNative]::GetForegroundWindow() -ne $mainWindowHandle) {
             throw 'Main download list lost foreground before Columns button acceptance.'
         }
-        $columnsX = $mainLeft + $mainWidth - 30
-        $columnsY = $mainTop + 114
+        # Center stays inside the 28dp control with or without DWM cropping.
+        $columnsX = $mainLeft + $mainWidth - 25
+        $columnsY = $mainTop + 112
         if (-not [HyperGetLiquidProgressNative]::SetCursorPos($columnsX, $columnsY)) {
             throw 'Cannot move mouse to visible Columns control.'
         }
