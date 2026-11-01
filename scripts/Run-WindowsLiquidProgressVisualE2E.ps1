@@ -131,6 +131,9 @@ $server = $null
 $started = $null
 $addProcess = $null
 $resumeProcess = $null
+$probeAddProcess = $null
+$probeStdout = $null
+$probeStderr = $null
 $visible = @()
 try {
     $server = Start-Process -FilePath 'python' -ArgumentList @(
@@ -698,11 +701,9 @@ public static class HyperGetLiquidProgressNative {
                         $allPersisted = $true
                         $clickX = $captureRight - 55
                         $clickY = $captureTop + 150
-                        # Prove both values can be written, then deliberately
-                        # leave the opposite value on disk for the restart test.
-                        # The new GUI session must load that explicit override,
-                        # not simply inherit the original/global default.
-                        foreach ($expected in @((-not $initialEnabled), $initialEnabled, (-not $initialEnabled))) {
+                        # Restore the original value; finished downloads intentionally
+                        # clean per-file settings, so the restart probe uses a paused task.
+                        foreach ($expected in @((-not $initialEnabled), $initialEnabled)) {
                             if (-not [HyperGetLiquidProgressNative]::SetCursorPos($clickX, $clickY)) {
                                 throw 'Could not position mouse for completion preference test.'
                             }
@@ -728,7 +729,7 @@ public static class HyperGetLiquidProgressNative {
                         }
                         $completionPreferenceDiskTested = $allPersisted
                         $completionPreferenceDiskResult = if ($allPersisted) {
-                            'Windows mouse toggles persisted both values, leaving the opposite choice for a restart probe'
+                            'Windows mouse toggle off/on persisted both values to per-download JSON'
                         } else {
                             'per-download completion preference disk roundtrip not confirmed'
                         }
@@ -839,7 +840,142 @@ public static class HyperGetLiquidProgressNative {
     # which distinguishes an actual per-file restore from a global default.
     # This is an isolated runner: terminate only our own installed GUI,
     # never invoke the OS shutdown-on-completion control.
+
     if ($completionPreferenceDiskTested) {
+        # Normal completion intentionally deletes the first task's extra settings.
+        # Use a DIFFERENT, unfinished/paused task to make restart retention meaningful.
+        $verifiedDownloadId = $taskId
+        $probeName = 'hyperget-preference-restart.bin'
+        $probeTaskId = $taskId + 1
+        $probeUrl = "http://127.0.0.1:$port/fixture.bin?task=$probeName"
+        $probeArgs = 'download add http --link "' + $probeUrl + '" --folder "' +
+            $downloadFolder + '" --name "' + $probeName + '"'
+        $probeStdout = Join-Path $env:RUNNER_TEMP ("hyperget-probe-$SourceSha.stdout.txt")
+        $probeStderr = Join-Path $env:RUNNER_TEMP ("hyperget-probe-$SourceSha.stderr.txt")
+        $probeAddProcess = Start-Process -FilePath $cliPath -ArgumentList $probeArgs -PassThru `
+            -NoNewWindow -RedirectStandardOutput $probeStdout -RedirectStandardError $probeStderr
+        $paused = $false
+        for ($attempt = 0; $attempt -lt 60; $attempt++) {
+            Start-Sleep -Milliseconds 300
+            $statusOutput = @(& $cliPath download show --status-lines $probeTaskId 2>&1)
+            if ($LASTEXITCODE -ne 0) { continue }
+            $probeStatus = Get-DownloadStatusFromOutput -Lines $statusOutput -ExpectedId $probeTaskId
+            if ($probeStatus -eq 'Paused') {
+                $paused = $true
+                break
+            }
+            if ($probeStatus -eq 'Downloading' -or $probeStatus -eq 'Finished') {
+                throw 'Restart fixture must remain paused, never completed.'
+            }
+        }
+        if (-not $paused) {
+            throw 'Could not establish the separate paused-download preference fixture.'
+        }
+        $probeOpen = @(& $cliPath download open $probeTaskId 2>&1)
+        if ($LASTEXITCODE -ne 0) { throw 'Could not open the paused preference fixture.' }
+        $probeHandle = [IntPtr]::Zero
+        for ($attempt = 0; $attempt -lt 40; $attempt++) {
+            $probeHandle = [HyperGetLiquidProgressNative]::FindVisibleWindow(
+                [uint32]$window.Id, $probeName
+            )
+            if ($probeHandle -ne [IntPtr]::Zero) { break }
+            Start-Sleep -Milliseconds 250
+        }
+        if ($probeHandle -eq [IntPtr]::Zero) {
+            throw 'Paused preference fixture download window never appeared.'
+        }
+        [HyperGetLiquidProgressNative]::ShowWindow($probeHandle, 3) | Out-Null
+        [HyperGetLiquidProgressNative]::SetWindowPos(
+            $probeHandle, [IntPtr](-1), 0, 0, 0, 0, [uint32](0x0001 -bor 0x0002 -bor 0x0040)
+        ) | Out-Null
+        [HyperGetLiquidProgressNative]::BringWindowToTop($probeHandle) | Out-Null
+        [HyperGetLiquidProgressNative]::SetForegroundWindow($probeHandle) | Out-Null
+        Start-Sleep -Milliseconds 300
+        if ([HyperGetLiquidProgressNative]::GetForegroundWindow() -ne $probeHandle) {
+            throw 'Paused preference fixture was not foreground before click.'
+        }
+        $probeRect = [HyperGetLiquidProgressNative+RECT]::new()
+        if (-not [HyperGetLiquidProgressNative]::GetWindowRect($probeHandle, [ref]$probeRect)) {
+            throw 'Paused fixture window geometry unavailable.'
+        }
+        $probeDwm = [HyperGetLiquidProgressNative+RECT]::new()
+        if ([HyperGetLiquidProgressNative]::DwmGetWindowAttribute(
+            $probeHandle, 9, [ref]$probeDwm, 16
+        ) -eq 0 -and $probeDwm.Right -gt $probeDwm.Left -and
+            $probeDwm.Bottom -gt $probeDwm.Top) {
+            $probeRect = $probeDwm
+        }
+        $probeWidth = $probeRect.Right - $probeRect.Left
+        $probeHeight = $probeRect.Bottom - $probeRect.Top
+        $probeScreen = [System.Windows.Forms.Screen]::FromHandle($probeHandle).Bounds
+        if ($probeWidth -lt 980 -or $probeWidth -gt 1080 -or
+            $probeHeight -lt 680 -or $probeHeight -gt 770 -or
+            $probeRect.Left -lt $probeScreen.Left -or $probeRect.Top -lt $probeScreen.Top -or
+            $probeRect.Right -gt $probeScreen.Right -or $probeRect.Bottom -gt $probeScreen.Bottom) {
+            throw 'Paused fixture geometry was not safe for on-screen switch interaction.'
+        }
+        if (-not [HyperGetLiquidProgressNative]::SetCursorPos(
+            ($probeRect.Left + 174), ($probeRect.Top + 47)
+        )) { throw 'Could not select paused-task On Completion tab.' }
+        [HyperGetLiquidProgressNative]::mouse_event([uint32]0x0002, 0, 0, 0, [UIntPtr]::Zero)
+        [HyperGetLiquidProgressNative]::mouse_event([uint32]0x0004, 0, 0, 0, [UIntPtr]::Zero)
+        Start-Sleep -Milliseconds 450
+        $probeBeforeShot = Join-Path $root 'liquid-progress-tab-on-completion-before-restart.png'
+        $probeBitmap = [System.Drawing.Bitmap]::new($probeWidth, $probeHeight)
+        $probeGraphics = [System.Drawing.Graphics]::FromImage($probeBitmap)
+        try {
+            $probeGraphics.CopyFromScreen(
+                [System.Drawing.Point]::new($probeRect.Left, $probeRect.Top),
+                [System.Drawing.Point]::Empty,
+                [System.Drawing.Size]::new($probeWidth, $probeHeight)
+            )
+            $probeBitmap.Save($probeBeforeShot, [System.Drawing.Imaging.ImageFormat]::Png)
+            $selected = $probeBitmap.GetPixel(175, 61)
+            $sample = $probeBitmap.GetPixel(($probeWidth - 55), 150)
+            $selectedConfirmed = ($selected.B -gt ($selected.R + 90))
+            $isBlue = ($sample.B -gt ($sample.R + 45))
+            $isGray = (
+                [Math]::Abs([int]$sample.B - [int]$sample.R) -le 16 -and
+                [int]$sample.R -ge 60 -and [int]$sample.R -le 225
+            )
+            if (-not $selectedConfirmed -or -not ($isBlue -or $isGray)) {
+                throw 'Paused-task On Completion tab or safe dialog switch not confirmed.'
+            }
+            $initialEnabled = $isBlue
+        } finally {
+            $probeGraphics.Dispose()
+            $probeBitmap.Dispose()
+        }
+        $tabCaptureFiles += [IO.Path]::GetFileName($probeBeforeShot)
+        # Never click the shutdown-on-completion control, only the SECOND switch.
+        if (-not [HyperGetLiquidProgressNative]::SetCursorPos(
+            ($probeRect.Right - 55), ($probeRect.Top + 150)
+        )) { throw 'Could not click the safe paused-task completion switch.' }
+        [HyperGetLiquidProgressNative]::mouse_event([uint32]0x0002, 0, 0, 0, [UIntPtr]::Zero)
+        [HyperGetLiquidProgressNative]::mouse_event([uint32]0x0004, 0, 0, 0, [UIntPtr]::Zero)
+        $settingFile = Join-Path $env:USERPROFILE (
+            ".personal-download-manager\config\download_db\extra_download_settings\{0}.json" -f $probeTaskId
+        )
+        $savedInverse = $false
+        for ($attempt = 0; $attempt -lt 30; $attempt++) {
+            Start-Sleep -Milliseconds 200
+            if (-not (Test-Path -LiteralPath $settingFile -PathType Leaf)) { continue }
+            try {
+                $stored = Get-Content -LiteralPath $settingFile -Raw | ConvertFrom-Json
+                if (($stored.PSObject.Properties.Name -contains 'showCompletionDialogOverride') -and
+                    ([bool]$stored.showCompletionDialogOverride -eq (-not $initialEnabled))) {
+                    $savedInverse = $true
+                    break
+                }
+            } catch { }
+        }
+        if (-not $savedInverse) {
+            throw 'Paused per-file switch change was not persisted before restart.'
+        }
+        # Reuse the existing strict reboot/crop/pixel/restore gate below,
+        # but target the new paused task rather than the completed test file.
+        $taskId = $probeTaskId
+        $fileName = $probeName
         $originalGuiId = $window.Id
         Stop-Process -Id $originalGuiId -Force -ErrorAction Stop
         for ($attempt = 0; $attempt -lt 40; $attempt++) {
@@ -995,6 +1131,7 @@ public static class HyperGetLiquidProgressNative {
             throw 'Could not restore the completion preference on disk after restart.'
         }
         $completionPreferenceRestartTested = $true
+        $taskId = $verifiedDownloadId
         $completionPreferenceRestartResult =
             'Installed Windows GUI was terminated/restarted; completed task reopened, opposite switch restored from per-file JSON, original choice restored on disk'
         Write-Host 'PASS: completion-dialog override survives a real installed GUI restart.'
@@ -1026,6 +1163,7 @@ public static class HyperGetLiquidProgressNative {
         CompletionPreferenceDiskTested = $completionPreferenceDiskTested
         CompletionPreferenceDiskResult = $completionPreferenceDiskResult
         CompletionPreferenceRestartTested = $completionPreferenceRestartTested
+        CompletionPreferenceRestartTaskId = if ($completionPreferenceRestartTested) { $probeTaskId } else { $null }
         CompletionPreferenceRestartResult = $completionPreferenceRestartResult
         FinalStatus = $finalStatus
         Verified = $true
@@ -1033,6 +1171,9 @@ public static class HyperGetLiquidProgressNative {
     Write-Host ("PASS: visible Liquid Progress fill reached {0:P0} before screenshot ({1}/{2} bytes)." -f ([long]$preScreenshotStats.bytes_sent / [double]$expectedBytes), [long]$preScreenshotStats.bytes_sent, $expectedBytes)
     Write-Host 'PASS: active Liquid Progress screenshot captured from installed Windows GUI; 16 MiB HTTP download SHA-256 verified.'
 } finally {
+    if ($probeAddProcess -and -not $probeAddProcess.HasExited) {
+        Stop-Process -Id $probeAddProcess.Id -Force -ErrorAction SilentlyContinue
+    }
     if ($resumeProcess -and -not $resumeProcess.HasExited) {
         Stop-Process -Id $resumeProcess.Id -Force -ErrorAction SilentlyContinue
     }
@@ -1046,7 +1187,7 @@ public static class HyperGetLiquidProgressNative {
     if ($server -and -not $server.HasExited) {
         Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue
     }
-    foreach ($tempFile in @($addStdout, $addStderr, $resumeStdout, $resumeStderr)) {
+    foreach ($tempFile in @($addStdout, $addStderr, $resumeStdout, $resumeStderr, $probeStdout, $probeStderr)) {
         if ($tempFile) { Remove-Item -LiteralPath $tempFile -Force -ErrorAction SilentlyContinue }
     }
 }

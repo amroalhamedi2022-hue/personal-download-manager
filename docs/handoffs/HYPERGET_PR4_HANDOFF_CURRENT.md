@@ -69,3 +69,9 @@ Continue HyperGet from the latest actual HEAD of experiment/liquid-reference-mat
 - The shutdown-on-completion switch is never operated. If the known geometry or pixel probes cannot be confirmed, the probe reports untested or fails instead of claiming a false pass.
 - Report keys: `CompletionPreferenceRestartTested` and `CompletionPreferenceRestartResult`. Source assertions cover the new gate.
 - **CI status at commit creation: not yet run.** Mark as Windows verified only after inspecting the new exact-SHA run and screenshot; do not infer from preexisting green runs.
+
+### 2026-11-01: corrected Windows restart fixture before acceptance
+- Source review confirmed `DesktopOnDownloadCompletionActionProvider` runs `CleanExtraSettingsOnDownloadFinish` for **finished** tasks. Therefore comparing a completed task after restart would be an invalid persistence claim.
+- The updated Windows harness now adds a second **paused** HTTP task after verifying the original 16 MiB file, safely selects its On Completion tab, captures `liquid-progress-tab-on-completion-before-restart.png`, flips only the completion-dialog switch, and verifies its JSON.
+- It then terminates and relaunches the actual installed Windows GUI, reopens the **same paused task** (not the completed download), captures `liquid-progress-tab-on-completion-after-restart.png`, checks its inverted switch color, confirms JSON restoration after a safe click, and restores the verified original task ID in the transfer report.
+- Do not change post-completion cleanup semantics or claim this test passed before a green exact-SHA run.
