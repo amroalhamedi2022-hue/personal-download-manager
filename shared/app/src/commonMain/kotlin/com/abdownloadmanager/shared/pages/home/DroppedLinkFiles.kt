@@ -10,7 +10,7 @@ import java.io.File
  * thousands of paths. Bound both count and total I/O; never follow directory
  * trees, log contents, or accidentally import links from large documents.
  */
-internal fun readDroppedLinkFiles(
+fun readDroppedLinkFiles(
     files: List<File>,
     maxFiles: Int = 16,
     maxTotalBytes: Long = 1024L * 1024L,
