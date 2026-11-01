@@ -918,6 +918,10 @@ fun HomeSearch(
     }
 
     val isFocused by searchBoxInteractionSource.collectIsFocusedAsState()
+    SideEffect { component.isHomeSearchFocused = isFocused }
+    DisposableEffect(component) {
+        onDispose { component.isHomeSearchFocused = false }
+    }
     WithLanguageDirection {
         SearchBox(
             text = component.filterState.textToSearch,

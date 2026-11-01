@@ -81,6 +81,13 @@ private fun HomeWindow(
                     (keyEvent.isCtrlPressed || keyEvent.isMetaPressed)) {
                     homeComponent.focusHomeSearch()
                     true
+                } else if (homeComponent.isHomeSearchFocused &&
+                    (keyEvent.isCtrlPressed || keyEvent.isMetaPressed) &&
+                    (keyEvent.key == Key.C || keyEvent.key == Key.V)) {
+                    // The search text editor owns Copy/Paste while focused;
+                    // opening Add from Clipboard or copying a download link
+                    // here would hijack standard text editing.
+                    false
                 } else {
                     homeComponent.shortcutManager.handle(keyEvent)
                 }

@@ -200,3 +200,9 @@ Continue HyperGet from the latest actual HEAD of experiment/liquid-reference-mat
 - After typing via Ctrl+F, pressing **Escape** now clears just the main downloads search term and releases focus to the list. This uses an optional `onEscape` callback at the *end* of `MyTextField` and `SearchBox` signatures; all other text fields preserve their existing Escape-to-blur behavior. Callback runs only on `KeyDown` to avoid duplicate clear.
 - The installed-Windows keyboard smoke now uses a real `Escape` to clean up its Ctrl+F text instead of Ctrl+A/Backspace; original pixel check still proves Ctrl+F typing before cleanup.
 - Source contract asserts opt-in behavior. **Exact-SHA Windows compile and real key interaction pending.** Main, PR #3, transfer logic and Liquid untouched.
+
+
+## 2026-11-01 — Preserve native clipboard editing inside Home search
+- Found another interaction conflict: the home window's global `Ctrl/Cmd+C` and `Ctrl/Cmd+V` download commands were eligible to consume text-editor keyboard actions while the newly focusable Search input was active. These commands must not open Add from Clipboard or copy a selected download link when the user is editing search text.
+- `HomeSearch` publishes its actual Compose focus state into a volatile HomeComponent flag via SideEffect, reset upon disposal. HomeWindow selectively returns `false` for Ctrl/Meta+C/V **while Search is focused**, allowing the text input to handle copy/paste. Outside Search, original download-link copy and clipboard-download shortcuts are unchanged. Ctrl/Meta+F still takes priority and refocuses Search.
+- Source regression asserts scoped gating. Windows code compilation/UI/regression on exact SHA pending. No engine, security, Liquid or settings changes.

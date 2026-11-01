@@ -675,6 +675,14 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("externalFocusRequester ?: remember { FocusRequester() }", TEXT_FIELD)
         self.assertIn("focusRequester.requestFocus()", TEXT_FIELD)
 
+    def test_copy_paste_in_focused_search_are_not_hijacked_by_download_shortcuts(self):
+        self.assertIn("isHomeSearchFocused: Boolean = false", HOME_COMPONENT)
+        self.assertIn("SideEffect { component.isHomeSearchFocused = isFocused }", HOME_PAGE)
+        self.assertIn("onDispose { component.isHomeSearchFocused = false }", HOME_PAGE)
+        self.assertIn("homeComponent.isHomeSearchFocused", HOME_WINDOW)
+        self.assertIn("keyEvent.key == Key.C || keyEvent.key == Key.V", HOME_WINDOW)
+        self.assertIn("homeComponent.shortcutManager.handle(keyEvent)", HOME_WINDOW)
+
     def test_ctrl_f_has_compose_key_handler_for_jbr_without_awt_event(self):
         self.assertIn("keyEvent.type == KeyEventType.KeyDown", HOME_WINDOW)
         self.assertIn("keyEvent.key == Key.F", HOME_WINDOW)
