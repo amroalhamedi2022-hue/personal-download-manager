@@ -20,11 +20,11 @@ class VisibleSelectionTest {
 
     @Test fun selectionRetainsOriginalOrderAndObjectsWithInvisibleEntriesDropped() {
         val visible = listOf(item(4L), item(1L), item(9L))
-        val selected = listOf(visible[2], item(7L), visible[0])
+        val selected = listOf(9L, 7L, 4L)
         val result = retainVisibleSelections(selected, visible)
-        assertEquals(listOf(9L, 4L), result.map { it.id })
-        assertTrue(result[0] === selected[0])
-        assertTrue(result[1] === selected[2])
+        assertEquals(listOf(9L, 4L), result)
+        assertEquals(9L, result[0])
+        assertEquals(4L, result[1])
         assertTrue(retainVisibleSelections(selected, emptyList()).isEmpty())
         assertTrue(retainVisibleSelections(emptyList(), visible).isEmpty())
     }
@@ -32,14 +32,14 @@ class VisibleSelectionTest {
     @Test fun tenThousandRowsAndSelectionsDoNotNeedNestedMembershipScans() {
         // List/selection membership only: NOT a 10k live-download GUI test.
         val visible = (0 until 10_000).map { item(it.toLong()) }
-        val selected = visible.asReversed() + (10_000 until 11_000).map { item(it.toLong()) }
+        val selected = (9_999L downTo 0L).toList() + (10_000L until 11_000L).toList()
         val started = System.nanoTime()
         val retained = retainVisibleSelections(selected, visible)
         val elapsedMs = (System.nanoTime() - started) / 1_000_000
         assertEquals(10_000, retained.size)
-        assertEquals(9_999L, retained.first().id)
-        assertEquals(0L, retained.last().id)
-        assertTrue(retained.none { it.id >= 10_000L })
+        assertEquals(9_999L, retained.first())
+        assertEquals(0L, retained.last())
+        assertTrue(retained.none { it >= 10_000L })
         println("HyperGet 10k selection filtering (no GUI): ${elapsedMs} ms")
     }
 }

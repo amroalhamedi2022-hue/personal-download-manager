@@ -465,11 +465,11 @@ internal fun matchesDownloadSearch(item: IDownloadItemState, term: String): Bool
  * for 1k/10k-row lists during frequent download progress updates.
  */
 internal fun retainVisibleSelections(
-    selected: List<IDownloadItemState>,
+    selected: List<Long>,
     visible: List<IDownloadItemState>,
-): List<IDownloadItemState> {
+): List<Long> {
     if (selected.isEmpty() || visible.isEmpty()) return emptyList()
     val visibleIds = HashSet<Long>(visible.size)
     visible.forEach { visibleIds.add(it.id) }
-    return selected.filter { it.id in visibleIds }
+    return selected.filter { it in visibleIds }
 }
