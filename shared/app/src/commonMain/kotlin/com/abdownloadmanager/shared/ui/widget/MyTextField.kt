@@ -29,11 +29,14 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.isSpecified
 import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
@@ -64,8 +67,11 @@ fun MyTextField(
     minLines: Int = 1,
     start: @Composable (RowScope.() -> Unit)? = null,
     end: @Composable (RowScope.() -> Unit)? = null,
+    visualTransformation: VisualTransformation = VisualTransformation.None,
+    externalFocusRequester: FocusRequester? = null,
+    onEscape: (() -> Unit)? = null,
 ) {
-    val focusRequester = remember { FocusRequester() }
+    val focusRequester = externalFocusRequester ?: remember { FocusRequester() }
     val fm = LocalFocusManager.current
     val isFocused by interactionSource.collectIsFocusedAsState()
 
@@ -85,6 +91,7 @@ fun MyTextField(
             )
             .onKeyEvent {
                 if (it.key == Key.Escape) {
+                    if (it.type == KeyEventType.KeyDown) onEscape?.invoke()
                     fm.clearFocus()
                     true
                 } else false
@@ -118,6 +125,7 @@ fun MyTextField(
             maxLines = maxLines,
             minLines = minLines,
             onValueChange = onTextChange,
+            visualTransformation = visualTransformation,
             interactionSource = interactionSource,
             enabled = enabled,
             modifier = Modifier

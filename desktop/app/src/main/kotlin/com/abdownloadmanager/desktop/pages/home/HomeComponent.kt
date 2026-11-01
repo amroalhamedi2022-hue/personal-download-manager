@@ -27,6 +27,7 @@ import com.abdownloadmanager.shared.pagemanager.FileChecksumDialogManager
 import com.abdownloadmanager.shared.pagemanager.NotificationSender
 import com.abdownloadmanager.shared.pagemanager.QueuePageManager
 import com.abdownloadmanager.shared.pages.home.BaseHomeComponent
+import com.abdownloadmanager.shared.pages.home.readDroppedLinkFiles
 import com.abdownloadmanager.shared.util.*
 import com.abdownloadmanager.shared.util.FileIconProvider
 import com.abdownloadmanager.shared.util.category.CategoryManager
@@ -157,6 +158,16 @@ class HomeComponent(
     val categoriesWidth = _categoriesWidth.asStateFlow()
     fun setCategoriesWidth(updater: (Dp) -> Dp) {
         _categoriesWidth.value = updater(_categoriesWidth.value)
+    }
+
+    // One-shot UI request, not a persisted setting or search-term mutation.
+    // The home search subscribes only while its window is composed.
+    val requestSearchFocus = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    // Set from HomeSearch's observed Compose focus. Avoid intercepting native
+    // clipboard editing with global download shortcuts.
+    @Volatile var isHomeSearchFocused: Boolean = false
+    fun focusHomeSearch() {
+        requestSearchFocus.tryEmit(Unit)
     }
 
     private val mainItem = MutableStateFlow<Long?>(null)
@@ -314,14 +325,11 @@ class HomeComponent(
     }
 
     fun onExternalFilesDraggedIn(getFilePaths: () -> List<File>) {
-        val filePaths = kotlin.runCatching { getFilePaths() }
-            .getOrNull()?.filter { it.length() <= 1024 * 1024 } ?: return
-        onExternalTextDraggedIn {
-            filePaths
-                .firstOrNull()
-                ?.readText()
-                .orEmpty()
-        }
+        // Unlike the old firstOrNull() path, combine URLs from multiple files.
+        // The helper bounds filesystem reads, skips directories/unreadable files,
+        // and never reads more than 1 MiB of dropped data on the UI thread.
+        val paths = runCatching { getFilePaths() }.getOrDefault(emptyList())
+        onExternalTextDraggedIn { readDroppedLinkFiles(paths) }
     }
 
     fun onDragExit() {
@@ -403,12 +411,14 @@ class HomeComponent(
             "DELETE" to downloadActions.deleteAction
         }
         "$metaKey N" to newDownloadAction
+        "$metaKey F" to ::focusHomeSearch
         "$metaKey V" to newDownloadFromClipboardAction
         "$metaKey C" to downloadActions.copyDownloadLinkAction
         "$metaKey alt S" to gotoSettingsAction
         "$metaKey Q" to requestExitAction
         "$metaKey O" to downloadActions.openFileAction
-        "$metaKey F" to downloadActions.openFolderAction
+        // Ctrl+F searches the list; Shift+O opens the selected file folder.
+        "$metaKey shift O" to downloadActions.openFolderAction
         "$metaKey E" to downloadActions.editDownloadAction
         "$metaKey P" to downloadActions.pauseAction
         "$metaKey R" to downloadActions.resumeAction

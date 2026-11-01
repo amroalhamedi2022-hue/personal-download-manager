@@ -239,18 +239,26 @@ fun HomePage(component: HomeComponent) {
                 target = remember {
                     object : DragAndDropTarget {
                         private fun onDraggedIn(event: DragAndDropEvent) {
-                            if (event.awtTransferable.isDataFlavorSupported(DataFlavor.stringFlavor)) {
-                                component.onExternalTextDraggedIn {
-                                    (event.awtTransferable.getTransferData(
-                                        DataFlavor.stringFlavor
-                                    ) as String)
+                            // Windows Explorer may expose BOTH file-list and text
+                            // flavors for one drag. Prefer the real files so an entire
+                            // multi-file link list is imported, not a text fallback.
+                            if (event.awtTransferable.isDataFlavorSupported(DataFlavor.javaFileListFlavor)) {
+                                component.onExternalFilesDraggedIn {
+                                    (event.awtTransferable.getTransferData(DataFlavor.javaFileListFlavor) as? List<*>)
+                                        ?.filterIsInstance<File>().orEmpty()
                                 }
                                 return
                             }
 
-                            if (event.awtTransferable.isDataFlavorSupported(DataFlavor.javaFileListFlavor)) {
-                                component.onExternalFilesDraggedIn {
-                                    (event.awtTransferable.getTransferData(DataFlavor.javaFileListFlavor) as List<*>).filterIsInstance<File>()
+                            if (event.awtTransferable.isDataFlavorSupported(DataFlavor.stringFlavor)) {
+                                runCatching {
+                                    component.onExternalTextDraggedIn {
+                                        event.awtTransferable.getTransferData(DataFlavor.stringFlavor) as? String ?: ""
+                                    }
+                                }.onFailure {
+                                    // Advertised flavors can still fail to resolve
+                                    // when a drag source closes; never crash the home UI.
+                                    component.onDragExit()
                                 }
                                 return
                             }
@@ -258,7 +266,13 @@ fun HomePage(component: HomeComponent) {
 
                         override fun onStarted(event: DragAndDropEvent) {
                             isDragging = true
-                            onDraggedIn(event)
+                            // Only the actual OS drop needs to decode file contents.
+                            // On Windows 16 x 1 MiB untrusted file candidates could
+                            // otherwise block the Compose UI twice per mouse drag.
+                            // Text-only drags keep the lightweight hover preview.
+                            if (!event.awtTransferable.isDataFlavorSupported(DataFlavor.javaFileListFlavor)) {
+                                onDraggedIn(event)
+                            }
                         }
 
                         override fun onEnded(event: DragAndDropEvent) {
@@ -268,10 +282,13 @@ fun HomePage(component: HomeComponent) {
 
                         override fun onDrop(event: DragAndDropEvent): Boolean {
                             isDragging = false
-                            if (Platform.isMac()) {
-                                onDraggedIn(event)
-                            }
+                            // Re-read the Transferable at the actual drop on ALL
+                            // desktops. Windows drag sources may advertise files
+                            // on start but only supply their payload at drop time.
+                            // Keep the hover-time parse solely for preview counts.
+                            onDraggedIn(event)
                             component.onDropped()
+                            component.onDragExit()
                             return true
                         }
                     }
@@ -910,8 +927,18 @@ fun HomeSearch(
     textPadding: PaddingValues = PaddingValues(horizontal = 8.dp),
 ) {
     val searchBoxInteractionSource = remember { MutableInteractionSource() }
+    val searchFocusRequester = remember { FocusRequester() }
+    LaunchedEffect(component, searchFocusRequester) {
+        component.requestSearchFocus.collect {
+            searchFocusRequester.requestFocus()
+        }
+    }
 
     val isFocused by searchBoxInteractionSource.collectIsFocusedAsState()
+    SideEffect { component.isHomeSearchFocused = isFocused }
+    DisposableEffect(component) {
+        onDispose { component.isHomeSearchFocused = false }
+    }
     WithLanguageDirection {
         SearchBox(
             text = component.filterState.textToSearch,
@@ -920,6 +947,8 @@ fun HomeSearch(
             },
             textPadding = textPadding,
             interactionSource = searchBoxInteractionSource,
+            externalFocusRequester = searchFocusRequester,
+            onEscape = { component.filterState.textToSearch = "" },
             modifier = modifier
                 .width(
                     animateDpAsState(

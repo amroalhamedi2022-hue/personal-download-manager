@@ -2,6 +2,12 @@ package com.abdownloadmanager.desktop.pages.home
 
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.runtime.*
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.isMetaPressed
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.WindowPlacement
@@ -66,8 +72,25 @@ private fun HomeWindow(
             state = windowState,
             onCloseRequest = onCLoseRequest,
             windowController = windowController,
-            onKeyEvent = {
-                homeComponent.shortcutManager.handle(it)
+            onKeyEvent = { keyEvent ->
+                // Compose may not expose an AWT event in all JBR builds.
+                // Handle search directly using Compose key/modifier state,
+                // and preserve the registered shortcut manager for all other actions.
+                if (keyEvent.type == KeyEventType.KeyDown &&
+                    keyEvent.key == Key.F &&
+                    (keyEvent.isCtrlPressed || keyEvent.isMetaPressed)) {
+                    homeComponent.focusHomeSearch()
+                    true
+                } else if (homeComponent.isHomeSearchFocused &&
+                    (keyEvent.isCtrlPressed || keyEvent.isMetaPressed) &&
+                    (keyEvent.key == Key.C || keyEvent.key == Key.V)) {
+                    // The search text editor owns Copy/Paste while focused;
+                    // opening Add from Clipboard or copying a download link
+                    // here would hijack standard text editing.
+                    false
+                } else {
+                    homeComponent.shortcutManager.handle(keyEvent)
+                }
             },
             minSize = DpSize(400.dp, 400.dp),
         ) {
