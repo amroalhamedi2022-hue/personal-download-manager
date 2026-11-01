@@ -4,6 +4,7 @@ import re
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
+HOME_TOOLBAR = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/Actions.kt").read_text(encoding="utf-8")
 TABLE = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/TableDownloadItem.kt").read_text(encoding="utf-8")
 LIST = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/DownloadList.kt").read_text(encoding="utf-8")
 SCRIPT = (ROOT / "scripts/Run-WindowsLiquidProgressVisualE2E.ps1").read_text(encoding="utf-8")
@@ -581,6 +582,14 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn(".border(if (compact) 0.75.dp else 1.dp", track)
         self.assertIn("val sharedPhase = LocalLiquidAnimationPhase.current", track)
         self.assertNotIn("rememberInfiniteTransition", track)
+
+
+    def test_main_toolbar_labels_and_icons_are_legible_without_touching_download_dialog(self):
+        self.assertIn("val iconSize = if (showLabels) 20.dp else 24.dp", HOME_TOOLBAR)
+        self.assertIn("fontSize = myTextSizes.base", HOME_TOOLBAR)
+        self.assertIn("PaddingValues(horizontal = 9.dp, vertical = 8.dp)", HOME_TOOLBAR)
+        self.assertIn(".horizontalScroll(scrollState)", HOME_TOOLBAR)
+        self.assertNotIn("fontSize = myTextSizes.sm", HOME_TOOLBAR)
 
 if __name__ == "__main__":
     unittest.main()

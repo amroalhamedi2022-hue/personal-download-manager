@@ -139,13 +139,16 @@ private fun ActionIconWithLabel(
                 .ifThen(!enabled) {
                     alpha(0.5f)
                 }
-                .padding(if (showLabels) 8.dp else 12.dp),
+                .padding(
+                    if (showLabels) PaddingValues(horizontal = 9.dp, vertical = 8.dp)
+                    else PaddingValues(12.dp)
+                ),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             WithContentColor(myColors.onBackground) {
                 WithContentAlpha(1f) {
                     icon?.let {
-                        val iconSize = if (showLabels) 16.dp else 24.dp
+                        val iconSize = if (showLabels) 20.dp else 24.dp
                         MyIcon(
                             icon = it,
                             contentDescription = null,
@@ -153,8 +156,8 @@ private fun ActionIconWithLabel(
                         )
                     }
                     if (showLabels) {
-                        Spacer(Modifier.size(2.dp))
-                        Text(title.rememberString(), maxLines = 1, fontSize = myTextSizes.sm)
+                        Spacer(Modifier.size(4.dp))
+                        Text(title.rememberString(), maxLines = 1, fontSize = myTextSizes.base)
                     }
                 }
             }
