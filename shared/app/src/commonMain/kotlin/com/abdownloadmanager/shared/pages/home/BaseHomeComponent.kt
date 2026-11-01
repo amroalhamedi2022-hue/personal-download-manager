@@ -28,6 +28,7 @@ import com.abdownloadmanager.shared.util.mvi.supportEffects
 import com.arkivanov.decompose.ComponentContext
 import ir.amirab.downloader.DownloadManagerEvents
 import ir.amirab.downloader.db.QueueModel
+import ir.amirab.downloader.monitor.IDownloadItemState
 import ir.amirab.downloader.downloaditem.DownloadStatus
 import ir.amirab.downloader.downloaditem.contexts.RemovedBy
 import ir.amirab.downloader.downloaditem.contexts.User
@@ -254,15 +255,13 @@ abstract class BaseHomeComponent(
         snapshotFlow { filterState.statusFilter },
         snapshotFlow { filterState.queueFilter },
     ) { textToSearch, activeDownloads, completeDownloads, categoryFilter, statusFilter, queueFilter ->
-        val isSearching = textToSearch.isNotBlank()
+        val searchTerm = textToSearch.trim()
         val allowedList = categoryFilter?.items ?: queueFilter?.queueItems
         (activeDownloads + completeDownloads)
             .filter {
                 val statusAccepted = filterState.statusFilter.accept(it)
                 val itemIsInAllowedList = allowedList?.contains(it.id) ?: true
-                val searchAccepted = if (isSearching) {
-                    it.name.contains(filterState.textToSearch, ignoreCase = true)
-                } else true
+                val searchAccepted = matchesDownloadSearch(it, searchTerm)
                 itemIsInAllowedList && statusAccepted && searchAccepted
             }
             // when restart a completed download item there is a duplication in list
@@ -452,4 +451,12 @@ abstract class BaseHomeComponent(
             ) : Common
         }
     }
+}
+
+/** Local-only search; does not log, export, or mutate source URLs. */
+internal fun matchesDownloadSearch(item: IDownloadItemState, term: String): Boolean {
+    val query = term.trim()
+    return query.isEmpty() ||
+        item.name.contains(query, ignoreCase = true) ||
+        item.downloadLink.contains(query, ignoreCase = true)
 }

@@ -152,3 +152,9 @@ Continue HyperGet from the latest actual HEAD of experiment/liquid-reference-mat
 - IDM menu/shortcut parity: Tools now exposes the existing localized **Search in the list** action. This menu item and `Ctrl+F` / `Cmd+F` invoke the exact same `focusHomeSearch()` method, sending one UI focus event to the existing filter instead of creating a second search state.
 - The optional shared `MyTextField` and `SearchBox` FocusRequester parameters were placed at the **end** of their signatures, preserving legacy positional calls. Removed a duplicate focus import from HomePage.
 - **CI status pending:** no claim of Windows keyboard/UI verification until exact SHA run + real screenshot inspected.
+
+
+### 2026-11-01 — Search by filename or source URL (N20)
+- Pure `matchesDownloadSearch` now filters the existing main list by trimmed, case-insensitive **filename OR source URL**, including completed downloads. Preserves category, queue, status and duplicate-ID filters; never logs URLs.
+- Four Kotlin desktop tests cover filenames, domain and query matching, Arabic/Latin, and blank search. The Windows workflow now executes these tests and recognizes the new paths.
+- **Pending Windows exact-SHA acceptance**, including installer, live HTTP/SHA-256 and completion preference restart. The existing Ctrl+F / Tools > Search action still focuses the one original search field.

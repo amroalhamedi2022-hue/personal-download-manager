@@ -47,3 +47,7 @@
 - **Main UI during transfer:** genuine `hyperget-main-list-active-download.png` evidence from Windows while CLI reports Downloading, plus verified 16 MiB SHA-256. `4d2cd76`, [run 41309137539](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/41309137539).
 - **Menu click verified visually** from real installed Windows `02c62a2`: `hyperget-main-columns-menu-open.png` screenshot and log reporting 400+ changed pixels under the live download row. That run FAILED afterward at restart geometry, so it is not accepted as whole-workflow regression success.
 - **Still OPEN:** original IDM screenshot side-by-side pixel parity (original `IDM_Repair_Handoff_2026-10-21.zip` unavailable), DPI 125–200%, RTL, multi-theme/icon pack matrix, speed preference after restart, power-action safety checks beyond completion-dialog switch. Do NOT conflate verified 1024px GUI parity with full IDM acceptance.
+
+
+### 2026-11-01 — Main search N20
+- Search matches source URL as well as filename, including previously completed entries; category/status/queue filtering unchanged. Four Kotlin tests added. Exact-SHA Windows runtime acceptance remains to be checked.
