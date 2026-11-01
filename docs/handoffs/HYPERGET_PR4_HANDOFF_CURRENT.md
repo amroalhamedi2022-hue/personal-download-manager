@@ -140,3 +140,9 @@ Continue HyperGet from the latest actual HEAD of experiment/liquid-reference-mat
 - **Implementation (not yet Windows verified at commit creation):** the home window now maps `Ctrl+F` on Windows/Linux (`Cmd+F` on macOS) to the *existing* HomeSearch field by a one-shot `MutableSharedFlow` + Compose `FocusRequester`. Shared `MyTextField` and `SearchBox` accept an optional requester, preserving existing call sites and internal default focus behavior.
 - It does **not** change the search filter, persisted settings, transfer engine, download window/14dp part bars or Liquid Bar. Does not add a duplicate search field. Source guard tests the whole keyboard-to-composable wiring.
 - **Acceptance still required:** exact SHA Windows Kotlin compile/installed GUI, real keyboard interaction (not source test alone), regression download/SHA256/restart.
+
+
+### 2026-11-01 — Real Windows Ctrl+F search keyboard acceptance
+- CI installed-GUI smoke now uses genuine WinForms SendKeys Ctrl+F + types `hgfocusprobe` into the existing header search while the installed GUI is foreground. It compares pixels inside the text glyph area (not merely the focus border) against the actual pre-keypress Windows screenshot, and saves `installed-gui-ctrl-f-search.png`.
+- Probe clears its search text after capture; an independent real 16 MiB download + SHA-256 + Liquid/restart suite follows in a separate GUI process. No fake screenshot or data mutation.
+- **Not accepted until same-SHA Windows workflow passes and actual artifact is inspected.**

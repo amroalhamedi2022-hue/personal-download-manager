@@ -5,6 +5,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 HOME_TOOLBAR = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/Actions.kt").read_text(encoding="utf-8")
+WINDOWS_UI_WORKFLOW = (ROOT / ".github/workflows/windows-installed-ui-smoke.yml").read_text(encoding="utf-8")
 HOME_COMPONENT = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/HomeComponent.kt").read_text(encoding="utf-8")
 HOME_PAGE = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/HomePage.kt").read_text(encoding="utf-8")
 FILTERS = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/Filters.kt").read_text(encoding="utf-8")
@@ -652,6 +653,13 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("externalFocusRequester = externalFocusRequester", FILTERS)
         self.assertIn("externalFocusRequester ?: remember { FocusRequester() }", TEXT_FIELD)
         self.assertIn("focusRequester.requestFocus()", TEXT_FIELD)
+
+    def test_windows_gui_smoke_checks_keyboard_search_with_real_typing_and_image(self):
+        self.assertIn("installed-gui-ctrl-f-search.png", WINDOWS_UI_WORKFLOW)
+        self.assertIn("SendKeys]::SendWait('^f')", WINDOWS_UI_WORKFLOW)
+        self.assertIn("SendKeys]::SendWait('hgfocusprobe')", WINDOWS_UI_WORKFLOW)
+        self.assertIn("$changedTextPixels -lt 85", WINDOWS_UI_WORKFLOW)
+        self.assertIn("SendKeys]::SendWait('{BACKSPACE}')", WINDOWS_UI_WORKFLOW)
 
 if __name__ == "__main__":
     unittest.main()
