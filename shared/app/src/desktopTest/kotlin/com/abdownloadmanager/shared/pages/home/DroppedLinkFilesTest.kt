@@ -78,6 +78,48 @@ class DroppedLinkFilesTest {
         assertEquals("https://valid.example", readDroppedLinkFiles(listOf(malformed, nul, valid)))
     }
 
+    @Test fun rejectsMalformedUtf8RatherThanImportingPartialUrl() = withTempDir { dir ->
+        val bad = dir.resolve("invalid-utf8.txt").apply {
+            writeBytes("https://bad.example/".toByteArray() +
+                byteArrayOf(0xC0.toByte(), 0xAF.toByte()) +
+                "file.zip".toByteArray())
+        }
+        val truncated = dir.resolve("truncated-utf8.txt").apply {
+            writeBytes("https://bad2.example/file".toByteArray() + byteArrayOf(0xE2.toByte(), 0x82.toByte()))
+        }
+        val valid = dir.resolve("valid-utf8.txt").apply { writeText("https://good.example/ملف") }
+        val result = readDroppedLinkFiles(listOf(bad, truncated, valid))
+        assertEquals("https://good.example/ملف", result)
+        assertFalse(result.contains("\uFFFD"))
+    }
+
+    @Test fun rejectsUnpairedUtf16SurrogateInBothEndiannesses() = withTempDir { dir ->
+        val badLe = dir.resolve("bad-le.url").apply {
+            writeBytes(byteArrayOf(0xFF.toByte(), 0xFE.toByte()) +
+                "URL=https://bad.example/".toByteArray(Charsets.UTF_16LE) +
+                byteArrayOf(0x00, 0xD8.toByte()))
+        }
+        val badBe = dir.resolve("bad-be.url").apply {
+            writeBytes(byteArrayOf(0xFE.toByte(), 0xFF.toByte()) +
+                "URL=https://bad2.example/".toByteArray(Charsets.UTF_16BE) +
+                byteArrayOf(0xD8.toByte(), 0x00))
+        }
+        val valid = dir.resolve("valid.txt").apply { writeText("https://good.example/safe") }
+        assertEquals("https://good.example/safe", readDroppedLinkFiles(listOf(badLe, badBe, valid)))
+    }
+
+    @Test fun acceptsValidSupplementaryUnicodeInUtf8AndUtf16() = withTempDir { dir ->
+        val url = "https://books.example/قصص/📖.pdf?lang=ar"
+        val utf8 = dir.resolve("utf8.txt").apply { writeText(url, Charsets.UTF_8) }
+        val utf16 = dir.resolve("utf16.url").apply {
+            writeBytes(byteArrayOf(0xFF.toByte(), 0xFE.toByte()) +
+                ("[InternetShortcut]\\r\\nURL=$url\\r\\n").toByteArray(Charsets.UTF_16LE))
+        }
+        val decoded = readDroppedLinkFiles(listOf(utf8, utf16))
+        assertEquals(listOf(url, url), decoded.lines().filter { it.startsWith("https://") || it.startsWith("URL=") }
+            .map { it.removePrefix("URL=") })
+    }
+
     @Test fun endToEndCombinesUtf16ShortcutAndPlainUrlListsWithoutLoss() = withTempDir { dir ->
         val shortcut = dir.resolve("legacy.url").apply {
             writeBytes(byteArrayOf(0xFF.toByte(), 0xFE.toByte()) +
