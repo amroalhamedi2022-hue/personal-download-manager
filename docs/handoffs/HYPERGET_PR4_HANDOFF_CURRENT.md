@@ -286,3 +286,28 @@ Continue HyperGet from the latest actual HEAD of experiment/liquid-reference-mat
 
 **Still OPEN, do not mark passed:** physical two-file Explorer drag and drop on installed Windows; Windows scaling 125%, 150%, 200%; long mixed Arabic/RTL/Latin URLs; source screenshot P01–P27 comparison archive; full 1k/10k *live downloads* stress and resource stability; IDM main-app/menu/queue feature parity and remaining P4–P8 roadmap. Inspect failed runs and fix only actual regressions; do not confuse code source checks with native UI acceptance.
 
+## 2026-11-01 — PR #4 follow-up: native drops, 10k list throughput, Windows CI stability
+
+**Freshest code SHA at this update:** `881f6aecbb8ff8a73e3fffde587ead5642ff8e04`. **Do not confuse this with an accepted Windows release.** PR #4 stays **Open / Draft** on `experiment/liquid-reference-match-20261030`; main and PR #3 untouched. Re-read PR HEAD and workflows before further commits, including concurrent Codex changes.
+
+### New source deltas after the prior handoff entry
+- `d2916a2`: Home drop handler re-reads the Transferable at the **actual OS drop event on Windows and other platforms**, not only at drag-start/hover; then imports and clears preview. Source regression validates order. Together with `81c55d0`, dual file-list/text flavor prefers the real file list. **A real two-file mouse drop on installed Windows remains unproven**.
+- `a221c99` had a compile failure because selected entries are IDs `List<Long>`, **not** item objects. The corrected `b590fc7` uses a set of visible IDs and a 10k-selection Kotlin test; regression to be accepted only when exact-SHA CI passes.
+- `e67cbc0`: further home-list throughput: category/queue membership uses one `HashSet` per filter recomputation instead of list scan per row, and selected item lookup uses `associateBy(id)` instead of a nested find. New tests cover selection order, object identity, and 10k lookup. **Unit test is not a 10k live-download stress test**.
+- `54335f5`: Windows keyboard E2E retries synthetic clipboard Ctrl+V/Ctrl+C **at most three times**, only passes if Ctrl+C produces the actual seeded/pasted probe. Earlier passes prove shortcuts work on installed Windows but occasional focus races caused CI-only failures.
+- `881f6ae`: Windows E2E applies **one bounded real restore/resize** of its own secondary Compose test dialog on **1024×768 CI screen only** if maximized geometry remains ~978×673; it still requires its original visible bounds and pixel acceptance. No app production window layout modified.
+
+### Real Windows CI ledger (do not flatten into all-green)
+- `81c55d0` [41342123264](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/41342123264): **SUCCESS**.
+- `8b5a628` [41342262901](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/41342262901): **SUCCESS**, actual HomeSearch Ctrl+F/V/A/C logged `PASS`, actual SHA-256 16MiB transfer and NSIS lifecycle; tested installer artifact [13098152988](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/41342262901/artifacts/13098152988), EXE SHA-256 `4a595e086e60f07e7945ed5329d1da28aee55ee43edde76f1d4b1beb99198d64`.
+- `d7e570b` [41342303706](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/41342303706): **SUCCESS**, includes the 10,000 mixed-URL parser regression; Windows installer and visual proof succeeded.
+- `eb7aa71` [41342335553](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/41342335553): **SUCCESS**.
+- `0d8f869` [41342151505](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/41342151505): **FAILED late** on 1024×768 native secondary dialog geometry; unrelated source regression passed. Known fallback now in `881f6ae`.
+- `53233e2` [41342360462](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/41342360462) and `d2916a2` [41342769761](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/41342769761): **FAILED** intermittently on strict newly introduced clipboard focus test. Later `54335f5` attempts actual keyboard validation with bounded retries; never accept a failing run.
+- `a221c99` [41342917169](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/41342917169): **FAILED compile** due ID vs state type mismatch; fixed in `b590fc7`, with exact newer CI required.
+- `b590fc7` [41342980115](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/41342980115): **FAILED late** on secondary dialog window geometry even though compilation and clipboard passed; retry handling now in `881f6ae`.
+- `e67cbc0` [41343470661](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/41343470661), `54335f5` [41343664976](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/41343664976), `881f6ae` [41343844985](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/41343844985): **IN PROGRESS when written**. Check their final status/artifacts, then update this ledger before claiming an accepted latest EXE.
+
+### Explicit remaining acceptance
+Physical drag of two Windows link files, 125/150/200% physical DPI, visually long Arabic/RTL/mixed Latin URLs, missing original IDM P01–P27 archive, 1k/10k live GUI/download/CPU/RAM sustained load, unfinished P3–P8 parity and user final approval. The 10k Kotlin tests and 1024×768 Windows smoke **do not** close these tasks.
+
