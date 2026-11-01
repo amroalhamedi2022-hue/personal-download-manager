@@ -711,6 +711,15 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertNotIn('"$metaKey F" to downloadActions.openFolderAction', HOME_COMPONENT)
         self.assertIn("keyEvent.key == Key.F", HOME_WINDOW)
 
+    def test_real_windows_clipboard_probe_fails_closed_instead_of_claiming_source_only(self):
+        self.assertIn("$clipboardShortcutsTested = $false", SCRIPT)
+        self.assertIn("'HYPERGET-COPY-NOT-YET-TESTED'", SCRIPT)
+        self.assertIn("[System.Windows.Forms.SendKeys]::SendWait('^v')", SCRIPT)
+        self.assertIn("[System.Windows.Forms.SendKeys]::SendWait('^c')", SCRIPT)
+        self.assertIn("if ($copiedSearchText -cne $clipboardProbe)", SCRIPT)
+        self.assertIn("ClipboardShortcutsTested = $clipboardShortcutsTested", SCRIPT)
+        self.assertIn("'-Sta'", SCRIPT)
+
     def test_windows_drag_uses_file_list_before_text_fallback(self):
         # Windows Explorer can advertise javaFileListFlavor and stringFlavor
         # simultaneously. A text-first branch silently skips actual .url/.txt
