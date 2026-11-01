@@ -29,6 +29,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.window.Dialog
 import com.abdownloadmanager.desktop.pages.home.sections.DownloadList
 import com.abdownloadmanager.desktop.pages.home.sections.SearchBox
@@ -910,6 +911,12 @@ fun HomeSearch(
     textPadding: PaddingValues = PaddingValues(horizontal = 8.dp),
 ) {
     val searchBoxInteractionSource = remember { MutableInteractionSource() }
+    val searchFocusRequester = remember { FocusRequester() }
+    LaunchedEffect(component, searchFocusRequester) {
+        component.requestSearchFocus.collect {
+            searchFocusRequester.requestFocus()
+        }
+    }
 
     val isFocused by searchBoxInteractionSource.collectIsFocusedAsState()
     WithLanguageDirection {
@@ -920,6 +927,7 @@ fun HomeSearch(
             },
             textPadding = textPadding,
             interactionSource = searchBoxInteractionSource,
+            externalFocusRequester = searchFocusRequester,
             modifier = modifier
                 .width(
                     animateDpAsState(

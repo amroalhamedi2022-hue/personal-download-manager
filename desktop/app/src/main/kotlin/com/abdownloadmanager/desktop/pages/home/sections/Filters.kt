@@ -15,6 +15,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
@@ -32,6 +33,7 @@ fun SearchBox(
     onTextChange: (String) -> Unit,
     textPadding: PaddingValues = PaddingValues(horizontal = 8.dp),
     interactionSource: MutableInteractionSource = remember { MutableInteractionSource() },
+    externalFocusRequester: FocusRequester? = null,
     placeholder: String = myStringResource(Res.string.search_in_the_list),
     modifier: Modifier,
 ) {
@@ -44,6 +46,7 @@ fun SearchBox(
         shape = shape,
         textPadding = textPadding,
         interactionSource = interactionSource,
+        externalFocusRequester = externalFocusRequester,
         start = {
             WithContentAlpha(
                 animateFloatAsState(if (text.isBlank()) 0.9f else 1f).value

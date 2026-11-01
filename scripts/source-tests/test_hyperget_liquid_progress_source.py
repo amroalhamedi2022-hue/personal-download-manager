@@ -5,6 +5,10 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 HOME_TOOLBAR = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/Actions.kt").read_text(encoding="utf-8")
+HOME_COMPONENT = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/HomeComponent.kt").read_text(encoding="utf-8")
+HOME_PAGE = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/HomePage.kt").read_text(encoding="utf-8")
+FILTERS = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/Filters.kt").read_text(encoding="utf-8")
+TEXT_FIELD = (ROOT / "shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/ui/widget/MyTextField.kt").read_text(encoding="utf-8")
 TABLE_WIDGET = (ROOT / "shared/app/src/desktopMain/kotlin/com/abdownloadmanager/shared/ui/widget/table/customtable/Table.kt").read_text(encoding="utf-8")
 HOME_DOWNLOAD_LIST = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/DownloadList.kt").read_text(encoding="utf-8")
 TABLE = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/TableDownloadItem.kt").read_text(encoding="utf-8")
@@ -638,6 +642,16 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("tableState.setOrder", TABLE_WIDGET)
         self.assertIn("tableState.setVisibleCells", TABLE_WIDGET)
         self.assertIn("tableState::reset", TABLE_WIDGET)
+
+    def test_main_search_ctrl_f_uses_existing_text_field_without_mutating_filters(self):
+        self.assertIn('"$metaKey F" to { requestSearchFocus.tryEmit(Unit) }', HOME_COMPONENT)
+        self.assertIn("val requestSearchFocus = MutableSharedFlow<Unit>(extraBufferCapacity = 1)", HOME_COMPONENT)
+        self.assertIn("component.requestSearchFocus.collect", HOME_PAGE)
+        self.assertIn("searchFocusRequester.requestFocus()", HOME_PAGE)
+        self.assertIn("externalFocusRequester = searchFocusRequester", HOME_PAGE)
+        self.assertIn("externalFocusRequester = externalFocusRequester", FILTERS)
+        self.assertIn("externalFocusRequester ?: remember { FocusRequester() }", TEXT_FIELD)
+        self.assertIn("focusRequester.requestFocus()", TEXT_FIELD)
 
 if __name__ == "__main__":
     unittest.main()

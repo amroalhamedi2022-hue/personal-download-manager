@@ -159,6 +159,10 @@ class HomeComponent(
         _categoriesWidth.value = updater(_categoriesWidth.value)
     }
 
+    // One-shot UI request, not a persisted setting or search-term mutation.
+    // The home search subscribes only while its window is composed.
+    val requestSearchFocus = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+
     private val mainItem = MutableStateFlow<Long?>(null)
 
 
@@ -403,6 +407,7 @@ class HomeComponent(
             "DELETE" to downloadActions.deleteAction
         }
         "$metaKey N" to newDownloadAction
+        "$metaKey F" to { requestSearchFocus.tryEmit(Unit) }
         "$metaKey V" to newDownloadFromClipboardAction
         "$metaKey C" to downloadActions.copyDownloadLinkAction
         "$metaKey alt S" to gotoSettingsAction
