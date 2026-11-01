@@ -35,16 +35,21 @@ if ($AsSource) {
  $pane.BackColor=[System.Drawing.Color]::LightBlue
  $form.Controls.Add($pane)
  $pane.Add_MouseDown({
+   [IO.File]::WriteAllText(($EffectPath+'.mousedown'),'received '+[DateTime]::UtcNow.ToString('o'))
    if ($_.Button -ne [System.Windows.Forms.MouseButtons]::Left) { return }
    $paths=[System.Collections.Specialized.StringCollection]::new()
    [void]$paths.Add($One)
    [void]$paths.Add($Two)
    $data=[System.Windows.Forms.DataObject]::new()
    $data.SetFileDropList($paths)
-   $effect=$pane.DoDragDrop($data,[System.Windows.Forms.DragDropEffects]::Copy)
-   [IO.File]::WriteAllText($EffectPath,$effect.ToString())
-   $form.Close()
- })
+   try {
+     $effect=$pane.DoDragDrop($data,[System.Windows.Forms.DragDropEffects]::Copy)
+     [IO.File]::WriteAllText($EffectPath,$effect.ToString())
+   } catch {
+     [IO.File]::WriteAllText(($EffectPath+'.error'),$_.Exception.ToString())
+   } finally { $form.Close() }
+ }.GetNewClosure())
+ $form.Add_Shown({ [IO.File]::WriteAllText(($EffectPath+'.ready'),[DateTime]::UtcNow.ToString('o')) }.GetNewClosure())
  $timer=[System.Windows.Forms.Timer]::new()
  $timer.Interval=20000
  $timer.Add_Tick({$timer.Stop();$form.Close()})
@@ -78,6 +83,7 @@ public static class HyperGetNativeDropTest {
  [DllImport("user32.dll")] public static extern bool SetCursorPos(int x,int y);
  [DllImport("user32.dll")] public static extern void mouse_event(uint f,uint x,uint y,uint d,UIntPtr e);
  [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h,int cmd);
+ [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
  public static int Count(uint processId) {
    int count=0;
    EnumWindows(delegate(IntPtr h, IntPtr p) {
@@ -144,6 +150,8 @@ try {
  $sr=[HyperGetNativeDropTest+RECT]::new()
  if(-not [HyperGetNativeDropTest]::GetWindowRect($sourceH,[ref]$sr)){throw 'Native file source bounds missing.'}
  $sx=$sr.Left+70; $sy=$sr.Top+70
+ [HyperGetNativeDropTest]::SetForegroundWindow($sourceH)|Out-Null
+ Start-Sleep -Milliseconds 350
  [HyperGetNativeDropTest]::SetCursorPos($sx,$sy)|Out-Null
  [HyperGetNativeDropTest]::mouse_event([uint32]2,0,0,0,[UIntPtr]::Zero)
  Start-Sleep -Milliseconds 250
@@ -187,6 +195,9 @@ try {
   VisibleWindowsBefore=$before
   VisibleWindowsAfter=$after
   OpenedNewDialog=($effect -eq 'Copy' -and $after -gt $before)
+  SourceShown=(Test-Path -LiteralPath ($effectPath+'.ready'))
+  NativeMouseDownReceived=(Test-Path -LiteralPath ($effectPath+'.mousedown'))
+  NativeMouseDownError=(if(Test-Path -LiteralPath ($effectPath+'.error')){Get-Content -LiteralPath ($effectPath+'.error') -Raw}else{''})
   Limitation='No automated assertion of both URL field values; needs visual/user content acceptance'
   Error=$failure
  }|ConvertTo-Json -Depth 4|Set-Content -LiteralPath (Join-Path $root 'native-drop-report.json') -Encoding utf8
