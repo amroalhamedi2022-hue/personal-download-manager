@@ -66,3 +66,11 @@
 - **N19 shortcuts:** Ctrl/Cmd+F unique binding; Ctrl/Cmd+Shift+O opens selected file folder. Escape clears active home search; Ctrl/Cmd+C/V within focused search no longer route through the global download commands. Unit/source and Windows suite verified, separate physical clipboard typing on a user's device still open.
 - **Link-list import:** now reads up to 16 dropped files with 1 MiB aggregate cap instead of only the first. Four Kotlin real-file tests passed in verified Windows run. GUI drag gesture acceptance remains open; do not mark it done.
 - **Still open:** original IDM pixel-reference archive, full DPI/RTL/icon/theme matrix, stress/long-running performance, other P3/P5/P6/P7 gaps. Main/PR #3 unchanged.
+
+
+## 2026-11-01 — Latest verified code and installer (supersedes earlier checkpoint)
+- Last compiled/Windows-accepted CODE SHA **`56fd102309d95abe1cabccdfe1d265f3c4c64c03`**; [run 41340178985](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/41340178985) **success**.
+- `readDroppedLinkFiles` now bounds **inspected candidates** at 16, not only successfully read files; caps actual raw bytes at 1 MiB; decodes BOM-marked UTF-16LE/UTF-16BE/UTF-8, rejects malformed UTF-16 and embedded NUL. `StringUrlExtractor` now handles standalone plus `URL=...`/other inline links in the same list without dropping either, preserves full FTP and source order.
+- Kotlin Desktop tests include mixed UTF-16 old Windows Internet Shortcut `.url` with UTF-8 plain list real-file end-to-end; exact-SHA Windows installer/gui/live HTTP SHA+restart/lifecycle passed. OS drag gesture remains **UNTESTED**, not completed.
+- New Windows x64 EXE: `HyperGet_1.0.0-sha.g56fd102_windows_x64.exe`, 79,934,345 bytes, SHA-256 `9c3a9414a39dd6db1f9744d9bd1ceadc09a76815c46552472cdc085c60fb6610`, [CI artifact 13096319578](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/41340178985/artifacts/13096319578). Latest real visual proof artifact **13096539064**.
+- Original IDM ZIP reference, complete DPI/RTL/theme/icon/pixel checks, 1K/10K load stress and original P4–P8 roadmap remain OPEN. This is a development candidate, main and PR #3 untouched.

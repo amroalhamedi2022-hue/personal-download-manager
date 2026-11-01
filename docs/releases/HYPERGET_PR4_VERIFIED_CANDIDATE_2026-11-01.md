@@ -1,3 +1,5 @@
+> **Historical candidate `fb9163b`**. A newer Windows-verified candidate `56fd102309d95abe1cabccdfe1d265f3c4c64c03` was built and delivered. See `HYPERGET_PR4_VERIFIED_CANDIDATE_2026-11-01_56fd102.md` for the latest EXE and test result. This document remains for traceability.
+
 # HyperGet — Windows verified development candidate (2026-11-01)
 
 ## Exact package
