@@ -113,7 +113,7 @@ class DroppedLinkFilesTest {
         val utf8 = dir.resolve("utf8.txt").apply { writeText(url, Charsets.UTF_8) }
         val utf16 = dir.resolve("utf16.url").apply {
             writeBytes(byteArrayOf(0xFF.toByte(), 0xFE.toByte()) +
-                ("[InternetShortcut]\\r\\nURL=$url\\r\\n").toByteArray(Charsets.UTF_16LE))
+                ("[InternetShortcut]\r\nURL=$url\r\n").toByteArray(Charsets.UTF_16LE))
         }
         val decoded = readDroppedLinkFiles(listOf(utf8, utf16))
         assertEquals(listOf(url, url), decoded.lines().filter { it.startsWith("https://") || it.startsWith("URL=") }
