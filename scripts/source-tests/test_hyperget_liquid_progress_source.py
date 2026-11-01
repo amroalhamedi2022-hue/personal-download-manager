@@ -479,6 +479,15 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("Get-ValidatedVisibleDownloadRect -Handle $restartDetail", SCRIPT)
         self.assertNotIn("Paused fixture geometry was not safe for on-screen switch interaction.", SCRIPT)
 
+    def test_main_url_search_keeps_real_download_row_visible_in_windows_ci(self):
+        self.assertIn("hyperget-main-search-by-source-url.png", SCRIPT)
+        self.assertIn("SendKeys]::SendWait('^f')", SCRIPT)
+        self.assertIn("SendKeys]::SendWait('127.0.0.1')", SCRIPT)
+        self.assertIn("SourceUrlSearchTested = $sourceUrlSearchTested", SCRIPT)
+        self.assertIn("SourceUrlSearchScreenshot = if ($sourceUrlSearchTested)", SCRIPT)
+        self.assertIn("$retainedNamePixels -lt 12", SCRIPT)
+        self.assertIn("SendKeys]::SendWait('{BACKSPACE}')", SCRIPT)
+
     def test_installed_windows_captures_other_idm_tabs_without_claiming_false_parity(self):
         self.assertIn("liquid-progress-tab-{0}.png", SCRIPT)
         self.assertIn("@{ Name = 'speed'; OffsetX = 81 }", SCRIPT)

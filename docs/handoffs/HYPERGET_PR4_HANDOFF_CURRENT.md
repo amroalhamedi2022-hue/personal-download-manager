@@ -158,3 +158,8 @@ Continue HyperGet from the latest actual HEAD of experiment/liquid-reference-mat
 - Pure `matchesDownloadSearch` now filters the existing main list by trimmed, case-insensitive **filename OR source URL**, including completed downloads. Preserves category, queue, status and duplicate-ID filters; never logs URLs.
 - Four Kotlin desktop tests cover filenames, domain and query matching, Arabic/Latin, and blank search. The Windows workflow now executes these tests and recognizes the new paths.
 - **Pending Windows exact-SHA acceptance**, including installer, live HTTP/SHA-256 and completion preference restart. The existing Ctrl+F / Tools > Search action still focuses the one original search field.
+
+
+### 2026-11-01 — Genuine active-download URL search Windows E2E (await CI)
+- E2E screenshots the busy main list, invokes `Ctrl+F`, types loopback host `127.0.0.1` (not part of `hyperget-liquid-progress.bin` filename), captures `hyperget-main-search-by-source-url.png`, verifies search glyphs changed **and** the actual row's filename pixels remain visibly present. Clears the probe input without altering tasks. This is stronger than a source-only or empty-list check.
+- Report adds `SourceUrlSearchTested` / `SourceUrlSearchScreenshot`. Bounds and foreground are guarded, other DPI modes remain untested. This CI is an *acceptance gate*; do not claim success unless exact-SHA Windows pipeline and artifact both confirm.

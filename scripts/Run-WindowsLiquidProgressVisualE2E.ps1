@@ -547,6 +547,79 @@ public static class HyperGetLiquidProgressNative {
     }
     Write-Host "Windows Columns menu interaction: $columnsMenuResult"
 
+
+    # Acceptance for N20: search by the actual loopback URL's HOST, which
+    # is absent from the filename. The active file row must remain visible.
+    # This is an isolated CI task; no user sources/credentials are involved.
+    $sourceUrlSearchTested = $false
+    $sourceUrlSearchScreenshot = Join-Path $root 'hyperget-main-search-by-source-url.png'
+    if ($mainWidth -ge 980 -and $mainWidth -le 1080 -and
+        $mainHeight -ge 680 -and $mainHeight -le 770) {
+        Add-Type -AssemblyName System.Windows.Forms
+        if ([HyperGetLiquidProgressNative]::GetForegroundWindow() -ne $mainWindowHandle) {
+            throw 'Cannot test source URL search when installed main GUI is not foreground.'
+        }
+        [System.Windows.Forms.SendKeys]::SendWait('^f')
+        Start-Sleep -Milliseconds 200
+        [System.Windows.Forms.SendKeys]::SendWait('127.0.0.1')
+        Start-Sleep -Milliseconds 450
+        if ([HyperGetLiquidProgressNative]::GetForegroundWindow() -ne $mainWindowHandle) {
+            throw 'Source URL search was interrupted by another foreground window.'
+        }
+        $urlSearchImage = [System.Drawing.Bitmap]::new($mainWidth, $mainHeight)
+        $urlSearchGraphics = [System.Drawing.Graphics]::FromImage($urlSearchImage)
+        try {
+            $urlSearchGraphics.CopyFromScreen(
+                [System.Drawing.Point]::new($mainLeft, $mainTop),
+                [System.Drawing.Point]::Empty,
+                [System.Drawing.Size]::new($mainWidth, $mainHeight)
+            )
+            $urlSearchImage.Save($sourceUrlSearchScreenshot, [System.Drawing.Imaging.ImageFormat]::Png)
+            $originalImage = [System.Drawing.Bitmap]::FromFile($mainDownloadListScreenshot)
+            try {
+                $searchTextChanged = 0
+                for ($y = 14; $y -le 33; $y++) {
+                    for ($x = [int]($mainWidth * 0.70); $x -lt [int]($mainWidth * 0.83); $x++) {
+                        $a = $originalImage.GetPixel($x, $y)
+                        $c = $urlSearchImage.GetPixel($x, $y)
+                        if (([Math]::Abs([int]$a.R - [int]$c.R) +
+                            [Math]::Abs([int]$a.G - [int]$c.G) +
+                            [Math]::Abs([int]$a.B - [int]$c.B)) -ge 45) {
+                            $searchTextChanged++
+                        }
+                    }
+                }
+                $retainedNamePixels = 0
+                # Filename glyphs only; the progress bar to the right moves.
+                for ($y = 132; $y -lt 158; $y += 2) {
+                    for ($x = 264; $x -lt 408; $x += 2) {
+                        $a = $originalImage.GetPixel($x, $y)
+                        $c = $urlSearchImage.GetPixel($x, $y)
+                        if ($a.R -ge 120 -and $a.G -ge 120 -and $a.B -ge 120 -and
+                            ([Math]::Abs([int]$a.R - [int]$c.R) +
+                            [Math]::Abs([int]$a.G - [int]$c.G) +
+                            [Math]::Abs([int]$a.B - [int]$c.B)) -le 25) {
+                            $retainedNamePixels++
+                        }
+                    }
+                }
+                if ($searchTextChanged -lt 65 -or $retainedNamePixels -lt 12) {
+                    throw "Real URL search failed: typed search pixels=$searchTextChanged, retained filename glyph pixels=$retainedNamePixels. Query '127.0.0.1' must match link, not filename."
+                }
+                $sourceUrlSearchTested = $true
+                Write-Host "PASS: Ctrl+F typed a loopback HOST absent from filename; real downloading row retained ($retainedNamePixels matching filename glyph pixels)."
+            } finally {
+                $originalImage.Dispose()
+            }
+        } finally {
+            $urlSearchGraphics.Dispose()
+            $urlSearchImage.Dispose()
+            [System.Windows.Forms.SendKeys]::SendWait('^a')
+            [System.Windows.Forms.SendKeys]::SendWait('{BACKSPACE}')
+            Start-Sleep -Milliseconds 150
+        }
+    }
+
     $openOutput = @(& $cliPath download open $taskId 2>&1)
     if ($LASTEXITCODE -ne 0) {
         throw 'Installed CLI could not open the active HyperGet download-details window.'
@@ -1319,6 +1392,8 @@ public static class HyperGetLiquidProgressNative {
         Screenshot = [IO.Path]::GetFileName($screenshot)
         MainDownloadListScreenshot = [IO.Path]::GetFileName($mainDownloadListScreenshot)
         MainDownloadListStatusAtCapture = $mainDownloadListStatusAtCapture
+        SourceUrlSearchTested = $sourceUrlSearchTested
+        SourceUrlSearchScreenshot = if ($sourceUrlSearchTested) { [IO.Path]::GetFileName($sourceUrlSearchScreenshot) } else { $null }
         ColumnsMenuTested = $columnsMenuTested
         ColumnsMenuResult = $columnsMenuResult
         ColumnsMenuScreenshot = if ($columnsMenuScreenshot) { [IO.Path]::GetFileName($columnsMenuScreenshot) } else { $null }
