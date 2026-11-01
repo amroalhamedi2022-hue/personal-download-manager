@@ -66,7 +66,7 @@ class StringUrlExtractorMixedListTest {
     @Test fun preservesFullArabicPathAndLongSignedQueryInInternetShortcut() {
         val link = "https://books.example/قصص/المدينة/novella.pdf?token=" +
             "a".repeat(2048) + "&lang=ar&part=2"
-        val input = "[InternetShortcut]\\r\\nURL=$link\\r\\n" +
+        val input = "[InternetShortcut]\r\nURL=$link\r\n" +
             "https://direct.example/reference.pdf"
         assertEquals(
             listOf(link, "https://direct.example/reference.pdf"),
@@ -78,7 +78,7 @@ class StringUrlExtractorMixedListTest {
         assertEquals(
             listOf("https://valid.example/book.pdf"),
             StringUrlExtractor.extract(
-                "URL=https://bad host.example/file.pdf\\n" +
+                "URL=https://bad host.example/file.pdf\n" +
                     "https://valid.example/book.pdf"
             )
         )
