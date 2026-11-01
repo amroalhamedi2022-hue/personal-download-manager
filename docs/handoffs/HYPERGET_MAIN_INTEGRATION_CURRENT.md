@@ -3,7 +3,7 @@
 ## Current actual code on main
 - Main CODE SHA: `22651fd12f87f6eb0a6ebc51732b09bb55a67375` (followed only by documentation-only commits, if any).
 - Main integration commits: `0ce216c`, `fe658cd`, `22651fd`.
-- Latest exact-SHA Windows CI: [41353394844](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/41353394844), **PENDING** when recorded. Check live final conclusion and installer artifact before user claims.
+- Latest exact-SHA Windows CI: [41353394844](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/41353394844), **SUCCESS** on exact code SHA after Kotlin tests, compile, Windows NSIS and safe silent installer lifecycle. Verified artifact [13102642061](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/41353394844/artifacts/13102642061): `DownloadManager_1.0.0-main-snapshot_windows_x64.exe` (79,589,979 bytes), SHA-256 `7a865244d62892a54629c65c4e39b847ebbcc970259e9371567695ca1d0980fd`. *This is the main snapshot with legacy installer naming, not the separate HyperGet-branded experimental installer.* Physical mouse-drop/RTL/DPI/live-10k still unaccepted.
 - Older main exact-SHA [41352081893](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/41352081893) was **SUCCESS** on `0ce216c`; the middle `fe658cd` run [41352911911](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/41352911911) was **CANCELLED at packaging by the next main push**. Not a failing test; not a full pass either.
 - Main's original HEAD `8fb64bc` included important newer HTTP/HLS/cancel/security/core recovery work that the 933-commit divergent PR #4 lacked. Those original main commits were **preserved**, not overwritten.
 
