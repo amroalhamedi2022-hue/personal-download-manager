@@ -1,180 +1,52 @@
 <div align="center">
-  <a href="https://abdownloadmanager.com" target="_blank">
-    <img width="180" src="assets/logo/app_logo_with_background.svg" alt="AB Download Manager Logo">
-  </a>
-</div>
-<h1 align="center">AB Download Manager</h1>
-<p align="center">
-    <a href="https://github.com/amir1376/ab-download-manager/releases/latest"><img alt="GitHub Release" src="https://img.shields.io/github/v/release/amir1376/ab-download-manager?color=greenlight&label=latest%20release"></a>
-    <a href="https://abdownloadmanager.com"><img alt="AB Download Manager Website" src="https://img.shields.io/badge/project-website-purple?&labelColor=gray"></a>
-    <a href="https://t.me/abdownloadmanager"><img alt="Telegram Channel" src="https://img.shields.io/badge/Telegram-Channel-blue?logo=telegram&labelColor=gray"></a>
-    <a href="https://t.me/abdownloadmanager_discussion"><img alt="Telegram Group" src="https://img.shields.io/badge/Telegram-Group-blue?logo=telegram&labelColor=gray"></a>
-    <a href="https://crowdin.com/project/ab-download-manager"><img alt="Crowdin" src="https://badges.crowdin.net/ab-download-manager/localized.svg"></a>
-</p>
-
-<a href="https://abdownloadmanager.com" target="_blank">
-    <img alt="AB Download Manager Banner" src="assets/banners/app_banner.png"/>
-</a>
-
-## Introduction
-
-[AB Download Manager](https://abdownloadmanager.com) is a desktop app that helps you manage and organize your downloads more efficiently than ever before.
-
-## Features
-
-- ⚡️ Faster Download Speed
-- ⏰ Queues and Schedulers
-- 🌐 Browser Extensions
-- 💻 Multiplatform (Android / Windows / Linux / Mac)
-- 🌙 Multiple Themes (Dark/Light/Black and more) with modern UI
-- ❤️ Free and Open Source
-
-Please visit [Project Website](https://abdownloadmanager.com) for more info.
-
-## Installation
-
-<a href="https://github.com/amir1376/ab-download-manager/releases/latest"><img alt="GitHub Release" src="https://img.shields.io/github/v/release/amir1376/ab-download-manager?color=greenlight&label=latest%20release"></a>
-
-### Download and Install the App
-
-<a href="https://abdownloadmanager.com"><img src="https://img.shields.io/badge/Official%20Website-897BFF?logo=abdownloadmanager&logoColor=fff&style=flat-square" alt="Official Website" height="32" /></a>
-<a href="https://github.com/amir1376/ab-download-manager/releases/latest"><img src="https://img.shields.io/badge/GitHub%20Releases-2a2f36?logo=github&logoColor=fff&style=flat-square" alt="GitHub Releases" height="32" /></a>
-
-#### Installation script (Linux)
-
-The recommended way to install the app on Linux
-
-```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/amir1376/ab-download-manager/master/scripts/install.sh)
-```
-
-#### Winget or Scoop (for Windows)
-
-**winget**:
-
-```bash
-winget install amir1376.ABDownloadManager
-```
-
-**scoop**:
-
-```bash
-scoop install extras/abdownloadmanager
-```
-
-#### Homebrew (for macOS & Linux)
-
-```bash
-brew tap amir1376/tap && brew install --cask ab-download-manager
-```
-
-> ⚠️ **Warning:** This software is NOT on Google Play or other app stores unless listed here. Any version **claiming to be or related to this project** should be considered SCAM and UNSAFE.
-
-For alternative installation methods, uninstallation instructions, and more details, please refer to the [wiki](https://github.com/amir1376/ab-download-manager/wiki/) page.
-
-### Browser Extensions
-
-<a href="https://addons.mozilla.org/en-US/firefox/addon/ab-download-manager/"><img src="https://img.shields.io/amo/v/ab-download-manager?label=Firefox&logo=firefoxbrowser" alt="Firefox Add-ons Version"></a>
-<a href="https://chromewebstore.google.com/detail/bbobopahenonfdgjgaleledndnnfhooj"> <img src="https://img.shields.io/chrome-web-store/v/bbobopahenonfdgjgaleledndnnfhooj?label=Chrome&logo=googlechrome" alt="Chrome Web Store Version"></a>
-
-You can download the browser extension to integrate the app with your browser.
-
-<p align="left">
-<a href="https://addons.mozilla.org/firefox/addon/ab-download-manager/">
-    <picture>
-        <img alt="Chrome Extension" src="./assets/banners/firefox-extension.png" height="48">
-    </picture>
-</a>
-<a href="https://chromewebstore.google.com/detail/bbobopahenonfdgjgaleledndnnfhooj">
-    <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="./assets/banners/chrome-extension_dark.png" height="48">
-        <source media="(prefers-color-scheme: light)" srcset="./assets/banners/chrome-extension_light.png" height="48">
-        <img alt="Chrome Extension" src="./assets/banners/chrome-extension_light.png" height="48">
-    </picture>
-</a>
-</p>
-
-## Screenshots
-
-<div align="center">
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="./assets/screenshots/app-home_dark.png">
-  <source media="(prefers-color-scheme: light)" srcset="./assets/screenshots/app-home_light.png">
-  <img alt="App Home Section" src="./assets/screenshots/app-home_dark.png">
-</picture>
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="./assets/screenshots/app-download_dark.png">
-  <source media="(prefers-color-scheme: light)" srcset="./assets/screenshots/app-download_light.png">
-  <img alt="App Download Section" src="./assets/screenshots/app-download_dark.png">
-</picture>
+  <img src="desktop/app/icons/hyperget-icon.svg" alt="HyperGet logo" width="112" />
+  <h1>HyperGet</h1>
+  <p>A desktop download manager for Windows, developed in Kotlin and Compose.</p>
 </div>
 
-## Community
+## HyperGet
 
-- 📢 [Telegram Channel](https://t.me/abdownloadmanager) – News, announcements, and release updates.
-- 💬 [Telegram Group](https://t.me/abdownloadmanager_discussion) – Get help, report bugs, suggest features, and discuss
-  the project with the community.
+**HyperGet** is our download manager built to provide reliable downloads, configurable queues, useful desktop tools, and a responsive Windows interface. Its main product name, launcher, installer, shortcuts, Start Menu and Windows app listing use **HyperGet**.
 
-## Repositories And Source Code
+The GitHub repository retains the historical URL `amroalhamedi2022-hue/personal-download-manager` so existing source links remain valid. Internal data-directory, package and browser native-messaging identifiers also retain compatibility with earlier installations.
 
-There are multiple repositories related to the **AB Download Manager** project:
+## Current development features
 
-| Repository                                                                                 | Description                                                                   |
-|--------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------|
-| [Main Application](https://github.com/amir1376/ab-download-manager) (You are here)         | Contains the  **Application** that runs on your  **device**                   |
-| [Browser Integration](https://github.com/amir1376/ab-download-manager-browser-integration) | Contains the **Browser Extension** to be installed on your  **browser**       |
-| [Website](https://github.com/amir1376/ab-download-manager-website)                         | Contains the **AB Download Manager** [website](https://abdownloadmanager.com) |
+- HTTP/HTTPS downloads with pause/resume, segment management and recovery mechanisms.
+- Download queues, categories, search by filename or link, and configurable sortable columns.
+- Multi-link paste and drag-and-drop text/Windows shortcut files, with bounded decoding and corrupt-input rejection.
+- FTP/HLS handling, download speed controls and preferences.
+- Windows installer and automated checks for download integrity, GUI behaviour and uninstall safety.
 
-I've spent a lot of time to create this project.
+Some functions remain under development or require additional human acceptance (particularly browser-integration compatibility, full Windows DPI/RTL review, real Explorer multi-file drop and sustained large-download loads). Passing CI does not mean all features are complete.
 
-If you like my work, please consider giving it a ⭐ — thanks! ❤️
+### aria2 status
 
-## Bug Report
+The `aria2` investigation includes a tested experimental process/RPC adapter and Windows performance comparison on the development branches. **It is not currently the active production download engine in `main`, is not bundled in this installer and is not enabled in the user interface.** The current engine remains in use until adapter wiring and compatibility/rollback acceptance are completed. The user approved retaining aria2's BitTorrent capability for the eventual integration; this does not mean Torrent downloads are active in the currently distributed application.
 
-If you notice any bugs in the source code, please report them via the `GitHub Issues` section.
+## Windows development builds
 
-## Build From Source
+Windows CI compiles the application, tests its Kotlin modules, creates the installer, and checks safe silent install/uninstall. See [GitHub Actions](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions) for builds from specific commits. Choose a successful workflow and its `hyperget-windows-x64` artifact. Development artifacts are not a signed final release.
 
-To compile and test the desktop app on your local machine,
-follow these steps:
+To build from source, use the repository's Gradle wrapper with the documented JetBrains Runtime toolchain. For Windows development:
 
-1. Clone the project.
-2. Download and extract the [JBR](https://github.com/JetBrains/JetBrainsRuntime/releases), and make it available by either:
-    
-    - Adding it to your `PATH`, or
-    - Setting the `JAVA_HOME` environment variable to its installation path.
-  
-3. Navigate to the project directory, open your terminal and execute the following command:
+```powershell
+.\gradlew.bat --no-daemon :downloader:core:desktopTest :shared:app:desktopTest :desktop:app:compileKotlin
+.\gradlew.bat --no-daemon createReleaseFolderForCi
+```
 
-    ```bash
-    ./gradlew createReleaseFolderForCi
-    ```
+## Compatibility and migration
 
-4. The output will be available at:
+The Windows graphical launcher is `HyperGet.exe`, the installer builder produces `HyperGetSetup.exe`, and visible shortcuts use **HyperGet**. The updater and existing browser integrations may still rely on old *internal* executable/registry IDs. Their aliases and persistence paths must remain stable until compatibility migrations are tested.
 
-    ```
-    <project_dir>/build/ci-release
-    ```
+## Project work and roadmap
 
-> **Note**. This project is compiled and published by GitHub actions [here](./.github/workflows/publish.yml), so if you
-> faced any problem you can check that too.
+- [Main integration checkpoint](docs/handoffs/HYPERGET_MAIN_INTEGRATION_CURRENT.md)
+- [Execution plan](docs/Download_Manager_Execution_Plan_v1.md)
+- [aria2 evaluation and migration plan](docs/ARIA2_CORE_MIGRATION_PLAN_2026-10-27.md) (on development branches)
 
-## Translations
+## Open-source acknowledgement
 
-<a href="https://crowdin.com/project/ab-download-manager"><img alt="Crowdin" src="https://badges.crowdin.net/ab-download-manager/localized.svg"></a>
+HyperGet is based on [AB Download Manager](https://github.com/amir1376/ab-download-manager), licensed under the [Apache License 2.0](LICENSE). We preserve the upstream attribution and licence; the project's current name is **HyperGet**, not the upstream project's name.
 
-If you’d like to help translate AB Download Manager into another language, or improve existing translations, you can do
-so on Crowdin. Here’s how:
-
-- Visit the project in [Crowdin](https://crowdin.com/project/ab-download-manager)
-- Please DO NOT submit translations via pull requests.
-- If you want to add a new language, please see [this](https://github.com/amir1376/ab-download-manager/issues/144).
-
-## Contribution
-
-If you want to contribute to this project, please read [Contributing Guide](CONTRIBUTING.md) first.
-
-## Support the Project
-
-If you'd like to support the project, you can find details on how to donate in the [DONATE.md](DONATE.md) file.
+No downloaded executables, icons, or project branding should be mistaken for those of Internet Download Manager (IDM); IDM is used only as a feature-comparison reference.
