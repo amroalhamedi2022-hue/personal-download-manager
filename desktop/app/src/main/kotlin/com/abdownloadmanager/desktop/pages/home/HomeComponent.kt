@@ -162,6 +162,9 @@ class HomeComponent(
     // One-shot UI request, not a persisted setting or search-term mutation.
     // The home search subscribes only while its window is composed.
     val requestSearchFocus = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    private fun focusHomeSearch() {
+        requestSearchFocus.tryEmit(Unit)
+    }
 
     private val mainItem = MutableStateFlow<Long?>(null)
 
@@ -207,6 +210,10 @@ class HomeComponent(
                 +shutdown
                 separator()
             }
+            item(Res.string.search_in_the_list.asStringSource()) {
+                focusHomeSearch()
+            }
+            separator()
             +browserIntegrations
             if (Platform.isLinux()) {
                 +createDesktopEntryAction
@@ -407,7 +414,7 @@ class HomeComponent(
             "DELETE" to downloadActions.deleteAction
         }
         "$metaKey N" to newDownloadAction
-        "$metaKey F" to { requestSearchFocus.tryEmit(Unit) }
+        "$metaKey F" to ::focusHomeSearch
         "$metaKey V" to newDownloadFromClipboardAction
         "$metaKey C" to downloadActions.copyDownloadLinkAction
         "$metaKey alt S" to gotoSettingsAction

@@ -146,3 +146,9 @@ Continue HyperGet from the latest actual HEAD of experiment/liquid-reference-mat
 - CI installed-GUI smoke now uses genuine WinForms SendKeys Ctrl+F + types `hgfocusprobe` into the existing header search while the installed GUI is foreground. It compares pixels inside the text glyph area (not merely the focus border) against the actual pre-keypress Windows screenshot, and saves `installed-gui-ctrl-f-search.png`.
 - Probe clears its search text after capture; an independent real 16 MiB download + SHA-256 + Liquid/restart suite follows in a separate GUI process. No fake screenshot or data mutation.
 - **Not accepted until same-SHA Windows workflow passes and actual artifact is inspected.**
+
+
+### 2026-11-01 — Unified Tools > Search and Ctrl+F / Cmd+F action
+- IDM menu/shortcut parity: Tools now exposes the existing localized **Search in the list** action. This menu item and `Ctrl+F` / `Cmd+F` invoke the exact same `focusHomeSearch()` method, sending one UI focus event to the existing filter instead of creating a second search state.
+- The optional shared `MyTextField` and `SearchBox` FocusRequester parameters were placed at the **end** of their signatures, preserving legacy positional calls. Removed a duplicate focus import from HomePage.
+- **CI status pending:** no claim of Windows keyboard/UI verification until exact SHA run + real screenshot inspected.

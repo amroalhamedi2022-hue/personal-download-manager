@@ -33,9 +33,9 @@ fun SearchBox(
     onTextChange: (String) -> Unit,
     textPadding: PaddingValues = PaddingValues(horizontal = 8.dp),
     interactionSource: MutableInteractionSource = remember { MutableInteractionSource() },
-    externalFocusRequester: FocusRequester? = null,
     placeholder: String = myStringResource(Res.string.search_in_the_list),
     modifier: Modifier,
+    externalFocusRequester: FocusRequester? = null,
 ) {
     val shape = myShapes.defaultRounded
     val textSize = myTextSizes.base

@@ -645,7 +645,10 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("tableState::reset", TABLE_WIDGET)
 
     def test_main_search_ctrl_f_uses_existing_text_field_without_mutating_filters(self):
-        self.assertIn('"$metaKey F" to { requestSearchFocus.tryEmit(Unit) }', HOME_COMPONENT)
+        self.assertIn('"$metaKey F" to ::focusHomeSearch', HOME_COMPONENT)
+        self.assertIn("item(Res.string.search_in_the_list.asStringSource())", HOME_COMPONENT)
+        self.assertIn("focusHomeSearch()", HOME_COMPONENT)
+        self.assertIn("requestSearchFocus.tryEmit(Unit)", HOME_COMPONENT)
         self.assertIn("val requestSearchFocus = MutableSharedFlow<Unit>(extraBufferCapacity = 1)", HOME_COMPONENT)
         self.assertIn("component.requestSearchFocus.collect", HOME_PAGE)
         self.assertIn("searchFocusRequester.requestFocus()", HOME_PAGE)

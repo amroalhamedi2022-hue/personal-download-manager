@@ -56,7 +56,6 @@ fun MyTextField(
     shape: Shape = myShapes.defaultRounded,
     textPadding: PaddingValues = PaddingValues(8.dp),
     interactionSource: MutableInteractionSource = remember { MutableInteractionSource() },
-    externalFocusRequester: FocusRequester? = null,
     fontSize: TextUnit = TextUnit.Unspecified,
     enabled: Boolean = true,
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
@@ -67,6 +66,7 @@ fun MyTextField(
     start: @Composable (RowScope.() -> Unit)? = null,
     end: @Composable (RowScope.() -> Unit)? = null,
     visualTransformation: VisualTransformation = VisualTransformation.None,
+    externalFocusRequester: FocusRequester? = null,
 ) {
     val focusRequester = externalFocusRequester ?: remember { FocusRequester() }
     val fm = LocalFocusManager.current
