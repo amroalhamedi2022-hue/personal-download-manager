@@ -16,7 +16,21 @@ object StringUrlExtractor : Extractor<String, List<String>> {
     // the ASCII fallback regex would otherwise silently truncate Arabic URLs.
     private val internetShortcutLine = Regex("""^URL\s*=\s*(.+)$""", RegexOption.IGNORE_CASE)
 
-    private val urlRegex by lazy { Regex("""\b(https?|ftp|file)://[-a-zA-Z0-9+&@#/%?=~_|!:,.;]*[-a-zA-Z0-9+&@#/%=~_|]""") }
+    // Avoid truncating inline Arabic/Unicode URL paths to an ASCII prefix.
+    // Whole-line URLs (including FTP filenames with spaces) are handled above.
+    private val urlRegex by lazy { Regex("""\b(https?|ftp|file)://[^\s<>"']+""", RegexOption.IGNORE_CASE) }
+
+    private fun trimInlinePunctuation(link: String): String {
+        var value = link.trimEnd('.', ',', ';', ':', '!', '،', '؛', '»')
+        // A URL can contain balanced brackets, but prose often wraps it in
+        // an unmatched closing bracket: "see (https://host/ملف.pdf)".
+        for ((open, close) in listOf('(' to ')', '[' to ']', '{' to '}')) {
+            while (value.endsWith(close) && value.count { it == close } > value.count { it == open }) {
+                value = value.dropLast(1)
+            }
+        }
+        return value
+    }
     override fun extract(input: String): List<String> {
         // Process each line independently. Previously, if ANY line was an
         // exact URL, all embedded URLs elsewhere (e.g. Windows Internet
@@ -36,7 +50,7 @@ object StringUrlExtractor : Extractor<String, List<String>> {
                     if (isDownloadUrl(shortcutUrl)) sequenceOf(shortcutUrl) else emptySequence()
                 } else {
                     urlRegex.findAll(line)
-                        .map { it.value }
+                        .map { trimInlinePunctuation(it.value) }
                         .filter { isDownloadUrl(it) }
                 }
             }

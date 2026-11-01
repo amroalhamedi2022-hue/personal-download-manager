@@ -74,6 +74,20 @@ class StringUrlExtractorMixedListTest {
         )
     }
 
+    @Test fun inlineArabicAndLongSignedUrlsKeepTheirFullPathAndQuery() {
+        val arabic = "https://books.example/قصص/المدينة.pdf?lang=ar&token=" +
+            "z".repeat(1024)
+        val second = "https://download.example/مكتبة/ملف.pdf?part=3"
+        val input = "راجع ($arabic), ثم تنزيل $second"
+        assertEquals(listOf(arabic, second), StringUrlExtractor.extract(input))
+    }
+
+    @Test fun inlineUrlTrailingPunctuationIsNotImportedAsPartOfFileName() {
+        val link = "https://docs.example/ملاحظات.pdf"
+        assertEquals(listOf(link), StringUrlExtractor.extract("Read: $link."))
+        assertEquals(listOf(link), StringUrlExtractor.extract("Read ($link)"))
+    }
+
     @Test fun malformedShortcutDoesNotFallBackToTruncatedPartialUrl() {
         assertEquals(
             listOf("https://valid.example/book.pdf"),
