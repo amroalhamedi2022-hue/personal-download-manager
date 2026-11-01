@@ -258,3 +258,31 @@ Continue HyperGet from the latest actual HEAD of experiment/liquid-reference-mat
 - **One verified, downloadable Windows installer** artifact **13096319578**. Direct EXE filename `HyperGet_1.0.0-sha.g56fd102_windows_x64.exe`, **79,934,345 bytes**, SHA-256 **`9c3a9414a39dd6db1f9744d9bd1ceadc09a76815c46552472cdc085c60fb6610`**; inspected ZIP and computed local installer hash, not guessed. Artifact upload gated on exact-SHA passing workflow.
 - **Still OPEN:** OS drag-and-drop GUI acceptance, actual Ctrl+C/V physical keyboard in Search, IDM original side-by-side P01–P27 package missing, DPI 125/150/200%, mixed RTL long URLs, 96 theme/icon/size matrix, P3 menu/toolbar comprehensive parity, 1K/10K task stress, full P4–P8 original roadmap and human acceptance. No modification to main/PR #3. This is a **VERIFIED DEVELOPMENT CANDIDATE**, not final complete IDM parity.
 - **New release handoff:** `docs/releases/HYPERGET_PR4_VERIFIED_CANDIDATE_2026-11-01_56fd102.md`. Future work must begin with current GitHub HEAD/Actions, never repeat completed code or duplicate commits.
+
+## 2026-11-01 — PR #4 next functional batch (Windows verification IN PROGRESS)
+
+**Concurrency baseline:** fresh PR #4 code HEAD was `53233e2789eb1c2d28749af014dedf952b7b20cc` at this handoff edit. PR remains **OPEN / DRAFT**, base `experiment/jules-liquid-progress-20261030`, main / PR #3 untouched. Before acting later, re-read HEAD, commits and Actions; do not repeat this batch.
+
+**Previously verified Windows development candidate remains:** CODE `56fd102309d95abe1cabccdfe1d265f3c4c64c03`, run [41340178985](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/41340178985) green, installer `HyperGet_1.0.0-sha.g56fd102_windows_x64.exe` artifact **13096319578**, SHA-256 `9c3a9414a39dd6db1f9744d9bd1ceadc09a76815c46552472cdc085c60fb6610`. **The new batch is not yet Windows-accepted.** Never market a pending build as a verified installer.
+
+### New code/test commits, to verify on exact HEAD
+
+| Commit | Functional or test delta | Acceptance state at handoff |
+| --- | --- | --- |
+| `81c55d0` | Home external drop prefers `javaFileListFlavor` over `stringFlavor` when both exist; safe fallback if transfer data throws. Prevents text-only import when Explorer advertises both types. | Code change; physical two-file OS mouse gesture still OPEN. |
+| `0d8f869` | Source regression guards Windows dual-flavor precedence and fallback. | CI Windows pending. |
+| `8b5a628` | Installed-Windows GUI test now exercises Ctrl+F, Ctrl+V, Ctrl+A, Ctrl+C against actual HomeSearch via STA clipboard sentinel, then clears the query. The sentinel is replaced between paste and copy to prevent a false pass. | Real keyboard acceptance pending exact-SHA Windows run; no claims until result. |
+| `d7e570b` | Kotlin Desktop parser-only 10,000-link mixed `URL=...` / full-link test checks order, query parameter identity and uniqueness and logs duration. | Full 10,000-row GUI and RAM/CPU stress NOT tested. |
+| `eb7aa71` | Source regression ensures real Windows clipboard probe is present and fails closed. | CI pending. |
+| `53233e2` | CI now explicitly triggers on HomePage/HomeComponent/HomeWindow edits so future drag/search changes cannot evade installed GUI checks through path filtering. | CI pending. |
+
+### Active exact-SHA Actions at the time of this entry
+- `81c55d0`: run [41342123264](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/41342123264).
+- `0d8f869`: run [41342151505](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/41342151505).
+- `8b5a628`: run [41342262901](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/41342262901).
+- `d7e570b`: run [41342303706](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/41342303706).
+- `eb7aa71`: run [41342335553](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/41342335553).
+- `53233e2`: run [41342360462](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/41342360462).
+
+**Still OPEN, do not mark passed:** physical two-file Explorer drag and drop on installed Windows; Windows scaling 125%, 150%, 200%; long mixed Arabic/RTL/Latin URLs; source screenshot P01–P27 comparison archive; full 1k/10k *live downloads* stress and resource stability; IDM main-app/menu/queue feature parity and remaining P4–P8 roadmap. Inspect failed runs and fix only actual regressions; do not confuse code source checks with native UI acceptance.
+
