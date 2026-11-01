@@ -107,3 +107,9 @@ Continue HyperGet from the latest actual HEAD of experiment/liquid-reference-mat
 - Three real Kotlin Desktop unit tests in `TableStatePersistenceTest.kt` cover non-sortable sort/fixed width, non-finite/removed values and valid cross-instance roundtrip.
 - Windows workflow includes the exact tests in its theme/Kotlin phase and triggers on changed model/test paths. Does not modify any download engine, transfer settings, completion logic, themes, or Liquid visuals.
 - Status: implementation committed, acceptance pending **exact-SHA Windows workflow**. This work is complementary to the visible Columns launcher and is not an excuse to re-implement `TableState` persistence or overwrite user data.
+
+
+### 2026-11-01 — Real Windows screenshot of an ACTIVE main download row (pending CI)
+- The already-installed Windows Liquid test now captures `hyperget-main-list-active-download.png` while the actual 16 MiB HTTP download has CLI status `Downloading`, verified active server request and >=25% bytes transferred. It is captured *before* opening the file's details window, with a live foreground-window and display-bounds guard.
+- The screenshot and `MainDownloadListStatusAtCapture` are included in the existing `windows-liquid-progress-visual` artifact and `liquid-progress-report.json`. This is the first explicit actual busy-list evidence in addition to the existing empty main GUI smoke and download-details captures; it is **not** a claim of pixel-exact IDM parity.
+- Production components and all downloader data/persistence logic remain unchanged. Source contract verifies report keys, screenshot and foreground guard. Accept after exact-commit Windows GUI/HTTP/sha256 run and real-image inspection.

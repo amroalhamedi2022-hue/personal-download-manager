@@ -391,6 +391,71 @@ public static class HyperGetLiquidProgressNative {
         throw 'Live transfer ended or stopped advancing before screenshot; sanitized diagnostics were saved.'
     }
     $captureStats = $preScreenshotStats
+
+    # Real Windows main-list evidence during a verified live HTTP transfer.
+    # Existing installed-GUI smoke screenshots show an EMPTY list. This shot
+    # reveals the actual row, status and compact Liquid progress rendering.
+    # Capture BEFORE opening the details window, not a fabricated UI preview.
+    $mainWindowHandle = $window.MainWindowHandle
+    [HyperGetLiquidProgressNative]::ShowWindow($mainWindowHandle, 3) | Out-Null
+    [HyperGetLiquidProgressNative]::SetWindowPos(
+        $mainWindowHandle, [IntPtr](-1), 0, 0, 0, 0,
+        [uint32](0x0001 -bor 0x0002 -bor 0x0040)
+    ) | Out-Null
+    [HyperGetLiquidProgressNative]::BringWindowToTop($mainWindowHandle) | Out-Null
+    [HyperGetLiquidProgressNative]::SetForegroundWindow($mainWindowHandle) | Out-Null
+    Start-Sleep -Milliseconds 150
+    if ([HyperGetLiquidProgressNative]::GetForegroundWindow() -ne $mainWindowHandle) {
+        throw 'Installed main download list was obscured during active-transfer screenshot.'
+    }
+    $mainRect = [HyperGetLiquidProgressNative+RECT]::new()
+    if (-not [HyperGetLiquidProgressNative]::GetWindowRect($mainWindowHandle, [ref]$mainRect)) {
+        throw 'Cannot resolve bounds of active installed HyperGet main window.'
+    }
+    $mainDwm = [HyperGetLiquidProgressNative+RECT]::new()
+    if ([HyperGetLiquidProgressNative]::DwmGetWindowAttribute(
+        $mainWindowHandle, 9, [ref]$mainDwm, 16
+    ) -eq 0 -and $mainDwm.Right -gt $mainDwm.Left -and
+        $mainDwm.Bottom -gt $mainDwm.Top) {
+        $mainRect = $mainDwm
+    }
+    Add-Type -AssemblyName System.Windows.Forms
+    $mainDisplay = [System.Windows.Forms.Screen]::FromHandle($mainWindowHandle).Bounds
+    $mainOverflow = @(
+        [Math]::Max(0, $mainDisplay.Left - $mainRect.Left),
+        [Math]::Max(0, $mainDisplay.Top - $mainRect.Top),
+        [Math]::Max(0, $mainRect.Right - $mainDisplay.Right),
+        [Math]::Max(0, $mainRect.Bottom - $mainDisplay.Bottom)
+    )
+    if (@($mainOverflow | Where-Object { $_ -gt 12 }).Count -gt 0) {
+        throw 'Main window exceeded visible Windows display bounds during active-transfer capture.'
+    }
+    $mainLeft = [Math]::Max($mainRect.Left, $mainDisplay.Left)
+    $mainTop = [Math]::Max($mainRect.Top, $mainDisplay.Top)
+    $mainWidth = [Math]::Min($mainRect.Right, $mainDisplay.Right) - $mainLeft
+    $mainHeight = [Math]::Min($mainRect.Bottom, $mainDisplay.Bottom) - $mainTop
+    if ($mainWidth -lt 800 -or $mainHeight -lt 500) {
+        throw 'Installed main window capture is too small for useful transfer-row evidence.'
+    }
+    Add-Type -AssemblyName System.Drawing
+    $mainDownloadListScreenshot = Join-Path $root 'hyperget-main-list-active-download.png'
+    $mainBitmap = [System.Drawing.Bitmap]::new($mainWidth, $mainHeight)
+    $mainGraphics = [System.Drawing.Graphics]::FromImage($mainBitmap)
+    try {
+        $mainGraphics.CopyFromScreen(
+            [System.Drawing.Point]::new($mainLeft, $mainTop),
+            [System.Drawing.Point]::Empty,
+            [System.Drawing.Size]::new($mainWidth, $mainHeight)
+        )
+        $mainBitmap.Save($mainDownloadListScreenshot, [System.Drawing.Imaging.ImageFormat]::Png)
+    } finally {
+        $mainGraphics.Dispose()
+        $mainBitmap.Dispose()
+    }
+    # This photograph is contextual evidence. The separate CLI/fixture checks
+    # prove the Downloading state; do not assert pixel-perfect IDM parity.
+    $mainDownloadListStatusAtCapture = $statusAtCapture
+
     $openOutput = @(& $cliPath download open $taskId 2>&1)
     if ($LASTEXITCODE -ne 0) {
         throw 'Installed CLI could not open the active HyperGet download-details window.'
@@ -1154,6 +1219,8 @@ public static class HyperGetLiquidProgressNative {
         ExpectedSHA256 = $expectedSha
         ActualSHA256 = $actualSha
         Screenshot = [IO.Path]::GetFileName($screenshot)
+        MainDownloadListScreenshot = [IO.Path]::GetFileName($mainDownloadListScreenshot)
+        MainDownloadListStatusAtCapture = $mainDownloadListStatusAtCapture
         GraphToggleTested = $graphToggleTested
         GraphToggleResult = $graphToggleResult
         GraphHiddenScreenshot = if ($graphHiddenScreenshot) { [IO.Path]::GetFileName($graphHiddenScreenshot) } else { $null }

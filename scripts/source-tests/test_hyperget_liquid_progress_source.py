@@ -443,6 +443,15 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("Could not restore the completion preference on disk after restart", SCRIPT)
         self.assertIn("Never click the shutdown-on-completion control", SCRIPT)
 
+    def test_installed_windows_screenshots_show_real_active_main_download_row(self):
+        self.assertIn("hyperget-main-list-active-download.png", SCRIPT)
+        self.assertIn("MainDownloadListScreenshot = [IO.Path]::GetFileName($mainDownloadListScreenshot)", SCRIPT)
+        self.assertIn("MainDownloadListStatusAtCapture = $mainDownloadListStatusAtCapture", SCRIPT)
+        self.assertIn("$mainDownloadListStatusAtCapture = $statusAtCapture", SCRIPT)
+        self.assertIn("CopyFromScreen(", SCRIPT)
+        self.assertIn("Installed main download list was obscured", SCRIPT)
+        self.assertIn("do not assert pixel-perfect IDM parity", SCRIPT)
+
     def test_installed_windows_captures_other_idm_tabs_without_claiming_false_parity(self):
         self.assertIn("liquid-progress-tab-{0}.png", SCRIPT)
         self.assertIn("@{ Name = 'speed'; OffsetX = 81 }", SCRIPT)
