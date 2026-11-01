@@ -113,3 +113,9 @@ Continue HyperGet from the latest actual HEAD of experiment/liquid-reference-mat
 - The already-installed Windows Liquid test now captures `hyperget-main-list-active-download.png` while the actual 16 MiB HTTP download has CLI status `Downloading`, verified active server request and >=25% bytes transferred. It is captured *before* opening the file's details window, with a live foreground-window and display-bounds guard.
 - The screenshot and `MainDownloadListStatusAtCapture` are included in the existing `windows-liquid-progress-visual` artifact and `liquid-progress-report.json`. This is the first explicit actual busy-list evidence in addition to the existing empty main GUI smoke and download-details captures; it is **not** a claim of pixel-exact IDM parity.
 - Production components and all downloader data/persistence logic remain unchanged. Source contract verifies report keys, screenshot and foreground guard. Accept after exact-commit Windows GUI/HTTP/sha256 run and real-image inspection.
+
+
+### 2026-11-01 — Real Windows Columns menu interaction gate (await exact-SHA CI)
+- Windows E2E now clicks the new header-end Columns button in the known 1040x744 isolated GUI layout, with foreground and actual icon-pixel guards (never blind or unknown-DPI clicks).
+- Records `hyperget-main-columns-menu-open.png` and uses a real pixel-difference gate **below** the animated transfer row to distinguish a substantial popup from a changing Liquid transfer bar. Closes the popup by clicking empty list space without mutating saved columns.
+- Report fields `ColumnsMenuTested`, `ColumnsMenuResult`, `ColumnsMenuScreenshot`. Acceptance requires exact-SHA Windows run and screenshot review; icon/layout differences in other DPI remain to test. No production code changes.

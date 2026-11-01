@@ -452,6 +452,16 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("Installed main download list was obscured", SCRIPT)
         self.assertIn("do not assert pixel-perfect IDM parity", SCRIPT)
 
+    def test_columns_menu_is_clicked_and_visually_proven_in_real_windows_fixture(self):
+        self.assertIn("hyperget-main-columns-menu-open.png", SCRIPT)
+        self.assertIn("ColumnsMenuTested = $columnsMenuTested", SCRIPT)
+        self.assertIn("ColumnsMenuResult = $columnsMenuResult", SCRIPT)
+        self.assertIn("ColumnsMenuScreenshot = if ($columnsMenuScreenshot)", SCRIPT)
+        self.assertIn("GetPixel(($mainWidth - 30), 114)", SCRIPT)
+        self.assertIn("if ($changedSamples -lt 400)", SCRIPT)
+        self.assertIn("A changing", SCRIPT)
+        self.assertIn("Liquid progress fill must NOT falsely satisfy this gate", SCRIPT)
+
     def test_installed_windows_captures_other_idm_tabs_without_claiming_false_parity(self):
         self.assertIn("liquid-progress-tab-{0}.png", SCRIPT)
         self.assertIn("@{ Name = 'speed'; OffsetX = 81 }", SCRIPT)

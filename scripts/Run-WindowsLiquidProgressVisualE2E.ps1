@@ -456,6 +456,85 @@ public static class HyperGetLiquidProgressNative {
     # prove the Downloading state; do not assert pixel-perfect IDM parity.
     $mainDownloadListStatusAtCapture = $statusAtCapture
 
+    # Exercise the opt-in Columns control with a REAL mouse click on the
+    # tested 1040x744 Windows visual fixture. Inspect the icon's actual pixels
+    # before clicking; never blindly click unknown desktop/DPI positions.
+    $columnsMenuTested = $false
+    $columnsMenuResult = 'not attempted outside known Windows GUI geometry'
+    $columnsMenuScreenshot = $null
+    if ($mainWidth -ge 980 -and $mainWidth -le 1080 -and
+        $mainHeight -ge 680 -and $mainHeight -le 770) {
+        $beforeColumns = [System.Drawing.Bitmap]::FromFile($mainDownloadListScreenshot)
+        try {
+            $columnsIconPixel = $beforeColumns.GetPixel(($mainWidth - 30), 114)
+            if ($columnsIconPixel.R -lt 85 -or $columnsIconPixel.G -lt 90) {
+                throw 'Columns button icon was not visually present at the guarded Windows header position.'
+            }
+        } finally {
+            $beforeColumns.Dispose()
+        }
+        if ([HyperGetLiquidProgressNative]::GetForegroundWindow() -ne $mainWindowHandle) {
+            throw 'Main download list lost foreground before Columns button acceptance.'
+        }
+        $columnsX = $mainLeft + $mainWidth - 30
+        $columnsY = $mainTop + 114
+        if (-not [HyperGetLiquidProgressNative]::SetCursorPos($columnsX, $columnsY)) {
+            throw 'Cannot move mouse to visible Columns control.'
+        }
+        [HyperGetLiquidProgressNative]::mouse_event([uint32]0x0002, 0, 0, 0, [UIntPtr]::Zero)
+        [HyperGetLiquidProgressNative]::mouse_event([uint32]0x0004, 0, 0, 0, [UIntPtr]::Zero)
+        try {
+            Start-Sleep -Milliseconds 550
+            $columnsMenuScreenshot = Join-Path $root 'hyperget-main-columns-menu-open.png'
+            $menuBitmap = [System.Drawing.Bitmap]::new($mainWidth, $mainHeight)
+            $menuGraphics = [System.Drawing.Graphics]::FromImage($menuBitmap)
+            try {
+                $menuGraphics.CopyFromScreen(
+                    [System.Drawing.Point]::new($mainLeft, $mainTop),
+                    [System.Drawing.Point]::Empty,
+                    [System.Drawing.Size]::new($mainWidth, $mainHeight)
+                )
+                $menuBitmap.Save($columnsMenuScreenshot, [System.Drawing.Imaging.ImageFormat]::Png)
+                $baseBitmap = [System.Drawing.Bitmap]::FromFile($mainDownloadListScreenshot)
+                try {
+                    $changedSamples = 0
+                    # Only inspect below the live download row. A changing
+                    # Liquid progress fill must NOT falsely satisfy this gate.
+                    for ($y = 180; $y -lt [Math]::Min($mainHeight - 100, 500); $y += 4) {
+                        for ($x = [int]($mainWidth * 0.55); $x -lt ($mainWidth - 32); $x += 4) {
+                            $a = $baseBitmap.GetPixel($x, $y)
+                            $b = $menuBitmap.GetPixel($x, $y)
+                            $delta = [Math]::Abs([int]$a.R - [int]$b.R) +
+                                [Math]::Abs([int]$a.G - [int]$b.G) +
+                                [Math]::Abs([int]$a.B - [int]$b.B)
+                            if ($delta -ge 24) { $changedSamples++ }
+                        }
+                    }
+                    if ($changedSamples -lt 400) {
+                        throw 'Real Columns click did not reveal a substantial menu overlay in the guarded header region.'
+                    }
+                    $columnsMenuTested = $true
+                    $columnsMenuResult = 'real mouse click opened Columns menu; 400+ changed pixels verified below dynamic download row'
+                } finally {
+                    $baseBitmap.Dispose()
+                }
+            } finally {
+                $menuGraphics.Dispose()
+                $menuBitmap.Dispose()
+            }
+        } finally {
+            # Clicking a known empty list area dismisses the popup without
+            # altering columns, sort, widths or downloads.
+            [HyperGetLiquidProgressNative]::SetCursorPos(
+                ($mainLeft + 500), ($mainTop + 440)
+            ) | Out-Null
+            [HyperGetLiquidProgressNative]::mouse_event([uint32]0x0002, 0, 0, 0, [UIntPtr]::Zero)
+            [HyperGetLiquidProgressNative]::mouse_event([uint32]0x0004, 0, 0, 0, [UIntPtr]::Zero)
+            Start-Sleep -Milliseconds 150
+        }
+    }
+    Write-Host "Windows Columns menu interaction: $columnsMenuResult"
+
     $openOutput = @(& $cliPath download open $taskId 2>&1)
     if ($LASTEXITCODE -ne 0) {
         throw 'Installed CLI could not open the active HyperGet download-details window.'
@@ -1221,6 +1300,9 @@ public static class HyperGetLiquidProgressNative {
         Screenshot = [IO.Path]::GetFileName($screenshot)
         MainDownloadListScreenshot = [IO.Path]::GetFileName($mainDownloadListScreenshot)
         MainDownloadListStatusAtCapture = $mainDownloadListStatusAtCapture
+        ColumnsMenuTested = $columnsMenuTested
+        ColumnsMenuResult = $columnsMenuResult
+        ColumnsMenuScreenshot = if ($columnsMenuScreenshot) { [IO.Path]::GetFileName($columnsMenuScreenshot) } else { $null }
         GraphToggleTested = $graphToggleTested
         GraphToggleResult = $graphToggleResult
         GraphHiddenScreenshot = if ($graphHiddenScreenshot) { [IO.Path]::GetFileName($graphHiddenScreenshot) } else { $null }
