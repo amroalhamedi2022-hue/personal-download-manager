@@ -321,3 +321,17 @@ Physical drag of two Windows link files, 125/150/200% physical DPI, visually lon
 - Newer check runs requiring review: `881f6ae` [41343844985](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/41343844985), `f90e281` [41344177162](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/41344177162), `696039d` [41344372048](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/41344372048), `c44f16c` [41344442151](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/41344442151), `cdbb7fc` [41344482096](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/41344482096). **All are IN PROGRESS as of entry**; inspect exact SHA, final conclusion and artifacts, including failures, before describing code as Windows accepted.
 
 Never replace the verified installer URL with a pending one. Unverified: physical two-file Explorer mouse drop, physical Windows DPI 125/150/200, Arabic visual pixel checks, and sustained 1k/10k live-download stress.
+
+## 2026-11-01 FINAL VERIFIED CANDIDATE — cdbb7fc (supersedes earlier pending labels)
+
+**Code HEAD tested on Windows:** `cdbb7fc89320bd9cfd07a3d32af89ee7f37ba931`.
+**GitHub Actions:** [run 41344482096](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/41344482096) — **COMPLETED / SUCCESS** on the exact source SHA.
+**Windows installer:** `HyperGet_1.0.0-sha.gcdbb7fc_windows_x64.exe`, artifact [13098658354](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/41344482096/artifacts/13098658354), SHA-256 `24feaa283cc32612996a2a888cf5ff67018043252b72cbfa7478e8c3a8b7431b` (79,654,055 bytes unpacked installer artifact).
+**Evidence:** exact-SHA Kotlin `desktopTest` including 10,000 mixed URL parser regression, 10,000-row selection/lookup tests, Unicode Windows Shortcut URL= extraction; native installed Windows Ctrl+F/V/A/C keyboard proof; real 16 MiB localhost download with output SHA-256; active-progress screenshot; silent NSIS install, reinstall, uninstall; Windows native GUI and idle process metric artifacts.
+**RTL:** `f90e281` introduced stable explicitly LTR URL display in the Info tab; included in this verified binary.
+**Windows shortcut parsing:** `cdbb7fc` corrected the URL= whole-value parser and real CRLF/LF Kotlin fixtures; included in this verified binary.
+**Older CI failures:** `a221c99` type mismatch, `696039d` and `c44f16c` Unicode shortcut test/escape issues; all corrected before exact-SHA `cdbb7fc` **GREEN**. Intermittent clipboard focus and secondary-dialog geometry runner flakiness addressed by `54335f5`/`881f6ae`, both green on independent subsequent runs.
+**Release proof document:** `docs/releases/HYPERGET_PR4_VERIFIED_CANDIDATE_2026-11-01_cdbb7fc.md`.
+
+**Important limitations remain OPEN:** physical OS mouse drag of two Explorer files has NOT been positively proven; 125%, 150%, 200% *physical Windows display scaling* have NOT been run; human-reviewed long RTL pixels + IDM reference P01–P27 remain pending; 10k parser and selection tests are not 10k live transfers; sustained download stress, IDM parity, remaining project roadmap P3–P8, final product approval, PR merge all remain open. **Never merge PR #4 or modify main/PR #3 without explicit instruction.**
+
