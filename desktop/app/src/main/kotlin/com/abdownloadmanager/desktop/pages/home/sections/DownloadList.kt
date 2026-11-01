@@ -150,6 +150,7 @@ fun DownloadList(
         val itemHorizontalPadding = 16.dp
         Table(
             tableState = tableState,
+            showColumnConfigButton = true,
             listState = lazyListState,
             key = { it.id },
             list = downloadList,

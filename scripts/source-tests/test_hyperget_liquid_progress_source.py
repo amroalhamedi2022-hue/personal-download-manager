@@ -5,6 +5,8 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 HOME_TOOLBAR = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/Actions.kt").read_text(encoding="utf-8")
+TABLE_WIDGET = (ROOT / "shared/app/src/desktopMain/kotlin/com/abdownloadmanager/shared/ui/widget/table/customtable/Table.kt").read_text(encoding="utf-8")
+HOME_DOWNLOAD_LIST = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/DownloadList.kt").read_text(encoding="utf-8")
 TABLE = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/TableDownloadItem.kt").read_text(encoding="utf-8")
 LIST = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/DownloadList.kt").read_text(encoding="utf-8")
 SCRIPT = (ROOT / "scripts/Run-WindowsLiquidProgressVisualE2E.ps1").read_text(encoding="utf-8")
@@ -590,6 +592,21 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("PaddingValues(horizontal = 9.dp, vertical = 8.dp)", HOME_TOOLBAR)
         self.assertIn(".horizontalScroll(scrollState)", HOME_TOOLBAR)
         self.assertNotIn("fontSize = myTextSizes.sm", HOME_TOOLBAR)
+
+    def test_idm_columns_configuration_is_discoverable_without_reimplementing_persistence(self):
+        self.assertIn("showColumnConfigButton: Boolean = false", TABLE_WIDGET)
+        self.assertIn("showColumnConfigButton = true", HOME_DOWNLOAD_LIST)
+        self.assertIn("if (showColumnConfigButton)", TABLE_WIDGET)
+        self.assertIn("Tooltip(Res.string.customize_columns.asStringSource())", TABLE_WIDGET)
+        self.assertIn("myStringResource(Res.string.customize_columns)", TABLE_WIDGET)
+        self.assertIn("showColumnConfig = true", TABLE_WIDGET)
+        self.assertIn("onDismissRequest = { showColumnConfig = false }", TABLE_WIDGET)
+        self.assertIn("matcher = {", TABLE_WIDGET)
+        self.assertIn("it.button == PointerButton.Secondary", TABLE_WIDGET)
+        self.assertIn("ReorderableColumn(", TABLE_WIDGET)
+        self.assertIn("tableState.setOrder", TABLE_WIDGET)
+        self.assertIn("tableState.setVisibleCells", TABLE_WIDGET)
+        self.assertIn("tableState::reset", TABLE_WIDGET)
 
 if __name__ == "__main__":
     unittest.main()

@@ -94,3 +94,9 @@ Continue HyperGet from the latest actual HEAD of experiment/liquid-reference-mat
 | Main branch / PR #3 | No code writes, ref updates, merges or new development branches | **preserved** |
 
 **Still NOT verified/unfinished:** final pixel-perfect IDM layout parity with original reference image archive; complete action parity of main menus/toolbar/context/shortcuts/tray; full 96 visual theme/icon-size combinations; 125%/150%/200% DPI, RTL, long URL state/window stress tests, 30-minute load stability and full resource regression; remaining software features from original broader roadmap. Do not treat those as done because this GUI smoke test passed. Progress on only these outstanding items from fresh HEAD, not from older handoffs or repeat commits.
+
+
+### 2026-11-01 — Discoverable IDM-style column customization (pending exact-commit Windows test)
+- `shared/.../customtable/Table.kt` now has **opt-in** `showColumnConfigButton: Boolean = false`: a compact 28dp header-end Columns button with a localized accessible label and tooltip. The Home downloads table opts in, while all unrelated tables retain their existing UI.
+- Clicking the button opens the already-implemented `ShowColumnConfigMenu`; existing right-click header still works. No new persistence schema or separate menu. Existing `TableState` controls visibility/order/sort/default reset, and `HomeComponent` continues to save/load the same state. No transfer engine, download-window Liquid, or theme modifications.
+- Source-contract regression asserts visible launcher, existing context menu, reordering, visibility, reset. Requires Kotlin compile/installer, actual Windows screenshot review and exact-commit Actions before marking accepted. The button may overlap a rightmost table heading on narrow windows: inspect Windows evidence before claiming visual acceptance.
