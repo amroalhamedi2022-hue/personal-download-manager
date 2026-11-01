@@ -114,7 +114,9 @@ try {
  $targetY=[int]($rect.Top+($rect.Bottom-$rect.Top)*0.52)
  $ps=Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
  $argsText='-NoProfile -NonInteractive -Sta -File "'+$PSCommandPath+'" -AsSource -One "'+$one+'" -Two "'+$two+'" -EffectPath "'+$effectPath+'"'
- $source=Start-Process -FilePath $ps -ArgumentList $argsText -WindowStyle Hidden -PassThru
+ $sourceOut=Join-Path $root 'source-stdout.log'
+ $sourceErr=Join-Path $root 'source-stderr.log'
+ $source=Start-Process -FilePath $ps -ArgumentList $argsText -WindowStyle Hidden -PassThru -RedirectStandardOutput $sourceOut -RedirectStandardError $sourceErr
  $sourceH=[IntPtr]::Zero
  for($n=0;$n -lt 80;$n++) {
   Start-Sleep -Milliseconds 100
