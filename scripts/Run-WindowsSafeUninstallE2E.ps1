@@ -64,9 +64,13 @@ try {
         throw 'Uninstall registration missing; cannot test cleanup.'
     }
     $installedRegistration = Get-ItemProperty -LiteralPath $registry
-    if ($installedRegistration.DisplayName -ne 'HyperGet' -or
-        $installedRegistration.DisplayIcon -notmatch 'HyperGet\\.exe') {
-        throw 'Windows Add/Remove Programs still displays a legacy product name or executable.'
+    # Use one regex escape for a literal dot. The previous CI probe
+    # accidentally searched for a literal backslash before an arbitrary
+    # character, and rejected an otherwise correctly registered product.
+    $nameOk = [string]$installedRegistration.DisplayName -eq 'HyperGet'
+    $iconOk = [string]$installedRegistration.DisplayIcon -match 'HyperGet\.exe'
+    if (-not $nameOk -or -not $iconOk) {
+        throw "Windows registration branding failed: displayNameOk=$nameOk, iconExeOk=$iconOk."
     }
     Set-Content -LiteralPath $sentinel -Value 'keep this unrelated file' -Encoding UTF8
     $sentinelCreated = $true

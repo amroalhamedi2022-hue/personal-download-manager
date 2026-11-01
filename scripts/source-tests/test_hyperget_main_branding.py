@@ -37,6 +37,8 @@ assert 'HyperGetSetup.exe' in ci and 'hyperget-windows-x64' in ci
 assert "Join-Path $installDir 'HyperGet.exe'" in e2e
 assert "Join-Path $startMenu 'HyperGet.lnk'" in e2e
 assert 'WindowsProductName=HyperGet' in e2e
+assert "iconOk = [string]$installedRegistration.DisplayIcon -match" in e2e
+assert "displayNameOk=$nameOk, iconExeOk=$iconOk" in e2e
 assert 'DownloadManagerNativeMessagingHost' in app
 assert 'DownloadManagerCli' in app
 assert '"DATA_DIR_NAME"' in shared and '"INTEGRATION_FIREFOX_EXTENSION_ID"' in shared
