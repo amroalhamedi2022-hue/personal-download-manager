@@ -63,6 +63,27 @@ class StringUrlExtractorMixedListTest {
         println("HyperGet 10k mixed URL extractor (parser only): ${elapsedMs} ms")
     }
 
+    @Test fun preservesFullArabicPathAndLongSignedQueryInInternetShortcut() {
+        val link = "https://books.example/قصص/المدينة/novella.pdf?token=" +
+            "a".repeat(2048) + "&lang=ar&part=2"
+        val input = "[InternetShortcut]\\r\\nURL=$link\\r\\n" +
+            "https://direct.example/reference.pdf"
+        assertEquals(
+            listOf(link, "https://direct.example/reference.pdf"),
+            StringUrlExtractor.extract(input)
+        )
+    }
+
+    @Test fun malformedShortcutDoesNotFallBackToTruncatedPartialUrl() {
+        assertEquals(
+            listOf("https://valid.example/book.pdf"),
+            StringUrlExtractor.extract(
+                "URL=https://wrong.example/file.pdf bad-trailing-data\\n" +
+                    "https://valid.example/book.pdf"
+            )
+        )
+    }
+
     @Test fun doesNotExtractUnsupportedOrCredentialBearingFtpLinks() {
         val input = """
             ftp://user:password@host.test/private.zip
