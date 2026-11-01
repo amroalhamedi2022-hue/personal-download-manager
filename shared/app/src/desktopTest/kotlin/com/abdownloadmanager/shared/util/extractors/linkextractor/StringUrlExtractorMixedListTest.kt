@@ -78,7 +78,7 @@ class StringUrlExtractorMixedListTest {
         assertEquals(
             listOf("https://valid.example/book.pdf"),
             StringUrlExtractor.extract(
-                "URL=https://wrong.example/file.pdf bad-trailing-data\\n" +
+                "URL=https://bad host.example/file.pdf\\n" +
                     "https://valid.example/book.pdf"
             )
         )
