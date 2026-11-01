@@ -682,6 +682,18 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("$changedTextPixels -lt 85", WINDOWS_UI_WORKFLOW)
         self.assertIn("SendKeys]::SendWait('{BACKSPACE}')", WINDOWS_UI_WORKFLOW)
 
+    def test_all_home_shortcuts_have_unique_keystrokes_and_search_is_not_shadowed(self):
+        import re
+        # DesktopShortcutManager uses a map, so a second registration silently
+        # shadows the first action; this must never recur.
+        keys = re.findall(r'^\s*"\$metaKey(?: [A-Za-z]+)+" to ', HOME_COMPONENT, re.MULTILINE)
+        self.assertGreaterEqual(len(keys), 10)
+        self.assertEqual(len(keys), len(set(keys)), "Duplicate modifier shortcuts shadow another action")
+        self.assertIn('"$metaKey F" to ::focusHomeSearch', HOME_COMPONENT)
+        self.assertIn('"$metaKey shift O" to downloadActions.openFolderAction', HOME_COMPONENT)
+        self.assertNotIn('"$metaKey F" to downloadActions.openFolderAction', HOME_COMPONENT)
+        self.assertIn("keyEvent.key == Key.F", HOME_WINDOW)
+
 if __name__ == "__main__":
     unittest.main()
 

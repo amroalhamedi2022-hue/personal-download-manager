@@ -420,7 +420,8 @@ class HomeComponent(
         "$metaKey alt S" to gotoSettingsAction
         "$metaKey Q" to requestExitAction
         "$metaKey O" to downloadActions.openFileAction
-        "$metaKey F" to downloadActions.openFolderAction
+        // Ctrl+F is reserved for Search. Shift+O opens the selected file's folder.
+        "$metaKey shift O" to downloadActions.openFolderAction
         "$metaKey E" to downloadActions.editDownloadAction
         "$metaKey P" to downloadActions.pauseAction
         "$metaKey R" to downloadActions.resumeAction

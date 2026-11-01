@@ -181,3 +181,9 @@ Continue HyperGet from the latest actual HEAD of experiment/liquid-reference-mat
 - All installed GUI + liquid + restart + NSIS lifecycle checks passed for the identical code SHA. **No production Liquid Bar/window styling or download engine changed. No main/PR #3 writes.**
 - Earlier red runs were correctly diagnosed: duplicate FocusRequester import on `110f2a0` (resolved), Ctrl+F absent in on-screen proof on `7e2f155` (resolved by direct Compose handler). These red runs are retained as history, but `cdd9357` is the verified terminal code result.
 - **Still OPEN:** pixel-perfect original-IDM side-by-side parity (historical ZIP still unavailable), 125/150/200% DPI, mixed RTL on native Windows, theme/icon-size matrix, per-download speed preference full GUI restart and broad menu/toolbar/context/shortcut/tray parity, stress/resource acceptance, human review. Do NOT mark these accepted merely because search E2E passed.
+
+
+## 2026-11-01 — N19 shortcut collision fix (needs same-SHA acceptance)
+- Discovered existing `HomeComponent.shortcutManager` registered **two** `"$metaKey F"` keystrokes: `focusHomeSearch` then `openFolderAction`. `ShortcutManager.register` uses `MutableMap` overwrite semantics, so the latter shadowed the former. Compose direct Ctrl+F handler already ensured the search worked, but the internal binding was objectively inconsistent and could regress.
+- **Fix:** keep Ctrl/Meta+F exclusively for the existing Search action, move `Open Folder` to Ctrl/Meta+Shift+O. Other shortcuts untouched; no engine or Liquid UI modifications. Add regression source contract extracting all modified HOME shortcut keys, requiring **no duplicates** and the correct action for Ctrl+F.
+- Exact-SHA Windows source/Kotlin/GUI/install/HTTP acceptance pending. Avoid moving or duplicating other shortcut actions.
