@@ -31,6 +31,7 @@ on:
       - "shared/app/src/desktopTest/kotlin/com/abdownloadmanager/shared/ui/theme/ModernThemePaletteContractTest.kt"
       - "shared/app/src/desktopMain/kotlin/com/abdownloadmanager/shared/ui/widget/table/customtable/TableUtils.kt"
       - "shared/app/src/desktopTest/kotlin/com/abdownloadmanager/shared/ui/widget/table/customtable/TableStatePersistenceTest.kt"
+      - "scripts/Run-WindowsMultiFileDropE2E.ps1"
       - "scripts/Run-WindowsLiquidProgressVisualE2E.ps1"
       - "scripts/Wait-WindowsLoopbackHttpPort.ps1"
       - "scripts/source-tests/test_hyperget_liquid_progress_source.py"
@@ -74,6 +75,7 @@ on:
       - "shared/app/src/desktopTest/kotlin/com/abdownloadmanager/shared/ui/theme/ModernThemePaletteContractTest.kt"
       - "shared/app/src/desktopMain/kotlin/com/abdownloadmanager/shared/ui/widget/table/customtable/TableUtils.kt"
       - "shared/app/src/desktopTest/kotlin/com/abdownloadmanager/shared/ui/widget/table/customtable/TableStatePersistenceTest.kt"
+      - "scripts/Run-WindowsMultiFileDropE2E.ps1"
       - "scripts/Run-WindowsLiquidProgressVisualE2E.ps1"
       - "scripts/Wait-WindowsLoopbackHttpPort.ps1"
       - "scripts/source-tests/test_hyperget_liquid_progress_source.py"
@@ -137,7 +139,7 @@ jobs:
           run=false
           while IFS= read -r file; do
             case "$file" in
-              .github/workflows/windows-installed-ui-smoke.yml|desktop/app/resources/installer/nsis-script-template.nsi|desktop/app/build.gradle.kts|desktop/app/icons/icon.ico|desktop/app/icons/hyperget-icon.svg|scripts/Run-WindowsInstallerLifecycleE2E.ps1|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/HomePage.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/HomeComponent.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/HomeWindow.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/TableDownloadItem.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/DownloadList.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/singleDownloadPage/ProgressDownloadPage.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/singleDownloadPage/ShowDownloadDialogs.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/singleDownloadPage/SingleDownloadPageStateToPersist.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/singleInstance/service/IDefaultAppIPCService.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/singleInstance/service/DefaultAppIPCServiceImpl.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/cli/download/Download.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/cli/download/open/OpenDownload.kt|shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/ui/theme/DefaultThemes.kt|shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/storage/appsettings/DefaultAppSettings.kt|shared/app/src/desktopTest/kotlin/com/abdownloadmanager/shared/ui/theme/ModernThemePaletteContractTest.kt|shared/app/src/desktopMain/kotlin/com/abdownloadmanager/shared/ui/widget/table/customtable/TableUtils.kt|shared/app/src/desktopTest/kotlin/com/abdownloadmanager/shared/ui/widget/table/customtable/TableStatePersistenceTest.kt|scripts/Run-WindowsLiquidProgressVisualE2E.ps1|scripts/Wait-WindowsLoopbackHttpPort.ps1|scripts/source-tests/test_hyperget_liquid_progress_source.py|shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/pages/home/BaseHomeComponent.kt|shared/app/src/desktopTest/kotlin/com/abdownloadmanager/shared/pages/home/DownloadSearchMatcherTest.kt|shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/pages/home/DroppedLinkFiles.kt|shared/app/src/desktopTest/kotlin/com/abdownloadmanager/shared/pages/home/DroppedLinkFilesTest.kt|shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/util/extractors/linkextractor/StringUrlExtractor.kt|shared/app/src/desktopTest/kotlin/com/abdownloadmanager/shared/util/extractors/linkextractor/StringUrlExtractorMixedListTest.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/di/Di.kt|scripts/source-tests/test_hyperget_http_dispatcher_bound_source.py)
+              .github/workflows/windows-installed-ui-smoke.yml|desktop/app/resources/installer/nsis-script-template.nsi|desktop/app/build.gradle.kts|desktop/app/icons/icon.ico|desktop/app/icons/hyperget-icon.svg|scripts/Run-WindowsInstallerLifecycleE2E.ps1|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/HomePage.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/HomeComponent.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/HomeWindow.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/TableDownloadItem.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/DownloadList.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/singleDownloadPage/ProgressDownloadPage.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/singleDownloadPage/ShowDownloadDialogs.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/singleDownloadPage/SingleDownloadPageStateToPersist.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/singleInstance/service/IDefaultAppIPCService.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/singleInstance/service/DefaultAppIPCServiceImpl.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/cli/download/Download.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/cli/download/open/OpenDownload.kt|shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/ui/theme/DefaultThemes.kt|shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/storage/appsettings/DefaultAppSettings.kt|shared/app/src/desktopTest/kotlin/com/abdownloadmanager/shared/ui/theme/ModernThemePaletteContractTest.kt|shared/app/src/desktopMain/kotlin/com/abdownloadmanager/shared/ui/widget/table/customtable/TableUtils.kt|shared/app/src/desktopTest/kotlin/com/abdownloadmanager/shared/ui/widget/table/customtable/TableStatePersistenceTest.kt|scripts/Run-WindowsMultiFileDropE2E.ps1|scripts/Run-WindowsLiquidProgressVisualE2E.ps1|scripts/Wait-WindowsLoopbackHttpPort.ps1|scripts/source-tests/test_hyperget_liquid_progress_source.py|shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/pages/home/BaseHomeComponent.kt|shared/app/src/desktopTest/kotlin/com/abdownloadmanager/shared/pages/home/DownloadSearchMatcherTest.kt|shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/pages/home/DroppedLinkFiles.kt|shared/app/src/desktopTest/kotlin/com/abdownloadmanager/shared/pages/home/DroppedLinkFilesTest.kt|shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/util/extractors/linkextractor/StringUrlExtractor.kt|shared/app/src/desktopTest/kotlin/com/abdownloadmanager/shared/util/extractors/linkextractor/StringUrlExtractorMixedListTest.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/di/Di.kt|scripts/source-tests/test_hyperget_http_dispatcher_bound_source.py)
                 run=true ;;
             esac
           done <<< "$changed"
@@ -454,6 +456,25 @@ jobs:
               Stop-Process -Id $started.Id -Force -ErrorAction SilentlyContinue
             }
           }
+
+      - name: Diagnose native Windows two-file OLE mouse drag
+        # Separate diagnostic: a hosted desktop may not support OLE mouse
+        # injection reliably. Do not misreport a failure as feature acceptance.
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $sourceSha = (git rev-parse HEAD).Trim()
+          & ./scripts/Run-WindowsMultiFileDropE2E.ps1 -GuiExecutable $env:IDM_SMOKE_EXECUTABLE -SourceSha $sourceSha -OutputDirectory (Join-Path $PWD 'build/ci-release/native-drop')
+
+      - name: Upload native two-file Windows drag diagnostic
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-native-two-file-drag
+          path: build/ci-release/native-drop/*
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Verify real Liquid Progress while an installed download is active
         shell: pwsh

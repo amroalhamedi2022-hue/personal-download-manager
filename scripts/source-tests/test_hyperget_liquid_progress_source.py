@@ -719,6 +719,16 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertNotIn('"$metaKey F" to downloadActions.openFolderAction', HOME_COMPONENT)
         self.assertIn("keyEvent.key == Key.F", HOME_WINDOW)
 
+    def test_native_two_file_mouse_drop_diagnostic_is_captured_not_misreported(self):
+        self.assertIn("Run-WindowsMultiFileDropE2E.ps1", WINDOWS_UI_WORKFLOW)
+        self.assertIn("windows-native-two-file-drag", WINDOWS_UI_WORKFLOW)
+        native = (ROOT / "scripts/Run-WindowsMultiFileDropE2E.ps1").read_text(encoding="utf-8")
+        self.assertIn("SetFileDropList", native)
+        self.assertIn("DoDragDrop", native)
+        self.assertIn("mouse_event", native)
+        self.assertIn("OpenedNewDialog", native)
+        self.assertIn("No automated assertion of both URL field values", native)
+
     def test_real_windows_clipboard_probe_fails_closed_instead_of_claiming_source_only(self):
         self.assertIn("$clipboardShortcutsTested = $false", SCRIPT)
         self.assertIn("'HYPERGET-COPY-NOT-YET-TESTED'", SCRIPT)
