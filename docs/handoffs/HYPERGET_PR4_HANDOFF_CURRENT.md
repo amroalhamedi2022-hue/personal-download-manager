@@ -209,3 +209,9 @@ Continue HyperGet from the latest actual HEAD of experiment/liquid-reference-mat
 
 ### 2026-11-01 — Cross-module compilation correction for dropped-link reader
 - Exact-SHA Windows run 41336728967 on e0a551a failed **only at Desktop Kotlin compilation**: Desktop module could not call a function declared `internal` in shared module (`INVISIBLE_REFERENCE`). Four shared Kotlin link-reader tests passed before packaging. Corrected helper visibility to `public` for the cross-module call, no change to size limits, parsing, transfer logic or user data. Requires fresh exact-SHA full Windows CI before acceptance.
+
+
+## 2026-11-01 — Downloadable verified Windows EXE candidate artifact (pending CI)
+- Existing Windows workflow already builds **exactly one NSIS installer** and proves silent install, GUI launch, active HTTP SHA-256, completion choice persistence after real restart, graph/columns, and NSIS reinstall/uninstall. However it previously uploaded only screenshots/reports, leaving the actual EXE inaccessible to the user.
+- Added `hyperget-windows-verified-installer` artifact upload pointing to `build/ci-release/binaries/**/*.exe`, **gated on `if: success()` AFTER all runtime and lifecycle checks**. It cannot publish a failed/untested candidate. One EXE count is enforced earlier by installed acceptance. Artifact is kept for 7 days and tied to an exact GitHub SHA.
+- **This is a PR #4 development candidate, NOT a full accepted production release**; original IDM pixel/DPI/RTL/extended acceptance remains open. Once CI succeeds, provide actual EXE or artifact link for user testing. No main/PR3 writes.

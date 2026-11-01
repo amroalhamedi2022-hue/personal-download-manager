@@ -471,6 +471,18 @@ jobs:
             throw 'Installer lifecycle acceptance proof was not written.'
           }
 
+      - name: Upload exact-SHA verified Windows NSIS installer for user testing
+        # Only publish a candidate when *all* preceding source, Kotlin, GUI,
+        # live HTTP/SHA256, restart and installer lifecycle steps passed.
+        # One EXE is enforced by the earlier installed-GUI acceptance step.
+        if: success()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: hyperget-windows-verified-installer
+          path: build/ci-release/binaries/**/*.exe
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Upload active Liquid Progress screenshot and verified transfer report
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

@@ -719,6 +719,16 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("raw.any { it == 0.toByte() }", DROPPED_FILE_READER)
         self.assertIn(".distinctBy { it.link }", HOME_COMPONENT)
 
+    def test_verified_windows_installer_uploaded_only_after_full_acceptance(self):
+        self.assertIn("Upload exact-SHA verified Windows NSIS installer for user testing", WINDOWS_UI_WORKFLOW)
+        upload_block = WINDOWS_UI_WORKFLOW.split(
+            "- name: Upload exact-SHA verified Windows NSIS installer for user testing", 1
+        )[1].split("- name: Upload active Liquid Progress screenshot", 1)[0]
+        self.assertIn("if: success()", upload_block)
+        self.assertIn("name: hyperget-windows-verified-installer", upload_block)
+        self.assertIn("path: build/ci-release/binaries/**/*.exe", upload_block)
+        self.assertIn("if-no-files-found: error", upload_block)
+
 if __name__ == "__main__":
     unittest.main()
 
