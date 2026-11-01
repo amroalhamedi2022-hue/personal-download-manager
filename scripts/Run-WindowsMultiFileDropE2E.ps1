@@ -76,6 +76,19 @@ public static class HyperGetNativeDropTest {
    },IntPtr.Zero);
    return count;
  }
+ public static IntPtr FirstVisible(uint processId) {
+   IntPtr found=IntPtr.Zero;
+   EnumWindows(delegate(IntPtr h, IntPtr p) {
+     uint owner;
+     GetWindowThreadProcessId(h,out owner);
+     if(owner==processId && IsWindowVisible(h)){
+       found=h;
+       return false;
+     }
+     return true;
+   },IntPtr.Zero);
+   return found;
+ }
 }
 '@
 $gui=$null
@@ -107,7 +120,10 @@ try {
   Start-Sleep -Milliseconds 100
   $source.Refresh()
   if($source.HasExited){throw 'Native OLE file source exited before drag.'}
-  $sourceH=$source.MainWindowHandle
+  # A WinForms FixedToolWindow is intentionally absent from the Windows
+  # taskbar: Process.MainWindowHandle may stay zero even when it is visible.
+  # Find the actual visible native window by owner PID instead.
+  $sourceH=[HyperGetNativeDropTest]::FirstVisible([uint32]$source.Id)
   if($sourceH -ne [IntPtr]::Zero){break}
  }
  if($sourceH -eq [IntPtr]::Zero){throw 'Native file source missing.'}
