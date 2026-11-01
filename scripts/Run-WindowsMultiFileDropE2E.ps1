@@ -197,7 +197,7 @@ try {
   OpenedNewDialog=($effect -eq 'Copy' -and $after -gt $before)
   SourceShown=(Test-Path -LiteralPath ($effectPath+'.ready'))
   NativeMouseDownReceived=(Test-Path -LiteralPath ($effectPath+'.mousedown'))
-  NativeMouseDownError=(if(Test-Path -LiteralPath ($effectPath+'.error')){Get-Content -LiteralPath ($effectPath+'.error') -Raw}else{''})
+  NativeMouseDownError=$(if(Test-Path -LiteralPath ($effectPath+'.error')){Get-Content -LiteralPath ($effectPath+'.error') -Raw}else{''})
   Limitation='No automated assertion of both URL field values; needs visual/user content acceptance'
   Error=$failure
  }|ConvertTo-Json -Depth 4|Set-Content -LiteralPath (Join-Path $root 'native-drop-report.json') -Encoding utf8
