@@ -236,3 +236,10 @@ Continue HyperGet from the latest actual HEAD of experiment/liquid-reference-mat
 - Text encoding: accept BOM-marked UTF-16LE/UTF-16BE Windows Notepad text and UTF-8 with BOM, with even UTF-16 payload length guard and decoded NUL rejection. Non-BOM binary zero bytes still rejected; no implicit interpretation of arbitrary binary as UTF-16. Byte budget now charged against actual **raw bytes read** (important for mixed UTF-16/UTF-8 lists) rather than re-encoded text length.
 - Added three real-file Kotlin Desktop tests (invalid-path flood, UTF-16 LE/BE + UTF-8 BOM, malformed/embedded NUL) alongside four existing tests; source regression confirms bounded inspected paths, encodings and byte budget.
 - **Not accepted yet:** same-SHA Kotlin/Desktop/Windows install/UI/HTTP/SHA256 suite must pass. Actual OS file drag/drop UI still separately untested. No change to download engine, Liquid UI, app identity, main or PR #3.
+
+
+## 2026-11-01 — Mixed plain/Windows .url link-list extraction fix (pending exact-SHA Windows acceptance)
+- Found `StringUrlExtractor` short-circuited to `byEachLine` whenever any standalone valid URL existed in a pasted/dropped link list. In the same list, `URL=https://...` (Windows Internet Shortcut files) and other embedded URLs were silently lost even though `byRegex` would have found them if no standalone URL were present.
+- Fixed extraction to process **each line** independently: preserve a whole valid URL line (critical for FTP filename spaces/brackets); on other lines scan validated embedded URL matches; deduplicate in stable original order. Existing FTP validation still rejects credentials and unsupported paths; curl/JSON extractors retain their existing precedence.
+- Added **four** Kotlin desktop tests for mixed `.url`/plain/inline links, FTP whitespace preservation, duplicate removal, and FTP credential rejection. Windows workflow's Kotlin suite and change-scope now cover the new extractor and tests.
+- No transfer engine, Liquid animation, settings or data migration changes. Same-SHA Windows build, local HTTP output SHA and installer acceptance pending. OS drag-and-drop gesture still pending manual test.

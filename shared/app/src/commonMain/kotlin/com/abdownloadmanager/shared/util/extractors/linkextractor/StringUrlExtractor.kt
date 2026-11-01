@@ -13,27 +13,23 @@ object StringUrlExtractor : Extractor<String, List<String>> {
 
     private val urlRegex by lazy { Regex("""\b(https?|ftp|file)://[-a-zA-Z0-9+&@#/%?=~_|!:,.;]*[-a-zA-Z0-9+&@#/%=~_|]""") }
     override fun extract(input: String): List<String> {
-        // maybe each line is a link
-        val linksInEachLines = byEachLine(input)
-        if (linksInEachLines.isNotEmpty()) {
-            return linksInEachLines
-        }
-        // try to find links by regex
-        return byRegex(input)
-    }
-
-    private fun byEachLine(input: String): List<String> {
-        return input
-            .lineSequence()
-            .map { it.trim() }
-            .filter { isDownloadUrl(it) }
-            .toList()
-    }
-
-    private fun byRegex(input: String): List<String> {
-        return urlRegex.findAll(input)
-            .map { it.value }
-            .filter { isDownloadUrl(it) }
+        // Process each line independently. Previously, if ANY line was an
+        // exact URL, all embedded URLs elsewhere (e.g. Windows Internet
+        // Shortcut lines "URL=https://...") were silently discarded.
+        // Preserve full validated links (including spaces in FTP filenames)
+        // rather than replacing them with truncated regex captures.
+        return input.lineSequence()
+            .flatMap { line ->
+                val fullLine = line.trim()
+                if (isDownloadUrl(fullLine)) {
+                    sequenceOf(fullLine)
+                } else {
+                    urlRegex.findAll(line)
+                        .map { it.value }
+                        .filter { isDownloadUrl(it) }
+                }
+            }
+            .distinct()
             .toList()
     }
 }

@@ -8,6 +8,7 @@ HOME_TOOLBAR = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/deskto
 WINDOWS_UI_WORKFLOW = (ROOT / ".github/workflows/windows-installed-ui-smoke.yml").read_text(encoding="utf-8")
 HOME_COMPONENT = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/HomeComponent.kt").read_text(encoding="utf-8")
 DROPPED_FILE_READER = (ROOT / "shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/pages/home/DroppedLinkFiles.kt").read_text(encoding="utf-8")
+LINK_EXTRACTOR = (ROOT / "shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/util/extractors/linkextractor/StringUrlExtractor.kt").read_text(encoding="utf-8")
 HOME_PAGE = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/HomePage.kt").read_text(encoding="utf-8")
 HOME_WINDOW = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/HomeWindow.kt").read_text(encoding="utf-8")
 FILTERS = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/Filters.kt").read_text(encoding="utf-8")
@@ -733,6 +734,14 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("name: hyperget-windows-verified-installer", upload_block)
         self.assertIn("path: build/ci-release/binaries/**/*.exe", upload_block)
         self.assertIn("if-no-files-found: error", upload_block)
+
+    def test_mixed_multifile_link_extraction_keeps_embedded_and_whole_line_urls(self):
+        self.assertIn("return input.lineSequence()", LINK_EXTRACTOR)
+        self.assertIn("if (isDownloadUrl(fullLine))", LINK_EXTRACTOR)
+        self.assertIn("urlRegex.findAll(line)", LINK_EXTRACTOR)
+        self.assertIn(".distinct()", LINK_EXTRACTOR)
+        self.assertNotIn("if (linksInEachLines.isNotEmpty())", LINK_EXTRACTOR)
+        self.assertIn("--tests com.abdownloadmanager.shared.util.extractors.linkextractor.StringUrlExtractorMixedListTest", WINDOWS_UI_WORKFLOW)
 
 if __name__ == "__main__":
     unittest.main()
