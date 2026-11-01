@@ -1,13 +1,15 @@
-> **CURRENT PR #4 HANDOFF — 2026-11-01, VERIFIED WINDOWS:** Exact last verified **code SHA `9ce2fc6a61e2a495d9f9a2294e3a84bac253ea1e`**, Windows Actions **[41306279017](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/41306279017)** `success`. This file's own follow-up commit is **documentation-only**; do not mistake it for new untested production code. Stay on `experiment/liquid-reference-match-20261030` / Draft PR #4; never touch main or PR #3.\n\n# HyperGet — PR #4 cross-chat handoff (2026-11-01)
+> **CURRENT PR #4 HANDOFF — 2026-11-01, VERIFIED WINDOWS:** Last verified **production code SHA `cdd93578e62ed7a83ebfdb61161ff814d231d6c2`**, [Windows Actions run 41334962719](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/41334962719) **SUCCESS**. Any next commit changing only handoff/checkpoint Markdown is documentation-only and does NOT alter that verified code SHA. Continue ONLY on `experiment/liquid-reference-match-20261030` / Draft PR #4; never touch main or PR #3.
+
+# HyperGet — PR #4 cross-chat handoff (2026-11-01)
 
 > This is a durable project checkpoint. GitHub HEAD and Actions are authoritative; refresh them before starting work. A documentation-only commit after the verified SHA does NOT mean new code was tested.
 
 ## Scope and verified state
 - Repo: amroalhamedi2022-hue/personal-download-manager
 - ONLY work branch: experiment/liquid-reference-match-20261030; Draft PR #4: https://github.com/amroalhamedi2022-hue/personal-download-manager/pull/4
-- Last **code** SHA verified on an installed Windows runner: c545031d1c9372677757e4969d7c6cdc2d590a32
-- All checks on this code SHA passed: https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/41192127768
-- Windows visual artifact: windows-liquid-progress-visual, artifact id 13040170006.
+- Last **production code** SHA verified on an installed Windows runner: cdd93578e62ed7a83ebfdb61161ff814d231d6c2
+- All checks on the latest code SHA passed: https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/41334962719
+- Latest Windows visual artifacts: `windows-liquid-progress-visual` ID **13095456141** and `windows-installed-gui-smoke` ID **13095490702**. Older run 41192127768 remains a historical baseline.
 - Never merge main, change PR #3, create unnecessary branches, or repeat verified Codex/automation commits.
 
 ## Confirmed completed work
@@ -169,3 +171,13 @@ Continue HyperGet from the latest actual HEAD of experiment/liquid-reference-mat
 - On `7e2f155`, Windows built/installed successfully, but genuine `SendKeys Ctrl+F + hgfocusprobe` yielded an **identical screenshot**; the keyboard acceptance step failed (`changed search glyph pixels=0`). This is **not accepted** regardless of source contracts.
 - Source review found `DesktopShortcutManager.getKeyStrokeFromEvent` depends on `KeyEvent.awtEventOrNull`, which may be absent on some JBR/Compose key paths. HomeWindow now handles Ctrl/Meta+F using Compose's own KeyDown/key/modifier fields directly, while keeping ShortcutManager for all other existing bindings.
 - CI also captures a bounded direct-mouse-click + typed-text diagnostic if Ctrl+F still fails, to distinguish an actual shortcut bug from Windows runner keyboard injection failure. The diagnostic never substitutes for passing Ctrl+F. Follow exact-SHA CI and inspect real images; do not claim pass prematurely.
+
+
+## 2026-11-01 — FINAL exact-SHA Windows acceptance for this search batch
+- **Verified last CODE SHA:** `cdd93578e62ed7a83ebfdb61161ff814d231d6c2` (run [41334962719](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/41334962719) **success**, both Windows workflow jobs green). Subsequent handoff-only commits must not be treated as new compiled code.
+- Real installed Windows keyboard test captured `installed-gui-ctrl-f-search.png` with **`hgfocusprobe` visibly typed into the existing HomeSearch input** after Ctrl+F. Source fix uses Compose KeyDown + Ctrl/Meta modifiers so synthetic/native event paths do not depend solely on `awtEventOrNull`; old shortcuts preserved. See artifact [13095490702](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/41334962719/artifacts/13095490702). `Tools > Search in the list` uses the same focus action; menu click itself has not separately been interaction-tested.
+- Real live loopback HTTP download: `hyperget-main-search-by-source-url.png` shows **`127.0.0.1` typed and the unrelated filename `hyperget-liquid-progress.bin` remaining visible during Downloading**. `liquid-progress-report.json`: `SourceUrlSearchTested=true`, `MainDownloadListStatusAtCapture=Downloading`, `ColumnsMenuTested=true`, `GraphToggleTested=true`, `CompletionPreferenceDiskTested=true`, `CompletionPreferenceRestartTested=true`, `FinalStatus=Finished`, `Verified=true`. Actual bytes = expected **16,777,216**, actual SHA-256 = expected `341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1`. Artifact [13095456141](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/41334962719/artifacts/13095456141).
+- Four `DownloadSearchMatcherTest` Kotlin Desktop tests passed: filename, completed URL domain/query, mixed Arabic/Latin search, empty query. The matching code is local-only and does not log URLs; original category/queue/status filter conditions and deduplication remain.
+- All installed GUI + liquid + restart + NSIS lifecycle checks passed for the identical code SHA. **No production Liquid Bar/window styling or download engine changed. No main/PR #3 writes.**
+- Earlier red runs were correctly diagnosed: duplicate FocusRequester import on `110f2a0` (resolved), Ctrl+F absent in on-screen proof on `7e2f155` (resolved by direct Compose handler). These red runs are retained as history, but `cdd9357` is the verified terminal code result.
+- **Still OPEN:** pixel-perfect original-IDM side-by-side parity (historical ZIP still unavailable), 125/150/200% DPI, mixed RTL on native Windows, theme/icon-size matrix, per-download speed preference full GUI restart and broad menu/toolbar/context/shortcut/tray parity, stress/resource acceptance, human review. Do NOT mark these accepted merely because search E2E passed.

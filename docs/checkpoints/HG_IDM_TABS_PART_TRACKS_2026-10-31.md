@@ -51,3 +51,10 @@
 
 ### 2026-11-01 — Main search N20
 - Search matches source URL as well as filename, including previously completed entries; category/status/queue filtering unchanged. Four Kotlin tests added. Exact-SHA Windows runtime acceptance remains to be checked.
+
+
+## 2026-11-01 — Search accepted on installed Windows (authoritative update)
+- Last production code verified: `cdd93578e62ed7a83ebfdb61161ff814d231d6c2`; [run 41334962719](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/41334962719) green. `Ctrl+F` → existing header search interaction proven by `installed-gui-ctrl-f-search.png` showing typed `hgfocusprobe`; screenshot and test data under Windows artifact **13095490702**.
+- Filename **or URL** search proven for a real ongoing loopback task: query `127.0.0.1` only matches the URL, yet the filename row remains visible while Downloading. Evidence `hyperget-main-search-by-source-url.png` and verified 16 MiB HTTP/SHA-256 report in Windows artifact **13095456141**.
+- Four Kotlin matcher tests also pass for filenames, completed URL/domain/query, mixed Arabic/Latin and empty search. `Tools > Search in the list` and Ctrl+F share one action.
+- Other IDM N18/N19/N20 menu actions and pixel parity remain **PARTIAL**, not full acceptance. Required original IDM P01–P27 screenshots still missing; do not invent comparison images.
