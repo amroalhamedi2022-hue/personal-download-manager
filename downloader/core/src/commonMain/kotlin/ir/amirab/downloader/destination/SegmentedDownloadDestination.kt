@@ -6,6 +6,11 @@ import okhttp3.internal.closeQuietly
 import okio.FileSystem
 import okio.Path.Companion.toOkioPath
 import java.io.File
+import java.io.IOException
+import java.nio.file.FileAlreadyExistsException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+import java.nio.file.StandardOpenOption
 
 class SegmentedDownloadDestination(
     // a directory unique for this item!
@@ -88,36 +93,67 @@ class SegmentedDownloadDestination(
         super.onAllPartsCompleted(onProgressUpdate)
     }
 
+    /**
+     * Assemble into an independent sibling first. Never truncate an unrelated
+     * destination if the download name became occupied after it was queued.
+     * The original media segments remain intact until publication succeeds.
+     */
     fun assemble(
         sources: List<File>,
         destination: File,
-        onProgress: (Int) -> Unit
+        onProgress: (Int) -> Unit,
     ) {
-        DownloadDestination.prepareDestinationFolder(outputFile)
-        val totalLength = sources.sumOf { it.length() }
-        var totalWritten = 0L
-        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-        var percent = 0
-        destination.outputStream().use { dst ->
-            sources.forEach { sourceFile ->
-                sourceFile.inputStream().use { src ->
-                    onProgress(percent)
-                    while (true) {
-                        val len = src.read(buffer)
-                        if (len == -1) break
-                        dst.write(buffer, 0, len)
-                        totalWritten += len
-
-                        val newPercent = calcPercent(totalWritten, totalLength)
-                        if (newPercent != percent) {
-                            onProgress(newPercent)
-                            percent = newPercent
+        require(sources.isNotEmpty()) { "Cannot publish an empty HLS segment list" }
+        DownloadDestination.prepareDestinationFolder(destination)
+        val expected = sources.sumOf { segment ->
+            if (!segment.isFile) throw IOException("Missing HLS media segment: ${segment.name}")
+            segment.length()
+        }
+        val target = destination.toPath()
+        val staged = Files.createTempFile(target.parent, ".hyperget-assemble-", ".tmp")
+        try {
+            var totalWritten = 0L
+            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+            var progress = 0
+            Files.newOutputStream(staged, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE).use { dst ->
+                sources.forEach { sourceFile ->
+                    sourceFile.inputStream().use { src ->
+                        while (true) {
+                            val read = src.read(buffer)
+                            if (read < 0) break
+                            if (read == 0) continue
+                            dst.write(buffer, 0, read)
+                            totalWritten += read
+                            val newPercent = calcPercent(totalWritten, expected)
+                            if (newPercent != progress && newPercent < 100) {
+                                progress = newPercent
+                                onProgress(newPercent)
+                            }
                         }
                     }
                 }
             }
+            if (totalWritten != expected) {
+                throw IOException("HLS media segments changed during assembly")
+            }
+            // A hard-link makes the final file visible atomically and can never
+            // replace an existing name. It works for normal Windows NTFS volumes.
+            // Use no-replacement copy as compatibility fallback for file systems
+            // that do not support hard links (e.g., FAT/external/network storage).
+            try {
+                Files.createLink(target, staged)
+            } catch (alreadyExists: FileAlreadyExistsException) {
+                throw alreadyExists
+            } catch (unsupported: UnsupportedOperationException) {
+                Files.copy(staged, target)
+            } catch (unsupported: IOException) {
+                if (Files.exists(target)) throw unsupported
+                Files.copy(staged, target)
+            }
+            onProgress(100)
+        } finally {
+            Files.deleteIfExists(staged)
         }
-        onProgress(100)
     }
 
     override fun flush() {
