@@ -711,6 +711,22 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertNotIn('"$metaKey F" to downloadActions.openFolderAction', HOME_COMPONENT)
         self.assertIn("keyEvent.key == Key.F", HOME_WINDOW)
 
+    def test_windows_drag_uses_file_list_before_text_fallback(self):
+        # Windows Explorer can advertise javaFileListFlavor and stringFlavor
+        # simultaneously. A text-first branch silently skips actual .url/.txt
+        # files, even though the multi-file decoder itself is correct.
+        handler = HOME_PAGE.split("private fun onDraggedIn(", 1)[1].split(
+            "override fun onStarted", 1
+        )[0]
+        self.assertLess(
+            handler.index("if (event.awtTransferable.isDataFlavorSupported(DataFlavor.javaFileListFlavor))"),
+            handler.index("if (event.awtTransferable.isDataFlavorSupported(DataFlavor.stringFlavor))"),
+        )
+        self.assertIn("component.onExternalFilesDraggedIn", handler)
+        self.assertIn("component.onExternalTextDraggedIn", handler)
+        self.assertIn("as? List<*>", handler)
+        self.assertIn("component.onDragExit()", handler)
+
     def test_multi_dropped_link_files_are_bounded_and_use_existing_import_parser(self):
         self.assertIn("onExternalTextDraggedIn { readDroppedLinkFiles(paths) }", HOME_COMPONENT)
         self.assertIn("maxFiles: Int = 16", DROPPED_FILE_READER)
