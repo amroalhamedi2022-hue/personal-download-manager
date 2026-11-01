@@ -60,3 +60,12 @@
 
 ## Suggested first message in the new conversation
 Continue HyperGet from the latest actual HEAD of experiment/liquid-reference-match-20261030 / Draft PR #4. Read docs/handoffs/HYPERGET_PR4_HANDOFF_CURRENT.md and docs/checkpoints/HG_IDM_TABS_PART_TRACKS_2026-10-31.md. Check GitHub Actions BEFORE edits, avoid duplicate Codex/automation commits, and work only on remaining priorities. Never touch main or PR #3. Deliver real Windows tests/screenshots and a precise status; do not merely write a plan.
+
+## 2026-11-01 follow-up implementation — Windows restart persistence (UNVERIFIED until exact-SHA CI)
+- This changeset extends `scripts/Run-WindowsLiquidProgressVisualE2E.ps1` only within the safe isolated Windows fixture, without altering the visual implementation, main, or PR #3.
+- The On Completion UI probe now writes both Boolean states and deliberately leaves the inverse of the initial UI state before ending the already-verified HTTP transfer.
+- After full transfer and SHA-256 validation, the installed GUI is forcibly terminated, relaunched from the installed EXE, and the same *completed* download is reopened with the installed CLI.
+- It captures a new actual Windows screenshot `liquid-progress-tab-on-completion-after-restart.png`, verifies the selected tab underline and the per-file override's inverse switch color, then toggles the safe completion-dialog switch back to its original value and checks the restored JSON.
+- The shutdown-on-completion switch is never operated. If the known geometry or pixel probes cannot be confirmed, the probe reports untested or fails instead of claiming a false pass.
+- Report keys: `CompletionPreferenceRestartTested` and `CompletionPreferenceRestartResult`. Source assertions cover the new gate.
+- **CI status at commit creation: not yet run.** Mark as Windows verified only after inspecting the new exact-SHA run and screenshot; do not infer from preexisting green runs.

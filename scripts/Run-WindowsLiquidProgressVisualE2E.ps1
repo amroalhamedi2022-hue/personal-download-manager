@@ -625,6 +625,8 @@ public static class HyperGetLiquidProgressNative {
     $tabCaptureFiles = @()
     $completionPreferenceDiskTested = $false
     $completionPreferenceDiskResult = 'not attempted'
+    $completionPreferenceRestartTested = $false
+    $completionPreferenceRestartResult = 'not attempted'
     if ($captureWidth -ge 980 -and $captureWidth -le 1080 -and
         $captureHeight -ge 680 -and $captureHeight -le 770 -and
         [HyperGetLiquidProgressNative]::GetForegroundWindow() -eq $windowHandle) {
@@ -696,8 +698,11 @@ public static class HyperGetLiquidProgressNative {
                         $allPersisted = $true
                         $clickX = $captureRight - 55
                         $clickY = $captureTop + 150
-                        # The second click restores the original selection.
-                        foreach ($expected in @((-not $initialEnabled), $initialEnabled)) {
+                        # Prove both values can be written, then deliberately
+                        # leave the opposite value on disk for the restart test.
+                        # The new GUI session must load that explicit override,
+                        # not simply inherit the original/global default.
+                        foreach ($expected in @((-not $initialEnabled), $initialEnabled, (-not $initialEnabled))) {
                             if (-not [HyperGetLiquidProgressNative]::SetCursorPos($clickX, $clickY)) {
                                 throw 'Could not position mouse for completion preference test.'
                             }
@@ -723,7 +728,7 @@ public static class HyperGetLiquidProgressNative {
                         }
                         $completionPreferenceDiskTested = $allPersisted
                         $completionPreferenceDiskResult = if ($allPersisted) {
-                            'Windows mouse toggle off/on persisted both values to per-download JSON'
+                            'Windows mouse toggles persisted both values, leaving the opposite choice for a restart probe'
                         } else {
                             'per-download completion preference disk roundtrip not confirmed'
                         }
@@ -828,6 +833,175 @@ public static class HyperGetLiquidProgressNative {
         throw "Final installed CLI status was not Finished after SHA-256 verification (exit=$finalStatusExitCode; output=$($finalStatusOutputPreview -join ' | '))."
     }
 
+
+    # Only run this after the 16 MiB transfer was independently verified.
+    # The setting was deliberately left opposite to the opening UI state,
+    # which distinguishes an actual per-file restore from a global default.
+    # This is an isolated runner: terminate only our own installed GUI,
+    # never invoke the OS shutdown-on-completion control.
+    if ($completionPreferenceDiskTested) {
+        $originalGuiId = $window.Id
+        Stop-Process -Id $originalGuiId -Force -ErrorAction Stop
+        for ($attempt = 0; $attempt -lt 40; $attempt++) {
+            if (-not (Get-Process -Id $originalGuiId -ErrorAction SilentlyContinue)) { break }
+            Start-Sleep -Milliseconds 250
+        }
+        if (Get-Process -Id $originalGuiId -ErrorAction SilentlyContinue) {
+            throw 'Restart preference test could not stop the original isolated GUI.'
+        }
+
+        $restarted = Start-Process -FilePath $guiPath -PassThru
+        $started = $restarted
+        $restartMain = [IntPtr]::Zero
+        $restartOwner = $null
+        for ($attempt = 0; $attempt -lt 60; $attempt++) {
+            Start-Sleep -Milliseconds 300
+            $candidate = @(Get-Process -Name $guiProcessName -ErrorAction SilentlyContinue |
+                Where-Object { $_.MainWindowHandle -ne [IntPtr]::Zero } | Select-Object -First 1)
+            if ($candidate.Count -gt 0) {
+                $restartOwner = $candidate[0]
+                $restartMain = $restartOwner.MainWindowHandle
+                break
+            }
+            if ($restarted.HasExited) {
+                throw 'Restarted HyperGet exited before exposing its main window.'
+            }
+        }
+        if ($restartMain -eq [IntPtr]::Zero) {
+            throw 'Restarted HyperGet did not present its main window.'
+        }
+        $visible = @($restartOwner)
+        $openAgain = @(& $cliPath download open $taskId 2>&1)
+        if ($LASTEXITCODE -ne 0) {
+            throw 'Installed CLI could not reopen the same completed download after GUI restart.'
+        }
+        $restartDetail = [IntPtr]::Zero
+        for ($attempt = 0; $attempt -lt 40; $attempt++) {
+            $restartDetail = [HyperGetLiquidProgressNative]::FindVisibleWindow(
+                [uint32]$restartOwner.Id, $fileName
+            )
+            if ($restartDetail -eq [IntPtr]::Zero) {
+                $restartDetail = [HyperGetLiquidProgressNative]::FindVisibleWindowExcluding(
+                    [uint32]$restartOwner.Id, $restartMain
+                )
+            }
+            if ($restartDetail -ne [IntPtr]::Zero) { break }
+            Start-Sleep -Milliseconds 250
+        }
+        if ($restartDetail -eq [IntPtr]::Zero) {
+            throw 'Completed download details did not reopen after GUI restart.'
+        }
+        [HyperGetLiquidProgressNative]::ShowWindow($restartDetail, 3) | Out-Null
+        [HyperGetLiquidProgressNative]::SetWindowPos(
+            $restartDetail, [IntPtr](-1), 0, 0, 0, 0,
+            [uint32](0x0001 -bor 0x0002 -bor 0x0040)
+        ) | Out-Null
+        [HyperGetLiquidProgressNative]::BringWindowToTop($restartDetail) | Out-Null
+        [HyperGetLiquidProgressNative]::SetForegroundWindow($restartDetail) | Out-Null
+        Start-Sleep -Milliseconds 350
+        if ([HyperGetLiquidProgressNative]::GetForegroundWindow() -ne $restartDetail) {
+            throw 'Restarted download details were not foreground for safe pixel verification.'
+        }
+
+        $restartRect = [HyperGetLiquidProgressNative+RECT]::new()
+        if (-not [HyperGetLiquidProgressNative]::GetWindowRect($restartDetail, [ref]$restartRect)) {
+            throw 'Restarted download window geometry unavailable.'
+        }
+        $dwmRestartRect = [HyperGetLiquidProgressNative+RECT]::new()
+        $dwmRestartResult = [HyperGetLiquidProgressNative]::DwmGetWindowAttribute(
+            $restartDetail, 9, [ref]$dwmRestartRect, 16
+        )
+        if ($dwmRestartResult -eq 0 -and
+            $dwmRestartRect.Right -gt $dwmRestartRect.Left -and
+            $dwmRestartRect.Bottom -gt $dwmRestartRect.Top) {
+            $restartRect = $dwmRestartRect
+        }
+        $restartWidth = $restartRect.Right - $restartRect.Left
+        $restartHeight = $restartRect.Bottom - $restartRect.Top
+        $restartScreen = [System.Windows.Forms.Screen]::FromHandle($restartDetail).Bounds
+        if ($restartWidth -lt 980 -or $restartWidth -gt 1080 -or
+            $restartHeight -lt 680 -or $restartHeight -gt 770 -or
+            $restartRect.Left -lt $restartScreen.Left -or
+            $restartRect.Top -lt $restartScreen.Top -or
+            $restartRect.Right -gt $restartScreen.Right -or
+            $restartRect.Bottom -gt $restartScreen.Bottom) {
+            throw 'Restarted download window differs from the known safe 1024x728 CI layout.'
+        }
+
+        # Click ONLY the On Completion tab; the lower switch is read before
+        # any further interaction. Saving a screenshot alone does not count.
+        $restartTabX = $restartRect.Left + 174
+        $restartTabY = $restartRect.Top + 47
+        if (-not [HyperGetLiquidProgressNative]::SetCursorPos($restartTabX, $restartTabY)) {
+            throw 'Could not select the On Completion tab after restart.'
+        }
+        [HyperGetLiquidProgressNative]::mouse_event([uint32]0x0002, 0, 0, 0, [UIntPtr]::Zero)
+        [HyperGetLiquidProgressNative]::mouse_event([uint32]0x0004, 0, 0, 0, [UIntPtr]::Zero)
+        Start-Sleep -Milliseconds 550
+
+        $restartScreenshot = Join-Path $root 'liquid-progress-tab-on-completion-after-restart.png'
+        $restartBitmap = [System.Drawing.Bitmap]::new($restartWidth, $restartHeight)
+        $restartGraphics = [System.Drawing.Graphics]::FromImage($restartBitmap)
+        try {
+            $restartGraphics.CopyFromScreen(
+                [System.Drawing.Point]::new($restartRect.Left, $restartRect.Top),
+                [System.Drawing.Point]::Empty,
+                [System.Drawing.Size]::new($restartWidth, $restartHeight)
+            )
+            $restartBitmap.Save($restartScreenshot, [System.Drawing.Imaging.ImageFormat]::Png)
+            $selectionPixel = $restartBitmap.GetPixel(175, 61)
+            $switchPixel = $restartBitmap.GetPixel(($restartWidth - 55), 150)
+            $selectionConfirmed = ($selectionPixel.B -gt ($selectionPixel.R + 90))
+            $switchBlue = ($switchPixel.B -gt ($switchPixel.R + 45))
+            $switchGray = (
+                [Math]::Abs([int]$switchPixel.B - [int]$switchPixel.R) -le 16 -and
+                [int]$switchPixel.R -ge 60 -and [int]$switchPixel.R -le 225
+            )
+            if (-not $selectionConfirmed -or -not ($switchBlue -or $switchGray) -or
+                $switchBlue -ne (-not $initialEnabled)) {
+                throw 'Completion switch did not reload the explicit per-file override after GUI restart.'
+            }
+        } finally {
+            $restartGraphics.Dispose()
+            $restartBitmap.Dispose()
+        }
+        $tabCaptureFiles += [IO.Path]::GetFileName($restartScreenshot)
+
+        # Restore the original user-facing choice, without touching the
+        # separate shutdown switch, and require a real JSON disk write.
+        if ([HyperGetLiquidProgressNative]::GetForegroundWindow() -ne $restartDetail -or
+            -not [HyperGetLiquidProgressNative]::SetCursorPos(
+                ($restartRect.Right - 55), ($restartRect.Top + 150)
+            )) {
+            throw 'Restarted On Completion window not safe for preference restoration.'
+        }
+        [HyperGetLiquidProgressNative]::mouse_event([uint32]0x0002, 0, 0, 0, [UIntPtr]::Zero)
+        [HyperGetLiquidProgressNative]::mouse_event([uint32]0x0004, 0, 0, 0, [UIntPtr]::Zero)
+        $restoredOnDisk = $false
+        for ($attempt = 0; $attempt -lt 30; $attempt++) {
+            Start-Sleep -Milliseconds 200
+            try {
+                $restored = Get-Content -LiteralPath $settingFile -Raw | ConvertFrom-Json
+                if (($restored.PSObject.Properties.Name -contains 'showCompletionDialogOverride') -and
+                    ([bool]$restored.showCompletionDialogOverride -eq [bool]$initialEnabled)) {
+                    $restoredOnDisk = $true
+                    break
+                }
+            } catch {
+                # Transactional JSON rename may be in flight.
+            }
+        }
+        if (-not $restoredOnDisk) {
+            throw 'Could not restore the completion preference on disk after restart.'
+        }
+        $completionPreferenceRestartTested = $true
+        $completionPreferenceRestartResult =
+            'Installed Windows GUI was terminated/restarted; completed task reopened, opposite switch restored from per-file JSON, original choice restored on disk'
+        Write-Host 'PASS: completion-dialog override survives a real installed GUI restart.'
+    } else {
+        $completionPreferenceRestartResult = 'not tested: safe disk toggle prerequisite unavailable'
+    }
+
     [pscustomobject]@{
         SourceSHA = $SourceSha
         TaskId = $taskId
@@ -851,6 +1025,8 @@ public static class HyperGetLiquidProgressNative {
         TabScreenshotFiles = @($tabCaptureFiles)
         CompletionPreferenceDiskTested = $completionPreferenceDiskTested
         CompletionPreferenceDiskResult = $completionPreferenceDiskResult
+        CompletionPreferenceRestartTested = $completionPreferenceRestartTested
+        CompletionPreferenceRestartResult = $completionPreferenceRestartResult
         FinalStatus = $finalStatus
         Verified = $true
     } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $root 'liquid-progress-report.json') -Encoding utf8

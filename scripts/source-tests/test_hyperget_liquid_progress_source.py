@@ -424,8 +424,15 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("[int]$toggleSample.R -le 225", SCRIPT)
         self.assertIn("extra_download_settings", SCRIPT)
         self.assertIn("showCompletionDialogOverride", SCRIPT)
-        self.assertIn("foreach ($expected in @((-not $initialEnabled), $initialEnabled))", SCRIPT)
+        self.assertIn("foreach ($expected in @((-not $initialEnabled), $initialEnabled, (-not $initialEnabled)))", SCRIPT)
         self.assertIn("CompletionPreferenceDiskTested = $completionPreferenceDiskTested", SCRIPT)
+        self.assertIn("CompletionPreferenceRestartTested = $completionPreferenceRestartTested", SCRIPT)
+        self.assertIn("liquid-progress-tab-on-completion-after-restart.png", SCRIPT)
+        self.assertIn("Stop-Process -Id $originalGuiId -Force", SCRIPT)
+        self.assertIn("Start-Process -FilePath $guiPath -PassThru", SCRIPT)
+        self.assertIn("download open $taskId", SCRIPT)
+        self.assertIn("$switchBlue -ne (-not $initialEnabled)", SCRIPT)
+        self.assertIn("Could not restore the completion preference on disk after restart", SCRIPT)
         self.assertIn("Never click the shutdown-on-completion control", SCRIPT)
 
     def test_installed_windows_captures_other_idm_tabs_without_claiming_false_parity(self):
