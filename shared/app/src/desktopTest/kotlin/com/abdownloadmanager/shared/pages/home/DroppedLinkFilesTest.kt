@@ -46,6 +46,20 @@ class DroppedLinkFilesTest {
         )
     }
 
+    @Test fun rejectedLargeFileConsumesReadBudgetBeforeNextCandidate() = withTempDir { dir ->
+        val corrupted = dir.resolve("invalid.txt").apply {
+            writeBytes(ByteArray(60) { 0xFF.toByte() })
+        }
+        val valid = dir.resolve("valid.txt").apply { writeText("https://valid.example/a") }
+        // 60 bytes were attempted and rejected. The remaining four bytes
+        // cannot be used to read a second, longer file.
+        assertEquals("", readDroppedLinkFiles(listOf(corrupted, valid), maxTotalBytes = 64))
+        assertEquals(
+            "https://valid.example/a",
+            readDroppedLinkFiles(listOf(corrupted, valid), maxTotalBytes = 128)
+        )
+    }
+
     @Test fun acceptsUtf16LittleAndBigEndianBomAndUtf8Bom() = withTempDir { dir ->
         val le = dir.resolve("old-notepad-LE.txt").apply {
             writeBytes(byteArrayOf(0xFF.toByte(), 0xFE.toByte()) +

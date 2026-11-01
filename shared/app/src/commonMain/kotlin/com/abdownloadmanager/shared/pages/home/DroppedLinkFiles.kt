@@ -41,13 +41,18 @@ fun readDroppedLinkFiles(
                 if (!file.isFile || !file.canRead()) return@runCatching null
                 val size = file.length()
                 if (size <= 0L || size > remaining) return@runCatching null
-                // Files may change after metadata inspection. Use a bounded
-                // stream to prevent racing a growing/untrusted file.
+                // Count every attempted file against the 1 MiB budget, even
+                // if its contents turn out to be binary or malformed. Charging
+                // only accepted files allowed 16 invalid 1 MiB files to force
+                // up to 16 MiB of synchronous I/O on the Compose UI thread.
+                remaining -= size
+                // Read one extra byte (bounded) to reject a file that grew
+                // between metadata inspection and the actual read.
                 val raw = file.inputStream().use { input ->
-                    val maxRead = remaining.coerceAtMost(Int.MAX_VALUE.toLong() - 1L).toInt()
+                    val maxRead = size.coerceAtMost(Int.MAX_VALUE.toLong() - 1L).toInt()
                     input.readNBytes(maxRead + 1)
                 }
-                if (raw.size.toLong() > remaining || raw.isEmpty()) return@runCatching null
+                if (raw.size.toLong() != size) return@runCatching null
                 // Old Windows Notepad .txt/.url lists are sometimes UTF-16.
                 // Accept UTF-16 ONLY with an explicit BOM, not arbitrary binary
                 // data containing zero bytes. UTF-8 BOM is also supported.
@@ -73,11 +78,10 @@ fun readDroppedLinkFiles(
                 if ('\u0000' in text) return@runCatching null
                 text to raw.size.toLong()
             }.getOrNull() ?: continue
-            val (text, bytesRead) = decoded
+            val (text, _) = decoded
             if (text.isBlank()) continue
-            // Charge the RAW byte count to the budget, not the UTF-8
-            // re-encoded length (which can differ for UTF-16/BOM files).
-            remaining -= bytesRead
+            // Input byte budget was charged before decoding, including for
+            // malformed/rejected files and BOM headers.
             if (isNotEmpty()) append('\n')
             append(text)
         }

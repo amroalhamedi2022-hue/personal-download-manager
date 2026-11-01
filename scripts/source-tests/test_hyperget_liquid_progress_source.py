@@ -777,7 +777,8 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("if (inspectedCount >= maxFiles", DROPPED_FILE_READER)
         self.assertIn("Charsets.UTF_16LE", DROPPED_FILE_READER)
         self.assertIn("Charsets.UTF_16BE", DROPPED_FILE_READER)
-        self.assertIn("remaining -= bytesRead", DROPPED_FILE_READER)
+        self.assertIn("remaining -= size", DROPPED_FILE_READER)
+        self.assertIn("if (raw.size.toLong() != size)", DROPPED_FILE_READER)
         self.assertIn(".distinctBy { it.link }", HOME_COMPONENT)
 
     def test_verified_windows_installer_uploaded_only_after_full_acceptance(self):
