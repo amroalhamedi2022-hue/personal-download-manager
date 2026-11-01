@@ -84,6 +84,7 @@ public static class HyperGetNativeDropTest {
  [DllImport("user32.dll")] public static extern void mouse_event(uint f,uint x,uint y,uint d,UIntPtr e);
  [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h,int cmd);
  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
+ [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr h,System.Text.StringBuilder value,int max);
  public static int Count(uint processId) {
    int count=0;
    EnumWindows(delegate(IntPtr h, IntPtr p) {
@@ -100,8 +101,12 @@ public static class HyperGetNativeDropTest {
      uint owner;
      GetWindowThreadProcessId(h,out owner);
      if(owner==processId && IsWindowVisible(h)){
-       found=h;
-       return false;
+       var title=new System.Text.StringBuilder(256);
+       GetWindowText(h,title,title.Capacity);
+       if(title.ToString()=="HyperGetFileDragFixture"){
+         found=h;
+         return false;
+       }
      }
      return true;
    },IntPtr.Zero);
@@ -150,6 +155,8 @@ try {
  $sr=[HyperGetNativeDropTest+RECT]::new()
  if(-not [HyperGetNativeDropTest]::GetWindowRect($sourceH,[ref]$sr)){throw 'Native file source bounds missing.'}
  $sx=$sr.Left+70; $sy=$sr.Top+70
+ [IO.File]::WriteAllText((Join-Path $root 'source-geometry.txt'),
+     "window=$sourceH; bounds=$($sr.Left),$($sr.Top),$($sr.Right),$($sr.Bottom); press=$sx,$sy")
  [HyperGetNativeDropTest]::SetForegroundWindow($sourceH)|Out-Null
  Start-Sleep -Milliseconds 350
  [HyperGetNativeDropTest]::SetCursorPos($sx,$sy)|Out-Null
