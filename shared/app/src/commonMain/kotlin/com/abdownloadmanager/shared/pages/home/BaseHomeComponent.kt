@@ -274,9 +274,7 @@ abstract class BaseHomeComponent(
 
     init {
         downloadList.onEach { downloads ->
-            _selectionList.value = selectionList.value.filter { previouslySelectedItem ->
-                downloads.any { it.id == previouslySelectedItem }
-            }
+            _selectionList.value = retainVisibleSelections(selectionList.value, downloads)
         }.launchIn(scope)
 
         downloadSystem.downloadManager.listOfJobsEvents
@@ -459,4 +457,19 @@ internal fun matchesDownloadSearch(item: IDownloadItemState, term: String): Bool
     return query.isEmpty() ||
         item.name.contains(query, ignoreCase = true) ||
         item.downloadLink.contains(query, ignoreCase = true)
+}
+
+/**
+ * Preserve selection order and instances while dropping entries no longer
+ * shown by search/category/queue filters. Avoid O(selected * visible) scans
+ * for 1k/10k-row lists during frequent download progress updates.
+ */
+internal fun retainVisibleSelections(
+    selected: List<IDownloadItemState>,
+    visible: List<IDownloadItemState>,
+): List<IDownloadItemState> {
+    if (selected.isEmpty() || visible.isEmpty()) return emptyList()
+    val visibleIds = HashSet<Long>(visible.size)
+    visible.forEach { visibleIds.add(it.id) }
+    return selected.filter { it.id in visibleIds }
 }
