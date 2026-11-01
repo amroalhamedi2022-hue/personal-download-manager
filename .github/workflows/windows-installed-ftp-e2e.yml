@@ -2,7 +2,7 @@ name: Windows installed FTP functionality acceptance
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, feature/ftp-functional-acceptance]
     paths:
       - ".github/workflows/windows-installed-ftp-e2e.yml"
       - "scripts/LocalFtpFixture.py"
