@@ -30,6 +30,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.unit.Dp
@@ -985,7 +986,11 @@ sealed class PartInfoCells : TableCell<IndexedValue<UiPart>> {
 
 
 @Composable
-private fun RenderPropertyItem(propertyItem: SingleDownloadPagePropertyItem, highlightStatus: Boolean = false) {
+private fun RenderPropertyItem(
+    propertyItem: SingleDownloadPagePropertyItem,
+    highlightStatus: Boolean = false,
+    preserveUrlDirection: Boolean = false,
+) {
     val title = propertyItem.name
     val value = propertyItem.value
     Row(
@@ -1006,13 +1011,18 @@ private fun RenderPropertyItem(propertyItem: SingleDownloadPagePropertyItem, hig
         WithContentAlpha(1f) {
             Text(
                 text = value.rememberString(),
-                modifier = Modifier
-                    .basicMarquee(
-                        iterations = Int.MAX_VALUE
-                    )
-                    .weight(0.7f),
+                modifier = if (preserveUrlDirection) {
+                    // Long URLs must not marquee indefinitely or reverse the
+                    // protocol/path punctuation inside an Arabic RTL locale.
+                    Modifier.weight(0.7f)
+                } else {
+                    Modifier.basicMarquee(iterations = Int.MAX_VALUE).weight(0.7f)
+                },
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+                style = if (preserveUrlDirection) {
+                    LocalTextStyle.current.copy(textDirection = TextDirection.Ltr)
+                } else LocalTextStyle.current,
                 fontSize = myTextSizes.base,
                 fontWeight = FontWeight.Medium,
                 lineHeight = 18.sp,
@@ -1063,7 +1073,8 @@ private fun RenderInfo(
                     RenderPropertyItem(
                         SingleDownloadPagePropertyItem(
                             "URL".asStringSource(), itemState.downloadLink.asStringSource()
-                        )
+                        ),
+                        preserveUrlDirection = true,
                     )
                 }
             }

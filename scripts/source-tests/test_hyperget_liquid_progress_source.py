@@ -35,6 +35,14 @@ FONT_MANAGER = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/deskto
 
 
 class LiquidProgressSourceContract(unittest.TestCase):
+    def test_long_url_remains_stable_ltr_inside_an_arabic_download_dialog(self):
+        self.assertIn("preserveUrlDirection = true", PAGE)
+        self.assertIn("TextDirection.Ltr", PAGE)
+        self.assertIn("if (preserveUrlDirection)", PAGE)
+        self.assertIn("Modifier.weight(0.7f)", PAGE)
+        # Remaining transfer/status properties retain the existing marquee.
+        self.assertIn("Modifier.basicMarquee(iterations = Int.MAX_VALUE).weight(0.7f)", PAGE)
+
     def test_dialog_typography_hierarchy_uses_selected_font_and_scoped_scale(self):
         self.assertIn("LocalTextSizes provides downloadTextSizes", PAGE)
         self.assertIn("sm = 12.sp, base = 14.sp, lg = 16.sp, xl = 18.sp", PAGE)
