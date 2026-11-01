@@ -1,0 +1,775 @@
+package ir.amirab.downloader.ftp
+
+import ir.amirab.downloader.NewDownloadItemProps
+import ir.amirab.downloader.downloaditem.EmptyContext
+import ir.amirab.downloader.utils.OnDuplicateStrategy
+import ir.amirab.downloader.DownloadManager
+import ir.amirab.downloader.DownloaderRegistry
+import ir.amirab.downloader.DownloadSettings
+import ir.amirab.downloader.db.DownloadListFileStorage
+import ir.amirab.downloader.db.TransactionalFileSaver
+import ir.amirab.downloader.downloaditem.IDownloadItem
+import ir.amirab.downloader.db.MemoryDownloadListDB
+import ir.amirab.downloader.db.MemoryDownloadPartStatesDB
+import ir.amirab.downloader.downloaditem.DownloadStatus
+import ir.amirab.downloader.downloaditem.DownloadJobStatus
+import ir.amirab.downloader.utils.EmptyFileCreator
+import ir.amirab.downloader.utils.IDiskStat
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.modules.SerializersModule
+import kotlinx.serialization.modules.polymorphic
+import org.apache.ftpserver.FtpServerFactory
+import org.apache.ftpserver.listener.ListenerFactory
+import org.apache.ftpserver.usermanager.impl.BaseUser
+import org.apache.ftpserver.usermanager.PropertiesUserManagerFactory
+import java.io.IOException
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
+import java.net.ServerSocket
+import java.nio.file.Files
+import java.nio.file.Path
+import java.security.MessageDigest
+import kotlin.test.Test
+import kotlin.test.assertContentEquals
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
+
+/** Integration tests, using a genuine local Apache FTP server (not a mocked protocol). */
+class FtpTransferClientTest {
+    @Test
+    fun ftpConnectionCheckReportsRemoteSizeWithoutCreatingDownloadedFiles() = withFixture { fixture ->
+        val original = fixture.bytes.size.toLong()
+        val result = FtpTransferClient().inspectRemote(
+            fixture.url("fixture.bin"),
+            username = "test",
+            password = "secret",
+        )
+        assertEquals(original, result.size)
+        assertTrue(Files.list(fixture.downloadFolder).use { !it.findAny().isPresent })
+    }
+
+    @Test
+    fun ftpConnectionCheckRejectsInvalidLoginAndMissingRemoteFile() = withFixture { fixture ->
+        val client = FtpTransferClient()
+        val denied = assertFailsWith<IOException> {
+            client.inspectRemote(fixture.url("fixture.bin"), username = "test", password = "wrong-password")
+        }
+        assertTrue(denied.message.orEmpty().contains("login rejected"))
+        val missing = assertFailsWith<IOException> {
+            client.inspectRemote(fixture.url("missing.bin"), username = "test", password = "secret")
+        }
+        assertTrue(missing.message.orEmpty().contains("not found"))
+    }
+
+
+    @Test
+    fun realFtpFileWithLiteralSpacesAndBracketsCanBeInspectedAndDownloaded() = withFixture { fixture ->
+        val unusualName = "photo archive [final] (2).bin"
+        Files.write(fixture.root.resolve(unusualName), fixture.bytes)
+        val rawUrl = fixture.url(unusualName)
+        val escapedUrl = fixture.url("photo%20archive%20%5Bfinal%5D%20(2).bin")
+        val client = FtpTransferClient()
+        assertEquals(fixture.bytes.size.toLong(), client.inspectRemote(rawUrl, "test", "secret").size)
+        val output = fixture.downloadFolder.resolve("real-special-name.bin")
+        val result = client.download(escapedUrl, output, username = "test", password = "secret")
+        assertEquals(fixture.bytes.size.toLong(), result.transferredBytes)
+        assertContentEquals(fixture.bytes, Files.readAllBytes(output))
+        assertFalse(Files.exists(output.resolveSibling(output.fileName.toString() + ".ftp-part")))
+    }
+
+    @Test
+    fun ftpJobHostAdmissionAlsoHandlesSpacesInSavedSourceLink() = withFixture { fixture ->
+        runBlocking {
+            val sourceName = "shared folder [2].bin"
+            Files.write(fixture.root.resolve(sourceName), fixture.bytes)
+            val item = FtpDownloadItem(
+                id = 728L,
+                folder = fixture.downloadFolder.toString(),
+                name = "saved-name.bin",
+                link = fixture.url(sourceName),
+                username = "test",
+            )
+            val database = MemoryDownloadListDB()
+            database.add(item)
+            val manager = DownloadManager(
+                dlListDb = database,
+                partListDb = MemoryDownloadPartStatesDB(),
+                settings = DownloadSettings(),
+                emptyFileCreator = EmptyFileCreator(
+                    diskStat = object : IDiskStat {
+                        override fun getRemainingSpace(path: java.io.File) = Long.MAX_VALUE
+                    },
+                    useSparseFile = { false },
+                ),
+                downloaderRegistry = DownloaderRegistry().apply {
+                    add(FtpDownloader(FtpCredentialsProvider { FtpSessionCredentials("test", "secret") }))
+                },
+                downloadDataFolder = fixture.downloadFolder.toFile(),
+            )
+            try {
+                manager.boot()
+                manager.resume(item.id)
+                withTimeout(25_000) {
+                    while (database.getById(item.id)?.status != DownloadStatus.Completed) delay(20)
+                }
+                assertContentEquals(fixture.bytes, Files.readAllBytes(fixture.downloadFolder.resolve("saved-name.bin")))
+            } finally {
+                manager.downloadJobs.forEach { it.close() }
+                manager.scope.cancel()
+            }
+        }
+    }
+
+    @Test
+    fun binaryFtpTransfersAllBytesAndCommitsOnlyCompletedFile() = withFixture { fixture ->
+        val destination = fixture.downloadFolder.resolve("binary.bin")
+        val client = FtpTransferClient()
+        val seen = mutableListOf<Long>()
+        val result = client.download(
+            fixture.url("fixture.bin"), destination,
+            username = "test", password = "secret",
+            onProgress = { done, _ -> seen.add(done) },
+        )
+        assertEquals(fixture.bytes.size.toLong(), result.transferredBytes)
+        assertEquals(0L, result.resumedFrom)
+        assertContentEquals(fixture.bytes, Files.readAllBytes(destination))
+        assertEquals(sha256(fixture.bytes), sha256(Files.readAllBytes(destination)))
+        assertTrue(seen.isNotEmpty())
+        assertFalse(Files.exists(fixture.downloadFolder.resolve("binary.bin.ftp-part")))
+        assertFalse(Files.exists(fixture.downloadFolder.resolve("binary.bin.ftp-part.properties")))
+    }
+
+    @Test
+    fun abortMidstreamLeavesPartialThenRestartsAtVerifiedRestOffset() = withFixture { fixture ->
+        val destination = fixture.downloadFolder.resolve("resumed.bin")
+        val first = FtpTransferClient()
+        assertFailsWith<IOException> {
+            first.download(fixture.url("fixture.bin"), destination, "test", "secret") { done, _ ->
+                if (done >= 16 * 1024) throw IOException("Intentional test interruption")
+            }
+        }
+        val part = fixture.downloadFolder.resolve("resumed.bin.ftp-part")
+        val metadata = fixture.downloadFolder.resolve("resumed.bin.ftp-part.properties")
+        assertTrue(Files.exists(part))
+        assertTrue(Files.exists(metadata))
+        val preserved = Files.size(part)
+        assertTrue(preserved > 0)
+        assertTrue(preserved < fixture.bytes.size.toLong())
+        assertFalse(Files.exists(destination))
+
+        val result = FtpTransferClient().download(fixture.url("fixture.bin"), destination, "test", "secret")
+        assertEquals(preserved, result.resumedFrom)
+        assertEquals(fixture.bytes.size - preserved, result.transferredBytes)
+        assertContentEquals(fixture.bytes, Files.readAllBytes(destination))
+        assertFalse(Files.exists(part))
+        assertFalse(Files.exists(metadata))
+    }
+
+    @Test
+    fun cancellingActiveFtpDataStreamKeepsPartialAndAllowsVerifiedRestResume() = withFixture { fixture ->
+        val destination = fixture.downloadFolder.resolve("cancelled-stream.bin")
+        val partial = fixture.downloadFolder.resolve("cancelled-stream.bin.ftp-part")
+        val client = FtpTransferClient()
+        val firstChunk = CountDownLatch(1)
+        val releaseChunk = CountDownLatch(1)
+        val signalled = AtomicBoolean(false)
+        val failure = AtomicReference<Throwable?>(null)
+        val worker = Thread {
+            try {
+                client.download(
+                    fixture.url("fixture.bin"), destination,
+                    username = "test", password = "secret",
+                    onProgress = { bytes, _ ->
+                        if (bytes >= 64 * 1024 && signalled.compareAndSet(false, true)) {
+                            firstChunk.countDown()
+                            if (!releaseChunk.await(10, TimeUnit.SECONDS)) {
+                                throw IOException("FTP cancellation test latch timed out")
+                            }
+                        }
+                    },
+                )
+            } catch (error: Throwable) {
+                failure.set(error)
+            }
+        }
+        try {
+            worker.start()
+            assertTrue(firstChunk.await(10, TimeUnit.SECONDS), "FTP did not reach a live data transfer")
+            // Pause is invoked from a different thread while RETR is in flight.
+            // Closing only the FTP control socket must not allow RETR to
+            // consume the remaining bytes and leave a full-size partial file.
+            client.cancel()
+        } finally {
+            releaseChunk.countDown()
+            worker.join(5_000)
+        }
+        assertFalse(worker.isAlive, "FTP data worker did not stop promptly after cancel")
+        assertTrue(failure.get() is IOException, "Cancelled transfer must fail instead of committing")
+        assertFalse(Files.exists(destination), "Cancelled FTP transfer must not commit the final file")
+        assertTrue(Files.isRegularFile(partial), "Cancelled transfer must preserve resumable partial data")
+        val pausedBytes = Files.size(partial)
+        assertTrue(pausedBytes > 0L && pausedBytes < fixture.bytes.size.toLong(), "Pause must preserve a genuinely partial file")
+
+        val resumed = FtpTransferClient().download(
+            fixture.url("fixture.bin"), destination,
+            username = "test", password = "secret",
+        )
+        assertEquals(pausedBytes, resumed.resumedFrom)
+        assertContentEquals(fixture.bytes, Files.readAllBytes(destination))
+        assertFalse(Files.exists(partial))
+    }
+
+    @Test
+    fun cancellationAtFinalPayloadBoundaryDoesNotPublishAndCanResumeFromFullStage() = withFixture { fixture ->
+        val destination = fixture.downloadFolder.resolve("cancel-final-payload.bin")
+        val part = fixture.downloadFolder.resolve("cancel-final-payload.bin.ftp-part")
+        val metadata = fixture.downloadFolder.resolve("cancel-final-payload.bin.ftp-part.properties")
+        val client = FtpTransferClient()
+
+        // Cancel from the last payload progress callback, after the staged bytes
+        // reach the remote size but before FTP completion and final publication.
+        assertFailsWith<IOException> {
+            client.download(
+                fixture.url("fixture.bin"),
+                destination,
+                username = "test",
+                password = "secret",
+                onProgress = { downloaded, total ->
+                    if (total != null && downloaded >= total) client.cancel()
+                },
+            )
+        }
+
+        assertFalse(Files.exists(destination), "Cancellation before FTP completion must not publish a final file")
+        assertTrue(Files.isRegularFile(part), "The last payload chunk must remain resumable")
+        assertEquals(fixture.bytes.size.toLong(), Files.size(part))
+        assertTrue(Files.isRegularFile(metadata))
+
+        // A later explicit resume may validate the complete staged payload,
+        // receive a successful FTP completion response, and then publish it.
+        val resumed = FtpTransferClient().download(
+            fixture.url("fixture.bin"),
+            destination,
+            username = "test",
+            password = "secret",
+        )
+        assertEquals(fixture.bytes.size.toLong(), resumed.resumedFrom)
+        assertEquals(0L, resumed.transferredBytes)
+        assertContentEquals(fixture.bytes, Files.readAllBytes(destination))
+        assertFalse(Files.exists(part))
+        assertFalse(Files.exists(metadata))
+    }
+
+    @Test
+    fun remoteFileChangingBetweenInterruptAndResumeCannotCorruptLocalOutput() = withFixture { fixture ->
+        val destination = fixture.downloadFolder.resolve("changed.bin")
+        assertFailsWith<IOException> {
+            FtpTransferClient().download(fixture.url("fixture.bin"), destination, "test", "secret") { done, _ ->
+                if (done >= 16 * 1024) throw IOException("Intentional interruption")
+            }
+        }
+        val part = fixture.downloadFolder.resolve("changed.bin.ftp-part")
+        val preserved = Files.readAllBytes(part)
+        val altered = fixture.bytes + byteArrayOf(11, 12, 13)
+        Files.write(fixture.root.resolve("fixture.bin"), altered)
+        val error = assertFailsWith<IOException> {
+            FtpTransferClient().download(fixture.url("fixture.bin"), destination, "test", "secret")
+        }
+        assertTrue(error.message.orEmpty().contains("identity"))
+        assertContentEquals(preserved, Files.readAllBytes(part))
+        assertFalse(Files.exists(destination))
+    }
+
+    @Test
+    fun invalidCredentialsOrUnsupportedSchemeNeverCreateOutput() = withFixture { fixture ->
+        val destination = fixture.downloadFolder.resolve("unauthorized.bin")
+        assertFailsWith<IOException> {
+            FtpTransferClient().download(fixture.url("fixture.bin"), destination, "test", "wrong-password")
+        }
+        assertFalse(Files.exists(destination))
+        assertFailsWith<IllegalArgumentException> {
+            FtpTransferClient().download("https://127.0.0.1/no.bin", destination, "test", "secret")
+        }
+        assertFailsWith<IllegalArgumentException> {
+            FtpTransferClient().download("ftp://test:secret@127.0.0.1/no.bin", destination)
+        }
+        assertFalse(Files.exists(destination))
+    }
+
+    @Test
+    fun missingRemoteFileDoesNotLeaveMisleadingResumeMetadata() = withFixture { fixture ->
+        val destination = fixture.downloadFolder.resolve("does-not-exist.bin")
+        val exception = assertFailsWith<IOException> {
+            FtpTransferClient().download(
+                fixture.url("missing-remote.bin"), destination,
+                username = "test", password = "secret"
+            )
+        }
+        assertTrue(exception.message.orEmpty().contains("FTP RETR rejected"))
+        assertFalse(Files.exists(destination))
+        assertFalse(Files.exists(fixture.downloadFolder.resolve("does-not-exist.bin.ftp-part")))
+        assertFalse(Files.exists(fixture.downloadFolder.resolve("does-not-exist.bin.ftp-part.properties")))
+    }
+
+    @Test
+    fun destinationCreatedWhileRetrIsRunningCannotBeOverwrittenAtCommit() = withFixture { fixture ->
+        val destination = fixture.downloadFolder.resolve("late-created.bin")
+        val sentinel = byteArrayOf(88, 77, 66, 55)
+        var createdDuringTransfer = false
+        val failure = assertFailsWith<IOException> {
+            FtpTransferClient().download(
+                fixture.url("fixture.bin"), destination,
+                username = "test", password = "secret",
+                onProgress = { downloaded, _ ->
+                    if (!createdDuringTransfer && downloaded > 0L) {
+                        Files.write(destination, sentinel)
+                        createdDuringTransfer = true
+                    }
+                },
+            )
+        }
+        assertTrue(createdDuringTransfer, "Test must create the conflicting file after RETR begins")
+        assertTrue(
+            failure is java.nio.file.FileAlreadyExistsException,
+            "A late-created output must be rejected rather than silently replaced",
+        )
+        assertContentEquals(sentinel, Files.readAllBytes(destination))
+        // Keep the fully received staged data so the user can resolve the name
+        // conflict without losing the completed transfer bytes.
+        assertContentEquals(
+            fixture.bytes,
+            Files.readAllBytes(fixture.downloadFolder.resolve("late-created.bin.ftp-part")),
+        )
+    }
+
+    @Test
+    fun nonFileFtpStagingPathCannotBeUsedAsOutput() = withFixture { fixture ->
+        val destination = fixture.downloadFolder.resolve("protected-stage.bin")
+        val staged = fixture.downloadFolder.resolve("protected-stage.bin.ftp-part")
+        Files.createDirectory(staged)
+        assertFailsWith<IOException> {
+            FtpTransferClient().download(fixture.url("fixture.bin"), destination, "test", "secret")
+        }
+        assertTrue(Files.isDirectory(staged), "A non-file staging path must be preserved")
+        assertFalse(Files.exists(destination), "Invalid staging must not publish output")
+    }
+
+    @Test
+    fun existingDestinationRemainsByteForByteUntouched() = withFixture { fixture ->
+        val destination = fixture.downloadFolder.resolve("protected.bin")
+        val original = byteArrayOf(1, 2, 3, 4, 5, 6)
+        Files.write(destination, original)
+        assertFailsWith<IOException> {
+            FtpTransferClient().download(fixture.url("fixture.bin"), destination, "test", "secret")
+        }
+        assertContentEquals(original, Files.readAllBytes(destination))
+        assertFalse(Files.exists(fixture.downloadFolder.resolve("protected.bin.ftp-part")))
+    }
+
+    @Test
+    fun partialResumeSidecarNeverStoresLoginPassword() = withFixture { fixture ->
+        val destination = fixture.downloadFolder.resolve("metadata.bin")
+        assertFailsWith<IOException> {
+            FtpTransferClient().download(fixture.url("fixture.bin"), destination, "test", "secret") { done, _ ->
+                if (done >= 16 * 1024) throw IOException("Intentional interruption for sidecar audit")
+            }
+        }
+        val metadata = fixture.downloadFolder.resolve("metadata.bin.ftp-part.properties")
+        assertTrue(Files.isRegularFile(metadata))
+        val contents = Files.readString(metadata)
+        assertFalse(contents.contains("secret"), "FTP password must not be persisted in resume sidecars")
+        assertFalse(contents.contains("password", ignoreCase = true), "FTP sidecar must contain only source identity")
+    }
+
+    @Test
+    fun boundedFtpDownloadUsesSharedSpeedLimiterWithoutByteLoss() = withFixture { fixture ->
+        val destination = fixture.downloadFolder.resolve("speed-limited.bin")
+        val result = FtpTransferClient().download(
+            url = fixture.url("fixture.bin"),
+            output = destination,
+            username = "test",
+            password = "secret",
+            speedLimitBytesPerSecond = 50L * 1024 * 1024,
+        )
+        assertEquals(fixture.bytes.size.toLong(), result.transferredBytes)
+        assertContentEquals(fixture.bytes, Files.readAllBytes(destination))
+        assertFailsWith<IllegalArgumentException> {
+            FtpTransferClient().download(
+                url = fixture.url("fixture.bin"),
+                output = fixture.downloadFolder.resolve("invalid-speed.bin"),
+                speedLimitBytesPerSecond = -1L,
+            )
+        }
+        Unit // JUnit 4 requires an actual void @Test method, not a Throwable result.
+    }
+
+    @Test
+    fun realFtpJobUsesManagerLifecycleAndTransientCredentials() = withFixture { fixture ->
+        runBlocking {
+            val item = FtpDownloadItem(
+                id = 71L,
+                folder = fixture.downloadFolder.toString(),
+                name = "manager-downloaded.bin",
+                link = fixture.url("fixture.bin"),
+                username = "test",
+                dateAdded = 71L,
+            )
+            val listDb = MemoryDownloadListDB()
+            listDb.add(item)
+            val provider = FtpCredentialsProvider { FtpSessionCredentials("test", "secret") }
+            val registry = DownloaderRegistry().apply { add(FtpDownloader(provider)) }
+            val manager = DownloadManager(
+                dlListDb = listDb,
+                partListDb = MemoryDownloadPartStatesDB(),
+                settings = DownloadSettings(),
+                emptyFileCreator = EmptyFileCreator(
+                    diskStat = object : IDiskStat {
+                        override fun getRemainingSpace(path: java.io.File) = Long.MAX_VALUE
+                    },
+                    useSparseFile = { false },
+                ),
+                downloaderRegistry = registry,
+                downloadDataFolder = fixture.downloadFolder.toFile(),
+            )
+            try {
+                manager.boot()
+                assertEquals(1, manager.downloadJobs.size)
+                manager.resume(item.id)
+                withTimeout(25_000) {
+                    while (item.status != DownloadStatus.Completed) delay(20)
+                }
+                assertContentEquals(
+                    fixture.bytes,
+                    Files.readAllBytes(fixture.downloadFolder.resolve("manager-downloaded.bin")),
+                )
+                assertEquals(fixture.bytes.size.toLong(), item.contentLength)
+                assertEquals(DownloadStatus.Completed, listDb.getById(item.id)?.status)
+                assertFalse(FtpSessionCredentials("test", "secret").toString().contains("secret"))
+                assertFalse(
+                    item.toString().contains("secret"),
+                    "FTP persisted item should never contain a password",
+                )
+            } finally {
+                manager.downloadJobs.forEach { it.close() }
+                manager.scope.cancel()
+            }
+        }
+    }
+
+
+    @Test
+    fun restoredWindowsCredentialDownloadsThroughRealFtpManager() = withFixture { fixture ->
+        if (!System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) return@withFixture
+        val originalVault = WindowsFtpCredentialVault()
+        val reference = originalVault.save("test", "secret")
+        try {
+            runBlocking {
+                val initial = FtpDownloadItem(
+                    id = 73L,
+                    folder = fixture.downloadFolder.toString(),
+                    name = "credential-restored.bin",
+                    link = fixture.url("fixture.bin"),
+                    username = "test",
+                    credentialRef = reference,
+                    status = DownloadStatus.Paused,
+                    dateAdded = 73L,
+                )
+                val record = Json.encodeToString(FtpDownloadItem.serializer(), initial)
+                assertFalse(record.contains("\"secret\""), "Persisted FTP task must not contain a password")
+                val restored = Json.decodeFromString(FtpDownloadItem.serializer(), record)
+                val database = MemoryDownloadListDB()
+                database.add(restored)
+                // Never use the vault instance that originally wrote the secret:
+                // this exercises WinCred lookup after task serialization/restart.
+                val manager = DownloadManager(
+                    dlListDb = database,
+                    partListDb = MemoryDownloadPartStatesDB(),
+                    settings = DownloadSettings(),
+                    emptyFileCreator = EmptyFileCreator(
+                        diskStat = object : IDiskStat {
+                            override fun getRemainingSpace(path: java.io.File) = Long.MAX_VALUE
+                        },
+                        useSparseFile = { false },
+                    ),
+                    downloaderRegistry = DownloaderRegistry().apply {
+                        add(FtpDownloader(WindowsCredentialFtpProvider(WindowsFtpCredentialVault())))
+                    },
+                    downloadDataFolder = fixture.downloadFolder.toFile(),
+                )
+                try {
+                    manager.boot()
+                    assertEquals(1, manager.downloadJobs.size)
+                    manager.resume(restored.id)
+                    withTimeout(25_000) {
+                        while (database.getById(restored.id)?.status != DownloadStatus.Completed) {
+                            delay(20)
+                        }
+                    }
+                    val output = fixture.downloadFolder.resolve("credential-restored.bin")
+                    assertTrue(Files.isRegularFile(output))
+                    assertEquals(sha256(fixture.bytes), sha256(Files.readAllBytes(output)))
+                    assertEquals(DownloadStatus.Completed, database.getById(restored.id)?.status)
+                    assertFalse(restored.toString().contains("\"secret\""))
+                } finally {
+                    manager.downloadJobs.forEach { it.close() }
+                    manager.scope.cancel()
+                }
+            }
+        } finally {
+            originalVault.delete(reference)
+        }
+    }
+
+
+    @Test
+    fun persistedFtpTaskRestartsFromRealDiskAndResolvesWindowsVaultWithoutStoredPassword() = withFixture { fixture ->
+        if (!System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) return@withFixture
+        val vault = WindowsFtpCredentialVault()
+        val reference = vault.save("test", "secret")
+        val storeFolder = Files.createTempDirectory("ftp-disk-restart-")
+        val json = Json {
+            serializersModule = SerializersModule {
+                polymorphic(IDownloadItem::class) {
+                    subclass(FtpDownloadItem::class, FtpDownloadItem.serializer())
+                }
+            }
+        }
+        try {
+            runBlocking {
+                // First instance persists a task, like a full app shutdown.
+                val beforeRestart = DownloadListFileStorage(storeFolder.toFile(), TransactionalFileSaver(json))
+                val item = FtpDownloadItem(
+                    id = 881L,
+                    folder = fixture.downloadFolder.toString(),
+                    name = "disk-restored.bin",
+                    link = fixture.url("fixture.bin"),
+                    username = "test",
+                    credentialRef = reference,
+                    status = DownloadStatus.Paused,
+                )
+                beforeRestart.add(item)
+                val record = Files.readString(beforeRestart.getDownloadItemFile(881L).toPath())
+                assertFalse(record.contains("\"secret\""))
+                assertTrue(record.contains(reference))
+                // A new database and WinCred instance resolve the same paused
+                // task, and the real DownloadManager resumes the real FTP server.
+                val afterRestart = DownloadListFileStorage(storeFolder.toFile(), TransactionalFileSaver(json))
+                val restored = afterRestart.getById(881L) as FtpDownloadItem
+                assertEquals(DownloadStatus.Paused, restored.status)
+                assertEquals(reference, restored.credentialRef)
+                val manager = DownloadManager(
+                    dlListDb = afterRestart,
+                    partListDb = MemoryDownloadPartStatesDB(),
+                    settings = DownloadSettings(),
+                    emptyFileCreator = EmptyFileCreator(
+                        diskStat = object : IDiskStat {
+                            override fun getRemainingSpace(path: java.io.File) = Long.MAX_VALUE
+                        },
+                        useSparseFile = { false },
+                    ),
+                    downloaderRegistry = DownloaderRegistry().apply {
+                        add(FtpDownloader(WindowsCredentialFtpProvider(WindowsFtpCredentialVault())))
+                    },
+                    downloadDataFolder = fixture.downloadFolder.toFile(),
+                )
+                try {
+                    manager.boot()
+                    assertEquals(1, manager.downloadJobs.size)
+                    manager.resume(restored.id)
+                    // The disk DB deserializes a fresh instance per read.
+                    // Poll the file-backed state, not the detached snapshot.
+                    withTimeout(25_000) {
+                        while (afterRestart.getById(restored.id)?.status != DownloadStatus.Completed) {
+                            delay(20)
+                        }
+                    }
+                    assertEquals(
+                        sha256(fixture.bytes),
+                        sha256(Files.readAllBytes(fixture.downloadFolder.resolve("disk-restored.bin"))),
+                    )
+                    assertEquals(DownloadStatus.Completed, afterRestart.getById(881L)?.status)
+                } finally {
+                    manager.downloadJobs.forEach { it.close() }
+                    manager.scope.cancel()
+                }
+            }
+        } finally {
+            vault.delete(reference)
+            storeFolder.toFile().deleteRecursively()
+        }
+    }
+
+
+    @Test
+    fun ftpAddedForLaterDoesNotDownloadUntilManuallyResumed() = withFixture { fixture ->
+        runBlocking {
+            val database = MemoryDownloadListDB()
+            val manager = DownloadManager(
+                dlListDb = database,
+                partListDb = MemoryDownloadPartStatesDB(),
+                settings = DownloadSettings(),
+                emptyFileCreator = EmptyFileCreator(
+                    diskStat = object : IDiskStat {
+                        override fun getRemainingSpace(path: java.io.File) = Long.MAX_VALUE
+                    },
+                    useSparseFile = { false },
+                ),
+                downloaderRegistry = DownloaderRegistry().apply {
+                    add(FtpDownloader(FtpCredentialsProvider { FtpSessionCredentials("test", "secret") }))
+                },
+                downloadDataFolder = fixture.downloadFolder.toFile(),
+            )
+            try {
+                manager.boot()
+                val id = manager.addDownload(
+                    NewDownloadItemProps(
+                        downloadItem = FtpDownloadItem(
+                            id = -1L,
+                            folder = fixture.downloadFolder.toString(),
+                            name = "start-later.bin",
+                            link = fixture.url("fixture.bin"),
+                            username = "test",
+                        ),
+                        extraConfig = null,
+                        onDuplicateStrategy = OnDuplicateStrategy.AddNumbered,
+                        context = EmptyContext,
+                    )
+                )
+                assertEquals(DownloadStatus.Added, database.getById(id)?.status)
+                assertFalse(Files.exists(fixture.downloadFolder.resolve("start-later.bin")))
+                assertFalse(Files.exists(fixture.downloadFolder.resolve("start-later.bin.ftp-part")))
+                // The UI's optional Start immediately flag is deliberately false:
+                // a saved task must not open FTP sockets before manual Resume.
+                delay(100)
+                assertEquals(DownloadStatus.Added, database.getById(id)?.status)
+
+                manager.resume(id)
+                withTimeout(25_000) {
+                    while (database.getById(id)?.status != DownloadStatus.Completed) delay(20)
+                }
+                assertContentEquals(
+                    fixture.bytes,
+                    Files.readAllBytes(fixture.downloadFolder.resolve("start-later.bin")),
+                )
+            } finally {
+                manager.downloadJobs.forEach { it.close() }
+                manager.scope.cancel()
+            }
+        }
+    }
+
+    @Test
+    fun stopAllCancelsFtpWaitingOnHostPermitAndNextResumeFinishes() = withFixture { fixture ->
+        runBlocking {
+            val item = FtpDownloadItem(
+                id = 72L,
+                folder = fixture.downloadFolder.toString(),
+                name = "gate.bin",
+                link = fixture.url("fixture.bin"),
+                username = "test",
+                dateAdded = 72L,
+            )
+            val database = MemoryDownloadListDB()
+            database.add(item)
+            val manager = DownloadManager(
+                dlListDb = database,
+                partListDb = MemoryDownloadPartStatesDB(),
+                settings = DownloadSettings(),
+                emptyFileCreator = EmptyFileCreator(
+                    diskStat = object : IDiskStat {
+                        override fun getRemainingSpace(path: java.io.File) = Long.MAX_VALUE
+                    },
+                    useSparseFile = { false },
+                ),
+                downloaderRegistry = DownloaderRegistry().apply {
+                    add(FtpDownloader(FtpCredentialsProvider {
+                        FtpSessionCredentials("test", "secret")
+                    }))
+                },
+                downloadDataFolder = fixture.downloadFolder.toFile(),
+            )
+            manager.configureHostLimits("127.0.0.1", maxConnections = 1)
+            val heldPermit = manager.hostLimitRegistry.acquireForHost("127.0.0.1")
+            try {
+                manager.boot()
+                val job = manager.downloadJobs.single()
+                manager.resume(item.id)
+                assertTrue(job.status.value is DownloadJobStatus.Resuming)
+                delay(150)
+                assertEquals(1, manager.hostLimitRegistry.activeConnections("127.0.0.1"))
+                assertFalse(Files.exists(fixture.downloadFolder.resolve("gate.bin.ftp-part")))
+                withTimeout(5_000) { manager.stopAll() }
+                assertTrue(job.status.value is DownloadJobStatus.Canceled)
+                assertFalse(job.isDownloadActive.value)
+                heldPermit.close()
+                manager.resume(item.id)
+                withTimeout(25_000) {
+                    while (item.status != DownloadStatus.Completed) delay(20)
+                }
+                assertContentEquals(fixture.bytes, Files.readAllBytes(fixture.downloadFolder.resolve("gate.bin")))
+                assertEquals(0, manager.hostLimitRegistry.activeConnections("127.0.0.1"))
+            } finally {
+                heldPermit.close()
+                manager.downloadJobs.forEach { it.close() }
+                manager.scope.cancel()
+            }
+        }
+    }
+
+    private class Fixture(
+        val root: Path,
+        val downloadFolder: Path,
+        val bytes: ByteArray,
+        val port: Int,
+        val server: org.apache.ftpserver.FtpServer,
+    ) : AutoCloseable {
+        fun url(filename: String) = "ftp://127.0.0.1:$port/$filename"
+        override fun close() {
+            server.stop()
+            root.toFile().deleteRecursively()
+            downloadFolder.toFile().deleteRecursively()
+        }
+    }
+
+    private fun <T> withFixture(block: (Fixture) -> T): T {
+        val root = Files.createTempDirectory("idm-real-ftp-root-")
+        val downloadFolder = Files.createTempDirectory("idm-real-ftp-download-")
+        val content = ByteArray(2 * 1024 * 1024) { ((it * 29 + 17) % 253).toByte() }
+        Files.write(root.resolve("fixture.bin"), content)
+        val port = ServerSocket(0).use { it.localPort }
+        val listenerFactory = ListenerFactory().apply {
+            serverAddress = "127.0.0.1"
+            this.port = port
+        }
+        val serverFactory = FtpServerFactory()
+        serverFactory.addListener("default", listenerFactory.createListener())
+        val user = BaseUser().apply {
+            name = "test"
+            password = "secret"
+            homeDirectory = root.toAbsolutePath().toString()
+        }
+        val userDbFile = root.resolve("ftp-test-users.properties")
+        // FtpServer 1.2.1 requires the properties file to exist before manager construction.
+        Files.createFile(userDbFile)
+        val userManager = PropertiesUserManagerFactory().apply {
+            // Never touch host/project credentials or any user-local settings.
+            file = userDbFile.toFile()
+        }.createUserManager()
+        userManager.save(user)
+        serverFactory.userManager = userManager
+        val server = serverFactory.createServer()
+        server.start()
+        return Fixture(root, downloadFolder, content, port, server).use(block)
+    }
+
+    private fun sha256(bytes: ByteArray): String =
+        MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+}

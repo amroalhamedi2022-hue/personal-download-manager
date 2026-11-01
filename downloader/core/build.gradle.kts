@@ -25,8 +25,15 @@ kotlin {
                 api("io.lindstrom:m3u8-parser:0.29")
             }
         }
+        getByName("desktopMain").dependencies {
+            implementation("commons-net:commons-net:3.13.0")
+            implementation(libs.jna.platform)
+        }
         commonTest.dependencies {
             implementation(kotlin("test"))
+        }
+        getByName("desktopTest").dependencies {
+            implementation("org.apache.ftpserver:ftpserver-core:1.2.1")
         }
     }
 }
