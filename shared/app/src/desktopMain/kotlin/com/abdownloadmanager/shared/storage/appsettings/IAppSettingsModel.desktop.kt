@@ -58,6 +58,7 @@ data class AppSettingsModel(
     val useNativeMenuBar: Boolean,
     val useSystemTray: Boolean,
     val toolbarIconSize: String,
+    val toolbarIconPack: String,
 ) : IAppSettingsModel {
     companion object {
     }
@@ -71,6 +72,7 @@ val DesktopSettingsSchema = S.typeSafeObject(
         prop(AppSettingsModel::useNativeMenuBar) bind S.boolean().catch(PlatformDefaultSettings.useNativeMenuBar)
         prop(AppSettingsModel::useSystemTray) bind S.boolean().catch(PlatformDefaultSettings.useSystemTray)
         prop(AppSettingsModel::toolbarIconSize) bind S.string().catch(PlatformDefaultSettings.toolbarIconSize)
+        prop(AppSettingsModel::toolbarIconPack) bind S.string().catch(PlatformDefaultSettings.toolbarIconPack)
     },
     factory = {
         PlatformAppSettingsModel(
@@ -117,6 +119,7 @@ val DesktopSettingsSchema = S.typeSafeObject(
             useNativeMenuBar = it[AppSettingsModel::useNativeMenuBar],
             useSystemTray = it[AppSettingsModel::useSystemTray],
             toolbarIconSize = it[AppSettingsModel::toolbarIconSize],
+            toolbarIconPack = it[AppSettingsModel::toolbarIconPack],
         )
     }
 ).asSettingsSchema()

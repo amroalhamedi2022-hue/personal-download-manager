@@ -14,6 +14,21 @@ import ir.amirab.util.platform.isMac
 import kotlinx.coroutines.CoroutineScope
 
 object DesktopSettings {
+    fun toolbarIconPackConfig(appSettings: AppSettingsStorage): EnumConfigurable<String> {
+        return EnumConfigurable(
+            title = "Toolbar icon style".asStringSource(),
+            description = "Choose a Modern Outline or Simple filled toolbar symbol set.".asStringSource(),
+            backedBy = appSettings.toolbarIconPack,
+            possibleValues = listOf("outline", "simple"),
+            itemTitle = {
+                when (it) {
+                    "simple" -> "Simple · Filled"
+                    else -> "Modern Outline"
+                }.asStringSource()
+            },
+        )
+    }
+
     fun toolbarIconSizeConfig(appSettings: AppSettingsStorage): EnumConfigurable<String> {
         return EnumConfigurable(
             title = "Toolbar icon size".asStringSource(),

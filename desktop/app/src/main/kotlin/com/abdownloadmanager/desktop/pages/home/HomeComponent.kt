@@ -99,6 +99,7 @@ class HomeComponent(
     val mergeTopBarWithTitleBar = appSettings.mergeTopBarWithTitleBar
     val useNativeMenuBar = appSettings.useNativeMenuBar
     val toolbarIconSize = appSettings.toolbarIconSize
+    val toolbarIconPack = appSettings.toolbarIconPack
 
     private val homePageStateToPersist = MutableStateFlow(pageStorage.homePageStorage.value)
 

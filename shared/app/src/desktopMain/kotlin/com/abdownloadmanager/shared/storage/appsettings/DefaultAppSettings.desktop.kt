@@ -7,4 +7,5 @@ actual object PlatformDefaultSettings : DefaultAppSettings() {
     val useNativeMenuBar: Boolean get() = false
     val useSystemTray: Boolean get() = true
     val toolbarIconSize: String get() = "medium"
+    val toolbarIconPack: String get() = "outline"
 }

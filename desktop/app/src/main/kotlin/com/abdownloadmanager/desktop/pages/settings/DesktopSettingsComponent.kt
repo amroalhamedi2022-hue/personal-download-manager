@@ -82,6 +82,7 @@ class DesktopSettingsComponent(
                             DesktopSettings.fontConfig(fontManager, scope),
                             CommonSettings.uiScaleConfig(appSettings),
                             DesktopSettings.toolbarIconSizeConfig(appSettings),
+                            DesktopSettings.toolbarIconPackConfig(appSettings),
                         )
                     ),
                     ConfigurableGroup(
