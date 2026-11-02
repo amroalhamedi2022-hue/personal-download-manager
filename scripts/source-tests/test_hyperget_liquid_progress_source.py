@@ -73,6 +73,18 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("LocalLiquidProgressPhase provides liquidProgressPhase", LIST)
         self.assertNotIn("rememberInfiniteTransition", TABLE)
 
+    def test_installed_clipboard_search_restores_native_foreground_after_sta_probe(self):
+        # Keep actual OS clipboard roundtrip assertion; do not merely trust
+        # foreground/native key presses or a pre-seeded clipboard string.
+        self.assertIn("for ($focusAttempt = 1; $focusAttempt -le 5; $focusAttempt++)", SCRIPT)
+        self.assertIn("GetForegroundWindow() -eq $mainWindowHandle", SCRIPT)
+        self.assertIn("Clipboard copy acceptance could not restore", SCRIPT)
+        self.assertIn("SendWait('^f')", SCRIPT)
+        self.assertIn("SendWait('^a')", SCRIPT)
+        self.assertIn("SendWait('^c')", SCRIPT)
+        self.assertIn("if ($copiedSearchText -cne $clipboardProbe)", SCRIPT)
+        self.assertIn("throw \"Ctrl+V/Ctrl+C real HomeSearch regression:", SCRIPT)
+
     def test_dark_home_liquid_empty_channel_follows_theme_not_light_dialog(self):
         track = PAGE.split("private fun LiquidProgressTrack(", 1)[1].split(
             "private fun RenderPartInfo(", 1

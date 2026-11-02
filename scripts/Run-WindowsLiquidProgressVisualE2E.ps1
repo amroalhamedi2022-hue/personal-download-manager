@@ -701,8 +701,26 @@ public static class HyperGetLiquidProgressNative {
             [System.Windows.Forms.SendKeys]::SendWait('^v')
             Start-Sleep -Milliseconds 450
             Set-ClipboardFixture -Text 'HYPERGET-COPY-NOT-YET-TESTED'
-            [HyperGetLiquidProgressNative]::SetForegroundWindow($mainWindowHandle) | Out-Null
-            Start-Sleep -Milliseconds 200
+            # Seeding the sentinel launches another Windows PowerShell STA
+            # process, which can temporarily disturb native input focus.
+            # Verify foreground before using the *real* Ctrl+A/C keypresses;
+            # never pass on a seeded clipboard or silently skip the copy.
+            $homeForegroundForCopy = $false
+            for ($focusAttempt = 1; $focusAttempt -le 5; $focusAttempt++) {
+                [HyperGetLiquidProgressNative]::SetForegroundWindow($mainWindowHandle) | Out-Null
+                Start-Sleep -Milliseconds 150
+                if ([HyperGetLiquidProgressNative]::GetForegroundWindow() -eq $mainWindowHandle) {
+                    $homeForegroundForCopy = $true
+                    break
+                }
+            }
+            if (-not $homeForegroundForCopy) {
+                throw 'Clipboard copy acceptance could not restore installed Home window foreground after STA sentinel.'
+            }
+            # Ctrl+F explicitly re-requests the SearchBox focus after the STA
+            # fixture, instead of relying on an unverified stale focus state.
+            [System.Windows.Forms.SendKeys]::SendWait('^f')
+            Start-Sleep -Milliseconds 250
             [System.Windows.Forms.SendKeys]::SendWait('^a')
             [System.Windows.Forms.SendKeys]::SendWait('^c')
             Start-Sleep -Milliseconds 250
