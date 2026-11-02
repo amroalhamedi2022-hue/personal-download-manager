@@ -1,6 +1,7 @@
 package com.abdownloadmanager.desktop.pages.home
 
 import com.abdownloadmanager.shared.util.ui.widget.MyIcon
+import com.abdownloadmanager.shared.util.ui.widget.Icon
 import com.abdownloadmanager.shared.util.ui.myColors
 import com.abdownloadmanager.shared.util.ui.theme.myTextSizes
 import ir.amirab.util.ifThen
@@ -35,6 +36,7 @@ fun Actions(
     list: List<MenuItem>,
     showLabels: Boolean,
     iconSizePreset: String = "medium",
+    iconPack: String = "outline",
 ) {
     val scrollState = rememberScrollState()
     Column {
@@ -57,11 +59,11 @@ fun Actions(
                     }
 
                     is MenuItem.SingleItem -> {
-                        ActionButton(Modifier, a, showLabels, iconSizePreset)
+                        ActionButton(Modifier, a, showLabels, iconSizePreset, iconPack)
                     }
 
                     is MenuItem.SubMenu -> {
-                        GroupActionButton(Modifier, a, showLabels, iconSizePreset)
+                        GroupActionButton(Modifier, a, showLabels, iconSizePreset, iconPack)
                     }
                 }
             }
@@ -84,6 +86,7 @@ private fun ActionButton(
     action: MenuItem.SingleItem,
     showLabels: Boolean,
     iconSizePreset: String,
+    iconPack: String,
 ) {
     val enabled by action.isEnabled.collectAsState()
     Column(modifier) {
@@ -92,6 +95,7 @@ private fun ActionButton(
             icon = action.icon.collectAsState().value,
             showLabels = showLabels,
             iconSizePreset = iconSizePreset,
+            iconPack = iconPack,
             onClick = {
                 action()
             },
@@ -106,6 +110,7 @@ private fun GroupActionButton(
     action: MenuItem.SubMenu,
     showLabels: Boolean,
     iconSizePreset: String,
+    iconPack: String,
 ) {
     val enabled by action.isEnabled.collectAsState()
     var showSubMenu by remember { mutableStateOf(false) }
@@ -115,6 +120,7 @@ private fun GroupActionButton(
             icon = action.icon.collectAsState().value,
             showLabels = showLabels,
             iconSizePreset = iconSizePreset,
+            iconPack = iconPack,
             onClick = {
                 showSubMenu = !showSubMenu
             },
@@ -138,6 +144,7 @@ private fun ActionIconWithLabel(
     icon: IconSource?,
     showLabels: Boolean,
     iconSizePreset: String,
+    iconPack: String,
     onClick: () -> Unit,
     enabled: Boolean,
 ) {
@@ -182,11 +189,20 @@ private fun ActionIconWithLabel(
             WithContentColor(myColors.onBackground) {
                 WithContentAlpha(1f) {
                     icon?.let {
-                        MyIcon(
-                            icon = it,
-                            contentDescription = null,
-                            modifier = Modifier.size(iconDp)
-                        )
+                        val simpleGlyph = if (iconPack == "simple") simpleToolbarGlyph(it) else null
+                        if (simpleGlyph != null) {
+                            Icon(
+                                imageVector = simpleGlyph,
+                                contentDescription = null,
+                                modifier = Modifier.size(iconDp),
+                            )
+                        } else {
+                            MyIcon(
+                                icon = it,
+                                contentDescription = null,
+                                modifier = Modifier.size(iconDp),
+                            )
+                        }
                     }
                     if (showLabels) {
                         Spacer(Modifier.size(4.dp))

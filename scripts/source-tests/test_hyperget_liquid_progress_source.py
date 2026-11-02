@@ -86,6 +86,31 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("theme.secondaryAccentColor", THEME_RENDERER)
         self.assertIn("selected = value.id == it.id", THEME_RENDERER)
 
+    def test_real_simple_icon_pack_and_default_outline_are_persisted(self):
+        model = (ROOT / "shared/app/src/desktopMain/kotlin/com/abdownloadmanager/shared/storage/appsettings/IAppSettingsModel.desktop.kt").read_text(encoding="utf-8")
+        default = (ROOT / "shared/app/src/desktopMain/kotlin/com/abdownloadmanager/shared/storage/appsettings/DefaultAppSettings.desktop.kt").read_text(encoding="utf-8")
+        storage = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/storage/AppSettingsStorage.kt").read_text(encoding="utf-8")
+        settings = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/settings/DesktopSettings.kt").read_text(encoding="utf-8")
+        cfg = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/settings/DesktopSettingsComponent.kt").read_text(encoding="utf-8")
+        artwork = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/SimpleToolbarIcons.kt").read_text(encoding="utf-8")
+        self.assertIn("val toolbarIconPack: String", model)
+        self.assertIn("prop(AppSettingsModel::toolbarIconPack) bind S.string().catch", model)
+        self.assertIn("toolbarIconPack = it[AppSettingsModel::toolbarIconPack]", model)
+        self.assertIn('val toolbarIconPack: String get() = "outline"', default)
+        self.assertIn("val toolbarIconPack = from(AppSettingsModel.toolbarIconPack)", storage)
+        self.assertIn('possibleValues = listOf("outline", "simple")', settings)
+        self.assertIn("DesktopSettings.toolbarIconPackConfig(appSettings)", cfg)
+        self.assertIn("component.toolbarIconPack.collectAsState().value", HOME_PAGE)
+        self.assertIn('if (iconPack == "simple") simpleToolbarGlyph(it) else null', HOME_TOOLBAR)
+        self.assertIn("internal fun simpleToolbarGlyph(icon: IconSource): ImageVector?", artwork)
+        for name in ("resume", "pause", "queueStart", "queueStop", "queue",
+                     "stopAll", "stop", "remove", "settings"):
+            self.assertIn(f'"{name}"', artwork)
+        self.assertIn("path(fill = SolidColor(Color.White))", artwork)
+        self.assertIn("pathFillType = PathFillType.EvenOdd", artwork)
+        self.assertIn("return simpleHomeIcons[key]", artwork)
+        self.assertIn("MyIcon(", HOME_TOOLBAR)  # custom/icon plugin fallback
+
     def test_persistent_three_size_windows_home_toolbar(self):
         model = (ROOT / "shared/app/src/desktopMain/kotlin/com/abdownloadmanager/shared/storage/appsettings/IAppSettingsModel.desktop.kt").read_text(encoding="utf-8")
         default = (ROOT / "shared/app/src/desktopMain/kotlin/com/abdownloadmanager/shared/storage/appsettings/DefaultAppSettings.desktop.kt").read_text(encoding="utf-8")
