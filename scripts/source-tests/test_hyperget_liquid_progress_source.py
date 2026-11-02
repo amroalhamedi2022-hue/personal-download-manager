@@ -719,15 +719,28 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertNotIn('"$metaKey F" to downloadActions.openFolderAction', HOME_COMPONENT)
         self.assertIn("keyEvent.key == Key.F", HOME_WINDOW)
 
-    def test_native_two_file_mouse_drop_diagnostic_is_captured_not_misreported(self):
+    def test_native_two_file_mouse_drop_is_gated_for_pr4_with_truthful_evidence(self):
         self.assertIn("Run-WindowsMultiFileDropE2E.ps1", WINDOWS_UI_WORKFLOW)
         self.assertIn("windows-native-two-file-drag", WINDOWS_UI_WORKFLOW)
+        # This native gesture was observed passing on hosted Windows in run
+        # 41353646866. Require it for PR #4, but not unrelated PR bases.
+        self.assertIn(
+            "continue-on-error: ${{ github.base_ref != 'experiment/jules-liquid-progress-20261030' }}",
+            WINDOWS_UI_WORKFLOW,
+        )
         native = (ROOT / "scripts/Run-WindowsMultiFileDropE2E.ps1").read_text(encoding="utf-8")
         self.assertIn("SetFileDropList", native)
         self.assertIn("DoDragDrop", native)
         self.assertIn("mouse_event", native)
         self.assertIn("OpenedNewDialog", native)
-        self.assertIn("No automated assertion of both URL field values", native)
+        self.assertIn("NativeMouseDownReceived", native)
+        self.assertIn("'Copy'", native)
+        self.assertIn("ExpectedUrls=@($urlOne,$urlTwo)", native)
+        self.assertIn("/قصص/one.bin", native)
+        self.assertIn("source=حكايات", native)
+        # The screenshot is reviewed separately; automation still only
+        # proves mouse/OLE/new-dialog, never the two full rendered URL values.
+        self.assertIn("exact two URL rows need separate screenshot/UI review", native)
 
     def test_real_windows_clipboard_probe_fails_closed_instead_of_claiming_source_only(self):
         self.assertIn("$clipboardShortcutsTested = $false", SCRIPT)
