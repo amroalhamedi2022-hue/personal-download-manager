@@ -98,6 +98,16 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("percent?.let { (it / 100f).coerceIn(0f, 1f) }", active_row)
         self.assertIn("LocalLiquidProgressPhase provides liquidProgressPhase", LIST)
 
+    def test_home_bulk_selection_membership_is_linear_not_quadratic(self):
+        self.assertIn("val selectedIds = remember(selectionList) { selectionList.toHashSet() }", LIST)
+        self.assertIn("downloadList.isNotEmpty() && downloadList.all { it.id in selectedIds }", LIST)
+        self.assertIn("val selectedDownloadsForDrag = remember(downloadList, selectedIds)", LIST)
+        self.assertIn("downloadList.filter { it.id in selectedIds }", LIST)
+        self.assertIn("val isSelected = item.id in selectedIds", LIST)
+        self.assertIn("rememberUpdatedState(selectedDownloadsForDrag)", LIST)
+        self.assertNotIn("list.map { it.id }.all", LIST)
+        self.assertNotIn("selectionList.contains(item.id)", LIST)
+
     def test_progress_phase_is_read_in_draw_not_by_each_row_composition(self):
         progress = TABLE.split("private fun ProgressStatus(", 1)[1]
         self.assertIn("Spacer(", progress)
