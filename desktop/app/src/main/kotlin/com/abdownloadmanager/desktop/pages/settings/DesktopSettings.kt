@@ -14,6 +14,22 @@ import ir.amirab.util.platform.isMac
 import kotlinx.coroutines.CoroutineScope
 
 object DesktopSettings {
+    fun toolbarIconSizeConfig(appSettings: AppSettingsStorage): EnumConfigurable<String> {
+        return EnumConfigurable(
+            title = "Toolbar icon size".asStringSource(),
+            description = "Change Home toolbar symbol sizes without scaling the text, downloads or windows.".asStringSource(),
+            backedBy = appSettings.toolbarIconSize,
+            possibleValues = listOf("small", "medium", "large"),
+            itemTitle = {
+                when (it) {
+                    "small" -> "Small · 16 dp"
+                    "large" -> "Large · 28 dp"
+                    else -> "Medium · 20 dp"
+                }.asStringSource()
+            },
+        )
+    }
+
     fun mergeTopBarWithTitleBarConfig(appSettings: AppSettingsStorage): BooleanConfigurable {
         return BooleanConfigurable(
             title = Res.string.settings_compact_top_bar.asStringSource(),

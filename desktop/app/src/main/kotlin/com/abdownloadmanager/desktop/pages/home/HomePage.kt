@@ -348,7 +348,8 @@ fun HomePage(component: HomeComponent) {
                         }
                         Actions(
                             component.headerActions,
-                            component.showLabels.collectAsState().value
+                            component.showLabels.collectAsState().value,
+                            component.toolbarIconSize.collectAsState().value,
                         )
                     }
                     var lastSelected by remember { mutableStateOf(null as Long?) }

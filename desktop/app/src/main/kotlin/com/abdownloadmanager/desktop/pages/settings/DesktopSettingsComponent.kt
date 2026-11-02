@@ -81,6 +81,7 @@ class DesktopSettingsComponent(
                             CommonSettings.languageConfig(languageManager, scope),
                             DesktopSettings.fontConfig(fontManager, scope),
                             CommonSettings.uiScaleConfig(appSettings),
+                            DesktopSettings.toolbarIconSizeConfig(appSettings),
                         )
                     ),
                     ConfigurableGroup(
