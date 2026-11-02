@@ -37,7 +37,12 @@ class Aria2HttpDownloadJobTest {
             assertFalse(fixture.output.exists(), "staged bytes must not be published before completion")
 
             fixture.engine.complete(Fixture.PAYLOAD)
-            await { fixture.item.status == DownloadStatus.Completed && fixture.output.isFile }
+            await {
+                fixture.item.status == DownloadStatus.Completed &&
+                    fixture.output.isFile &&
+                    fixture.engine.removeCalls == 1 &&
+                    !fixture.engine.contains(fixture.item.id)
+            }
 
             assertContentEquals(Fixture.PAYLOAD, fixture.output.readBytes())
             assertEquals(Fixture.PAYLOAD.size.toLong(), fixture.item.contentLength)
