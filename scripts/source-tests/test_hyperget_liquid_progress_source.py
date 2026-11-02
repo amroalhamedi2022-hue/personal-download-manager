@@ -98,6 +98,18 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("percent?.let { (it / 100f).coerceIn(0f, 1f) }", active_row)
         self.assertIn("LocalLiquidProgressPhase provides liquidProgressPhase", LIST)
 
+    def test_unknown_size_home_progress_does_not_claim_bogus_percentage(self):
+        # Active unknown-length downloads now use the dialog's indeterminate
+        # liquid capsule; no nonnumeric ".%" label is shown to the user.
+        status = TABLE.split("private fun ProgressAndPercent(", 1)[1].split(
+            "private fun ProgressStatus(", 1
+        )[0]
+        self.assertIn("if (gotAnyProgress && percent != null)", status)
+        self.assertIn('"$percent% $statusString"', status)
+        self.assertNotIn('${percent ?: "."}', status)
+        self.assertIn("statusString", status)
+        self.assertIn("percent?.let { (it / 100f).coerceIn(0f, 1f) }", TABLE)
+
     def test_home_bulk_selection_membership_is_linear_not_quadratic(self):
         self.assertIn("val selectedIds = remember(selectionList) { selectionList.toHashSet() }", LIST)
         self.assertIn("downloadList.isNotEmpty() && downloadList.all { it.id in selectedIds }", LIST)

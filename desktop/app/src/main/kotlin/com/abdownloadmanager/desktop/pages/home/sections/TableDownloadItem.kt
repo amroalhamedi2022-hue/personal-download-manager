@@ -448,8 +448,11 @@ private fun ProgressAndPercent(
         statusString = errorReason.title
     }
     Column {
-        val statusText = if (gotAnyProgress) {
-            "${percent ?: "."}% $statusString"
+        // Unknown-length transfers have no meaningful percentage. Show the
+        // real status instead of the old misleading ".% Downloading" text;
+        // the shared compact liquid track animates its indeterminate capsule.
+        val statusText = if (gotAnyProgress && percent != null) {
+            "$percent% $statusString"
         } else {
             statusString
         }
