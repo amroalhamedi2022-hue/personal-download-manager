@@ -72,30 +72,19 @@ class PartDownloaderIoLifecycleContract(unittest.TestCase):
         self.assertIn("the 61st body copy must remain suspended", self.test)
         self.assertIn("bodyCopyPermitIsReleasedAfterCopyFailure", self.test)
 
-    def test_permit_is_acquired_before_network_connection_and_held_through_copy(self):
+    def test_permit_limits_body_copy_without_capping_network_connections(self):
         download = self.part.split("private suspend fun download()", 1)[1].split("protected open fun onCanceled", 1)[0]
-        self.assertRegex(
-            download,
-            r"withFairPartBodyCopyPermit\(part\.getID\(\) == 0L\)\s*\{\s*downloadWithReservedConnectionSlot\(\)",
-        )
         self.assertLess(
-            download.index("withFairPartBodyCopyPermit(part.getID() == 0L) {"),
             download.index("val conn = awaitPartResponseWithDeadline"),
+            download.index("withPartBodyCopyPermit {"),
         )
         self.assertRegex(
             download,
-            r"conn\.use\s*\{\s*connection\s*->\s*withContext\(Dispatchers\.IO\)",
+            r"conn\.use\s*\{\s*connection\s*->\s*withPartBodyCopyPermit\s*\{\s*withContext\(Dispatchers\.IO\)",
         )
         self.assertIn("copyDataSync(connection.source, writer)", download)
-        self.assertIn("connectionAdmissionWaitsForSharedPermit", self.test)
-        self.assertIn("a waiting part must not open an HTTP socket", self.test)
-
-    def test_first_ranges_keep_sixteen_reserved_connection_slots(self):
-        self.assertIn('internal const val PART_PRIMARY_COPY_RESERVE = 16', self.part)
-        self.assertIn('Semaphore(PART_BODY_COPY_PARALLELISM - PART_PRIMARY_COPY_RESERVE)', self.part)
-        self.assertIn('withFairPartBodyCopyPermit(part.getID() == 0L)', self.part)
-        self.assertIn('primaryRangesCannotBeStarvedByEarlierMultiPartDownloads', self.test)
-        self.assertIn('all 16 first ranges must start', self.test)
+        self.assertIn("connectionAdmissionDoesNotWaitForBodyCopyPermit", self.test)
+        self.assertIn("a waiting body copy must already have opened its HTTP connection", self.test)
 
     def test_truncated_known_length_http_range_cannot_complete(self):
         self.assertIn('part is RangedPart && part.to != null && !part.isCompleted', self.part)

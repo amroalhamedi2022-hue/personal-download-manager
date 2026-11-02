@@ -163,61 +163,11 @@ class PartDownloaderIoLifecycleTest {
 
 
     @Test
-    fun primaryRangesCannotBeStarvedByEarlierMultiPartDownloads() = runBlocking<Unit> {
-        assertEquals(16, PART_PRIMARY_COPY_RESERVE)
-        val secondaryCapacity = PART_BODY_COPY_PARALLELISM - PART_PRIMARY_COPY_RESERVE
-        val secondaryEntered = CountDownLatch(secondaryCapacity)
-        val primaryEntered = CountDownLatch(PART_PRIMARY_COPY_RESERVE)
-        val extraSecondaryEntered = CompletableDeferred<Unit>()
-        val release = CompletableDeferred<Unit>()
-
-        coroutineScope {
-            val secondaries = List(secondaryCapacity) {
-                launch(Dispatchers.Default) {
-                    withFairPartBodyCopyPermit(isPrimaryPart = false) {
-                        secondaryEntered.countDown()
-                        release.await()
-                    }
-                }
-            }
-            val primaries = mutableListOf<kotlinx.coroutines.Job>()
-            var extraSecondary: kotlinx.coroutines.Job? = null
-            try {
-                assertTrue(secondaryEntered.await(5, TimeUnit.SECONDS))
-                repeat(PART_PRIMARY_COPY_RESERVE) {
-                    primaries += launch(Dispatchers.Default) {
-                        withFairPartBodyCopyPermit(isPrimaryPart = true) {
-                            primaryEntered.countDown()
-                            release.await()
-                        }
-                    }
-                }
-                assertTrue(
-                    primaryEntered.await(5, TimeUnit.SECONDS),
-                    "all 16 first ranges must start despite 44 occupied secondary slots",
-                )
-                extraSecondary = launch(Dispatchers.Default) {
-                    withFairPartBodyCopyPermit(isPrimaryPart = false) {
-                        extraSecondaryEntered.complete(Unit)
-                    }
-                }
-                assertFalse(
-                    withTimeoutOrNull(250L) { extraSecondaryEntered.await(); true } ?: false,
-                    "a 45th secondary must not consume a first-range reservation",
-                )
-            } finally {
-                release.complete(Unit)
-            }
-            (secondaries + primaries).joinAll()
-            extraSecondary?.join()
-        }
-    }
-
-    @Test
-    fun connectionAdmissionWaitsForSharedPermit() = runBlocking {
+    fun connectionAdmissionDoesNotWaitForBodyCopyPermit() = runBlocking {
         val releaseHolders = CompletableDeferred<Unit>()
         val allHoldersEntered = CountDownLatch(PART_BODY_COPY_PARALLELISM)
         val connected = CompletableDeferred<Unit>()
+        val writerOpened = CompletableDeferred<Unit>()
         val connectionCalls = AtomicInteger(0)
         val holders = List(PART_BODY_COPY_PARALLELISM) {
             launch(Dispatchers.Default) {
@@ -229,16 +179,20 @@ class PartDownloaderIoLifecycleTest {
         }
         val downloader = object : PartDownloader<TestPart>(
             TestPart(),
-            { error("no destination writer should open in this test") },
+            {
+                writerOpened.complete(Unit)
+                error("synthetic writer stop after body-copy admission")
+            },
+            allowInternalRetries = false,
         ) {
             override fun howMuchCanRead(maxAllowed: Long): Long = maxAllowed
             override suspend fun connectAndVerify(): Connection<*> {
                 connectionCalls.incrementAndGet()
                 connected.complete(Unit)
-                awaitCancellation()
+                return Connection(Buffer().writeByte(1), 1L, TestResponseInfo)
             }
         }
-        downloader.onTooManyErrors = { throw it }
+        downloader.onTooManyErrors = { /* expected synthetic writer failure */ }
 
         try {
             assertTrue(allHoldersEntered.await(5, TimeUnit.SECONDS))
@@ -246,16 +200,21 @@ class PartDownloaderIoLifecycleTest {
             withTimeout(2_000L) {
                 downloader.statusFlow.first { it == PartDownloadStatus.Connecting }
             }
-            assertFalse(
-                withTimeoutOrNull(300L) { connected.await(); true } ?: false,
-                "a waiting part must not open an HTTP socket before a copy slot is free",
+            withTimeout(2_000L) { connected.await() }
+            assertEquals(
+                1,
+                connectionCalls.get(),
+                "a waiting body copy must already have opened its HTTP connection",
             )
-            assertEquals(0, connectionCalls.get())
+            assertFalse(
+                withTimeoutOrNull(300L) { writerOpened.await(); true } ?: false,
+                "destination/body copy must still wait while all 60 copy permits are held",
+            )
 
             releaseHolders.complete(Unit)
             holders.joinAll()
-            withTimeout(2_000L) { connected.await() }
-            assertEquals(1, connectionCalls.get(), "admission must resume when a slot is released")
+            withTimeout(2_000L) { writerOpened.await() }
+            withTimeout(2_000L) { downloader.join() }
         } finally {
             releaseHolders.complete(Unit)
             holders.forEach { it.cancel() }
