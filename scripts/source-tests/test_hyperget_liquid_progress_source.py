@@ -32,6 +32,9 @@ TABS_WIDGET = (ROOT / "shared/app/src/commonMain/kotlin/com/abdownloadmanager/sh
 THEME_MANAGER = (ROOT / "shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/ui/theme/ThemeManager.kt").read_text(encoding="utf-8")
 THEME_RENDERER = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/ui/configurable/comon/renderer/ThemeConfigurableRenderer.kt").read_text(encoding="utf-8")
 FONT_MANAGER = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/settings/FontManager.kt").read_text(encoding="utf-8")
+BRAND_ICON = (ROOT / "shared/resources/src/commonMain/kotlin/com/abdownloadmanager/resources/icons/AppIcon.kt").read_text(encoding="utf-8")
+ICON_REGISTRY = (ROOT / "shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/util/ui/icon/MyIcons.kt").read_text(encoding="utf-8")
+ICON_BUTTON = (ROOT / "shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/ui/widget/MyIconButton.kt").read_text(encoding="utf-8")
 
 
 class LiquidProgressSourceContract(unittest.TestCase):
@@ -54,6 +57,35 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("FontFamily(\"Segoe UI\")", FONT_MANAGER)
         self.assertIn("it.equals(\"Segoe UI\", ignoreCase = true)", FONT_MANAGER)
 
+    def test_hyperget_brand_icon_replaces_legacy_purple_glyph_in_window_and_tray(self):
+        self.assertIn('name = "HyperGetAppIcon"', BRAND_ICON)
+        self.assertIn("desktop/app/icons/hyperget-icon.svg", BRAND_ICON)
+        self.assertIn("Color(0xFF071435)", BRAND_ICON)
+        self.assertIn("Color(0xFF72EAFF)", BRAND_ICON)
+        self.assertIn("Color(0xFF36EBFF)", BRAND_ICON)
+        self.assertIn("val ABDMIcons.AppIcon: ImageVector", BRAND_ICON)
+        self.assertIn('override val appIcon = ABDMIcons.AppIcon.asIconSource("appIcon", false)', ICON_REGISTRY)
+        self.assertNotIn("Color(0xFFC631FF)", BRAND_ICON)
+
+    def test_icon_source_names_match_actual_semantics_and_hover_is_subtle(self):
+        for name in ("minus", "pictureFile", "musicFile", "zipFile", "videoFile",
+                     "applicationFile", "documentFile", "otherFile"):
+            self.assertRegex(ICON_REGISTRY, rf'override val {name} = .*?asIconSource\("{name}"\)')
+        self.assertIn("collectIsHoveredAsState()", ICON_BUTTON)
+        self.assertIn("background(myColors.primary.copy(alpha = 0.07f))", ICON_BUTTON)
+        self.assertIn("SolidColor(myColors.primary.copy(alpha = 0.55f))", ICON_BUTTON)
+        self.assertIn("if (!enabled) disabledBorderColor", ICON_BUTTON)
+
+    def test_theme_selector_miniature_previews_actual_secondary_accent(self):
+        self.assertIn("val secondaryAccentColor: Color = accentColor", THEME_MANAGER)
+        self.assertIn("secondaryAccentColor = secondary", THEME_MANAGER)
+        self.assertIn("private fun ThemeWindowSwatch(theme: ThemeInfo, selected: Boolean)", THEME_RENDERER)
+        self.assertIn(".background(theme.backgroundColor)", THEME_RENDERER)
+        self.assertIn(".background(theme.color)", THEME_RENDERER)
+        self.assertIn(".background(theme.accentColor)", THEME_RENDERER)
+        self.assertIn("theme.secondaryAccentColor", THEME_RENDERER)
+        self.assertIn("selected = value.id == it.id", THEME_RENDERER)
+
     def test_theme_selector_shows_candidate_palette_and_preserves_modes(self):
         self.assertIn("val backgroundColor: Color = color", THEME_MANAGER)
         self.assertIn("val accentColor: Color = color", THEME_MANAGER)
@@ -61,9 +93,9 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("accentColor = primary", THEME_MANAGER)
         self.assertIn("getThemeById(themeId)?.takeUnless { it.isLight }", THEME_MANAGER)
         self.assertIn("getThemeById(themeId)?.takeIf { it.isLight }", THEME_MANAGER)
-        self.assertIn(".background(it.backgroundColor)", THEME_RENDERER)
-        self.assertIn(".background(it.accentColor)", THEME_RENDERER)
-        self.assertIn(".background(it.color)", THEME_RENDERER)
+        self.assertIn(".background(theme.backgroundColor)", THEME_RENDERER)
+        self.assertIn(".background(theme.accentColor)", THEME_RENDERER)
+        self.assertIn(".background(theme.color)", THEME_RENDERER)
         self.assertNotIn("Brush.verticalGradient(myColors.primaryGradientColors)", THEME_RENDERER)
 
     def test_one_shared_clock_is_created_only_when_a_download_is_active(self):

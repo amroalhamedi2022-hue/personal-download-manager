@@ -82,6 +82,7 @@ class ModernThemePaletteContractTest {
             assertEquals(theme.surface, preview.color)
             assertEquals(theme.background, preview.backgroundColor)
             assertEquals(theme.primary, preview.accentColor)
+            assertEquals(theme.secondary, preview.secondaryAccentColor)
         }
         val dark = DefaultThemes.hyperGetDark.toThemeInfo()
         val light = DefaultThemes.hyperGetLight.toThemeInfo()

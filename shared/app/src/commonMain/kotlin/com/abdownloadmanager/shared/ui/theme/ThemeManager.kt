@@ -199,6 +199,9 @@ data class ThemeInfo(
     // Each selector swatch describes its candidate palette, not the active UI.
     val backgroundColor: Color = color,
     val accentColor: Color = color,
+    // The second liquid/accent shade is needed by the selector's real
+    // miniature status track; preserve old ThemeInfo call sites via default.
+    val secondaryAccentColor: Color = accentColor,
 )
 
 internal fun MyColors.toThemeInfo(): ThemeInfo {
@@ -208,5 +211,6 @@ internal fun MyColors.toThemeInfo(): ThemeInfo {
         color = surface,
         backgroundColor = background,
         accentColor = primary,
+        secondaryAccentColor = secondary,
     )
 }
