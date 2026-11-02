@@ -73,6 +73,31 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("LocalLiquidProgressPhase provides liquidProgressPhase", LIST)
         self.assertNotIn("rememberInfiniteTransition", TABLE)
 
+    def test_main_list_uses_the_exact_dialog_liquid_with_one_shared_clock(self):
+        # This is the real dialog renderer, not a separate shimmer imitation.
+        self.assertIn(
+            "import com.abdownloadmanager.desktop.pages.singleDownloadPage.CompactHomeLiquidProgressTrack",
+            TABLE,
+        )
+        home_track = PAGE.split("internal fun CompactHomeLiquidProgressTrack(", 1)[1].split(
+            "private fun RenderPartInfo(", 1
+        )[0]
+        self.assertIn("LocalLiquidAnimationPhase provides sharedPhase", home_track)
+        self.assertIn("LiquidProgressTrack(", home_track)
+        self.assertIn("colors = referenceLiquidColors", home_track)
+        self.assertIn("modifier = Modifier.fillMaxWidth().height(12.dp)", home_track)
+        self.assertIn("bubbleCount = 6", home_track)
+        self.assertIn("compact = true", home_track)
+        self.assertNotIn("rememberInfiniteTransition", home_track)
+        active_row = TABLE.split("private fun ProgressStatus(", 1)[1].split(
+            "val liquidProgressPhase =", 1
+        )[0]
+        self.assertIn("if (isLiquidActive)", active_row)
+        self.assertIn("CompactHomeLiquidProgressTrack(", active_row)
+        self.assertIn("sharedPhase = LocalLiquidProgressPhase.current", active_row)
+        self.assertIn("percent?.let { (it / 100f).coerceIn(0f, 1f) }", active_row)
+        self.assertIn("LocalLiquidProgressPhase provides liquidProgressPhase", LIST)
+
     def test_progress_phase_is_read_in_draw_not_by_each_row_composition(self):
         progress = TABLE.split("private fun ProgressStatus(", 1)[1]
         self.assertIn("Spacer(", progress)

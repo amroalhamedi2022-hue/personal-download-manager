@@ -737,6 +737,26 @@ private fun LiquidProgressTrack(
     }
 }
 
+// The Home list uses the EXACT two-wave liquid renderer from the download
+// dialog, just at a compact row-friendly size. No new animation timers:
+// the list provides one shared State read during draw for all visible rows.
+@Composable
+internal fun CompactHomeLiquidProgressTrack(
+    progress: Float?,
+    sharedPhase: State<Float>,
+) {
+    CompositionLocalProvider(LocalLiquidAnimationPhase provides sharedPhase) {
+        LiquidProgressTrack(
+            progress = progress,
+            colors = referenceLiquidColors,
+            active = true,
+            modifier = Modifier.fillMaxWidth().height(12.dp),
+            bubbleCount = 6,
+            compact = true,
+        )
+    }
+}
+
 @Composable
 private fun RenderPartInfo(
     modifier: Modifier,
