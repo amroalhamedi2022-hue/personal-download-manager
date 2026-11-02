@@ -34,6 +34,7 @@ data class HttpDownloadItem(
     override var retryAt: Long? = null,
     override var preferredConnectionCount: Int? = null,
     override var speedLimit: Long = 0,//0 is unlimited
+    var maxRetryCount: Int? = null,
     override var fileChecksum: String? = null,
 ) : IDownloadItem, IHttpDownloadCredentials {
     override fun copy(
@@ -124,6 +125,7 @@ data class HttpDownloadItem(
             status: DownloadStatus = DownloadStatus.Added,
             preferredConnectionCount: Int? = null,
             speedLimit: Long = 0,
+            maxRetryCount: Int? = null,
             fileChecksum: String? = null,
         ): HttpDownloadItem {
             return HttpDownloadItem(
@@ -144,6 +146,7 @@ data class HttpDownloadItem(
                 status = status,
                 preferredConnectionCount = preferredConnectionCount,
                 speedLimit = speedLimit,
+                maxRetryCount = maxRetryCount,
                 fileChecksum = fileChecksum,
             )
         }
@@ -174,6 +177,7 @@ fun HttpDownloadItem.applyFrom(other: HttpDownloadItem) {
     retryAt = other.retryAt
     preferredConnectionCount = other.preferredConnectionCount
     speedLimit = other.speedLimit
+    maxRetryCount = other.maxRetryCount
 
     fileChecksum = other.fileChecksum
 }

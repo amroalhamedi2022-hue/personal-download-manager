@@ -70,20 +70,23 @@ class RestartPersistenceSafetyTest {
             dateAdded = 1,
             retryAttempt = 2,
             retryAt = 1_234_567L,
+            maxRetryCount = 7,
         )
 
         val encoded = json.encodeToString(HttpDownloadItem.serializer(), item)
         val restored = json.decodeFromString(HttpDownloadItem.serializer(), encoded)
         assertEquals(2, restored.retryAttempt)
         assertEquals(1_234_567L, restored.retryAt)
+        assertEquals(7, restored.maxRetryCount)
 
         val legacy = JsonObject(
             json.parseToJsonElement(encoded).jsonObject
-                .filterKeys { it != "retryAttempt" && it != "retryAt" }
+                .filterKeys { it != "retryAttempt" && it != "retryAt" && it != "maxRetryCount" }
         )
         val legacyRestored = json.decodeFromString(HttpDownloadItem.serializer(), legacy.toString())
         assertEquals(0, legacyRestored.retryAttempt)
         assertNull(legacyRestored.retryAt)
+        assertNull(legacyRestored.maxRetryCount)
     }
 
     @Test
@@ -96,20 +99,23 @@ class RestartPersistenceSafetyTest {
             dateAdded = 1,
             retryAttempt = 3,
             retryAt = 9_876_543L,
+            maxRetryCount = 11,
         )
 
         val encoded = json.encodeToString(HLSDownloadItem.serializer(), item)
         val restored = json.decodeFromString(HLSDownloadItem.serializer(), encoded)
         assertEquals(3, restored.retryAttempt)
         assertEquals(9_876_543L, restored.retryAt)
+        assertEquals(11, restored.maxRetryCount)
 
         val legacy = JsonObject(
             json.parseToJsonElement(encoded).jsonObject
-                .filterKeys { it != "retryAttempt" && it != "retryAt" }
+                .filterKeys { it != "retryAttempt" && it != "retryAt" && it != "maxRetryCount" }
         )
         val legacyRestored = json.decodeFromString(HLSDownloadItem.serializer(), legacy.toString())
         assertEquals(0, legacyRestored.retryAttempt)
         assertNull(legacyRestored.retryAt)
+        assertNull(legacyRestored.maxRetryCount)
     }
     @Test
     fun managerBootRestoresOneRetryAndNeverCreatesDuplicateJob() = kotlinx.coroutines.runBlocking {

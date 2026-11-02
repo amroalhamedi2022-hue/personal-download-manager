@@ -46,7 +46,11 @@ class HttpNewDownloadInputs(
     //extra settings
     private var threadCount = MutableStateFlow(null as Int?)
     private var speedLimit = MutableStateFlow(0L)
+    private var maxRetryCount = MutableStateFlow(null as Int?)
     private var fileChecksum = MutableStateFlow(null as FileChecksum?)
+    private val retryAndChecksum = combineStateFlows(maxRetryCount, fileChecksum) { retry, checksum ->
+        retry to checksum
+    }
     override val downloadItem: StateFlow<HttpDownloadItem> = combineStateFlows(
         this.credentials,
         this.folder,
@@ -54,7 +58,7 @@ class HttpNewDownloadInputs(
         this.downloadSize,
         this.speedLimit,
         this.threadCount,
-        this.fileChecksum,
+        this.retryAndChecksum,
     ) {
             credentials,
             folder,
@@ -62,7 +66,7 @@ class HttpNewDownloadInputs(
             length,
             speedLimit,
             threadCount,
-            fileChecksum,
+            retryAndChecksum,
         ->
         HttpDownloadItem(
             id = -1,
@@ -76,7 +80,8 @@ class HttpNewDownloadInputs(
             status = DownloadStatus.Added,
             preferredConnectionCount = threadCount,
             speedLimit = speedLimit,
-            fileChecksum = fileChecksum?.toString()
+            maxRetryCount = retryAndChecksum.first,
+            fileChecksum = retryAndChecksum.second?.toString()
         ).withCredentials(credentials)
     }
 
@@ -88,7 +93,8 @@ class HttpNewDownloadInputs(
             setPassword = { setCredentials(credentials.value.copy(password = it)) },
             setUserAgent = { setCredentials(credentials.value.copy(userAgent = it)) },
             setThreadCount = { threadCount.value = it },
-            setSpeedLimit = { speedLimit.value = it }
+            setSpeedLimit = { speedLimit.value = it },
+            setMaxRetryCount = { maxRetryCount.value = it },
         )
     }
 
