@@ -11,6 +11,11 @@ import com.abdownloadmanager.shared.util.ui.WithContentColor
 import ir.amirab.util.compose.action.MenuItem
 import com.abdownloadmanager.shared.util.div
 import androidx.compose.foundation.*
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.layout.*
 import com.abdownloadmanager.shared.ui.widget.Text
 import androidx.compose.runtime.*
@@ -29,6 +34,7 @@ import ir.amirab.util.compose.StringSource
 fun Actions(
     list: List<MenuItem>,
     showLabels: Boolean,
+    iconSizePreset: String = "medium",
 ) {
     val scrollState = rememberScrollState()
     Column {
@@ -51,11 +57,11 @@ fun Actions(
                     }
 
                     is MenuItem.SingleItem -> {
-                        ActionButton(Modifier, a, showLabels)
+                        ActionButton(Modifier, a, showLabels, iconSizePreset)
                     }
 
                     is MenuItem.SubMenu -> {
-                        GroupActionButton(Modifier, a, showLabels)
+                        GroupActionButton(Modifier, a, showLabels, iconSizePreset)
                     }
                 }
             }
@@ -77,6 +83,7 @@ private fun ActionButton(
     modifier: Modifier = Modifier,
     action: MenuItem.SingleItem,
     showLabels: Boolean,
+    iconSizePreset: String,
 ) {
     val enabled by action.isEnabled.collectAsState()
     Column(modifier) {
@@ -84,6 +91,7 @@ private fun ActionButton(
             title = action.title.collectAsState().value,
             icon = action.icon.collectAsState().value,
             showLabels = showLabels,
+            iconSizePreset = iconSizePreset,
             onClick = {
                 action()
             },
@@ -97,6 +105,7 @@ private fun GroupActionButton(
     modifier: Modifier = Modifier,
     action: MenuItem.SubMenu,
     showLabels: Boolean,
+    iconSizePreset: String,
 ) {
     val enabled by action.isEnabled.collectAsState()
     var showSubMenu by remember { mutableStateOf(false) }
@@ -105,6 +114,7 @@ private fun GroupActionButton(
             title = action.title.collectAsState().value,
             icon = action.icon.collectAsState().value,
             showLabels = showLabels,
+            iconSizePreset = iconSizePreset,
             onClick = {
                 showSubMenu = !showSubMenu
             },
@@ -127,32 +137,55 @@ private fun ActionIconWithLabel(
     title: StringSource,
     icon: IconSource?,
     showLabels: Boolean,
+    iconSizePreset: String,
     onClick: () -> Unit,
     enabled: Boolean,
 ) {
+    val iconDp = when (iconSizePreset) {
+        "small" -> 16.dp
+        "large" -> 28.dp
+        else -> 20.dp
+    }
+    val touchPadding = when (iconSizePreset) {
+        "small" -> 6.dp
+        "large" -> 10.dp
+        else -> 8.dp
+    }
+    val interactionSource = remember { MutableInteractionSource() }
+    val isHovered by interactionSource.collectIsHoveredAsState()
+    val tileShape = RoundedCornerShape(8.dp)
     OptionalTooltip(
         title.takeIf { !showLabels },
     ) {
         Column(
             modifier = Modifier
-                .clickable(enabled = enabled, onClick = onClick)
+                .clip(tileShape)
+                .background(
+                    if (enabled && isHovered) myColors.primary.copy(alpha = 0.09f)
+                    else Color.Transparent
+                )
+                .clickable(
+                    enabled = enabled,
+                    interactionSource = interactionSource,
+                    indication = LocalIndication.current,
+                    onClick = onClick,
+                )
                 .ifThen(!enabled) {
                     alpha(0.5f)
                 }
                 .padding(
-                    if (showLabels) PaddingValues(horizontal = 9.dp, vertical = 8.dp)
-                    else PaddingValues(12.dp)
+                    if (showLabels) PaddingValues(horizontal = touchPadding, vertical = 8.dp)
+                    else PaddingValues(touchPadding + 4.dp)
                 ),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             WithContentColor(myColors.onBackground) {
                 WithContentAlpha(1f) {
                     icon?.let {
-                        val iconSize = if (showLabels) 20.dp else 24.dp
                         MyIcon(
                             icon = it,
                             contentDescription = null,
-                            modifier = Modifier.size(iconSize)
+                            modifier = Modifier.size(iconDp)
                         )
                     }
                     if (showLabels) {

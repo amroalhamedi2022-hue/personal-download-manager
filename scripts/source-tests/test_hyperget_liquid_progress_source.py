@@ -86,6 +86,26 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("theme.secondaryAccentColor", THEME_RENDERER)
         self.assertIn("selected = value.id == it.id", THEME_RENDERER)
 
+    def test_persistent_three_size_windows_home_toolbar(self):
+        model = (ROOT / "shared/app/src/desktopMain/kotlin/com/abdownloadmanager/shared/storage/appsettings/IAppSettingsModel.desktop.kt").read_text(encoding="utf-8")
+        default = (ROOT / "shared/app/src/desktopMain/kotlin/com/abdownloadmanager/shared/storage/appsettings/DefaultAppSettings.desktop.kt").read_text(encoding="utf-8")
+        storage = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/storage/AppSettingsStorage.kt").read_text(encoding="utf-8")
+        settings = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/settings/DesktopSettings.kt").read_text(encoding="utf-8")
+        settings_component = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/settings/DesktopSettingsComponent.kt").read_text(encoding="utf-8")
+        self.assertIn("val toolbarIconSize: String", model)
+        self.assertIn("prop(AppSettingsModel::toolbarIconSize) bind S.string().catch", model)
+        self.assertIn("toolbarIconSize = it[AppSettingsModel::toolbarIconSize]", model)
+        self.assertIn('val toolbarIconSize: String get() = "medium"', default)
+        self.assertIn("val toolbarIconSize = from(AppSettingsModel.toolbarIconSize)", storage)
+        self.assertIn('possibleValues = listOf("small", "medium", "large")', settings)
+        self.assertIn("DesktopSettings.toolbarIconSizeConfig(appSettings)", settings_component)
+        self.assertIn("component.toolbarIconSize.collectAsState().value", HOME_PAGE)
+        self.assertIn('"small" -> 16.dp', HOME_TOOLBAR)
+        self.assertIn('"large" -> 28.dp', HOME_TOOLBAR)
+        self.assertIn("else -> 20.dp", HOME_TOOLBAR)
+        self.assertIn("collectIsHoveredAsState()", HOME_TOOLBAR)
+        self.assertIn("interactionSource = interactionSource", HOME_TOOLBAR)
+
     def test_theme_selector_shows_candidate_palette_and_preserves_modes(self):
         self.assertIn("val backgroundColor: Color = color", THEME_MANAGER)
         self.assertIn("val accentColor: Color = color", THEME_MANAGER)
