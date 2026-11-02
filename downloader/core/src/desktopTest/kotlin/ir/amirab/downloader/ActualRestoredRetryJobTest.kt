@@ -20,6 +20,7 @@ import ir.amirab.downloader.downloaditem.DownloadStatus
 import ir.amirab.downloader.downloaditem.hls.HLSDownloadItem
 import ir.amirab.downloader.downloaditem.hls.HLSDownloader
 import ir.amirab.downloader.downloaditem.http.HttpDownloadItem
+import ir.amirab.downloader.downloaditem.http.HttpDownloadJob
 import ir.amirab.downloader.downloaditem.http.HttpDownloader
 import ir.amirab.downloader.downloaditem.http.sameHttpResourceLocation
 import ir.amirab.downloader.queue.ManualDownloadQueue
@@ -78,6 +79,32 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class ActualRestoredRetryJobTest {
+
+    @Test
+    fun persistedPerDownloadRetryLimitOverridesGlobalPolicyInRealHttpJob() = withRetryServer { server ->
+        runBlocking {
+            val dataFolder = createTempDir("per-host-retry-")
+            val item = HttpDownloadItem(
+                link = "${server.baseUrl}/file/301.bin",
+                id = 301,
+                folder = dataFolder.absolutePath,
+                name = "override.bin",
+                dateAdded = 1,
+                maxRetryCount = 0,
+            )
+            val manager = createHttpManager(listOf(item), server.client, dataFolder)
+            try {
+                manager.boot()
+
+                val job = manager.downloadJobs.single() as HttpDownloadJob
+                assertEquals(0, job.getMaxAllowedRetries())
+                assertEquals(2, manager.settings.maxDownloadRetryCount)
+            } finally {
+                closeManager(manager)
+                dataFolder.deleteRecursively()
+            }
+        }
+    }
 
     @Test
     fun httpResourceIdentityIgnoresRefreshQueryButNotPathOrOrigin() {

@@ -356,10 +356,9 @@ class HLSDownloadJob(
         }
     }
 
-    // for this download job only, it has higher priority than download manager settings
-    var _maxAllowedRetries: Int? = null
     fun getMaxAllowedRetries(): Int {
-        return _maxAllowedRetries ?: downloadManager.settings.maxDownloadRetryCount
+        return (downloadItem.maxRetryCount ?: downloadManager.settings.maxDownloadRetryCount)
+            .coerceAtLeast(0)
     }
 
     var failedDownloadTries = 0

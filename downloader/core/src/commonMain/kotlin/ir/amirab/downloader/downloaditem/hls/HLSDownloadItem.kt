@@ -24,6 +24,7 @@ data class HLSDownloadItem(
     override var retryAt: Long? = null,
     override var preferredConnectionCount: Int? = null,
     override var speedLimit: Long = 0,
+    var maxRetryCount: Int? = null,
     override var fileChecksum: String? = null,
     override var headers: Map<String, String>? = null,
     override var username: String? = null,
@@ -102,6 +103,7 @@ data class HLSDownloadItem(
             status: DownloadStatus = DownloadStatus.Added,
             preferredConnectionCount: Int? = null,
             speedLimit: Long = 0,
+            maxRetryCount: Int? = null,
             fileChecksum: String? = null,
             duration: Double? = null,
         ): HLSDownloadItem {
@@ -122,6 +124,7 @@ data class HLSDownloadItem(
                 status = status,
                 preferredConnectionCount = preferredConnectionCount,
                 speedLimit = speedLimit,
+                maxRetryCount = maxRetryCount,
                 fileChecksum = fileChecksum,
                 duration = duration,
             )
@@ -160,6 +163,7 @@ fun HLSDownloadItem.applyFrom(other: HLSDownloadItem) {
     retryAt = other.retryAt
     preferredConnectionCount = other.preferredConnectionCount
     speedLimit = other.speedLimit
+    maxRetryCount = other.maxRetryCount
 
     fileChecksum = other.fileChecksum
 }

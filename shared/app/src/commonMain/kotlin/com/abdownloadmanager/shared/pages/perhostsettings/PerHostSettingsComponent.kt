@@ -2,6 +2,7 @@ package com.abdownloadmanager.shared.pages.perhostsettings
 
 import arrow.core.prependTo
 import com.abdownloadmanager.shared.util.ThreadCountLimitation
+import com.abdownloadmanager.shared.util.MaximumDownloadRetriesLimitation
 import com.abdownloadmanager.shared.ui.configurable.item.IntConfigurable
 import com.abdownloadmanager.shared.ui.configurable.item.ToggleableSpeedLimitConfigurable
 import com.abdownloadmanager.shared.ui.configurable.item.StringConfigurable
@@ -187,6 +188,32 @@ abstract class BasePerHostSettingsComponent(
                         describe = {
                             if (it == 0) Res.string.unlimited.asStringSource()
                             else it.toString().asStringSource()
+                        }
+                    ),
+                    IntConfigurable(
+                        title = Res.string.settings_download_max_retries_count.asStringSource(),
+                        description = Res.string.settings_download_max_retries_count_description.asStringSource(),
+                        backedBy = state.mapTwoWayStateFlow(
+                            map = {
+                                it.maxDownloadRetryCount ?: -1
+                            },
+                            unMap = {
+                                copy(maxDownloadRetryCount = it.takeIf { count -> count >= 0 })
+                            }
+                        ),
+                        range = -1..MaximumDownloadRetriesLimitation.MAX_ALLOWED_RETRIES,
+                        renderMode = IntConfigurable.RenderMode.TextField,
+                        describe = {
+                            when {
+                                it < 0 -> Res.string.use_global_settings.asStringSource()
+                                it == 0 -> Res.string.settings_download_max_retries_count_describe_no_retries.asStringSource()
+                                else -> Res.string.settings_download_max_retries_count_describe_n_retries
+                                    .asStringSourceWithARgs(
+                                        Res.string.settings_download_max_retries_count_describe_n_retries_createArgs(
+                                            count = it.toString()
+                                        )
+                                    )
+                            }
                         }
                     ),
                 )

@@ -19,7 +19,8 @@ fun PerHostSettingsItem.applyToHttpDownload(
             out = out.copy(userAgent = it)
         },
         setThreadCount = {},
-        setSpeedLimit = {}
+        setSpeedLimit = {},
+        setMaxRetryCount = {},
     )
     return out
 }
@@ -43,6 +44,9 @@ fun PerHostSettingsItem.applyToHttpDownload(
         },
         setSpeedLimit = {
             out = out.copy(speedLimit = it)
+        },
+        setMaxRetryCount = {
+            out = out.copy(maxRetryCount = it)
         }
     )
     return out
@@ -54,10 +58,12 @@ fun PerHostSettingsItem.applyToHttpDownload(
     setUserAgent: (String) -> Unit,
     setThreadCount: (Int) -> Unit,
     setSpeedLimit: (Long) -> Unit,
+    setMaxRetryCount: (Int) -> Unit,
 ) {
     username?.let(setUsername)
     password?.let(setPassword)
     userAgent?.let(setUserAgent)
     threadCount?.let(setThreadCount)
     speedLimit?.let(setSpeedLimit)
+    maxDownloadRetryCount?.coerceAtLeast(0)?.let(setMaxRetryCount)
 }

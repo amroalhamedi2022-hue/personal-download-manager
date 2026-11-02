@@ -10,6 +10,7 @@ data class PerHostSettingsItem(
     val userAgent: String? = null,
     val threadCount: Int? = null,
     val speedLimit: Long? = null,
+    val maxDownloadRetryCount: Int? = null,
     val hostConnectionLimit: Int? = null,
     val hostSpeedLimit: Long? = null,
 )
