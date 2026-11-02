@@ -136,6 +136,50 @@ class Aria2EngineAdapterTest {
     }
 
     @Test
+    fun existingPartialRequiresMatchingAria2ControlFile() {
+        val root = Files.createTempDirectory("aria2-partial")
+        Files.writeString(root.resolve("partial.bin"), "partial data")
+        val rpc = FakeRpc()
+        val adapter = Aria2EngineAdapter.restore(rpc, Aria2BindingStore(root.resolve("bindings.json")))
+        val request = Aria2AddRequest(
+            81,
+            "https://example.invalid/partial",
+            root,
+            "partial.bin",
+            resumeExistingPartial = true,
+        )
+
+        assertFailsWith<IllegalArgumentException> { adapter.add(request) }
+        Files.writeString(root.resolve("partial.bin.aria2"), "owned control")
+        assertEquals(81, adapter.add(request))
+        assertEquals(1, rpc.addCalls)
+    }
+
+    @Test
+    fun addForwardsBoundedConnectionsSpeedAndUserAgentWithoutChangingIdentity() {
+        val root = Files.createTempDirectory("aria2-options")
+        val rpc = FakeRpc()
+        val adapter = Aria2EngineAdapter.restore(rpc, Aria2BindingStore(root.resolve("bindings.json")))
+
+        assertEquals(82, adapter.add(Aria2AddRequest(
+            hyperGetTaskId = 82,
+            source = "https://example.invalid/options",
+            destinationDirectory = root,
+            fileName = "options.bin",
+            connections = 8,
+            speedLimitBytesPerSecond = 1_048_576,
+            userAgent = "HyperGet-test",
+        )))
+
+        assertEquals("false", rpc.lastOptions["pause"])
+        assertEquals("8", rpc.lastOptions["split"])
+        assertEquals("8", rpc.lastOptions["max-connection-per-server"])
+        assertEquals("1048576", rpc.lastOptions["max-download-limit"])
+        assertEquals("HyperGet-test", rpc.lastOptions["user-agent"])
+        assertFalse(rpc.lastOptions.values.any { it.contains("example.invalid") })
+    }
+
+    @Test
     fun concurrentAddsCreateOneRemoteTaskAndOneDurableBinding() {
         val root = Files.createTempDirectory("aria2-add-race")
         val rpc = FakeRpc()
@@ -283,10 +327,12 @@ class Aria2EngineAdapterTest {
         var tellFailure: Aria2RpcRemoteException? = null
         var missingAfterRemove = false
         var status = Aria2Status(GID, Aria2TransferState.ACTIVE, 0, 0, 0, null, null)
+        var lastOptions = emptyMap<String, String>()
 
         override fun getVersion() = Aria2Version("1.37.0", listOf("BitTorrent"))
         override fun addUri(uri: String, options: Map<String, String>): String {
             addCalls++
+            lastOptions = options
             return GID
         }
 

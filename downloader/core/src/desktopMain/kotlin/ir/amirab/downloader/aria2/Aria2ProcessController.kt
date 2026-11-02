@@ -254,6 +254,9 @@ class Aria2ProcessController(
             appendLine("auto-save-interval=1")
             appendLine("always-resume=true")
             appendLine("force-save=true")
+            // Restored session entries must not escape HyperGet queue ownership.
+            // addUri explicitly overrides this to false for newly admitted jobs.
+            appendLine("pause=true")
         }
         try {
             Files.writeString(path, contents, StandardCharsets.UTF_8)

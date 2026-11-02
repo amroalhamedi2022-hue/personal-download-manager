@@ -9,6 +9,10 @@ data class Aria2AddRequest(
     val source: String,
     val destinationDirectory: Path,
     val fileName: String,
+    val connections: Int? = null,
+    val speedLimitBytesPerSecond: Long = 0,
+    val userAgent: String? = null,
+    val resumeExistingPartial: Boolean = false,
 )
 
 data class Aria2TaskSnapshot(
@@ -17,6 +21,16 @@ data class Aria2TaskSnapshot(
     val errorCode: String?,
     val hasErrorMessage: Boolean,
 )
+
+interface Aria2TaskEngine {
+    fun add(request: Aria2AddRequest): Long
+    fun status(hyperGetTaskId: Long): Aria2TaskSnapshot
+    fun pause(hyperGetTaskId: Long)
+    fun unpause(hyperGetTaskId: Long)
+    fun cancel(hyperGetTaskId: Long): Boolean
+    fun remove(hyperGetTaskId: Long): Boolean
+    fun contains(hyperGetTaskId: Long): Boolean
+}
 
 /**
  * Stage-3 adapter boundary. It deliberately knows nothing about Compose, browser
@@ -27,7 +41,7 @@ class Aria2EngineAdapter private constructor(
     private val rpc: Aria2RpcApi,
     private val bindingStore: Aria2BindingStore,
     private val registry: Aria2TaskRegistry,
-) {
+) : Aria2TaskEngine {
     private val progressByTask = mutableMapOf<Long, Aria2MonotonicProgress>()
     private var acceptingCommands = true
 
@@ -40,18 +54,33 @@ class Aria2EngineAdapter private constructor(
     }
 
     @Synchronized
-    fun add(request: Aria2AddRequest): Long {
+    override fun add(request: Aria2AddRequest): Long {
         checkOpen()
         registry.bindingForTask(request.hyperGetTaskId)?.let { return it.hyperGetTaskId }
         val source = validateSource(request.source)
-        val directory = validateDestination(request.destinationDirectory, request.fileName)
-        val options = mapOf(
-            "dir" to directory.toString(),
-            "out" to request.fileName,
-            "continue" to "true",
-            "allow-overwrite" to "false",
-            "auto-file-renaming" to "false",
+        val directory = validateDestination(
+            request.destinationDirectory,
+            request.fileName,
+            request.resumeExistingPartial,
         )
+        val options = buildMap {
+            put("dir", directory.toString())
+            put("out", request.fileName)
+            put("continue", "true")
+            put("allow-overwrite", "false")
+            put("auto-file-renaming", "false")
+            put("pause", "false")
+            request.connections?.let {
+                require(it in 1..16) { "aria2 connection count must be between 1 and 16." }
+                put("split", it.toString())
+                put("max-connection-per-server", it.toString())
+            }
+            require(request.speedLimitBytesPerSecond >= 0) { "aria2 speed limit cannot be negative." }
+            if (request.speedLimitBytesPerSecond > 0) {
+                put("max-download-limit", request.speedLimitBytesPerSecond.toString())
+            }
+            request.userAgent?.takeIf(String::isNotBlank)?.let { put("user-agent", it) }
+        }
         val gid = rpc.addUri(source, options)
         val binding = Aria2TaskBinding(request.hyperGetTaskId, gid)
         var bound = false
@@ -78,7 +107,7 @@ class Aria2EngineAdapter private constructor(
     }
 
     @Synchronized
-    fun status(hyperGetTaskId: Long): Aria2TaskSnapshot {
+    override fun status(hyperGetTaskId: Long): Aria2TaskSnapshot {
         checkOpen()
         val binding = requireBinding(hyperGetTaskId)
         val status = rpc.tellStatus(binding.aria2Gid)
@@ -102,14 +131,14 @@ class Aria2EngineAdapter private constructor(
     }
 
     @Synchronized
-    fun pause(hyperGetTaskId: Long) {
+    override fun pause(hyperGetTaskId: Long) {
         checkOpen()
         val binding = requireBinding(hyperGetTaskId)
         rpc.pause(binding.aria2Gid)
     }
 
     @Synchronized
-    fun unpause(hyperGetTaskId: Long) {
+    override fun unpause(hyperGetTaskId: Long) {
         checkOpen()
         val binding = requireBinding(hyperGetTaskId)
         rpc.unpause(binding.aria2Gid)
@@ -117,11 +146,11 @@ class Aria2EngineAdapter private constructor(
 
     /** aria2 cancellation is its remove operation; durable cleanup is identical. */
     @Synchronized
-    fun cancel(hyperGetTaskId: Long): Boolean = remove(hyperGetTaskId)
+    override fun cancel(hyperGetTaskId: Long): Boolean = remove(hyperGetTaskId)
 
     /** Removes the engine task before forgetting its durable association. */
     @Synchronized
-    fun remove(hyperGetTaskId: Long): Boolean {
+    override fun remove(hyperGetTaskId: Long): Boolean {
         checkOpen()
         val binding = registry.bindingForTask(hyperGetTaskId) ?: return false
         removeEngineTask(binding.aria2Gid)
@@ -231,6 +260,9 @@ class Aria2EngineAdapter private constructor(
     internal fun bindings(): List<Aria2TaskBinding> = registry.snapshot()
 
     @Synchronized
+    override fun contains(hyperGetTaskId: Long): Boolean = registry.bindingForTask(hyperGetTaskId) != null
+
+    @Synchronized
     internal fun stopAcceptingCommands() {
         acceptingCommands = false
     }
@@ -249,14 +281,30 @@ class Aria2EngineAdapter private constructor(
         return uri.toASCIIString()
     }
 
-    private fun validateDestination(directory: Path, fileName: String): Path {
+    private fun validateDestination(
+        directory: Path,
+        fileName: String,
+        resumeExistingPartial: Boolean,
+    ): Path {
         require(fileName.isNotBlank()) { "Destination file name cannot be blank." }
         require(Path.of(fileName).fileName.toString() == fileName) { "Destination must be a plain file name." }
         val normalized = directory.toAbsolutePath().normalize()
         require(Files.isDirectory(normalized) && Files.isWritable(normalized)) {
             "Destination directory is unavailable."
         }
-        require(Files.notExists(normalized.resolve(fileName))) { "Destination file already exists." }
+        val output = normalized.resolve(fileName)
+        if (Files.exists(output)) {
+            require(resumeExistingPartial) { "Destination file already exists." }
+            require(Files.isRegularFile(output) && !Files.isSymbolicLink(output)) {
+                "Existing partial destination is unsafe."
+            }
+            val control = normalized.resolve("$fileName.aria2")
+            require(Files.isRegularFile(control) && !Files.isSymbolicLink(control)) {
+                "Existing partial destination is not owned by an aria2 control file."
+            }
+        } else {
+            require(!resumeExistingPartial) { "aria2 partial destination disappeared before resume." }
+        }
         return normalized
     }
 }

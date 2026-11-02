@@ -31,7 +31,7 @@ internal fun publishCompletedStagedFile(incomplete: File, complete: File) {
     }
 }
 
-class SimpleDownloadDestination(
+open class SimpleDownloadDestination(
     file: File,
     val appendExtensionToIncompleteDownloads: Boolean,
     val downloadId: Long,

@@ -254,6 +254,7 @@ abstract class DownloadJob(
                 markDownloadInactive()
                 onDownloadFinishedBeforeSave()
                 saveState()
+                onDownloadFinishedAfterSave()
                 downloadManager.onDownloadFinished(downloadItem)
             } catch (e: Exception) {
                 // A failed finalization must be reported, never marked complete.
@@ -264,9 +265,10 @@ abstract class DownloadJob(
     }
 
     open fun onDownloadFinishedBeforeSave() {}
+    protected open suspend fun onDownloadFinishedAfterSave() {}
     abstract fun getDownloadedSize(): Long
 
-    fun downloadRemoved(
+    open suspend fun downloadRemoved(
         removeOutputFile: Boolean = true,
     ) {
         ensureBooted()

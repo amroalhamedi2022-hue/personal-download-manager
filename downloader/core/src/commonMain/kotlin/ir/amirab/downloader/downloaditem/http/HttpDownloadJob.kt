@@ -105,7 +105,7 @@ class HttpDownloadJob(
     val client: HttpDownloaderClient,
 ) : DownloadJob(
     downloadManager = downloadManager,
-) {
+), RangeBasedDownloadJob {
     val listDb by downloadManager::dlListDb
     val partListDb by downloadManager::partListDb
     private val parts: MutableList<RangedPart> = mutableListOf()
@@ -114,7 +114,7 @@ class HttpDownloadJob(
         return destination
     }
 
-    var supportsConcurrent: Boolean? = null
+    override var supportsConcurrent: Boolean? = null
         private set
 
     var serverLastModified: Long? = null
@@ -890,7 +890,7 @@ class HttpDownloadJob(
         saveParts()
     }
 
-    fun getParts(): List<RangedPart> {
+    override fun getParts(): List<RangedPart> {
         //Make a copy because of CMException
         return parts.toList()
     }

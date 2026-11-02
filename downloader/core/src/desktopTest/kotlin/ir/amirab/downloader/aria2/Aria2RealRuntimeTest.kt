@@ -1,5 +1,17 @@
 package ir.amirab.downloader.aria2
 
+import ir.amirab.downloader.DownloadManager
+import ir.amirab.downloader.DownloadSettings
+import ir.amirab.downloader.DownloaderRegistry
+import ir.amirab.downloader.db.MemoryDownloadListDB
+import ir.amirab.downloader.db.MemoryDownloadPartStatesDB
+import ir.amirab.downloader.downloaditem.DownloadJob
+import ir.amirab.downloader.downloaditem.DownloadStatus
+import ir.amirab.downloader.downloaditem.http.HttpDownloadItem
+import ir.amirab.downloader.downloaditem.http.HttpDownloader
+import ir.amirab.downloader.downloaditem.http.OptionalHttpDownloadJobFactory
+import ir.amirab.downloader.utils.EmptyFileCreator
+import ir.amirab.downloader.utils.IDiskStat
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
 import java.net.InetAddress
@@ -14,6 +26,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import kotlinx.coroutines.runBlocking
 
 class Aria2RealRuntimeTest {
     @Test
@@ -85,6 +98,56 @@ class Aria2RealRuntimeTest {
             assertTrue(adapter.remove(9001))
             assertTrue(adapter.bindings().isEmpty())
             assertFalse(Files.readString(root.resolve("bindings.json")).contains("token:"))
+
+            // Exercise the real DownloadManager job bridge, not only the adapter
+            // API. The completed aria2 staging file must be atomically published
+            // under HyperGet's task identity and exact payload hash.
+            val managerRoot = root.resolve("manager")
+            Files.createDirectories(managerRoot)
+            val managerItem = HttpDownloadItem(
+                link = "http://127.0.0.1:${server.address.port}/fixture.bin",
+                id = 9002,
+                folder = managerRoot.toString(),
+                name = "manager-result.bin",
+                dateAdded = System.currentTimeMillis(),
+            )
+            val managerDb = MemoryDownloadListDB()
+            runBlocking { managerDb.add(managerItem) }
+            val managerRegistry = DownloaderRegistry().apply {
+                add(HttpDownloader(
+                    lazy { error("built-in HTTP client must not be used by the enabled adapter test") },
+                    OptionalHttpDownloadJobFactory { item, manager ->
+                        Aria2HttpDownloadJob(item, manager, adapter, Duration.ofMillis(25))
+                    },
+                ))
+            }
+            val manager = DownloadManager(
+                dlListDb = managerDb,
+                partListDb = MemoryDownloadPartStatesDB(),
+                settings = DownloadSettings(),
+                emptyFileCreator = EmptyFileCreator(
+                    diskStat = object : IDiskStat {
+                        override fun getRemainingSpace(path: java.io.File): Long = Long.MAX_VALUE
+                    },
+                    useSparseFile = { false },
+                ),
+                downloaderRegistry = managerRegistry,
+                downloadDataFolder = managerRoot.toFile(),
+            )
+            try {
+                runBlocking {
+                    manager.boot()
+                    manager.resume(managerItem.id)
+                }
+                await(Duration.ofSeconds(90)) { managerItem.status == DownloadStatus.Completed }
+                val managerOutput = managerRoot.resolve(managerItem.name)
+                assertTrue(Files.isRegularFile(managerOutput))
+                assertEquals(payload.size.toLong(), Files.size(managerOutput))
+                assertTrue(sha256(payload).contentEquals(sha256(Files.readAllBytes(managerOutput))))
+                assertTrue(adapter.bindings().isEmpty())
+            } finally {
+                manager.downloadJobs.forEach(DownloadJob::close)
+            }
         } finally {
             controller.shutdown()
             server.stop(0)

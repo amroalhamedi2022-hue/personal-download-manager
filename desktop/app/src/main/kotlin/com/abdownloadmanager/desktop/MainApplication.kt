@@ -14,6 +14,7 @@ import com.abdownloadmanager.shared.util.keepawake.KeepAwakeManager
 import kotlinx.coroutines.runBlocking
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
+import ir.amirab.downloader.aria2.Aria2EngineRuntime
 
 /**
  * Main gui application startup
@@ -27,6 +28,7 @@ class MainApplication : AutoCloseable,
     private val previousVersion: PreviousVersion by inject()
     private val keepAwakeManager: KeepAwakeManager by inject()
     private val customRenderApi: CustomRenderApi by inject()
+    private val aria2EngineRuntime: Aria2EngineRuntime by inject()
 
     private val browserNativeMessaging: NativeMessaging by inject()
     fun start(
@@ -63,6 +65,6 @@ class MainApplication : AutoCloseable,
     }
 
     override fun close() {
-        //nothing yet!
+        aria2EngineRuntime.close()
     }
 }
