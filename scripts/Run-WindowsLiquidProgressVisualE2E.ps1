@@ -476,7 +476,8 @@ public static class HyperGetLiquidProgressNative {
     }
 
     # This is the real installed Windows Home screenshot. CLI/fixture checks
-    # separately prove the Downloading state and the real HTTP byte stream.
+    # separately prove the Downloading state and the real HTTP byte stream;
+    # do not assert pixel-perfect IDM parity from one hosted screenshot.
     $mainDownloadListStatusAtCapture = $statusAtCapture
 
     # Exercise the opt-in Columns control with a REAL mouse click on the
