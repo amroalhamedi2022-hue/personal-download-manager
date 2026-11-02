@@ -736,8 +736,9 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("NativeMouseDownReceived", native)
         self.assertIn("'Copy'", native)
         self.assertIn("ExpectedUrls=@($urlOne,$urlTwo)", native)
-        self.assertIn("/قصص/one.bin", native)
-        self.assertIn("source=حكايات", native)
+        self.assertIn(r"\u0642\u0635\u0635", native)
+        self.assertIn(r"\u062d\u0643\u0627\u064a\u0627\u062a", native)
+        self.assertIn("ConvertFrom-Json", native)
         # The screenshot is reviewed separately; automation still only
         # proves mouse/OLE/new-dialog, never the two full rendered URL values.
         self.assertIn("exact two URL rows need separate screenshot/UI review", native)

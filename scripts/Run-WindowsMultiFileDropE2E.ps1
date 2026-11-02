@@ -69,8 +69,12 @@ $two=Join-Path $root 'second.txt'
 $effectPath=Join-Path $root 'native-effect.txt'
 # One real native Windows gesture now covers two files AND mixed Arabic/Latin URL paths.
 # ASCII-only fixtures could pass even if the Unicode import/display path regressed.
-$urlOne='http://127.0.0.1:9999/قصص/one.bin?lang=ar&part=1'
-$urlTwo='http://127.0.0.1:9999/two.bin?source=حكايات&part=2'
+# Windows PowerShell 5.1 reads BOM-less .ps1 files as the system codepage.
+# Keep this script ASCII; JSON Unicode escapes preserve exact Arabic URL bytes.
+$arabicPath=ConvertFrom-Json -InputObject '"\u0642\u0635\u0635"'
+$arabicQuery=ConvertFrom-Json -InputObject '"\u062d\u0643\u0627\u064a\u0627\u062a"'
+$urlOne='http://127.0.0.1:9999/'+$arabicPath+'/one.bin?lang=ar&part=1'
+$urlTwo='http://127.0.0.1:9999/two.bin?source='+$arabicQuery+'&part=2'
 $shortcut='[InternetShortcut]'+[Environment]::NewLine+'URL='+$urlOne+[Environment]::NewLine
 [IO.File]::WriteAllBytes($one,([byte[]]@(255,254)+[Text.Encoding]::Unicode.GetBytes($shortcut)))
 [IO.File]::WriteAllText($two,$urlTwo,[Text.Encoding]::UTF8)
