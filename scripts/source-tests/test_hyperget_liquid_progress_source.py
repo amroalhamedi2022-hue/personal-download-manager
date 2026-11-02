@@ -774,9 +774,15 @@ class LiquidProgressSourceContract(unittest.TestCase):
 
 
     def test_main_toolbar_labels_and_icons_are_legible_without_touching_download_dialog(self):
-        self.assertIn("val iconSize = if (showLabels) 20.dp else 24.dp", HOME_TOOLBAR)
+        # P3 icon sizing is explicitly configurable; never reintroduce the
+        # old hardcoded 20/24dp label-dependent icon pair.
+        self.assertIn('"small" -> 16.dp', HOME_TOOLBAR)
+        self.assertIn('"large" -> 28.dp', HOME_TOOLBAR)
+        self.assertIn("else -> 20.dp", HOME_TOOLBAR)
         self.assertIn("fontSize = myTextSizes.base", HOME_TOOLBAR)
-        self.assertIn("PaddingValues(horizontal = 9.dp, vertical = 8.dp)", HOME_TOOLBAR)
+        self.assertIn("PaddingValues(horizontal = touchPadding, vertical = 8.dp)", HOME_TOOLBAR)
+        self.assertIn("collectIsHoveredAsState()", HOME_TOOLBAR)
+        self.assertNotIn("val iconSize = if (showLabels) 20.dp else 24.dp", HOME_TOOLBAR)
         self.assertIn(".horizontalScroll(scrollState)", HOME_TOOLBAR)
         self.assertNotIn("fontSize = myTextSizes.sm", HOME_TOOLBAR)
 
