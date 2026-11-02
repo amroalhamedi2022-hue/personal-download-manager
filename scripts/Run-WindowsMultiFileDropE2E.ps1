@@ -67,9 +67,13 @@ $root=[IO.Path]::GetFullPath($OutputDirectory)
 $one=Join-Path $root 'old.url'
 $two=Join-Path $root 'second.txt'
 $effectPath=Join-Path $root 'native-effect.txt'
-$shortcut='[InternetShortcut]'+[Environment]::NewLine+'URL=http://127.0.0.1:9999/one.bin'+[Environment]::NewLine
+# One real native Windows gesture now covers two files AND mixed Arabic/Latin URL paths.
+# ASCII-only fixtures could pass even if the Unicode import/display path regressed.
+$urlOne='http://127.0.0.1:9999/قصص/one.bin?lang=ar&part=1'
+$urlTwo='http://127.0.0.1:9999/two.bin?source=حكايات&part=2'
+$shortcut='[InternetShortcut]'+[Environment]::NewLine+'URL='+$urlOne+[Environment]::NewLine
 [IO.File]::WriteAllBytes($one,([byte[]]@(255,254)+[Text.Encoding]::Unicode.GetBytes($shortcut)))
-[IO.File]::WriteAllText($two,'http://127.0.0.1:9999/two.bin',[Text.Encoding]::UTF8)
+[IO.File]::WriteAllText($two,$urlTwo,[Text.Encoding]::UTF8)
 Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
@@ -188,8 +192,10 @@ try {
   $draw.CopyFromScreen($screen.Location,[System.Drawing.Point]::Empty,$screen.Size)
   $bmp.Save((Join-Path $root 'native-drop.png'),[System.Drawing.Imaging.ImageFormat]::Png)
  }finally{$draw.Dispose();$bmp.Dispose()}
- if($effect -ne 'Copy' -or $after -le $before){
-  throw "Native drop inconclusive: OLE effect=$effect, before=$before, after=$after."
+ if(-not (Test-Path -LiteralPath ($effectPath+'.ready')) -or
+    -not (Test-Path -LiteralPath ($effectPath+'.mousedown')) -or
+    $effect -ne 'Copy' -or $after -le $before){
+  throw "Native drop inconclusive: OLE effect=$effect, before=$before, after=$after, source shown=$(Test-Path -LiteralPath ($effectPath+'.ready')), mouse down=$(Test-Path -LiteralPath ($effectPath+'.mousedown'))."
  }
  Write-Host "PASS: native two-file OLE Copy drop opened new HyperGet GUI window."
 }catch{
@@ -198,6 +204,7 @@ try {
  [pscustomobject]@{
   SourceSHA=$SourceSha
   OfferedFiles=2
+  ExpectedUrls=@($urlOne,$urlTwo)
   NativeOLEEffect=$effect
   VisibleWindowsBefore=$before
   VisibleWindowsAfter=$after
@@ -205,7 +212,7 @@ try {
   SourceShown=(Test-Path -LiteralPath ($effectPath+'.ready'))
   NativeMouseDownReceived=(Test-Path -LiteralPath ($effectPath+'.mousedown'))
   NativeMouseDownError=$(if(Test-Path -LiteralPath ($effectPath+'.error')){Get-Content -LiteralPath ($effectPath+'.error') -Raw}else{''})
-  Limitation='No automated assertion of both URL field values; needs visual/user content acceptance'
+  Limitation='Native OLE mouse gesture and new window are gated; exact two URL rows need separate screenshot/UI review'
   Error=$failure
  }|ConvertTo-Json -Depth 4|Set-Content -LiteralPath (Join-Path $root 'native-drop-report.json') -Encoding utf8
  if($source -and -not $source.HasExited){Stop-Process -Id $source.Id -Force -ErrorAction SilentlyContinue}

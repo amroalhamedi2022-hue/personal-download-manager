@@ -458,10 +458,12 @@ jobs:
             }
           }
 
-      - name: Diagnose native Windows two-file OLE mouse drag
-        # Separate diagnostic: a hosted desktop may not support OLE mouse
-        # injection reliably. Do not misreport a failure as feature acceptance.
-        continue-on-error: true
+      - name: Verify native Windows two-file OLE mouse drag
+        # Proven on the isolated Windows PR #4 runner (run 41353646866):
+        # native mouse-down, OLE Copy, and an actual Add Download window.
+        # Gate this experimental PR but keep unrelated older branches diagnostic.
+        # Exact imported URL values still require screenshot/UI inspection.
+        continue-on-error: ${{ github.base_ref != 'experiment/jules-liquid-progress-20261030' }}
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
