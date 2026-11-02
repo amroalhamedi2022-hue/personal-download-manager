@@ -567,6 +567,10 @@ private fun LiquidProgressTrack(
     bubbleCount: Int,
     compact: Boolean = false,
     showCompletionIcon: Boolean = false,
+    // A dark Home table must not inherit the light dialog's white/ice track.
+    // Only the unfilled channel/outline varies; fluid waves stay identical.
+    unfilledTrackColor: Color? = null,
+    outlineColor: Color? = null,
 ) {
     // Downloaded bytes, not the animation phase, determine the filled width.
     val animatedProgress = animateFloatAsState(
@@ -575,12 +579,17 @@ private fun LiquidProgressTrack(
     )
     val sharedPhase = LocalLiquidAnimationPhase.current
     val trackShape = if (compact) RoundedCornerShape(4.dp) else CircleShape
+    // The approved light window retains its existing pale glass channel.
+    // Home passes theme.surface so the unfilled portion is navy on dark mode,
+    // rather than a white rectangle sitting alongside the blue liquid.
+    val trackBrush = unfilledTrackColor?.let { SolidColor(it) }
+        ?: Brush.horizontalGradient(listOf(Color(0xFFEAF0F7), Color(0xFFDDE5F0)))
 
     Box(
         modifier
             .clip(trackShape)
-            .background(Brush.horizontalGradient(listOf(Color(0xFFEAF0F7), Color(0xFFDDE5F0))))
-            .border(if (compact) 0.75.dp else 1.dp, Color(0xFFBFCAD9), trackShape)
+            .background(trackBrush)
+            .border(if (compact) 0.75.dp else 1.dp, outlineColor ?: Color(0xFFBFCAD9), trackShape)
     ) {
         Spacer(
             Modifier.fillMaxSize().drawWithCache {
@@ -753,6 +762,8 @@ internal fun CompactHomeLiquidProgressTrack(
             modifier = Modifier.fillMaxWidth().height(12.dp),
             bubbleCount = 6,
             compact = true,
+            unfilledTrackColor = myColors.surface,
+            outlineColor = myColors.onSurface.copy(alpha = 0.14f),
         )
     }
 }

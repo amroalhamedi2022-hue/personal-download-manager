@@ -73,6 +73,26 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("LocalLiquidProgressPhase provides liquidProgressPhase", LIST)
         self.assertNotIn("rememberInfiniteTransition", TABLE)
 
+    def test_dark_home_liquid_empty_channel_follows_theme_not_light_dialog(self):
+        track = PAGE.split("private fun LiquidProgressTrack(", 1)[1].split(
+            "private fun RenderPartInfo(", 1
+        )[0]
+        home = PAGE.split("internal fun CompactHomeLiquidProgressTrack(", 1)[1].split(
+            "private fun RenderPartInfo(", 1
+        )[0]
+        self.assertIn("unfilledTrackColor: Color? = null", track)
+        self.assertIn("outlineColor: Color? = null", track)
+        self.assertIn("val trackBrush = unfilledTrackColor?.let { SolidColor(it) }", track)
+        self.assertIn("Color(0xFFEAF0F7), Color(0xFFDDE5F0)", track)
+        self.assertIn("outlineColor ?: Color(0xFFBFCAD9)", track)
+        self.assertIn("unfilledTrackColor = myColors.surface", home)
+        self.assertIn("outlineColor = myColors.onSurface.copy(alpha = 0.14f)", home)
+        self.assertIn("HomeLiquidDarkBackgroundTested = $homeLiquidDarkBackgroundTested", SCRIPT)
+        self.assertIn("HomeLiquidUnfilledTrackPixelRGB = $homeLiquidUnfilledTrackPixelRGB", SCRIPT)
+        self.assertIn("$probeX = [int][Math]::Round($mainWidth * 0.590)", SCRIPT)
+        self.assertIn("$probeY = [int][Math]::Round($mainHeight * 0.213)", SCRIPT)
+        self.assertIn("dark mode background regression", SCRIPT)
+
     def test_main_list_uses_the_exact_dialog_liquid_with_one_shared_clock(self):
         # This is the real dialog renderer, not a separate shimmer imitation.
         self.assertIn(

@@ -452,8 +452,31 @@ public static class HyperGetLiquidProgressNative {
         $mainGraphics.Dispose()
         $mainBitmap.Dispose()
     }
-    # This photograph is contextual evidence. The separate CLI/fixture checks
-    # prove the Downloading state; do not assert pixel-perfect IDM parity.
+    # Fail on the exact visual regression that left an ice-white empty
+    # channel beside the Home liquid in the dark theme. Sample only the
+    # known clean 1024x728-ish runner geometry; other DPI layouts remain
+    # unaccepted until explicit scaled Windows screenshots exist.
+    $homeLiquidUnfilledTrackPixelRGB = $null
+    $homeLiquidDarkBackgroundTested = $false
+    if ($mainWidth -ge 980 -and $mainWidth -le 1080 -and
+        $mainHeight -ge 680 -and $mainHeight -le 770) {
+        $probeX = [int][Math]::Round($mainWidth * 0.590)
+        $probeY = [int][Math]::Round($mainHeight * 0.213)
+        $trackProbe = [System.Drawing.Bitmap]::FromFile($mainDownloadListScreenshot)
+        try {
+            $sample = $trackProbe.GetPixel($probeX, $probeY)
+            $homeLiquidUnfilledTrackPixelRGB = @([int]$sample.R, [int]$sample.G, [int]$sample.B)
+            if ($sample.R -ge 155 -and $sample.G -ge 165 -and $sample.B -ge 175) {
+                throw "Main Home Liquid has a light/white unfilled track at ($probeX,$probeY); dark mode background regression."
+            }
+            $homeLiquidDarkBackgroundTested = $true
+        } finally {
+            $trackProbe.Dispose()
+        }
+    }
+
+    # This is the real installed Windows Home screenshot. CLI/fixture checks
+    # separately prove the Downloading state and the real HTTP byte stream.
     $mainDownloadListStatusAtCapture = $statusAtCapture
 
     # Exercise the opt-in Columns control with a REAL mouse click on the
@@ -1487,6 +1510,8 @@ public static class HyperGetLiquidProgressNative {
         Screenshot = [IO.Path]::GetFileName($screenshot)
         MainDownloadListScreenshot = [IO.Path]::GetFileName($mainDownloadListScreenshot)
         MainDownloadListStatusAtCapture = $mainDownloadListStatusAtCapture
+        HomeLiquidDarkBackgroundTested = $homeLiquidDarkBackgroundTested
+        HomeLiquidUnfilledTrackPixelRGB = $homeLiquidUnfilledTrackPixelRGB
         SourceUrlSearchTested = $sourceUrlSearchTested
         ClipboardShortcutsTested = $clipboardShortcutsTested
         SourceUrlSearchScreenshot = if ($sourceUrlSearchTested) { [IO.Path]::GetFileName($sourceUrlSearchScreenshot) } else { $null }
