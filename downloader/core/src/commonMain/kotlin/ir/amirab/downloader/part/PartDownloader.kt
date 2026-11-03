@@ -41,13 +41,14 @@ const val RetryDelay = 1_000L
 // Bounds only the pre-response connection phase; long streaming bodies remain unrestricted.
 private const val PART_RESPONSE_DEADLINE_MILLIS = 45_000L
 
-// Reserve four workers under the default 64-worker Dispatchers.IO ceiling while
-// retaining enough body-copy capacity for the installed 16-download workload. The
-// 48-copy experiment reduced peak memory modestly but failed the controlled 16-way
-// throughput gate; 60 is the next bounded trial, not accepted until Windows A/B passes.
+// Reserve eight workers under the default 64-worker Dispatchers.IO ceiling while
+// retaining most body-copy capacity for the installed 16-download workload. The
+// measured 48-copy trial failed throughput (-22.45%); the 60-copy trial exceeded
+// the 15% memory-regression gate (+17.77% Working Set at 16 tasks). Trial 56 is
+// deliberately unaccepted until the same installed Windows A/B passes both gates.
 // Acquire before Dispatchers.IO so excess parts suspend without occupying IO workers.
 // This does not cap task admission or change the independent OkHttp request-dispatch limits.
-internal const val PART_BODY_COPY_PARALLELISM = 60
+internal const val PART_BODY_COPY_PARALLELISM = 56
 private val partBodyCopyPermits = Semaphore(PART_BODY_COPY_PARALLELISM)
 
 internal suspend fun <T> withPartBodyCopyPermit(block: suspend () -> T): T {

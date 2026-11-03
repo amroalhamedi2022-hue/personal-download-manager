@@ -59,7 +59,7 @@ class PartDownloaderIoLifecycleContract(unittest.TestCase):
         self.assertIn("if (activeConnection === conn)", download_body)
 
     def test_shared_body_copy_gate_is_global_and_released_in_finally(self):
-        self.assertIn("internal const val PART_BODY_COPY_PARALLELISM = 60", self.part)
+        self.assertIn("internal const val PART_BODY_COPY_PARALLELISM = 56", self.part)
         self.assertIn("private val partBodyCopyPermits = Semaphore(PART_BODY_COPY_PARALLELISM)", self.part)
         helper = self.part.split("internal suspend fun <T> withPartBodyCopyPermit", 1)[1].split("abstract class PartDownloader", 1)[0]
         self.assertIn("partBodyCopyPermits.acquire()", helper)
@@ -69,7 +69,7 @@ class PartDownloaderIoLifecycleContract(unittest.TestCase):
         self.assertIn("val taskCount = PART_BODY_COPY_PARALLELISM * 2", self.test)
         self.assertIn("val overflowEntered = CompletableDeferred<Unit>()", self.test)
         self.assertIn("withTimeoutOrNull(250L)", self.test)
-        self.assertIn("the 61st body copy must remain suspended", self.test)
+        self.assertIn("an additional body copy must remain suspended", self.test)
         self.assertIn("bodyCopyPermitIsReleasedAfterCopyFailure", self.test)
 
     def test_permit_limits_body_copy_without_capping_network_connections(self):
