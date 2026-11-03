@@ -281,3 +281,10 @@
 - اكتب/حدّث **الملف الثابت** `docs/handoffs/HYPERGET_FUNCTIONALITY_HANDOFF_CURRENT.md` بعد كل جولة تطوير كبيرة أو دمج أو فشل مهم في GitHub Actions، وليس فقط عند امتلاء المحادثة.
 - اجعله قصيرًا جدًا: HEAD/PR، التغيير الفعلي، نتيجة CI على نفس SHA، العائق والمتبقي، ثم الخطوة التالية. ممنوع إعادة شرح التاريخ كاملاً أو نقل نصوص حساسة من الصور.
 - زامِن نفس الملف إلى `/HyperGet/HYPERGET_FUNCTIONALITY_HANDOFF_CURRENT.md` في مكتبة ChatGPT مع تحديث الخطة الرئيسية، أو اذكر أي فشل مزامنة بصراحة. هذه وثيقة للوظائف فقط، منفصلة عن handoff الثيمات.
+
+
+## 2026-11-03 — تنفيذ وظيفي فعلي: Settings Backup + API Key Privacy (F04-11/F05-07، حالة جزئية)
+- **PR #3:** `92e228f` نفّذ استيراد/تصدير تفضيلات غير سرية من نافذة Settings وتخزين `DataStore.updateData` الذري؛ `ff0fd84` أصلح smart-cast Kotlin وكشف المفتاح، وحجب Browser API Key افتراضيًا مع Show/Hide؛ **Windows Kotlin + unit tests PASS** run [41705173090](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/41705173090). فشل البناء السابق عند `92e228f` بسبب smart-cast ثم أصلح، ولا يمحى من التاريخ.
+- **main:** نُقلت الميزة وحدها إلى `673b29dbd8e2219b48eaa8b192dd959f3aaf5652` في 11 ملفًا دون دمج PR3 كله أو تغيير الثيمات. `main` وPR3 متباعدان؛ لا دمج شامل. اختبار main الخاص [41706083060](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/41706083060) **قيد التشغيل عند التحديث**؛ لا تدّعِ اجتيازه بعد.
+- **نطاق فعلي:** export يسمح مفاتيح إعدادات معروفة ويستبعد `apiAuthKey/apiEnabled/apiAuthEnabled/apiPort/ignoreSSLCertificates/autoStartOnBoot`، ويمنع استيرادها، يحد حجم الملف، يرفض قيم التزامن/المحاولات غير الصالحة، ويترك الإعدادات الحالية محفوظة عند فشل decode؛ زر export لا يكتب فوق ملف موجود، وزر import يتطلب تأكيد.
+- **لا تغلق F04-11 أو F05-07 بالكامل:** الإعدادات المستقلة لـproxy/per-host والحسابات/الحزم وملفات backup الكاملة غير مشمولة؛ لا يوجد قبول Windows GUI يدوي، وتدقيق أمان عام ما زال مطلوبًا. تابع بعد اجتياز بناء main، ثم تحقق الـ16 download benchmark.
