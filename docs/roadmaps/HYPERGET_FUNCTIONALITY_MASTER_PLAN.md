@@ -60,7 +60,7 @@
 
 - [x] **F00-01** — تثبيت اسم **HyperGet** والنطاق Windows أولًا، فصل الوظائف PR #3 عن الثيمات PR #4، والمصدر `main` (دليل كود/وثائق حتى 2026-11-03؛ لا يعني جميع الملفات متطابقة).
 - [ ] **F00-02** — إعادة جرد حيّ للمتطلبات `P0–P8 + N01–N26 + T01–T20 + A/R/C + طلبات المحادثات` على أحدث `main` وPR #3، ومعالجة تناقضات الوثائق؛ تقرير diff: `in main / only PR3 / only PR4 / missing / blocked`.
-- [ ] **F00-03** — استخراج ZIP مقارنة IDM و27 صورة؛ لكل صورة: قائمة الأوامر الفعلية/الإعدادات/التبويبات/السلوك، خريطة HyperGet، proof screenshot؛ إن تعذر، يبقى BLOCKED موثقًا لا ادعاء بإنجازه.
+- [ ] **F00-03** — **تم استلام واستخراج أرشيف المقارنة يوم 2026-11-03 (26 صورة فعلية: 15 IDM و11 HyperGet)**، وتم إنشاء فهرس وظيفي لكل صورة في `docs/roadmaps/HYPERGET_IDM_26_SCREENSHOT_FUNCTIONAL_AUDIT_2026-11-03.md`؛ **مفتوح** حتى مطابقة كل control بالكود الحالي وباختبار Windows مثبت. رقم «27» تاريخي ولم توجد الصورة الإضافية داخل ZIP، ولا نفترض وجودها.
 - [ ] **F00-04** — خطة cherry-pick/patch لكل وظيفة نجحت في PR #3 إلى main، مع تحقّق الاختبارات على main دون نقل تعديلات الثيمات، وتوثيق تعارضات dependency.
 - [ ] **F00-05** — جرد مكتبات/تبعيات/توقيعات/المصدر/الـGPL/APK غير المعني؛ عدم نقل أسرار أو تغيير DB/IDs أو فقدان توافق الإضافة القديمة.
 
@@ -105,7 +105,7 @@
 - [ ] **F03-11** — Download Complete dialog وسلوك فتح الملف/المجلد/الإغلاق/عدم الإظهار، حسب الخيارات؛ no auto-run غير مأذون، لا مطالبة كاذبة بالنجاح.
 - [ ] **F03-12** — Tray actions: open/minimize/close-to-tray/exit, pause/start/stop queues, speed preset, options, updates, notification count، حفظ سياسة الإغلاق والصوت والبدء التلقائي.
 - [ ] **F03-13** — قبول Windows keyboard/RTL/Unicode/long names/DPI 100/125/150/200% **للوصول إلى جميع الأوامر**؛ تعديل محاذاة أو مقاس فقط عند كسر وظيفة، لا تغيير ألوان/ثيمات أو Liquid Glass.
-- [ ] **F03-14** — مقارنة P01–P27 item-by-item بعد وصول ZIP؛ لا إغلاق مطابقة IDM قبل وجود جدول لكل control وفتح فعلي على Windows.
+- [ ] **F03-14** — طابِق الصور **P01–P26 من الأرشيف المتاح** بندًا بندًا؛ أظهر الحالة per control مع أحدث main وPR3 ودليل Windows GUI، وابحث عن صورة إضافية فقط إن وجد مصدرها؛ لا إغلاق للمطابقة الكاملة بمجرد استخراج الصور.
 
 ### F04 — الإعدادات كلها، وربط القيم بالوظيفة الفعلية
 
@@ -213,7 +213,7 @@
 | N21–N23 | F04/F03 | effective settings/backup/tray |
 | N24–N26 | F01/F11 | network suite and durable trace |
 | T01–T20 | F01–F11 | every applicable test retained in original plan |
-| IDM screenshots P01–P27 | F00-03/F03-14 | BLOCKED on missing original ZIP; no fabricated parity |
+| IDM screenshots P01–P26 (26 actual files; historical expectation 27) | F00-03/F03-14 | Original ZIP recovered; audit/index written; current-code wiring and installed Windows parity OPEN |
 
 ## 6. عقود الاختبارات اليومية وقياس التقدم
 
@@ -262,3 +262,17 @@
 - عُثر على لقطتي Task Manager للمقارنة التاريخية بين IDM ومدير التحميل: [1000066710.png](https://drive.google.com/file/d/1V79Hs0t4FOtp_sZNgmjJxKfRH5WtINab/view) و[image(20261014-210754).png](https://drive.google.com/file/d/12laj1JTccRxkp4G1vYQ8rPz_7pmvGCdd/view). **الأرقام فيها لقطات آنية، وليست benchmark مضبوطًا**.
 - توجد صورة نموذج واجهة مرجعية [image(20261014-204353).png](https://drive.google.com/file/d/1lT2Y6fbxCPleFSA46yHzn5v2V3O0WD_K/view) موسومة «نموذج P0 — لا ينزل ملفات»، لذلك لا تُعدّ اختبار وظائف ولا لقطة من المنتج الأصلي.
 - **الإجراء المستمر:** أبقِ F00-03 مفتوحًا؛ استكمل مراجعة جميع الصور الـ27 إن ظهرت في أرشيف أو مجلد محدد. في المقابل نفذ فهرس أدوات/اختصارات/إعدادات IDM من الوثائق والصور المثبتة ولا توقف بقية الوظائف. لا تلمس الثيمات.
+
+
+## 2026-11-03 — وصلت صور المقارنة الأصلية، انتهاء عائق المصدر وبدء فحص كل control
+
+**التصحيح الأحدث الحاكم بعد ملاحظة Drive أعلاه:** رفع المستخدم أرشيف `archiveNew.zip` في نفس اليوم، وفُتح بالفعل. يحتوي **26 PNG، لا 27**: original IDM UI = 7، original IDM settings = 8، old HyperGet UI = 6، old HyperGet settings = 5. أربعة مجلدات في ZIP. SHA-256 للأرشيف `f83ae37695224ddaa6f0095b0d2c23f592ac27b4c7a35650481a8fd1f817e8bd`.
+
+- فهرس مقارنة بندية مكتمل المصدر: [`docs/roadmaps/HYPERGET_IDM_26_SCREENSHOT_FUNCTIONAL_AUDIT_2026-11-03.md`](HYPERGET_IDM_26_SCREENSHOT_FUNCTIONAL_AUDIT_2026-11-03.md)، يتضمن 26 صورة، اسم كل ملف، SHA-256، الوظائف الظاهرة، IDs، فجوات مرشحة للاختبار، ومعايير قبول على Windows.
+- المصدر الخام **خاص** في مكتبة ChatGPT: `/HyperGet/IDM_REFERENCE_2026-10-21_26_IMAGES_PRIVATE.zip`، والفهرس النصي محفوظ أيضًا في المكتبة. **لا ترفع الصور الخام إلى GitHub**: إحدى صور HyperGet القديمة تكشف قيمة API key، وأخرى تحوي مسارات محلية؛ لا تُكرر هذه القيمة في docs/CI. لو كانت نشطة يجب تدويرها وإخفاؤها في الواجهة.
+- أعلى الوظائف التي يجب تدقيقها من الصور: قائمة Tasks (batch URL/clipboard/site grabber/import/export/Drop Target)، Downloads (Stop All/Delete Completed/Find Next F3/Speed Limiter/Queue scheduler)، View (Sort/Category/Toolbar customization)، Settings (browser lists/exclusions, file types/site exclusions, category paths and staging folder, duplicate/notification policy, max connections/host, proxy/PAC/VPN legacy, event sounds). **المطلوب مطابقة *السلوك* لا الشكل.**
+- **عائق المصدر القديم F00-03 تحول من `missing archive` إلى `reference recovered / implementation acceptance open`**. لا تعتبر الوظائف الموجودة في صور 2026-10-21 غير منفذة الآن؛ احكم من أحدث main وPR #3 وWindows Actions، ولا تكرر الشغل.
+- **Next action:** جرّد Source الحالية أمام جدول كل control في الملف التفصيلي واملأ لكل منها `in main / only PR3 / partial / missing` مع اختبار Windows. F03-14/F11-04 تبقيان OPEN لحين التحقق الوظيفي.
+- هذا تحديث **وثائقي فقط**؛ لا تغييرات كود/ثيم/أزرار في هذا الـCommit، ولا إعلان نجاح CI جديد.
+
+| 2026-11-03 | `main` docs-only reference recovery | فُحص ZIP الحقيقي، 26/26 PNG، فهرس P01–P26 ودليل source+requirements؛ صور حساسة بقيت بالمكتبة | Audit المذكور + ZIP SHA-256 | action-by-action code audit ثم Windows evidence؛ صورة 27 غير موجودة بهذه الحزمة | ZIP وAudit وMaster محفوظة بالمكتبة |
