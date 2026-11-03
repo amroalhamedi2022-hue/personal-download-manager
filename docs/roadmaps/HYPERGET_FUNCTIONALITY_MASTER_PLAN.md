@@ -276,3 +276,8 @@
 - هذا تحديث **وثائقي فقط**؛ لا تغييرات كود/ثيم/أزرار في هذا الـCommit، ولا إعلان نجاح CI جديد.
 
 | 2026-11-03 | `main` docs-only reference recovery | فُحص ZIP الحقيقي، 26/26 PNG، فهرس P01–P26 ودليل source+requirements؛ صور حساسة بقيت بالمكتبة | Audit المذكور + ZIP SHA-256 | action-by-action code audit ثم Windows evidence؛ صورة 27 غير موجودة بهذه الحزمة | ZIP وAudit وMaster محفوظة بالمكتبة |
+
+### قاعدة جديدة 2026-11-03 — HANDOFF سريع وإجباري بعد كل دفعة كبيرة
+- اكتب/حدّث **الملف الثابت** `docs/handoffs/HYPERGET_FUNCTIONALITY_HANDOFF_CURRENT.md` بعد كل جولة تطوير كبيرة أو دمج أو فشل مهم في GitHub Actions، وليس فقط عند امتلاء المحادثة.
+- اجعله قصيرًا جدًا: HEAD/PR، التغيير الفعلي، نتيجة CI على نفس SHA، العائق والمتبقي، ثم الخطوة التالية. ممنوع إعادة شرح التاريخ كاملاً أو نقل نصوص حساسة من الصور.
+- زامِن نفس الملف إلى `/HyperGet/HYPERGET_FUNCTIONALITY_HANDOFF_CURRENT.md` في مكتبة ChatGPT مع تحديث الخطة الرئيسية، أو اذكر أي فشل مزامنة بصراحة. هذه وثيقة للوظائف فقط، منفصلة عن handoff الثيمات.
