@@ -190,6 +190,10 @@ class DesktopSettingsComponent(
     fun allSettingsSections(): List<Pair<SettingSection, List<ConfigurableGroup>>> =
         pages.map { section -> section to settingsCatalog.getValue(section) }
 
+    suspend fun exportNonSecretSettings(): String = appSettings.exportNonSecretSettings()
+
+    suspend fun importNonSecretSettings(text: String) = appSettings.importNonSecretSettings(text)
+
     fun toFront() {
         sendEffect(Effects.BringToFront)
     }

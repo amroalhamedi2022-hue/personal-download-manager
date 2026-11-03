@@ -22,6 +22,8 @@ plugins {
 
 
 dependencies {
+    testImplementation(kotlin("test"))
+
     implementation(libs.decompose)
     implementation(libs.decompose.jbCompose)
 

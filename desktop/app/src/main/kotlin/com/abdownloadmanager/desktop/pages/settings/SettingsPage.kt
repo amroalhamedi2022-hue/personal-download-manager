@@ -38,6 +38,16 @@ import com.abdownloadmanager.shared.util.ui.theme.myShapes
 import com.abdownloadmanager.shared.util.ui.theme.myTextSizes
 import io.github.oikvpqya.compose.fastscroller.rememberScrollbarAdapter
 import ir.amirab.util.ifThen
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.nio.charset.StandardCharsets
+import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.StandardOpenOption
+import javax.swing.JFileChooser
+import javax.swing.JOptionPane
+import javax.swing.filechooser.FileNameExtensionFilter
 
 @Composable
 private fun SideBar(
@@ -163,6 +173,73 @@ fun SettingsPage(
 ) {
     WindowIcon(MyIcons.appIcon)
     var search by rememberSaveable { mutableStateOf("") }
+    var backupNotice by remember { mutableStateOf<String?>(null) }
+    val backupScope = rememberCoroutineScope()
+
+    fun exportBackup() {
+        val chooser = JFileChooser().apply {
+            dialogTitle = "Export HyperGet settings (no passwords or API keys)"
+            selectedFile = java.io.File("HyperGet-settings.json")
+            fileFilter = FileNameExtensionFilter("JSON settings backup", "json")
+        }
+        if (chooser.showSaveDialog(null) != JFileChooser.APPROVE_OPTION) return
+        val selected = chooser.selectedFile.toPath()
+        val destination = if (selected.fileName.toString().endsWith(".json", ignoreCase = true)) {
+            selected
+        } else {
+            selected.resolveSibling(selected.fileName.toString() + ".json")
+        }
+        backupScope.launch {
+            val result = runCatching {
+                val content = settingsComponent.exportNonSecretSettings()
+                withContext(Dispatchers.IO) {
+                    // CREATE_NEW must not overwrite an older user backup.
+                    Files.writeString(destination, content, StandardCharsets.UTF_8,
+                        StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE)
+                }
+            }
+            backupNotice = if (result.isSuccess) {
+                "Settings exported. Browser credentials, API keys and security options are excluded."
+            } else {
+                "Export failed (the destination may already exist). Choose a new filename."
+            }
+        }
+    }
+
+    fun importBackup() {
+        val chooser = JFileChooser().apply {
+            dialogTitle = "Import HyperGet settings"
+            fileFilter = FileNameExtensionFilter("JSON settings backup", "json")
+        }
+        if (chooser.showOpenDialog(null) != JFileChooser.APPROVE_OPTION) return
+        if (JOptionPane.showConfirmDialog(
+                null,
+                "Restore non-secret preferences from this file? Existing preferences will change. " +
+                    "Browser credentials, authentication keys, TLS policy and startup settings are preserved.",
+                "Confirm settings import",
+                JOptionPane.YES_NO_OPTION,
+                JOptionPane.WARNING_MESSAGE
+            ) != JOptionPane.YES_OPTION
+        ) return
+        val selected = chooser.selectedFile.toPath()
+        backupScope.launch {
+            val result = runCatching {
+                val content = withContext(Dispatchers.IO) {
+                    require(Files.size(selected) <=
+                        com.abdownloadmanager.desktop.storage.DesktopSettingsBackup.MAX_BACKUP_BYTES) {
+                        "Settings backup too large"
+                    }
+                    Files.readString(selected, StandardCharsets.UTF_8)
+                }
+                settingsComponent.importNonSecretSettings(content)
+            }
+            backupNotice = if (result.isSuccess) {
+                "Settings imported. Changes are saved; reopen this window if needed."
+            } else {
+                "Import rejected: invalid, incompatible or unsafe settings file. No changes were applied."
+            }
+        }
+    }
     val searching = search.isNotBlank()
     val currentPage by settingsComponent.currentPage.collectAsState()
     val currentConfigurables by settingsComponent.configurables.collectAsState()
@@ -198,6 +275,14 @@ fun SettingsPage(
                 Spacer(Modifier.width(8.dp))
                 ActionButton("Clear", onClick = { search = "" })
             }
+            Spacer(Modifier.width(8.dp))
+            ActionButton("Export settings", onClick = { exportBackup() })
+            Spacer(Modifier.width(8.dp))
+            ActionButton("Import settings", onClick = { importBackup() })
+        }
+        if (backupNotice != null) {
+            Text(backupNotice!!, Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                color = myColors.onBackground)
         }
         Spacer(Modifier.fillMaxWidth().height(1.dp).background(myColors.onBackground / 0.12f))
         Row {
