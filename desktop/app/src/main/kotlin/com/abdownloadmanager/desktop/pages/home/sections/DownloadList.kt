@@ -1,5 +1,11 @@
 package com.abdownloadmanager.desktop.pages.home.sections
 
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import com.abdownloadmanager.shared.util.DOUBLE_CLICK_DELAY
 import com.abdownloadmanager.shared.util.ui.WithContentAlpha
 import com.abdownloadmanager.shared.util.ui.myColors
@@ -40,6 +46,7 @@ import com.abdownloadmanager.shared.util.category.CategoryManager
 import com.abdownloadmanager.shared.util.category.rememberCategoryOf
 import com.abdownloadmanager.shared.util.downloaderror.DownloadErrorReason
 import com.abdownloadmanager.shared.util.ui.theme.myShapes
+import ir.amirab.downloader.downloaditem.DownloadJobStatus
 import ir.amirab.downloader.monitor.*
 import ir.amirab.util.compose.resources.myStringResource
 import ir.amirab.util.compose.StringSource
@@ -105,6 +112,22 @@ fun DownloadList(
         downloadList.filter { it.id in selectionList }
     )
 
+    val hasActiveDownload = downloadList.any { item ->
+        item is ProcessingDownloadItemState && item.status == DownloadJobStatus.Downloading
+    }
+    val liquidProgressPhase: State<Float> = if (hasActiveDownload) {
+        rememberInfiniteTransition().animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 1800, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart,
+            ),
+        )
+    } else {
+        remember { mutableStateOf(0f) }
+    }
+
     val tableInteractionSource = remember { MutableInteractionSource() }
 
     fun newSelection(ids: List<Long>, isSelected: Boolean) {
@@ -121,7 +144,8 @@ fun DownloadList(
             onNewSelection,
             downloadList,
             isALlSelected,
-        )
+        ),
+        LocalLiquidProgressPhase provides liquidProgressPhase,
     ) {
         val itemHorizontalPadding = 16.dp
         Table(

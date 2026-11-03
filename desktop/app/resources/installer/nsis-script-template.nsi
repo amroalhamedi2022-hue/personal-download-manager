@@ -18,7 +18,8 @@ SetCompressor /SOLID lzma
 
 !define INPUT_DIR "{{ input_dir }}"
 !define LICENSE_FILE "{{ license_file }}"
-!define MAIN_BINARY_NAME "${APP_NAME}"
+!define MAIN_BINARY_NAME "{{ main_binary_name }}"
+!define LEGACY_MAIN_BINARY_NAME "${APP_NAME}"
 !define NATIVE_MESSAGING_HOST_BINARY_NAME "{{ native_messaging_host_binary_name }}"
 !define CLI_BINARY_NAME "{{ cli_binary_name }}"
 
@@ -66,6 +67,10 @@ InstallDir "$LOCALAPPDATA\${APP_NAME}"
 
 !define INSTALL_DIR `$INSTDIR`
 Function .onInit
+    ; This is a per-user install under $LOCALAPPDATA with HKCU registration.
+    ; Pin the same shell context used by the uninstaller instead of relying on
+    ; account/elevation-dependent NSIS defaults.
+    SetShellVarContext current
 
     ; Call RestorePreviousInstallLocation
 
@@ -104,6 +109,8 @@ FunctionEnd
     RmDir /r "${INSTALL_DIR}\runtime"
     Delete "${INSTALL_DIR}\${MAIN_BINARY_NAME}.exe"
     Delete "${INSTALL_DIR}\${MAIN_BINARY_NAME}.ico"
+    Delete "${INSTALL_DIR}\${LEGACY_MAIN_BINARY_NAME}.exe"
+    Delete "${INSTALL_DIR}\${LEGACY_MAIN_BINARY_NAME}.ico"
     Delete "${INSTALL_DIR}\${CLI_BINARY_NAME}.exe"
     Delete "${INSTALL_DIR}\${NATIVE_MESSAGING_HOST_BINARY_NAME}.exe"
     Delete "${INSTALL_DIR}\uninstall.exe"
@@ -114,17 +121,23 @@ Function RunMainBinary
    Exec "${INSTALL_DIR}\${MAIN_BINARY_NAME}.exe"
 FunctionEnd
 
-!macro closeProcess executableName
+!macro closeProcess executableName macroId
     DetailPrint "Stopping Executable ${executableName}"
 
-    ${If} "$EXEFILE" != "${executableName}"
-        nsExec::ExecToLog 'taskkill /F /IM "${executableName}"'
-        Pop $0
+    ${If} "$EXEFILE" == "${executableName}"
+        ; Setup and GUI can share a basename. Compare directories before skipping termination.
+        StrCmp "$EXEDIR" "$INSTDIR" closeProcess_${macroId}_skip closeProcess_${macroId}_kill
     ${Else}
-        DetailPrint "It seems that installer file name is same as executable name"
-        DetailPrint "Please close app manually"
-        StrCpy $0 "1"
-    ${Endif}
+        Goto closeProcess_${macroId}_kill
+    ${EndIf}
+closeProcess_${macroId}_skip:
+    DetailPrint "Installer and target resolve to the same directory; not terminating the installer."
+    StrCpy $0 "1"
+    Goto closeProcess_${macroId}_done
+closeProcess_${macroId}_kill:
+    nsExec::ExecToLog 'taskkill /F /IM "${executableName}"'
+    Pop $0
+closeProcess_${macroId}_done:
 !macroend
 
 ; Function RestorePreviousInstallLocation
@@ -135,10 +148,11 @@ FunctionEnd
 ; FunctionEnd
 
 ; I should improve this.
-!macro closeApp
-    !insertmacro closeProcess "${NATIVE_MESSAGING_HOST_BINARY_NAME}.exe"
-    !insertmacro closeProcess "${CLI_BINARY_NAME}.exe"
-    !insertmacro closeProcess "${MAIN_BINARY_NAME}.exe"
+!macro closeApp phaseId
+    !insertmacro closeProcess "${NATIVE_MESSAGING_HOST_BINARY_NAME}.exe" ${phaseId}_native
+    !insertmacro closeProcess "${CLI_BINARY_NAME}.exe" ${phaseId}_cli
+    !insertmacro closeProcess "${MAIN_BINARY_NAME}.exe" ${phaseId}_main
+    !insertmacro closeProcess "${LEGACY_MAIN_BINARY_NAME}.exe" ${phaseId}_legacy
 
     ${If} $0 == "0"
         Sleep 500
@@ -153,7 +167,9 @@ FunctionEnd
 !macroend
 
 !macro RemoveStartMenu
-	RmDir /r "$SMPROGRAMS\${APP_DISPLAY_NAME}"
+    ; Remove only the product shortcut; leave unrelated user files untouched.
+    Delete "$SMPROGRAMS\${APP_DISPLAY_NAME}\${APP_DISPLAY_NAME}.lnk"
+    RMDir "$SMPROGRAMS\${APP_DISPLAY_NAME}"
 !macroend
 
 !macro RemoveUserData
@@ -169,6 +185,18 @@ FunctionEnd
 	Delete "$DESKTOP\${APP_DISPLAY_NAME}.lnk"
 !macroend
 
+; Display branding changed from "Download Manager" to "HyperGet".
+; Remove only this product's two known shortcut names so upgrade and rollback
+; never leave a stale shortcut pointing at the shared DownloadManager.exe.
+!macro RemoveKnownBrandShortcuts
+    Delete "$SMPROGRAMS\Download Manager\Download Manager.lnk"
+    RMDir "$SMPROGRAMS\Download Manager"
+    Delete "$SMPROGRAMS\HyperGet\HyperGet.lnk"
+    RMDir "$SMPROGRAMS\HyperGet"
+    Delete "$DESKTOP\Download Manager.lnk"
+    Delete "$DESKTOP\HyperGet.lnk"
+!macroend
+
 ; Do not launch the GUI after /S: scripted/enterprise installs should stay silent.
 ; Interactive users retain the existing MUI_FINISHPAGE_RUN option.
 ; This also prevents a second, unintended GUI during CPU/RAM benchmarks.
@@ -177,7 +205,9 @@ Section "${APP_DISPLAY_NAME}"
     SectionInstType RO
 
     DetailPrint "Closing app (if any)"
-    !insertmacro closeApp
+    !insertmacro closeApp install
+    DetailPrint "Removing stale HyperGet/legacy product shortcuts"
+    !insertmacro RemoveKnownBrandShortcuts
     DetailPrint "clearing old app (if any)"
     !insertmacro clearFiles
     DetailPrint "writing new data"
@@ -192,7 +222,9 @@ Section "${APP_DISPLAY_NAME}"
     ; Registry information for add/remove programs
     WriteRegStr SHCTX "${REG_UNINSTALL_KEY}" "DisplayName" "${APP_DISPLAY_NAME}"
     WriteRegStr SHCTX "${REG_UNINSTALL_KEY}" "DisplayIcon" "$\"${INSTALL_DIR}\${MAIN_BINARY_NAME}.exe$\""
-    WriteRegStr SHCTX "${REG_UNINSTALL_KEY}" "DisplayVersion" "${APP_VERSION}"
+    ; Keep branch-specific SemVer suffixes in Add/Remove Programs so upgrade tests can distinguish snapshots.
+    ; APP_VERSION remains numeric for the internal product Version and fixed-format PE version resources.
+    WriteRegStr SHCTX "${REG_UNINSTALL_KEY}" "DisplayVersion" "${APP_DISPLAY_VERSION}"
     WriteRegStr SHCTX "${REG_UNINSTALL_KEY}" "Publisher" "${APP_PUBLISHER}"
     WriteRegStr SHCTX "${REG_UNINSTALL_KEY}" "InstallLocation" "$\"${INSTALL_DIR}$\""
     WriteRegStr SHCTX "${REG_UNINSTALL_KEY}" "UninstallString" "$\"${INSTALL_DIR}\uninstall.exe$\""
@@ -219,15 +251,23 @@ SectionEnd
 Section "Uninstall"
     SectionInstType RO
 
-    !insertmacro closeApp
-    !insertmacro clearFiles
+    ; Match the installer's per-user shell/registry context explicitly.
+    SetShellVarContext current
 
+    !insertmacro closeApp uninstall
+
+    ; Remove discoverability and registration before deleting the running
+    ; uninstaller and its containing directory. Keep file deletion last so
+    ; registry/shortcut cleanup cannot be skipped by self-removal behavior.
     !insertmacro RemoveStartMenu
     !insertmacro RemoveDesktopShortCut
+    !insertmacro RemoveKnownBrandShortcuts
 
     DeleteRegKey SHCTX "${REG_UNINSTALL_KEY}"
     DeleteRegKey SHCTX "${REG_APP_KEY}"
 
     ; remove auto start on boot registry
     DeleteRegValue SHCTX "${REG_RUN_KEY}" "${APP_NAME}"
+
+    !insertmacro clearFiles
 SectionEnd

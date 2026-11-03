@@ -5,7 +5,6 @@ import ir.amirab.downloader.connection.HttpDownloaderClient
 import ir.amirab.downloader.connection.response.HttpResponseInfo
 import ir.amirab.downloader.connection.response.expectSuccess
 import ir.amirab.downloader.destination.DestWriter
-import ir.amirab.downloader.downloaditem.http.HttpDownloadCredentials
 import ir.amirab.downloader.part.MediaSegment
 import ir.amirab.downloader.part.PartDownloader
 import ir.amirab.util.HttpUrlUtils
@@ -19,6 +18,7 @@ class HLSPartDownloader(
     part: MediaSegment,
     getDestWriter: () -> DestWriter,
     private val baseURL: String,
+    private val playlistCredentials: IHLSCredentials,
     private val client: HttpDownloaderClient,
     private val speedLimiters: List<SpeedLimiter>,
     private val hostLimitRegistry: HostLimitRegistry? = null,
@@ -46,9 +46,8 @@ class HLSPartDownloader(
         val hostPermit = hostLimitRegistry?.acquireForUrl(url)
         var openedConnection: Connection<HttpResponseInfo>? = null
         try {
-            val connect = client.connect(
-                HttpDownloadCredentials(url),
-                null, null,
+            val connect = client.connectHlsWithOriginGuard(
+                credentialsForHlsSegment(playlistCredentials, baseURL, url)
             )
             openedConnection = connect
             if (stop || !currentCoroutineContext().isActive) {
@@ -59,6 +58,10 @@ class HLSPartDownloader(
                 connect.close()
                 connect.responseInfo.expectSuccess()
             }
+            // A server's 206 is successful HTTP but not a complete HLS segment.
+            // We do not send Range for media segments, so accepting 206 here
+            // would silently publish a fragment as a finished segment.
+            requireCompleteHlsSegmentResponse(connect.responseInfo.statusCode)
             part.length = connect.responseInfo.contentLength
             val limiters = buildList {
                 addAll(speedLimiters)
@@ -87,6 +90,14 @@ class HLSPartDownloader(
     }
 
     override fun onFinish() {
+        // PartDownloader signals EOF as success even when the server closed
+        // early. Only mark Completed after the entire declared body arrived.
+        try {
+            requireCompleteHlsSegmentBytes(part.length, part.current)
+        } catch (failure: java.io.IOException) {
+            onCanceled(failure)
+            return
+        }
         part.isCompleted = true
         super.onFinish()
     }

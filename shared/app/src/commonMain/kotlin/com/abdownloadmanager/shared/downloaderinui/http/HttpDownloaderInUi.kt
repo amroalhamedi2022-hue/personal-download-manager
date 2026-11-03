@@ -13,11 +13,12 @@ import com.abdownloadmanager.shared.util.SizeAndSpeedUnitProvider
 import com.abdownloadmanager.shared.util.DownloadSystem
 import ir.amirab.downloader.connection.response.HttpResponseInfo
 import ir.amirab.downloader.downloaditem.IDownloadCredentials
+import ir.amirab.downloader.downloaditem.DownloadJob
 import ir.amirab.downloader.downloaditem.http.HttpDownloadCredentials
 import ir.amirab.downloader.downloaditem.http.HttpDownloadItem
-import ir.amirab.downloader.downloaditem.http.HttpDownloadJob
 import ir.amirab.downloader.downloaditem.http.HttpDownloader
 import ir.amirab.downloader.downloaditem.http.IHttpDownloadCredentials
+import ir.amirab.downloader.downloaditem.http.RangeBasedDownloadJob
 import ir.amirab.downloader.monitor.ProcessingDownloadItemFactoryInputs
 import ir.amirab.downloader.monitor.ProcessingDownloadItemState
 import ir.amirab.downloader.monitor.RangeBasedProcessingDownloadItemState
@@ -31,7 +32,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 class HttpDownloaderInUi(
     httpDownloader: HttpDownloader,
     private val sizeAndSpeedUnitProvider: SizeAndSpeedUnitProvider,
-) : DownloaderInUi<HttpDownloadCredentials, HttpResponseInfo, DownloadSize.Bytes, HttpLinkChecker, HttpDownloadItem, HttpNewDownloadInputs, HttpEditDownloadInputs, HttpCredentialsToItemMapper, HttpDownloadJob, HttpDownloader>(
+) : DownloaderInUi<HttpDownloadCredentials, HttpResponseInfo, DownloadSize.Bytes, HttpLinkChecker, HttpDownloadItem, HttpNewDownloadInputs, HttpEditDownloadInputs, HttpCredentialsToItemMapper, DownloadJob, HttpDownloader>(
     downloader = httpDownloader
 ) {
     override fun createLinkChecker(initialCredentials: HttpDownloadCredentials): HttpLinkChecker {
@@ -110,12 +111,14 @@ class HttpDownloaderInUi(
     }
 
     override fun createProcessingDownloadItemState(
-        props: ProcessingDownloadItemFactoryInputs<HttpDownloadJob>
+        props: ProcessingDownloadItemFactoryInputs<DownloadJob>
     ): ProcessingDownloadItemState {
         val downloadJob = props.downloadJob
+        val rangeJob = downloadJob as? RangeBasedDownloadJob
+            ?: error("HTTP job does not expose range progress: ${downloadJob::class.qualifiedName}")
         val downloadItem = downloadJob.downloadItem
         val downloadJobStatus = downloadJob.status.value
-        val parts = downloadJob.getParts()
+        val parts = rangeJob.getParts()
         val contentLength = downloadItem.contentLength
         return RangeBasedProcessingDownloadItemState(
             id = downloadItem.id,
@@ -134,7 +137,7 @@ class HttpDownloaderInUi(
                 )
             },
             speed = props.speed,
-            supportResume = downloadJob.supportsConcurrent,
+            supportResume = rangeJob.supportsConcurrent,
             downloadLink = downloadItem.link,
             isWaiting = props.isWaiting,
         )

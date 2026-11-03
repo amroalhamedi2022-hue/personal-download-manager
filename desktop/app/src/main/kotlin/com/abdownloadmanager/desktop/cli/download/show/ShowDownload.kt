@@ -22,8 +22,22 @@ class ShowDownload : SuspendingCliktCommand("show") {
         "--watch",
         help = "Track the download progress"
     ).flag()
+    // Stable, untruncated, non-sensitive ID/status output for scripts and diagnostics.
+    // No IPC protocol or persisted state changes.
+    private val statusLines by option(
+        "--status-lines",
+        help = "Print one tab-separated ID and status per download (no names or paths)"
+    ).flag()
+
+    private val diagnosticLines by option(
+        "--diagnostic-lines",
+        help = "Print ID, status and sanitized error class only (never URLs or messages)"
+    ).flag()
 
     override suspend fun run() {
+        require(!watch || !statusLines) { "--status-lines cannot be combined with --watch" }
+        require(!watch || !diagnosticLines) { "--diagnostic-lines cannot be combined with --watch" }
+        require(!statusLines || !diagnosticLines) { "Choose only one machine-readable output format" }
         if (watch) {
             monitorDownloads()
         } else {
@@ -66,7 +80,22 @@ class ShowDownload : SuspendingCliktCommand("show") {
         }
 
         if (downloads.isEmpty()) {
-            echo(yellow("No downloads found."))
+            if (!statusLines && !diagnosticLines) echo(yellow("No downloads found."))
+            return
+        }
+        if (statusLines) {
+            downloads.forEach { download ->
+                echo("${download.id}\t${download.status.displayName}")
+            }
+            return
+        }
+        if (diagnosticLines) {
+            downloads.forEach { download ->
+                val type = if (download.status == ShowDownloadIPC.DownloadStatus.Error) {
+                    download.failureType ?: "Unclassified"
+                } else "-"
+                echo("${download.id}\t${download.status.displayName}\t$type")
+            }
             return
         }
 

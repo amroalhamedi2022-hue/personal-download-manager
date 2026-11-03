@@ -19,6 +19,7 @@ param(
     [Parameter(Mandatory = $true)]
     [ValidateNotNullOrEmpty()]
     [string] $SourceSha,
+    [string] $HarnessSha = '',
     [Parameter(Mandatory = $true)]
     [ValidateNotNullOrEmpty()]
     [string] $OutputCsv,
@@ -35,6 +36,8 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $logicalProcessors = [Environment]::ProcessorCount
 $rootName = [IO.Path]::GetFileNameWithoutExtension($RootProcessName)
+if ([string]::IsNullOrWhiteSpace($HarnessSha)) { $HarnessSha = $SourceSha }
+if ($HarnessSha -notmatch '^[0-9a-fA-F]{40}$') { throw 'HarnessSha must be the exact 40-character checkout SHA.' }
 $csvPath = [IO.Path]::GetFullPath($OutputCsv)
 $csvFolder = Split-Path $csvPath -Parent
 if (-not (Test-Path -LiteralPath $csvFolder)) {
@@ -112,6 +115,7 @@ while ($timer.Elapsed.TotalSeconds -lt $DurationSeconds) {
     $rows.Add([pscustomobject]@{
         TimestampUtc = $at.ToString('o')
         SourceSha = $SourceSha
+        HarnessSha = $HarnessSha
         Scenario = $Scenario
         RunLabel = $RunLabel
         OS = $os
@@ -138,6 +142,7 @@ $cpu = @($rows | Measure-Object -Property CpuMachinePercent -Average -Maximum)
     StartedUtc = $start.ToString('o')
     Scenario = $Scenario
     SourceSha = $SourceSha
+    HarnessSha = $HarnessSha
     AverageWorkingSetMiB = [math]::Round($ram[0].Average, 3)
     PeakWorkingSetMiB = [math]::Round($ram[0].Maximum, 3)
     AveragePrivateBytesMiB = [math]::Round($private[0].Average, 3)

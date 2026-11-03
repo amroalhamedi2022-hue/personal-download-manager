@@ -6,6 +6,7 @@ one fixture. /stats is a loopback-only test endpoint used to PROVE how many
 distinct tasks actually transferred concurrently (not merely queued).
 """
 import argparse
+from contextlib import contextmanager
 import json
 import re
 import threading
@@ -15,6 +16,56 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 RANGE = re.compile(r"^bytes=(\d+)-(\d*)$")
+# A 256/512-byte range probe is metadata discovery, not a sustained transfer.
+# Only a GET of at least one 64-KiB data chunk admits a strict gated task.
+MIN_DATA_TRANSFER_BYTES = 64 * 1024
+
+class BurstReadyHTTPServer(ThreadingHTTPServer):
+    """Give the loopback fixture enough pending accepts for 16 segmented jobs.
+
+    Python 3.12's ThreadingHTTPServer inherits a listen backlog of just five.
+    The installed Windows benchmark opens >100 parallel Range connections;
+    a saturated fixture accept queue can cause ConnectException before any
+    download data GET. This changes only the local test server, not HyperGet.
+    """
+    request_queue_size = 256
+
+
+
+class TaskChunkPacer:
+    """Share one byte-rate budget across all Range sockets of a task.
+
+    Reserving a chunk is serialized by the fixture's existing guard. The
+    wait itself happens outside the guard, so different tasks stay parallel.
+    """
+    def __init__(self, interval_seconds):
+        self.interval_seconds = interval_seconds
+        self.next_send = {}
+        self.task_locks = {}
+        self.lock_guard = threading.Lock()
+
+    @contextmanager
+    def slot(self, task_id):
+        # Serialize actual sends per task instead of reserving arbitrarily
+        # distant future slots. Many Range sockets otherwise queue >10s of
+        # future sends, hit the downloader's read timeout and drop live tasks.
+        with self.lock_guard:
+            task_lock = self.task_locks.setdefault(task_id, threading.Lock())
+        with task_lock:
+            now = time.monotonic()
+            wait = max(0.0, self.next_send.get(task_id, now) - now)
+            if wait:
+                time.sleep(wait)
+            try:
+                yield wait
+            finally:
+                # Advance only after the actual write, not at reservation time.
+                self.next_send[task_id] = time.monotonic() + self.interval_seconds
+
+    def reset(self):
+        with self.lock_guard:
+            self.next_send.clear()
+            self.task_locks.clear()
 
 
 def main():
@@ -22,7 +73,10 @@ def main():
     ap.add_argument("--file", type=Path, required=True)
     ap.add_argument("--port-file", type=Path, required=True)
     ap.add_argument("--chunk-delay-ms", type=float, default=15.0)
+    ap.add_argument("--task-chunk-delay-ms", type=float, default=0.0)
     args = ap.parse_args()
+    if args.task_chunk_delay_ms < 0:
+        ap.error("--task-chunk-delay-ms must be nonnegative")
     if args.chunk_delay_ms < 0:
         ap.error("--chunk-delay-ms must be nonnegative")
     file_path = args.file.resolve(strict=True)
@@ -39,15 +93,51 @@ def main():
         "total_requests": 0,
         "bytes_sent": 0,
         "peak_distinct_tasks": 0,
+        "paced_chunks": 0,
+        "paced_wait_seconds": 0.0,
+        "connection_delay_sleeps": 0,
     }
     tasks_active = {}
     tasks_seen = set()
+    task_bytes_sent = {}
+    # Per-task bounded HTTP response lifecycle counters distinguish a
+    # short successful Range probe from a disconnected/stalled data socket.
+    # Task names are synthetic fixture labels; no URL or credential is logged.
+    task_get_started = {}
+    task_get_completed = {}
+    task_get_interrupted = {}
+    task_requested_bytes = {}
+    task_ranges = {}
+    task_probe_get_started = {}
+    task_data_get_started = {}
+    task_pacer = TaskChunkPacer(args.task_chunk_delay_ms / 1000.0)
+    # Test-only admission OBSERVATION: track simultaneous real data GETs.
+    # Never hold HTTP sockets behind a barrier: under a shared host connection
+    # cap, early tasks can occupy every socket and prevent later tasks from
+    # reaching their first data GET (a self-inflicted deadlock). The benchmark
+    # must still observe all 16 live data tasks through its full sample.
+    gate_expected = [0]
+    gate_open = threading.Event()
+    gate_open.set()
 
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
 
         def stats_request(self, query):
-            reset = parse_qs(query).get("reset") == ["1"]
+            params = parse_qs(query)
+            reset = params.get("reset") == ["1"]
+            gate_values = params.get("gate_tasks", [])
+            if gate_values and (not reset or len(gate_values) != 1):
+                self.send_error(400, "gate_tasks requires reset=1")
+                return
+            try:
+                requested_gate = int(gate_values[0]) if gate_values else 0
+            except ValueError:
+                self.send_error(400, "Invalid gate_tasks")
+                return
+            if requested_gate < 0 or requested_gate > 64:
+                self.send_error(400, "gate_tasks outside 0..64")
+                return
             with guard:
                 if reset and stats["active_requests"]:
                     self.send_error(409, "Transfers still active")
@@ -57,9 +147,36 @@ def main():
                         stats[key] = 0
                     tasks_active.clear()
                     tasks_seen.clear()
+                    task_bytes_sent.clear()
+                    task_get_started.clear()
+                    task_get_completed.clear()
+                    task_get_interrupted.clear()
+                    task_requested_bytes.clear()
+                    task_ranges.clear()
+                    task_probe_get_started.clear()
+                    task_data_get_started.clear()
+                    task_pacer.reset()
+                    gate_expected[0] = requested_gate
+                    if requested_gate:
+                        gate_open.clear()
+                    else:
+                        gate_open.set()
                 snapshot = dict(stats)
+                snapshot["gate_expected_tasks"] = gate_expected[0]
+                snapshot["gate_released"] = gate_open.is_set()
                 snapshot["active_distinct_tasks"] = len(tasks_active)
+                # Only local synthetic task names, never request URLs, headers
+                # or credentials. Helps distinguish late starts from early exits.
+                snapshot["active_task_ids"] = sorted(tasks_active)
                 snapshot["unique_tasks_seen"] = len(tasks_seen)
+                snapshot["task_bytes_sent"] = dict(sorted(task_bytes_sent.items()))
+                snapshot["task_get_started"] = dict(sorted(task_get_started.items()))
+                snapshot["task_get_completed"] = dict(sorted(task_get_completed.items()))
+                snapshot["task_get_interrupted"] = dict(sorted(task_get_interrupted.items()))
+                snapshot["task_requested_bytes"] = dict(sorted(task_requested_bytes.items()))
+                snapshot["task_ranges"] = dict(sorted(task_ranges.items()))
+                snapshot["task_probe_get_started"] = dict(sorted(task_probe_get_started.items()))
+                snapshot["task_data_get_started"] = dict(sorted(task_data_get_started.items()))
             body = json.dumps(snapshot, sort_keys=True).encode("ascii")
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -73,11 +190,34 @@ def main():
             if address.path == "/stats":
                 self.stats_request(address.query)
                 return
-            if address.path != "/fixture.bin":
+            if address.path == "/redirect":
+                target = "/fixture.bin"
+                if address.query:
+                    target += "?" + address.query
+                self.send_response(302)
+                self.send_header("Location", target)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+            if address.path.startswith("/status/"):
+                try:
+                    status = int(address.path.rsplit("/", 1)[1])
+                except ValueError:
+                    status = 400
+                if status not in (404, 429, 500):
+                    status = 400
+                self.send_response(status)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+            if address.path not in ("/fixture.bin", "/ignore-range"):
                 self.send_error(404)
                 return
             start, end = 0, size - 1
-            requested = self.headers.get("Range")
+            incoming_range = self.headers.get("Range")
+            # Deliberately ignore Range only on this explicit test route.
+            # The default fixture endpoint keeps strict 206/416 behavior.
+            requested = None if address.path == "/ignore-range" else incoming_range
             if requested:
                 m = RANGE.fullmatch(requested.strip())
                 if m:
@@ -102,16 +242,45 @@ def main():
                 return
 
             task_id = parse_qs(address.query).get("task", ["unlabeled"])[0][:128]
+            request_record = {
+                "start": start,
+                "end": end,
+                "range": bool(incoming_range),
+                "honored": bool(requested),
+                "data_transfer": remaining >= MIN_DATA_TRANSFER_BYTES,
+                "completed": False,
+                "socket_write_bytes": 0,
+            }
+            response_socket_write_bytes = 0
             with guard:
+                task_ranges.setdefault(task_id, []).append(request_record)
+                # The 16-task barrier previously counted 256-byte metadata
+                # probes as live downloads. Those probes finished before any
+                # actual file data socket opened, yielding a false peak=16.
+                # Let probes complete immediately; block only real data GETs.
+                is_counted_transfer = (
+                    gate_expected[0] == 0 or remaining >= MIN_DATA_TRANSFER_BYTES
+                )
+                task_get_started[task_id] = task_get_started.get(task_id, 0) + 1
+                task_requested_bytes[task_id] = task_requested_bytes.get(task_id, 0) + remaining
                 stats["active_requests"] += 1
                 stats["total_requests"] += 1
                 tasks_seen.add(task_id)
-                tasks_active[task_id] = tasks_active.get(task_id, 0) + 1
                 stats["peak_requests"] = max(stats["peak_requests"], stats["active_requests"])
-                stats["peak_distinct_tasks"] = max(
-                    stats["peak_distinct_tasks"], len(tasks_active)
-                )
+                if is_counted_transfer:
+                    task_data_get_started[task_id] = task_data_get_started.get(task_id, 0) + 1
+                    tasks_active[task_id] = tasks_active.get(task_id, 0) + 1
+                    stats["peak_distinct_tasks"] = max(
+                        stats["peak_distinct_tasks"], len(tasks_active)
+                    )
+                    if gate_expected[0] and len(tasks_active) >= gate_expected[0]:
+                        gate_open.set()
+                else:
+                    task_probe_get_started[task_id] = task_probe_get_started.get(task_id, 0) + 1
             try:
+                # Transfer immediately; gate_released records actual overlap,
+                # not permission to start sending. Pacing keeps each task live
+                # long enough for later jobs to obtain host connections.
                 with file_path.open("rb") as inp:
                     inp.seek(start)
                     try:
@@ -119,23 +288,57 @@ def main():
                             chunk = inp.read(min(64 * 1024, remaining))
                             if not chunk:
                                 raise IOError("Source truncated mid-response")
-                            self.wfile.write(chunk)
-                            self.wfile.flush()
+                            # Per-connection throttling alone is insufficient:
+                            # 16 Range sockets can finish one task while the
+                            # other 15 remain active. Pace aggregate bytes for
+                            # each task only in the strict gated workload.
+                            if gate_expected[0] and is_counted_transfer:
+                                with task_pacer.slot(task_id) as wait:
+                                    with guard:
+                                        stats["paced_chunks"] += 1
+                                        stats["paced_wait_seconds"] += wait
+                                    self.wfile.write(chunk)
+                                    self.wfile.flush()
+                            else:
+                                self.wfile.write(chunk)
+                                self.wfile.flush()
+                            response_socket_write_bytes += len(chunk)
                             remaining -= len(chunk)
                             with guard:
+                                # Counts local socket-writer acceptance, not peer acknowledgement.
+                                # A canceled response may have one buffered 64-KiB write accepted.
                                 stats["bytes_sent"] += len(chunk)
-                            if args.chunk_delay_ms > 0:
+                                task_bytes_sent[task_id] = (
+                                    task_bytes_sent.get(task_id, 0) + len(chunk)
+                                )
+                            # Strict 16-task mode already uses an aggregate
+                            # per-task rate budget. Applying the legacy 500-ms
+                            # per-socket delay on top creates unnecessary
+                            # idle gaps and may trip client read timeouts.
+                            # Ungated 1/4-task workloads retain their existing
+                            # per-connection delay and acceptance behavior.
+                            if args.chunk_delay_ms > 0 and not gate_expected[0]:
+                                with guard:
+                                    stats["connection_delay_sleeps"] += 1
                                 time.sleep(args.chunk_delay_ms / 1000.0)
                     except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
                         pass
             finally:
                 with guard:
-                    stats["active_requests"] -= 1
-                    count = tasks_active[task_id] - 1
-                    if count:
-                        tasks_active[task_id] = count
+                    # Record request completion after the body finishes or is interrupted.
+                    request_record["completed"] = remaining == 0
+                    request_record["socket_write_bytes"] = response_socket_write_bytes
+                    if remaining == 0:
+                        task_get_completed[task_id] = task_get_completed.get(task_id, 0) + 1
                     else:
-                        del tasks_active[task_id]
+                        task_get_interrupted[task_id] = task_get_interrupted.get(task_id, 0) + 1
+                    stats["active_requests"] -= 1
+                    if is_counted_transfer:
+                        count = tasks_active[task_id] - 1
+                        if count:
+                            tasks_active[task_id] = count
+                        else:
+                            del tasks_active[task_id]
 
         def do_GET(self):
             self.serve_file(True)
@@ -146,7 +349,7 @@ def main():
         def log_message(self, fmt, *values):
             return
 
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    server = BurstReadyHTTPServer(("127.0.0.1", 0), Handler)
     server.daemon_threads = True
     args.port_file.write_text(str(server.server_port), encoding="ascii")
     try:

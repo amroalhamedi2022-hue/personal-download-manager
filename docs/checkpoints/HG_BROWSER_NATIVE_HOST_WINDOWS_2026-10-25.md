@@ -1,0 +1,21 @@
+# HG-BROWSER-HOST-01 — installed Windows native-messaging host gate (2026-10-25)
+
+## Scope and acceptance (before any new Windows build)
+Continue the browser integration milestone without resetting PR #3 or browser PR #1. The next functional prerequisite is **installed Windows host registration and native stdio request/reply**, not merely TypeScript bundle success. The existing native host and browser integration are Apache-2.0 project code; the script uses Windows PowerShell/.NET standard APIs and the existing Chrome/Firefox native messaging protocol, with **no new library, copied third-party code or paid service**.
+
+**Required:** install the actual Windows GUI/CLI/native-host package; GUI must create the legacy `app.personaldownloadmanager` HKCU Chrome/Firefox registrations; both manifests must point to the installed native host, preserve `stdio` and browser allowlists; a real native host process must answer **two** 4-byte little-endian length-prefixed `ping` requests with correlated IDs and JSON boolean `true`; an unknown action must return a correlated sanitized error without leaking exception data; host must exit normally after stdin EOF. Record exact source SHA, installer SHA-256, report, and Windows log.
+
+**Explicit NOT TESTED after this slice:** real Chrome/Firefox extension process loading, extension ↔ host browser API handshake, browser capture of HTTP headers/cookies, actual download completion from the browser, installed HLS process-kill, external HTTPS, safe upgrade, UI/branding, final HyperGet.exe. Do not call this full browser E2E.
+
+## Purposeful Windows build decision — recorded before workflow trigger
+**Question:** Does the existing installer really register and launch the native messaging host on Windows, and does the installed process obey the browser's binary framing and correlation protocol? **Expected:** one NSIS installer built from the exact PR head; clean silent installation; manifests for Chrome and Firefox point to that installed native host; 2/2 framed pings PASS, safe correlated unknown-action reply PASS, clean EOF PASS; test evidence and SHA-256 available. **Why source checks insufficient:** they cannot establish Windows registry writes, installed executable discovery, GUI startup, actual process stdio, binary framing, or host lifecycle. One path-scoped Windows workflow is justified; no manual duplicate build.
+
+## Evidence from preceding milestone (same PR branch)
+Exact prior head `fa28fd4ca5a811fa883ab158e9ce3a80fbf8ebe9`: [HTTP installed Windows run 40209937687](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40209937687) **PASS**, 63/63 SHA-256 transfers and 9/9 CPU/RAM captures, three rounds each of 1/4/16, 16-way working set peak **532.551 MiB**. [FTP installed run 40209937676](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40209937676) **PASS**, 32 MiB transfer paused at 4,259,840 bytes, restarted, REST-resumed, SHA verified and credentials cleaned; internal test installer SHA-256 `60949a815966ef6e9a926a25255348e87342e752c6df3fdf9ab21ee230d35d12`. These are real Windows installed results but not browser tests.
+
+## Status
+Script added at `scripts/Run-WindowsInstalledNativeHostE2E.ps1` in commit `50de336dfdc97dc7f2fb0dc77f1dc6314bb13caa`. New native host Windows gate **NOT TESTED** until exact-head CI result. No main write, auto-merge, Torrent, release or user-facing binary.
+
+## First exact-head Windows attempt — FAIL in test harness, not host (2026-10-25)
+
+[Windows run 40214882135](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40214882135) at SHA `3fe66173c8200e0828784b43b489d5ff0a34c6a5`: pre-build PowerShell parser **PASS**, NSIS **BUILD SUCCESSFUL** (~4 min), internal installer SHA-256 `c2e52b4404555ca5fa52105e91ffb4f97fe550dd60e3c0b7b026067473759b68`. Installation stage **FAIL** because workflow variable `$host` conflicts with PowerShell's built-in read-only `$Host` automatic variable. The native protocol script **did not execute**; registration/ping/error/EOF remain **NOT TESTED**. The targeted repair renames only the workflow local variable to `$nativeExeFiles`, without changing application code or loosening assertions. A new exact-head Windows installed run is required. No success claim from the failed run.

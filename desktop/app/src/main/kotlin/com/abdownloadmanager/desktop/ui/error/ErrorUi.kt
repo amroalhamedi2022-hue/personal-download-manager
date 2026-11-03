@@ -41,7 +41,7 @@ fun ErrorWindow(
             )
         ),
         alwaysOnTop = true,
-        windowController = rememberWindowController(title = "Error"),
+        windowController = rememberWindowController(title = "${AppInfo.displayName} — Error"),
     ) {
         ErrorUi(throwable, close)
     }

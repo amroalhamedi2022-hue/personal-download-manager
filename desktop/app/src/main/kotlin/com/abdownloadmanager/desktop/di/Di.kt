@@ -127,9 +127,14 @@ import ir.amirab.downloader.downloaditem.IDownloadItem
 import ir.amirab.downloader.downloaditem.hls.HLSDownloader
 import ir.amirab.downloader.downloaditem.http.HttpDownloadCredentials
 import ir.amirab.downloader.downloaditem.http.HttpDownloadItem
+import ir.amirab.downloader.downloaditem.http.OptionalHttpDownloadJobFactory
 import ir.amirab.downloader.ftp.FtpDownloader
 import ir.amirab.downloader.ftp.WindowsCredentialFtpProvider
 import ir.amirab.downloader.downloaditem.http.HttpDownloader
+import ir.amirab.downloader.aria2.Aria2EngineFeatureFlag
+import ir.amirab.downloader.aria2.Aria2EngineRuntime
+import ir.amirab.downloader.aria2.Aria2HttpDownloadJobFactory
+import ir.amirab.downloader.aria2.Aria2ProcessConfig
 import ir.amirab.downloader.monitor.DownloadItemStateFactory
 import ir.amirab.downloader.monitor.IDownloadMonitor
 import ir.amirab.downloader.queue.ManualDownloadQueue
@@ -146,6 +151,26 @@ import kotlinx.serialization.modules.SerializersModule
 import kotlinx.serialization.modules.polymorphic
 import okhttp3.Protocol
 import okhttp3.internal.tls.OkHostnameVerifier
+import java.nio.file.Files
+import java.nio.file.Path
+
+private fun resolveAria2ProcessConfig(): Aria2ProcessConfig? {
+    val configured = sequenceOf(
+        System.getProperty("hyperget.engine.aria2.executable"),
+        System.getenv("HYPERGET_ARIA2C_PATH"),
+    ).firstOrNull { !it.isNullOrBlank() }
+    val bundled = AppInfo.installationFolder?.let { Path.of(it).resolve("aria2c.exe") }
+    val executable = sequenceOf(configured?.let(Path::of), bundled)
+        .filterNotNull()
+        .firstOrNull(Files::isRegularFile)
+        ?: return null
+    val stateRoot = AppInfo.dataDir.toPath().resolve("system").resolve("aria2")
+    return Aria2ProcessConfig(
+        executable = executable,
+        workingDirectory = executable.toAbsolutePath().normalize().parent,
+        sessionDirectory = stateRoot.resolve("session"),
+    )
+}
 
 val downloaderModule = module {
     single<IDownloadQueueDatabase> {
@@ -236,7 +261,14 @@ val downloaderModule = module {
         HLSDownloaderInUi(get(), get())
     }
     single {
-        HttpDownloader(inject())
+        Aria2EngineRuntime(
+            featureFlag = Aria2EngineFeatureFlag(),
+            processConfig = ::resolveAria2ProcessConfig,
+        )
+    }
+    single<OptionalHttpDownloadJobFactory> { Aria2HttpDownloadJobFactory(get()) }
+    single {
+        HttpDownloader(inject(), get())
     }
     // Desktop FTP resolves secrets from the current Windows user's vault.
     single { FtpDownloader(WindowsCredentialFtpProvider()) }
@@ -655,9 +687,12 @@ val appModule = module {
         OkHttpClient
             .Builder()
             .dispatcher(Dispatcher().apply {
-                //bypass limit on concurrent connections!
-                maxRequests = Int.MAX_VALUE
-                maxRequestsPerHost = Int.MAX_VALUE
+                // Bound asynchronous response setup so segmented-download bursts do not
+                // create an unbounded OkHttp callback-thread burst. Keep headroom
+                // above the required 16-task workload; the installed 1/4/16 matrix
+                // is the runtime gate for fairness and resource impact.
+                maxRequests = 64
+                maxRequestsPerHost = 64
             })
             .sslSocketFactory(
                 appSSLFactoryProvider.createSSLSocketFactory(),

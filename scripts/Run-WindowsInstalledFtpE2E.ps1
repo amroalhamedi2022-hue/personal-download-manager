@@ -26,6 +26,9 @@ foreach ($required in @($guiPath, $cliPath, $fixtureScript)) {
         throw "Required program or fixture missing: $required"
     }
 }
+if ([IO.Path]::GetFileName($guiPath) -cne 'HyperGet.exe') {
+    throw 'Installed FTP E2E GUI must be the branded HyperGet.exe; CLI/native-host names remain legacy-compatible.'
+}
 if (Test-Path -LiteralPath $root) {
     if (@(Get-ChildItem -LiteralPath $root -Force).Count -gt 0) {
         throw "FTP evidence directory must be empty: $root"
@@ -56,7 +59,7 @@ function Start-InstalledGui {
     for ($attempt = 0; $attempt -lt 60; $attempt++) {
         Start-Sleep -Milliseconds 500
         if ($process.HasExited) { throw "Installed GUI exited with code $($process.ExitCode)." }
-        if (@(Get-Process -Name 'DownloadManager' -ErrorAction SilentlyContinue).Count -gt 0) {
+        if (@(Get-Process -Name 'DownloadManager','HyperGet' -ErrorAction SilentlyContinue).Count -gt 0) {
             return $process
         }
     }
@@ -142,9 +145,20 @@ try {
     if ((Test-Path -LiteralPath $partialPath) -or (Test-Path -LiteralPath "$partialPath.properties")) {
         throw 'FTP staging data remained after successful commit.'
     }
-    $statusOutput = @(& $cliPath download show $taskId 2>&1)
-    if ($LASTEXITCODE -ne 0 -or ($statusOutput -join "`n") -notmatch 'Finished') {
-        throw "Persisted FTP task did not report Finished: $($statusOutput -join ' ')"
+    # The default Mordant table truncates status columns on narrow Windows CI
+    # consoles (e.g. "Fini…"). Use the production's stable, non-sensitive
+    # machine-readable ID/status output rather than matching rendered columns.
+    $statusOutput = @(& $cliPath download show --status-lines $taskId 2>&1)
+    $statusExitCode = $LASTEXITCODE
+    $statusRows = @($statusOutput | ForEach-Object { "$_".Trim() })
+    # PowerShell can normalize native stdout tab stops to spaces. Validate the
+    # machine-readable fields, not the exact whitespace representation.
+    if ($statusExitCode -ne 0 -or $statusRows.Count -ne 1) {
+        throw "Persisted FTP task returned an invalid number of status rows or nonzero exit: $($statusRows -join ' ')"
+    }
+    $statusMatch = [regex]::Match($statusRows[0], '^([0-9]+)\s+Finished$')
+    if (-not $statusMatch.Success -or [long]$statusMatch.Groups[1].Value -ne $taskId) {
+        throw "Persisted FTP task did not report Finished for expected ID $taskId : $($statusRows -join ' ')"
     }
     $stats = Get-Content -LiteralPath $statsFile -Raw | ConvertFrom-Json
     $positiveOffsets = @($stats.rest_offsets | Where-Object { [long]$_ -gt 0 })

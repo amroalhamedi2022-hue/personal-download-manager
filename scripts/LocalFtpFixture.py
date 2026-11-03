@@ -15,6 +15,25 @@ import time
 from pathlib import Path
 
 
+def replace_with_retry(source: Path, destination: Path, *, max_attempts: int = 40, retry_delay_seconds: float = 0.025) -> None:
+    """Atomically publish fixture counters despite transient Windows readers.
+
+    PowerShell acceptance polls can briefly hold the previous stats file open.
+    Windows then rejects os.replace with PermissionError; retry only that
+    transient sharing violation and surface a persistent failure unchanged.
+    """
+    if max_attempts < 1:
+        raise ValueError("max_attempts must be >= 1")
+    for attempt in range(max_attempts):
+        try:
+            os.replace(source, destination)
+            return
+        except PermissionError:
+            if attempt + 1 >= max_attempts:
+                raise
+            time.sleep(retry_delay_seconds)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--file", type=Path, required=True)
@@ -38,6 +57,12 @@ def main():
         parser.error("invalid fixture password")
 
     expected_path = "/" + source.name
+    # FTP clients differ on whether a URL path's leading slash is preserved in
+    # SIZE/MDTM/RETR. Accept only the exact fixture name in either form; never
+    # normalize arbitrary paths or permit traversal outside this one file.
+    expected_paths = {source.name, expected_path}
+    def is_fixture_path(value):
+        return value in expected_paths
     stats_lock = threading.Lock()
     stats = {
         "control_connections": 0,
@@ -52,9 +77,14 @@ def main():
     }
 
     def save_stats():
-        temporary = args.stats_file.with_suffix(args.stats_file.suffix + ".tmp")
+        temporary = args.stats_file.with_name(
+            f".{args.stats_file.name}.{threading.get_ident()}.tmp"
+        )
         temporary.write_text(json.dumps(stats, sort_keys=True), encoding="utf-8")
-        os.replace(temporary, args.stats_file)
+        try:
+            replace_with_retry(temporary, args.stats_file)
+        finally:
+            temporary.unlink(missing_ok=True)
 
     def update_stats(update):
         with stats_lock:
@@ -150,10 +180,10 @@ def main():
                         self.reply(f"229 Entering Extended Passive Mode (|||{port}|)")
                     elif command == "SIZE":
                         if self.require_login():
-                            self.reply(f"213 {source.stat().st_size}" if argument == expected_path else "550 File unavailable")
+                            self.reply(f"213 {source.stat().st_size}" if is_fixture_path(argument) else "550 File unavailable")
                     elif command == "MDTM":
                         if self.require_login():
-                            self.reply("213 20261023000000" if argument == expected_path else "550 File unavailable")
+                            self.reply("213 20261023000000" if is_fixture_path(argument) else "550 File unavailable")
                     elif command == "REST":
                         if not self.require_login():
                             continue
@@ -170,7 +200,7 @@ def main():
                     elif command == "RETR":
                         if not self.require_login():
                             continue
-                        if argument != expected_path:
+                        if not is_fixture_path(argument):
                             self.reply("550 File unavailable")
                             continue
                         if self.passive is None:

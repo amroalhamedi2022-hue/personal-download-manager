@@ -6,16 +6,13 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import java.lang.reflect.Proxy
 import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
-import kotlin.time.Duration.Companion.seconds
 
 class CategoryRestartPersistenceTest {
     @Test
@@ -121,16 +118,17 @@ class CategoryRestartPersistenceTest {
                     itemIds = listOf(1, 4, 4),
                 )
 
-                withTimeout(2.seconds) {
-                    while (
-                        firstStorage.getCategories() != listOf(
-                            category(id = 1, name = "First", items = listOf(2)),
-                            category(id = 2, name = "Second", items = listOf(3, 1, 4)),
-                        )
-                    ) {
-                        delay(20)
-                    }
-                }
+                // Shutdown is required to flush the latest category snapshot.
+                // A 2-second poll of the periodic sampler was timing-dependent
+                // under Windows CI load and did not test restart persistence.
+                firstManager.close()
+                assertEquals(
+                    listOf(
+                        category(id = 1, name = "First", items = listOf(2)),
+                        category(id = 2, name = "Second", items = listOf(3, 1, 4)),
+                    ),
+                    firstStorage.getCategories(),
+                )
             } finally {
                 firstScope.cancel()
             }

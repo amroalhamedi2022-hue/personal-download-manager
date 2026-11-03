@@ -143,8 +143,10 @@ class HttpPartDownloader(
                     }
                 }
             } else {
-                // just download it we don't want to validate anything here
-                throwServerPartIsNotTheSameAsWeExpectException = true
+                // Non-strict mode is used for HTML or non-resumable content.
+                // A blind part intentionally has no expected length, while the
+                // server can still advertise Content-Length. Accept the body.
+                throwServerPartIsNotTheSameAsWeExpectException = false
             }
             val serverPartIsNotTheSameAsWeExpectException = ServerPartIsNotTheSameAsWeExpectException(
                 start = partCopy.current,
@@ -155,7 +157,7 @@ class HttpPartDownloader(
             if (throwServerPartIsNotTheSameAsWeExpectException) {
                 conn.close()
                 throw serverPartIsNotTheSameAsWeExpectException
-            } else {
+            } else if (strictMode) {
                 println("WARNING: ${serverPartIsNotTheSameAsWeExpectException.message}")
             }
         }

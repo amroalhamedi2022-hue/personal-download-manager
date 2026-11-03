@@ -1,0 +1,17 @@
+# HyperGet HTTP 16-way — terminal failure category checkpoint (2026-10-25)
+
+## Actual failure and evidence
+The **installed Windows** benchmark [40187300830](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40187300830) on exact SHA `0be99ed34d8d0dee127708037a65803f69134927` **FAILED**, despite a successful NSIS compile/install (installer SHA-256 `85c2846d6fa6cbba49caa11773afb73b6148bb73ae957f5b71a222ce0fbf22d0`). The 1-way and 4-way rounds passed (15/15 SHA-256 outputs; 6/9 CPU/RAM CSVs). The first 16-way round saw 15/16 live data tasks. Download **ID 26 / task 12** was **Error**, had only two 256-byte metadata GET probes (512 response bytes total), **zero sustained data GETs**, and its 32-MiB destination was merely preallocated, not SHA-verified. Artifact [12596916251](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40187300830/artifacts/12596916251) contains exact fixture counters and untruncated statuses. **Overall 63/63 FAIL; 9/9 metrics FAIL.** This is a real terminal error, not evidence of a global socket cap or a completed transfer.
+
+## Functional milestone slice
+Use the **existing** in-memory `FailedDownloads` error registry (no new dependency; existing Apache-2.0 project) to surface only a sanitized exception **class/category** for terminal Error jobs through an optional default-null IPC field and opt-in installed CLI `download show --diagnostic-lines`. Never expose throwable messages, URLs, headers, paths or credentials. Preserve the existing `--status-lines` output and old IPC fields. Record diagnostic rows on all three benchmark failure paths without weakening concurrency, SHA-256 or CPU/RAM gates. This is **diagnostic functionality**, not a claimed fix for ID 26.
+
+## Pre-build question / acceptance
+Can the actual installed Windows GUI/CLI compile with the additive nullable RPC field, return a safe category for a failed job, and write 3-column diagnostic rows in an actual failing 16-task run, while still preserving existing 2-column status output and strict 63/63 + 9/9 gates? **Expected:** Kotlin/NSIS build PASS, installed diagnostic command executes, source privacy contracts PASS; full concurrency may still FAIL until the underlying Error cause is identified. Source-only Python cannot validate Kotlin RPC serialization, installed CLI IPC, process state or real sockets. One existing PR-scoped Windows benchmark build is justified for this functional diagnostic addition; **do not repeat an unchanged build**.
+
+## Acceptance state at commit creation
+- **PASS (prior SHA only):** FTP, queue, HLS Windows JUnit workflows; source checks; Windows installer compilation; 1/4 active HTTP rounds.
+- **FAIL (prior SHA):** 16 concurrent installed HTTP tasks (one Error before data).
+- **NOT TESTED (new SHA until CI):** compilation and runtime of optional failure category, sanitized installed CLI diagnostics, 63/63 exact-head concurrency, final HyperGet.exe, browser E2E, FTP installed kill/restart, HLS installed kill/restart, Liquid Progress screenshots, safe legacy upgrade, independent Windows device recheck.
+- **Next:** inspect new failure class and relevant exception path, then fix the **root cause** with focused regression and re-run the strict installed benchmark. Do not disguise a terminal Error by extending timeouts or lowering the gate.
+- PR #3 stays Draft; no main write, merge, Torrent, paid service, or release.

@@ -27,6 +27,10 @@ import org.apache.ftpserver.listener.ListenerFactory
 import org.apache.ftpserver.usermanager.impl.BaseUser
 import org.apache.ftpserver.usermanager.PropertiesUserManagerFactory
 import java.io.IOException
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 import java.net.ServerSocket
 import java.nio.file.Files
 import java.nio.file.Path
@@ -170,6 +174,101 @@ class FtpTransferClientTest {
     }
 
     @Test
+    fun cancellingActiveFtpDataStreamKeepsPartialAndAllowsVerifiedRestResume() = withFixture { fixture ->
+        val destination = fixture.downloadFolder.resolve("cancelled-stream.bin")
+        val partial = fixture.downloadFolder.resolve("cancelled-stream.bin.ftp-part")
+        val client = FtpTransferClient()
+        val firstChunk = CountDownLatch(1)
+        val releaseChunk = CountDownLatch(1)
+        val signalled = AtomicBoolean(false)
+        val failure = AtomicReference<Throwable?>(null)
+        val worker = Thread {
+            try {
+                client.download(
+                    fixture.url("fixture.bin"), destination,
+                    username = "test", password = "secret",
+                    onProgress = { bytes, _ ->
+                        if (bytes >= 64 * 1024 && signalled.compareAndSet(false, true)) {
+                            firstChunk.countDown()
+                            if (!releaseChunk.await(10, TimeUnit.SECONDS)) {
+                                throw IOException("FTP cancellation test latch timed out")
+                            }
+                        }
+                    },
+                )
+            } catch (error: Throwable) {
+                failure.set(error)
+            }
+        }
+        try {
+            worker.start()
+            assertTrue(firstChunk.await(10, TimeUnit.SECONDS), "FTP did not reach a live data transfer")
+            // Pause is invoked from a different thread while RETR is in flight.
+            // Closing only the FTP control socket must not allow RETR to
+            // consume the remaining bytes and leave a full-size partial file.
+            client.cancel()
+        } finally {
+            releaseChunk.countDown()
+            worker.join(5_000)
+        }
+        assertFalse(worker.isAlive, "FTP data worker did not stop promptly after cancel")
+        assertTrue(failure.get() is IOException, "Cancelled transfer must fail instead of committing")
+        assertFalse(Files.exists(destination), "Cancelled FTP transfer must not commit the final file")
+        assertTrue(Files.isRegularFile(partial), "Cancelled transfer must preserve resumable partial data")
+        val pausedBytes = Files.size(partial)
+        assertTrue(pausedBytes > 0L && pausedBytes < fixture.bytes.size.toLong(), "Pause must preserve a genuinely partial file")
+
+        val resumed = FtpTransferClient().download(
+            fixture.url("fixture.bin"), destination,
+            username = "test", password = "secret",
+        )
+        assertEquals(pausedBytes, resumed.resumedFrom)
+        assertContentEquals(fixture.bytes, Files.readAllBytes(destination))
+        assertFalse(Files.exists(partial))
+    }
+
+    @Test
+    fun cancellationAtFinalPayloadBoundaryDoesNotPublishAndCanResumeFromFullStage() = withFixture { fixture ->
+        val destination = fixture.downloadFolder.resolve("cancel-final-payload.bin")
+        val part = fixture.downloadFolder.resolve("cancel-final-payload.bin.ftp-part")
+        val metadata = fixture.downloadFolder.resolve("cancel-final-payload.bin.ftp-part.properties")
+        val client = FtpTransferClient()
+
+        // Cancel from the last payload progress callback, after the staged bytes
+        // reach the remote size but before FTP completion and final publication.
+        assertFailsWith<IOException> {
+            client.download(
+                fixture.url("fixture.bin"),
+                destination,
+                username = "test",
+                password = "secret",
+                onProgress = { downloaded, total ->
+                    if (total != null && downloaded >= total) client.cancel()
+                },
+            )
+        }
+
+        assertFalse(Files.exists(destination), "Cancellation before FTP completion must not publish a final file")
+        assertTrue(Files.isRegularFile(part), "The last payload chunk must remain resumable")
+        assertEquals(fixture.bytes.size.toLong(), Files.size(part))
+        assertTrue(Files.isRegularFile(metadata))
+
+        // A later explicit resume may validate the complete staged payload,
+        // receive a successful FTP completion response, and then publish it.
+        val resumed = FtpTransferClient().download(
+            fixture.url("fixture.bin"),
+            destination,
+            username = "test",
+            password = "secret",
+        )
+        assertEquals(fixture.bytes.size.toLong(), resumed.resumedFrom)
+        assertEquals(0L, resumed.transferredBytes)
+        assertContentEquals(fixture.bytes, Files.readAllBytes(destination))
+        assertFalse(Files.exists(part))
+        assertFalse(Files.exists(metadata))
+    }
+
+    @Test
     fun remoteFileChangingBetweenInterruptAndResumeCannotCorruptLocalOutput() = withFixture { fixture ->
         val destination = fixture.downloadFolder.resolve("changed.bin")
         assertFailsWith<IOException> {
@@ -218,6 +317,49 @@ class FtpTransferClientTest {
         assertFalse(Files.exists(destination))
         assertFalse(Files.exists(fixture.downloadFolder.resolve("does-not-exist.bin.ftp-part")))
         assertFalse(Files.exists(fixture.downloadFolder.resolve("does-not-exist.bin.ftp-part.properties")))
+    }
+
+    @Test
+    fun destinationCreatedWhileRetrIsRunningCannotBeOverwrittenAtCommit() = withFixture { fixture ->
+        val destination = fixture.downloadFolder.resolve("late-created.bin")
+        val sentinel = byteArrayOf(88, 77, 66, 55)
+        var createdDuringTransfer = false
+        val failure = assertFailsWith<IOException> {
+            FtpTransferClient().download(
+                fixture.url("fixture.bin"), destination,
+                username = "test", password = "secret",
+                onProgress = { downloaded, _ ->
+                    if (!createdDuringTransfer && downloaded > 0L) {
+                        Files.write(destination, sentinel)
+                        createdDuringTransfer = true
+                    }
+                },
+            )
+        }
+        assertTrue(createdDuringTransfer, "Test must create the conflicting file after RETR begins")
+        assertTrue(
+            failure is java.nio.file.FileAlreadyExistsException,
+            "A late-created output must be rejected rather than silently replaced",
+        )
+        assertContentEquals(sentinel, Files.readAllBytes(destination))
+        // Keep the fully received staged data so the user can resolve the name
+        // conflict without losing the completed transfer bytes.
+        assertContentEquals(
+            fixture.bytes,
+            Files.readAllBytes(fixture.downloadFolder.resolve("late-created.bin.ftp-part")),
+        )
+    }
+
+    @Test
+    fun nonFileFtpStagingPathCannotBeUsedAsOutput() = withFixture { fixture ->
+        val destination = fixture.downloadFolder.resolve("protected-stage.bin")
+        val staged = fixture.downloadFolder.resolve("protected-stage.bin.ftp-part")
+        Files.createDirectory(staged)
+        assertFailsWith<IOException> {
+            FtpTransferClient().download(fixture.url("fixture.bin"), destination, "test", "secret")
+        }
+        assertTrue(Files.isDirectory(staged), "A non-file staging path must be preserved")
+        assertFalse(Files.exists(destination), "Invalid staging must not publish output")
     }
 
     @Test

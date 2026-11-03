@@ -13,6 +13,8 @@ open class StringConfigurable(
     validate: (String) -> Boolean = { true },
     enabled: StateFlow<Boolean> = DefaultEnabledValue,
     visible: StateFlow<Boolean> = DefaultVisibleValue,
+    /** Protect secret values from casual disclosure; reveal is opt-in. */
+    val isSecret: Boolean = false,
 ) : Configurable<String>(
     title = title,
     description = description,

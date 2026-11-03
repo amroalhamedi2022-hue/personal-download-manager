@@ -1,6 +1,5 @@
 package com.abdownloadmanager.desktop.storage
 
-import androidx.datastore.core.DataStore
 import arrow.optics.Lens
 import com.abdownloadmanager.shared.storage.SpeedLimitMode
 import com.abdownloadmanager.shared.storage.appsettings.AppSettingsModel
@@ -10,6 +9,9 @@ import com.abdownloadmanager.shared.storage.appsettings.*
 import com.abdownloadmanager.shared.util.ConfigBaseSettingsByJson
 import com.abdownloadmanager.shared.util.ui.theme.DEFAULT_UI_SCALE
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
+import androidx.datastore.core.DataStore
+
 
 private val fontLens: Lens<AppSettingsModel, String?>
     get() = Lens(
@@ -41,9 +43,19 @@ private val languageLens: Lens<PlatformAppSettingsModel, String?>
     )
 
 class AppSettingsStorage(
-    settings: DataStore<AppSettingsModel>,
+    private val settingsStore: DataStore<AppSettingsModel>,
 ) : BaseAppSettingsStorage,
-    ConfigBaseSettingsByJson<AppSettingsModel>(settings) {
+    ConfigBaseSettingsByJson<AppSettingsModel>(settingsStore) {
+    suspend fun exportNonSecretSettings(): String =
+        DesktopSettingsBackup.export(settingsStore.data.first())
+
+    suspend fun importNonSecretSettings(backup: String) {
+        // Failure aborts the transaction; no partial option-by-option writes.
+        settingsStore.updateData { current ->
+            DesktopSettingsBackup.restored(current, backup)
+        }
+    }
+
     override val theme = from(AppSettingsModel.theme)
     override val defaultDarkTheme = from(AppSettingsModel.defaultDarkTheme)
     override val defaultLightTheme = from(AppSettingsModel.defaultLightTheme)

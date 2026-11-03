@@ -4,6 +4,54 @@ import androidx.compose.ui.graphics.Color
 import com.abdownloadmanager.shared.util.ui.MyColors
 
 object DefaultThemes {
+    val hyperGetDark = MyColors(
+        id = "hyperget_aurora_dark",
+        name = "HyperGet Aurora Dark",
+        primary = Color(0xFF1459C7),
+        primaryVariant = Color(0xFF2B72E8),
+        onPrimary = Color.White,
+        secondary = Color(0xFF007A92),
+        secondaryVariant = Color(0xFF00A9C7),
+        onSecondary = Color.White,
+        background = Color(0xFF0B1220),
+        onBackground = Color(0xFFEAF2FF),
+        surface = Color(0xFF142038),
+        onSurface = Color(0xFFEAF2FF),
+        error = Color(0xFFFF6577),
+        onError = Color(0xFF2A0007),
+        success = Color(0xFF35C98B),
+        onSuccess = Color(0xFF002115),
+        warning = Color(0xFFFFC857),
+        onWarning = Color(0xFF281900),
+        info = Color(0xFF52B8FF),
+        onInfo = Color(0xFF001D31),
+        isLight = false,
+    )
+
+    val hyperGetLight = MyColors(
+        id = "hyperget_aurora_light",
+        name = "HyperGet Aurora Light",
+        primary = Color(0xFF1459C7),
+        primaryVariant = Color(0xFF0B47A8),
+        onPrimary = Color.White,
+        secondary = Color(0xFF007A92),
+        secondaryVariant = Color(0xFF005F73),
+        onSecondary = Color.White,
+        background = Color(0xFFF7FAFF),
+        onBackground = Color(0xFF17243A),
+        surface = Color(0xFFEAF1FA),
+        onSurface = Color(0xFF17243A),
+        error = Color(0xFFB4233C),
+        onError = Color.White,
+        success = Color(0xFF087A55),
+        onSuccess = Color.White,
+        warning = Color(0xFF8B5A00),
+        onWarning = Color.White,
+        info = Color(0xFF075E96),
+        onInfo = Color.White,
+        isLight = true,
+    )
+
     val dark = MyColors(
         id = "dark",
         name = "Dark",
@@ -233,6 +281,8 @@ object DefaultThemes {
 
     fun getAll(): List<MyColors> {
         return listOf(
+            hyperGetDark,
+            hyperGetLight,
             dark,
             light,
             obsidian,
@@ -243,6 +293,6 @@ object DefaultThemes {
         ) + modernThemes
     }
 
-    fun getDefaultDark() = dark
-    fun getDefaultLight() = light
+    fun getDefaultDark() = hyperGetDark
+    fun getDefaultLight() = hyperGetLight
 }

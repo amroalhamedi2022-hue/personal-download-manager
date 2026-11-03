@@ -1,0 +1,483 @@
+name: HyperGet Windows EXE + aria2 evaluation
+
+on:
+  pull_request:
+    branches: [codex/repair-rf00-rf01]
+    # Expensive Windows gates run on meaningful app, engine and harness changes.
+    # Docs-only checkpoint updates stay on source-only validation; no installer rebuild.
+    paths:
+      - ".github/workflows/hyperget-windows-exe-aria2-evaluation.yml"
+      - ".github/workflows/hyperget-source-only.yml"
+      - ".github/workflows/windows-installed-active-benchmark.yml"
+      - ".github/workflows/hyperget-ftp-windows-milestone.yml"
+      - ".github/workflows/hyperget-hls-redirect-milestone.yml"
+      - "downloader/**"
+      - "desktop/**"
+      - "shared/**"
+      - "integration/**"
+      - "compositeBuilds/plugins/installer-plugin/**"
+      - "build.gradle.kts"
+      - "settings.gradle.kts"
+      - "gradle/**"
+      - "scripts/LocalHttpRangeFixture.py"
+      - "scripts/LocalFtpFixture.py"
+      - "scripts/test_local_http_range_fixture.py"
+      - "scripts/test_local_ftp_fixture.py"
+      - "scripts/Run-WindowsAria2Viability.ps1"
+      - "scripts/Wait-WindowsLoopbackHttpPort.ps1"
+      - "scripts/Run-WindowsActiveBenchmarkMatrix.ps1"
+      - "scripts/Measure-WindowsDownloadManager.ps1"
+      - "scripts/Summarize-WindowsActiveBenchmark.ps1"
+      - "scripts/Compare-WindowsActiveBenchmarks.ps1"
+      - "scripts/Run-WindowsAria2ActiveBenchmarkMatrix.ps1"
+      - "scripts/Run-WindowsAria2PairedComparison.ps1"
+      - "scripts/Compare-WindowsAria2Stage2.ps1"
+      - "scripts/Assert-WindowsAria2Stage2Gates.ps1"
+      - "scripts/source-tests/test_hyperget_active_benchmark_source.py"
+      - "scripts/source-tests/test_hyperget_aria2_comparison_source.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hyperget-exe-aria2-${{ github.event.pull_request.head.sha || github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  aria2-standalone-spike:
+    name: Verify upstream aria2 and real loopback HTTP downloads
+    runs-on: windows-2022
+    timeout-minutes: 35
+    env:
+      HYPERGET_TESTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Check out exact PR head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Verify exact source SHA and preflight source/fixture tests
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $actual = (git rev-parse HEAD).Trim()
+          if ($actual -ne $env:HYPERGET_TESTED_SHA) { throw "Wrong source SHA: $actual expected $env:HYPERGET_TESTED_SHA" }
+          Write-Host "HYPERGET_TESTED_SHA=$actual"
+          python -m py_compile scripts/LocalHttpRangeFixture.py scripts/LocalFtpFixture.py scripts/test_local_http_range_fixture.py scripts/source-tests/test_hyperget_active_benchmark_source.py scripts/source-tests/test_hyperget_aria2_comparison_source.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python scripts/source-tests/test_hyperget_active_benchmark_source.py
+          python scripts/source-tests/test_hyperget_aria2_comparison_source.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m unittest discover -s scripts -p test_local_http_range_fixture.py -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          foreach ($path in @('scripts/Run-WindowsAria2Viability.ps1', 'scripts/Wait-WindowsLoopbackHttpPort.ps1', 'scripts/Run-WindowsAria2ActiveBenchmarkMatrix.ps1', 'scripts/Run-WindowsAria2PairedComparison.ps1', 'scripts/Compare-WindowsAria2Stage2.ps1', 'scripts/Assert-WindowsAria2Stage2Gates.ps1')) {
+            $tokens = $null
+            $parseErrors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path -LiteralPath $path).Path, [ref]$tokens, [ref]$parseErrors) | Out-Null
+            if ($parseErrors.Count -gt 0) {
+              foreach ($parseError in $parseErrors) {
+                Write-Host ("PARSE_ERROR path={0} line={1} column={2} id={3} message={4} extent=<{5}>" -f $path, $parseError.Extent.StartLineNumber, $parseError.Extent.StartColumnNumber, $parseError.ErrorId, $parseError.Message, $parseError.Extent.Text)
+              }
+              throw "PowerShell parse failed for $path"
+            }
+            Write-Host "PASS: PowerShell parse $path"
+          }
+      - name: Download and verify pinned upstream aria2 archive
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $url = 'https://github.com/aria2/aria2/releases/download/release-1.37.0/aria2-1.37.0-win-64bit-build1.zip'
+          $expected = '67d015301eef0b612191212d564c5bb0a14b5b9c4796b76454276a4d28d9b288'
+          $zip = Join-Path $env:RUNNER_TEMP 'aria2-win64.zip'
+          $root = Join-Path $env:RUNNER_TEMP 'aria2-unpacked'
+          Invoke-WebRequest -Uri $url -OutFile $zip
+          $actual = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $expected) { throw "aria2 archive SHA-256 mismatch: $actual" }
+          Expand-Archive -LiteralPath $zip -DestinationPath $root -Force
+          $bins = @(Get-ChildItem -LiteralPath $root -Filter 'aria2c.exe' -Recurse -File)
+          if ($bins.Count -ne 1) { throw "Expected one aria2c.exe, found $($bins.Count)" }
+          $version = (& $bins[0].FullName --version 2>&1 | Out-String)
+          if ($LASTEXITCODE -ne 0 -or $version -notmatch 'aria2 version 1\.37\.0') { throw "Unexpected aria2 version: $version" }
+          "ARIA2_EXE=$($bins[0].FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "PASS: official aria2 1.37.0 archive SHA-256 $actual"
+          Write-Host $version
+      - name: Test aria2 single-connection and segmented HTTP with SHA-256
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $work = Join-Path $env:RUNNER_TEMP 'aria2-http-spike'
+          New-Item -ItemType Directory -Path $work | Out-Null
+          $source = Join-Path $work 'fixture.bin'
+          $portFile = Join-Path $work 'port.txt'
+          $expectedBytes = 16MB
+          $payload = New-Object byte[] $expectedBytes
+          for ($i = 0; $i -lt $payload.Length; $i++) { $payload[$i] = [byte]($i % 251) }
+          [IO.File]::WriteAllBytes($source, $payload)
+          $expectedHash = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash.ToLowerInvariant()
+          $fixture = Join-Path $PWD 'scripts/LocalHttpRangeFixture.py'
+          $server = Start-Process -FilePath 'python' -ArgumentList @(
+            $fixture, '--file', $source, '--port-file', $portFile,
+            '--chunk-delay-ms', '2', '--task-chunk-delay-ms', '0'
+          ) -PassThru -RedirectStandardOutput (Join-Path $work 'server-out.log') -RedirectStandardError (Join-Path $work 'server-err.log')
+          try {
+            for ($i = 0; $i -lt 100 -and -not (Test-Path -LiteralPath $portFile); $i++) {
+              if ($server.HasExited) { throw "HTTP fixture exited: $($server.ExitCode)" }
+              Start-Sleep -Milliseconds 100
+            }
+            if (-not (Test-Path -LiteralPath $portFile)) { throw 'HTTP fixture failed to publish its port' }
+            $portText = (Get-Content -LiteralPath $portFile -Raw).Trim()
+            if ($portText -notmatch '^\d+$') { throw "Invalid fixture port: $portText" }
+            $url = "http://127.0.0.1:$portText/fixture.bin"
+            foreach ($mode in @(@{Name='single'; Split=1}, @{Name='segmented'; Split=4})) {
+              $dir = Join-Path $work $mode.Name
+              New-Item -ItemType Directory -Path $dir | Out-Null
+              $ariaArgs = @(
+                '--console-log-level=notice', '--summary-interval=0',
+                '--allow-overwrite=true', '--auto-file-renaming=false',
+                "--split=$($mode.Split)", "--max-connection-per-server=$($mode.Split)",
+                '--min-split-size=1M', '--file-allocation=none',
+                '--dir', $dir, '--out=download.bin', $url
+              )
+              $log = & $env:ARIA2_EXE @ariaArgs 2>&1
+              if ($LASTEXITCODE -ne 0) { throw "aria2 $($mode.Name) failed: $($log | Out-String)" }
+              $output = Join-Path $dir 'download.bin'
+              if (-not (Test-Path -LiteralPath $output -PathType Leaf)) { throw "aria2 $($mode.Name) output missing" }
+              if ((Get-Item -LiteralPath $output).Length -ne $expectedBytes) { throw "aria2 $($mode.Name) output length mismatch" }
+              $actualHash = (Get-FileHash -LiteralPath $output -Algorithm SHA256).Hash.ToLowerInvariant()
+              if ($actualHash -ne $expectedHash) { throw "aria2 $($mode.Name) SHA-256 mismatch: $actualHash" }
+              Write-Host "PASS: aria2 $($mode.Name), bytes=$expectedBytes, SHA256=$actualHash"
+            }
+          } finally {
+            if ($null -ne $server -and -not $server.HasExited) { Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue }
+          }
+      - name: Run full aria2 Stage 1 viability gate (no packaging)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $output = Join-Path $env:RUNNER_TEMP 'aria2-viability'
+          & ./scripts/Run-WindowsAria2Viability.ps1 -Aria2Executable $env:ARIA2_EXE -OutputDirectory $output -SourceSha $env:HYPERGET_TESTED_SHA
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Upload aria2 spike logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: hyperget-aria2-standalone-spike
+          path: ${{ runner.temp }}/aria2-http-spike
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Upload sanitized Stage 1 viability evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: hyperget-aria2-stage1-viability
+          path: ${{ runner.temp }}/aria2-viability
+          if-no-files-found: warn
+          retention-days: 7
+
+  build-test-hyperget-windows:
+    name: Test current HyperGet and build Windows installer EXE
+    runs-on: windows-2022
+    timeout-minutes: 100
+    env:
+      SKIP_ANDROID_BUILD: "true"
+    steps:
+      - name: Check out exact PR head (not synthetic merge)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Record source provenance
+        shell: pwsh
+        run: |
+          $actual = (git rev-parse HEAD).Trim()
+          $expected = '${{ github.event.pull_request.head.sha || github.sha }}'
+          if ($actual -ne $expected) { throw "Wrong source SHA: $actual expected $expected" }
+          Write-Host "HYPERGET_SOURCE_SHA=$actual"
+          "HYPERGET_SOURCE_SHA=$actual" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Set up JetBrains Runtime 25
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: jetbrains
+          java-package: jdk
+          java-version: "25"
+          check-latest: true
+          cache: gradle
+      - name: Run current desktop and downloader regression suites
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & ./gradlew.bat --no-daemon --stacktrace --dependency-verification strict :downloader:core:desktopTest :downloader:monitor:desktopTest :shared:app:desktopTest :desktop:app:compileKotlin
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Require JUnit XML and zero failures/errors/skips
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $files = @(Get-ChildItem -Path . -Recurse -File -Filter 'TEST-*.xml' | Where-Object { $_.FullName -match '\\build\\test-results\\' })
+          if ($files.Count -lt 3) { throw "Expected >=3 JUnit XML files, found $($files.Count)" }
+          $tests = 0
+          foreach ($file in $files) {
+            [xml]$doc = Get-Content -LiteralPath $file.FullName -Raw
+            foreach ($suite in @($doc.SelectNodes('//testsuite'))) {
+              foreach ($field in @('failures','errors','skipped')) {
+                if ([int]$suite.GetAttribute($field) -ne 0) { throw "JUnit $field in $($file.FullName)" }
+              }
+              $tests += [int]$suite.GetAttribute('tests')
+            }
+          }
+          if ($tests -lt 1) { throw 'No JUnit test cases were reported.' }
+          Write-Host "PASS: $tests JUnit tests; zero failures, errors, or skipped cases."
+      - name: Build Windows installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & ./gradlew.bat --no-daemon --stacktrace --dependency-verification strict createReleaseFolderForCi
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Stage one EXE and compute SHA-256
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $source = Join-Path $PWD 'build/ci-release/binaries'
+          $installers = @(Get-ChildItem -LiteralPath $source -Filter '*.exe' -Recurse -File)
+          if ($installers.Count -ne 1) { throw "Expected exactly one installer EXE, found $($installers.Count)" }
+          $delivery = Join-Path $PWD 'build/ci-release/hyperget-exe-delivery'
+          New-Item -ItemType Directory -Force -Path $delivery | Out-Null
+          Copy-Item -LiteralPath $installers[0].FullName -Destination $delivery
+          $hash = (Get-FileHash -LiteralPath (Join-Path $delivery $installers[0].Name) -Algorithm SHA256).Hash.ToLowerInvariant()
+          Write-Host "HYPERGET_INSTALLER=$($installers[0].Name)"
+          Write-Host "HYPERGET_INSTALLER_SHA256=$hash"
+          "HYPERGET_INSTALLER_SHA256=$hash" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Upload Windows installer EXE
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: hyperget-windows-x64-installer
+          path: build/ci-release/hyperget-exe-delivery/*.exe
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload JUnit and build reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: hyperget-windows-build-test-reports
+          path: |
+            **/build/test-results/**
+            **/build/reports/**
+          if-no-files-found: ignore
+          retention-days: 7
+
+
+  aria2-stage2-paired-performance:
+    name: Paired HyperGet-vs-aria2 Stage 2 performance gate
+    needs: [aria2-standalone-spike, build-test-hyperget-windows]
+    runs-on: windows-2022
+    timeout-minutes: 120
+    env:
+      SKIP_ANDROID_BUILD: "true"
+      HYPERGET_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      ARIA2_SOURCE_SHA: "02f2d0d8472b3c38c29b4dba8c75ebd5fdd2899a"
+      ARIA2_ARCHIVE_SHA256: "67d015301eef0b612191212d564c5bb0a14b5b9c4796b76454276a4d28d9b288"
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Verify exact source and Stage 2 source contracts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $actual = (git rev-parse HEAD).Trim()
+          if ($actual -ne $env:HYPERGET_SOURCE_SHA) { throw "Wrong source SHA: $actual expected $env:HYPERGET_SOURCE_SHA" }
+          python -m py_compile scripts/source-tests/test_hyperget_aria2_comparison_source.py
+          python scripts/source-tests/test_hyperget_aria2_comparison_source.py
+          foreach ($path in @('scripts/Run-WindowsAria2ActiveBenchmarkMatrix.ps1', 'scripts/Run-WindowsAria2PairedComparison.ps1', 'scripts/Compare-WindowsAria2Stage2.ps1', 'scripts/Assert-WindowsAria2Stage2Gates.ps1')) {
+            $tokens = $null
+            $parseErrors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path -LiteralPath $path).Path, [ref]$tokens, [ref]$parseErrors) | Out-Null
+            if ($parseErrors.Count -gt 0) {
+              foreach ($parseError in $parseErrors) {
+                Write-Host ("PARSE_ERROR path={0} line={1} column={2} id={3} message={4} extent=<{5}>" -f $path, $parseError.Extent.StartLineNumber, $parseError.Extent.StartColumnNumber, $parseError.ErrorId, $parseError.Message, $parseError.Extent.Text)
+              }
+              throw "PowerShell parse failed for $path"
+            }
+            Write-Host "PASS: PowerShell parse $path"
+          }
+      - name: Download installer artifact from the successful exact-head build job
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: hyperget-windows-x64-installer
+          path: ${{ runner.temp }}/hyperget-installer
+      - name: Download and verify pinned aria2 evaluation binary
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $zip = Join-Path $env:RUNNER_TEMP 'aria2-stage2-win64.zip'
+          $root = Join-Path $env:RUNNER_TEMP 'aria2-stage2-unpacked'
+          $url = 'https://github.com/aria2/aria2/releases/download/release-1.37.0/aria2-1.37.0-win-64bit-build1.zip'
+          Invoke-WebRequest -Uri $url -OutFile $zip
+          $actual = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $env:ARIA2_ARCHIVE_SHA256) { throw "aria2 archive SHA-256 mismatch: $actual" }
+          if (Test-Path -LiteralPath $root) { Remove-Item -LiteralPath $root -Recurse -Force }
+          Expand-Archive -LiteralPath $zip -DestinationPath $root
+          $bins = @(Get-ChildItem -LiteralPath $root -Filter 'aria2c.exe' -Recurse -File)
+          if ($bins.Count -ne 1) { throw "Expected one aria2c.exe, found $($bins.Count)" }
+          $version = & $bins[0].FullName --version 2>&1 | Out-String
+          if ($LASTEXITCODE -ne 0 -or $version -notmatch 'aria2 version 1\.37\.0') { throw "Unexpected aria2 version: $version" }
+          "ARIA2_EXE=$($bins[0].FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "PASS: aria2 1.37.0 source commit $env:ARIA2_SOURCE_SHA; archive SHA-256 $actual"
+          Write-Host "Evaluation-only binary; BitTorrent is prohibited in HyperGet and this binary will not be bundled."
+      - name: Refuse to overwrite pre-existing install or profile data
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installDir = Join-Path $env:RUNNER_TEMP 'hyperget-aria2-stage2-install'
+          $dataDir = Join-Path $env:USERPROFILE '.personal-download-manager'
+          if (Test-Path -LiteralPath $installDir) { throw "Refusing pre-existing install path: $installDir" }
+          if (Test-Path -LiteralPath $dataDir) { throw "Refusing pre-existing profile data: $dataDir" }
+          $keys = @(
+            'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\DownloadManager',
+            'HKCU:\Software\DownloadManager',
+            'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run\DownloadManager',
+            'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\HyperGet',
+            'HKCU:\Software\HyperGet',
+            'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run\HyperGet'
+          )
+          foreach ($key in $keys) { if (Test-Path -LiteralPath $key) { throw "Refusing pre-existing registry entry: $key" } }
+          $shortcuts = @(
+            (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\HyperGet\HyperGet.lnk'),
+            (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Download Manager\Download Manager.lnk'),
+            (Join-Path $env:USERPROFILE 'Desktop\HyperGet.lnk'),
+            (Join-Path $env:USERPROFILE 'Desktop\Download Manager.lnk')
+          )
+          foreach ($shortcut in $shortcuts) { if (Test-Path -LiteralPath $shortcut) { throw "Refusing pre-existing shortcut: $shortcut" } }
+          $installToken = "HYPERGET-ARIA2-STAGE2-INSTALL-$env:HYPERGET_SOURCE_SHA"
+          "HYPERGET_INSTALL_DIR=$installDir" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "HYPERGET_DATA_DIR=$dataDir" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "HYPERGET_INSTALL_OWNED_TOKEN=$installToken" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host 'PASS: no pre-existing install, profile data, registry keys or shortcuts.'
+      - name: Install the exact-head HyperGet installer for real Windows downloads
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installerDir = Join-Path $env:RUNNER_TEMP 'hyperget-installer'
+          $installers = @(Get-ChildItem -LiteralPath $installerDir -Filter '*.exe' -Recurse -File)
+          if ($installers.Count -ne 1) { throw "Expected one installer artifact, found $($installers.Count)" }
+          $installerSha = (Get-FileHash -LiteralPath $installers[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          $p = Start-Process -FilePath $installers[0].FullName -ArgumentList @('/S', "/D=$env:HYPERGET_INSTALL_DIR") -PassThru
+          if (-not $p.WaitForExit(180000)) { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue; throw 'HyperGet installer timed out.' }
+          if ($p.ExitCode -ne 0) { throw "HyperGet installer exited $($p.ExitCode)." }
+          $gui = @(Get-ChildItem -LiteralPath $env:HYPERGET_INSTALL_DIR -Filter 'HyperGet.exe' -Recurse -File)
+          $cli = @(Get-ChildItem -LiteralPath $env:HYPERGET_INSTALL_DIR -Filter 'DownloadManagerCli.exe' -Recurse -File)
+          $oldName = @(Get-ChildItem -LiteralPath $env:HYPERGET_INSTALL_DIR -Filter 'DownloadManager.exe' -Recurse -File)
+          if ($gui.Count -ne 1 -or $cli.Count -ne 1 -or $oldName.Count -ne 0) { throw "Installed identity mismatch: HyperGet=$($gui.Count), CLI=$($cli.Count), legacy=$($oldName.Count)." }
+          if (-not $env:HYPERGET_INSTALL_OWNED_TOKEN) { throw 'Missing Stage 2 install ownership token from successful preflight.' }
+          Set-Content -LiteralPath (Join-Path $env:HYPERGET_INSTALL_DIR '.hyperget-stage2-owned.txt') -Value $env:HYPERGET_INSTALL_OWNED_TOKEN -Encoding utf8
+          $markerToken = "HYPERGET-ARIA2-STAGE2-$env:HYPERGET_SOURCE_SHA"
+          $marker = Join-Path $env:HYPERGET_DATA_DIR 'system\hyperget-aria2-stage2-owned.txt'
+          New-Item -ItemType Directory -Force -Path (Split-Path -Parent $marker) | Out-Null
+          Set-Content -LiteralPath $marker -Value $markerToken -Encoding utf8
+          "HYPERGET_GUI=$($gui[0].FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "HYPERGET_CLI=$($cli[0].FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "HYPERGET_INSTALLER_SHA256=$installerSha" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "HYPERGET_MARKER_TOKEN=$markerToken" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "PASS: installed HyperGet and CLI; installer SHA-256=$installerSha"
+      - name: Run three paired 1/4/16 rounds and aria2 1/4/8 segmentation sweep
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $output = Join-Path $env:RUNNER_TEMP 'hyperget-aria2-stage2'
+          & ./scripts/Run-WindowsAria2PairedComparison.ps1 -HyperGetGuiExecutable $env:HYPERGET_GUI -HyperGetCliExecutable $env:HYPERGET_CLI -Aria2Executable $env:ARIA2_EXE -HyperGetSourceSha $env:HYPERGET_SOURCE_SHA -Aria2SourceSha $env:ARIA2_SOURCE_SHA -Aria2ArchiveSha256 $env:ARIA2_ARCHIVE_SHA256 -HyperGetInstallerSha256 $env:HYPERGET_INSTALLER_SHA256 -HarnessSha $env:HYPERGET_SOURCE_SHA -OutputDirectory $output -Rounds 3 -FileSizeMiB 32 -SampleSeconds 8 -ServerChunkDelayMs 500
+      - name: Clean only the marker-owned Stage 2 installation and profile
+        if: always()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $status = [System.Collections.Generic.List[string]]::new()
+          $installDir = Join-Path $env:RUNNER_TEMP 'hyperget-aria2-stage2-install'
+          $dataDir = Join-Path $env:USERPROFILE '.personal-download-manager'
+          $installMarker = Join-Path $installDir '.hyperget-stage2-owned.txt'
+          $installOwned = $false
+          if ($env:HYPERGET_INSTALL_OWNED_TOKEN -and (Test-Path -LiteralPath $installMarker)) {
+            $installToken = (Get-Content -LiteralPath $installMarker -Raw).Trim()
+            $installOwned = $installToken -eq $env:HYPERGET_INSTALL_OWNED_TOKEN
+          }
+          if ($installOwned) {
+            $prefix = [IO.Path]::GetFullPath($installDir).TrimEnd('\') + '\'
+            try {
+              $owned = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase) })
+              foreach ($proc in $owned) { Stop-Process -Id $proc.ProcessId -Force -ErrorAction SilentlyContinue }
+              if ($owned.Count -gt 0) { $status.Add("Stopped $($owned.Count) process(es) under the verified Stage 2 install path.") }
+            } catch { $status.Add("Process cleanup warning: $($_.Exception.Message)") }
+            $uninstaller = Join-Path $installDir 'uninstall.exe'
+            if (Test-Path -LiteralPath $uninstaller) {
+              try {
+                $u = Start-Process -FilePath $uninstaller -ArgumentList @('/S') -PassThru
+                if (-not $u.WaitForExit(180000)) { Stop-Process -Id $u.Id -Force -ErrorAction SilentlyContinue; $status.Add('UNINSTALL_TIMEOUT') }
+                else { $status.Add("UninstallerExitCode=$($u.ExitCode)") }
+              } catch { $status.Add("UninstallerWarning=$($_.Exception.Message)") }
+            } else { $status.Add('No uninstaller found in the verified Stage 2 install.') }
+            $dataMarker = Join-Path $dataDir 'system\hyperget-aria2-stage2-owned.txt'
+            if ((Test-Path -LiteralPath $dataMarker) -and $env:HYPERGET_MARKER_TOKEN) {
+              $dataToken = (Get-Content -LiteralPath $dataMarker -Raw).Trim()
+              if ($dataToken -eq $env:HYPERGET_MARKER_TOKEN) {
+                Remove-Item -LiteralPath $dataDir -Recurse -Force -ErrorAction SilentlyContinue
+                $status.Add('Removed only the profile directory carrying the exact Stage 2 ownership token.')
+              } else { $status.Add('PRESERVED profile directory: ownership token mismatch.') }
+            } elseif (Test-Path -LiteralPath $dataDir) {
+              $status.Add('PRESERVED profile directory: no matching Stage 2 ownership marker.')
+            }
+            $keys = @(
+              'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\DownloadManager',
+              'HKCU:\Software\DownloadManager',
+              'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run\DownloadManager',
+              'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\HyperGet',
+              'HKCU:\Software\HyperGet',
+              'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run\HyperGet'
+            )
+            foreach ($key in $keys) {
+              if (Test-Path -LiteralPath $key) {
+                $props = Get-ItemProperty -LiteralPath $key -ErrorAction SilentlyContinue
+                $values = @($props.PSObject.Properties | ForEach-Object { [string]$_.Value })
+                if (@($values | Where-Object { $_ -and $_.IndexOf($installDir, [StringComparison]::OrdinalIgnoreCase) -ge 0 }).Count -gt 0) {
+                  Remove-Item -LiteralPath $key -Recurse -Force -ErrorAction SilentlyContinue
+                  $status.Add("Removed registry residue pointing to the verified Stage 2 install: $key")
+                } else { $status.Add("Preserved registry key without a matching install path: $key") }
+              }
+            }
+            try {
+              $shell = New-Object -ComObject WScript.Shell
+              $shortcuts = @(
+                (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\HyperGet\HyperGet.lnk'),
+                (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Download Manager\Download Manager.lnk'),
+                (Join-Path $env:USERPROFILE 'Desktop\HyperGet.lnk'),
+                (Join-Path $env:USERPROFILE 'Desktop\Download Manager.lnk')
+              )
+              foreach ($shortcut in $shortcuts) {
+                if (Test-Path -LiteralPath $shortcut) {
+                  $link = $shell.CreateShortcut($shortcut)
+                  if ($link.TargetPath -and $link.TargetPath.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) {
+                    Remove-Item -LiteralPath $shortcut -Force -ErrorAction SilentlyContinue
+                    $status.Add("Removed shortcut targeting the verified Stage 2 install: $shortcut")
+                  } else { $status.Add("Preserved shortcut with non-matching target: $shortcut") }
+                }
+              }
+            } catch { $status.Add("Shortcut cleanup warning: $($_.Exception.Message)") }
+            if (Test-Path -LiteralPath $installDir) {
+              $leftovers = @(Get-ChildItem -LiteralPath $installDir -Force -Recurse -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName)
+              $status.Add("UNINSTALL_RESIDUE_COUNT=$($leftovers.Count); removing only the preflight-absent, marker-owned runner-temp install.")
+              Remove-Item -LiteralPath $installDir -Recurse -Force -ErrorAction SilentlyContinue
+            } else { $status.Add('Install directory absent after uninstall.') }
+          } else {
+            $status.Add('PRESERVED install/profile/registry/shortcuts: exact Stage 2 install ownership marker missing or mismatched; no cleanup actions performed.')
+          }
+          $cleanupPath = Join-Path $env:RUNNER_TEMP 'hyperget-aria2-stage2-cleanup.txt'
+          $status | Set-Content -LiteralPath $cleanupPath -Encoding utf8
+          Get-Content -LiteralPath $cleanupPath
+      - name: Upload paired comparison and cleanup evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: hyperget-aria2-stage2-comparison
+          path: |
+            ${{ runner.temp }}/hyperget-aria2-stage2/**
+            ${{ runner.temp }}/hyperget-aria2-stage2-cleanup.txt
+          if-no-files-found: warn
+          retention-days: 7

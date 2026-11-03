@@ -26,7 +26,8 @@ fun Project.getAppName(): String {
 }
 
 fun Project.getPrettifiedAppName(): String {
-    return "Download Manager"
+    // User-visible packaging/shortcut label; keep getAppName(), data directory, and package ID stable.
+    return "HyperGet"
 }
 fun Project.getAppDataDirName(): String {
     return ".personal-download-manager"

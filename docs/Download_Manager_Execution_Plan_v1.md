@@ -1,3 +1,7 @@
+## 2026-10-23 — binding product name: HyperGet
+
+**Latest approved user instruction supersedes older product-name wording throughout the ENTIRE plan and all future tasks:** our Windows app's official name is **HyperGet** (no space). From this point, interpret every stage referring to “Personal Download Manager”, “our IDM” or “IDM-like project” as development of **HyperGet**. The real Internet Download Manager may still be named IDM when referenced for comparison. **Do not rename the existing GitHub repo, branches, internal app IDs, IPC/storage keys or test IDs by blind text replacement.** Preserve functionality, upgrade paths and cross-repo browser integration. Any future UI title, binary/installer/shortcut/branding is HyperGet after testing. See [HYPERGET_REBRAND_PLAN.md](HYPERGET_REBRAND_PLAN.md), acceptance HG-01–HG-05. **Planned, not implemented as of this note.** All previous requirements remain in force, Torrent excluded.
+
 # خطة تنفيذ مدير التحميل الشخصي — المرجع التنفيذي
 
 الإصدار: 2.1 | التاريخ: 2026-10-19 | المنطقة الزمنية: Asia/Jerusalem
@@ -1024,3 +1028,262 @@ Commit/نسخة المصدر:
 **E056 pending:** GUI smoke workflow now calls `scripts/Measure-WindowsDownloadManager.ps1` on the REAL installed app process tree, capturing a 30-second idle WorkingSet/PrivateBytes/CPU/handles/threads CSV artifact; source commit `982ffe0a5ee083511090e88f3d573a3d17e44aa6`. Workflow [39765365895](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/39765365895) still pending/in progress when this evidence block was authored. No measured CPU/RAM improvement claim until its artifact is reviewed. Next expand to repeat baseline rounds and active 1/4/16 workload with equal hardware; compare under same conditions only.
 
 **Unclosed acceptance:** M04 interactive anonymous/auth FTP add/check/pause-resume/edit/delete/WinCred/relocation/restart and LAN/WAN; M06 visual Liquid progress screenshot parity; M07-M08 original IDM navigation/settings and functionality; M09 full repeated CPU/RAM comparisons incl minimized and downloads; M10 accepted media/browser features; M11 upgrade/uninstall and whole-product release. Torrent excluded. Do not call the snapshot a final release.
+
+
+## E056 follow-up — installed idle-process evidence reviewed (2026-10-27)
+
+Windows GUI run [40425830147](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40425830147), PR source `77f8c7e637b0fc6430484249af148588cc01837f`, uploaded idle metrics artifact [12700256551](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40425830147/artifacts/12700256551), ZIP SHA-256 `3dcbb0a31a6005dbe3d04538c78375b4dce1646ab52bed0dfa45aeb12511bb53`. It contains 6 CSVs (20 samples each across 3 warm and 3 minimized rounds). Warm medians were about 222.7–224.6 MiB Working Set and 238.2–242.1 MiB Private Bytes; maxima were 228.6/245.9 MiB. CPU median was 0%, with observed sample maxima below 0.8%. **Provenance caveat:** CSV rows embed `SourceSha=09d16d595b8f4166f108f5e4356c0fd4224f51ec`, not the checked-out head `77f8c7e`; do not use this as exact-head performance acceptance until the measurement script's SHA source is corrected. This is idle-only evidence, not active 1/4/16 performance.
+
+## E057 — Liquid Progress visible-fill Windows E2E (2026-10-27, PASS)
+
+- Exact tested source SHA `77f8c7e637b0fc6430484249af148588cc01837f`; Windows run [40425830147](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40425830147) terminal SUCCESS.
+- Source contracts [40425830410](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40425830410): 17/17 Liquid Progress checks PASS.
+- Visual artifact [12699952296](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40425830147/artifacts/12699952296), SHA-256 `110dd6ae8a51bf619b093707a4e3e39fe29784666ee73ba310ab2eb5c2babc3d`. Screenshot captured while Downloading at 5,570,816/16,777,216 bytes (33.2%), with one active task and bytes advancing; final size and expected/actual SHA-256 matched `341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1`.
+- Same-version reinstall/silent uninstall PASS; test installer SHA-256 `b8b113af3e7e38b928fda49ca9762a84efcb2b16ffe2ab34bce5d3065dec3bf2`.
+- Visual review confirms the bubble path is exercised, but contrast is still too subtle. Cross-version upgrade/rollback separately passed on `f023a0e`; no release claim.
+
+## E058 — Liquid Progress contrast polish (PRE-BUILD)
+
+**Pre-build question:** does increasing track height from 5dp to 7dp, strengthening the cached shimmer and bubbles, and adding a 1dp top-edge gloss make the liquid treatment visibly clearer while preserving the shared animation clock and cached draw path?
+
+**Expected:** source tests retain active-only animation, no row-level infinite transition, and cached gradients; a purposeful Windows build/install captures the UI at >=25% live transfer, CLI status `Downloading`, active fixture bytes advancing, and a 16 MiB final SHA-256 match.
+
+**Why source-only is insufficient:** only the installed Windows screenshot can prove actual visual contrast/Compose rendering; the build also checks Kotlin/Compose compilation. This is a targeted visual acceptance build, not release packaging.
+
+**Status:** implementation and regression test are being prepared; exact-head Windows visual acceptance remains **NOT TESTED** until the new screenshot is inspected.
+
+
+## E059 — إصلاح مصدر SHA لقياسات الخمول والتحقق المثبّت من Liquid Progress (2026-10-27)
+
+**الهدف:** منع قبول CSVs تحمل SHA مرجع الدمج الاصطناعي بدل SHA المصدر الذي شُغّل فعلًا، مع إعادة إثبات أن إصلاح القياس لا يكسر واجهة Windows أو التنزيل الحقيقي.
+
+- **PASS — Windows UI run:** [40430490546](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40430490546)، على SHA `923f715852997b56c7bf6c1229633e2e14e10245`. بُني المثبّت الاختباري وثُبّت التطبيق وشُغّلت الواجهة والتُقطت صورة أثناء تنزيل 16 MiB؛ وصلت الصورة عند 5,439,744/16,777,216 بايت (32.4%)، ثم انتهى الملف بالحجم الصحيح وبصمة SHA-256 المتوقعة نفسها `341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1`.
+- **PASS — lifecycle:** إعادة تثبيت النسخة نفسها وإزالتها بصمت؛ لم يبدأ GUI تلقائيًا، وأزيل مفتاح uninstall. المثبّت هنا اختباري فقط، SHA-256 `50582da3dcbed91525335a62f842974ce18bb3e2c1922cfd04b2fd10a1d19b0b`، وليس ملف التسليم النهائي.
+- **PASS — provenance:** artifact [12702316987](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40430490546/artifacts/12702316987)، SHA-256 `cdb526b0fd7e21e8cdf70e01b756899db254bf620013c3b599b23cb4b5556617`. فُحصت الملفات الستة: 20 عينة في كل CSV، 120 صفًا إجمالًا، وجميعها تحمل SHA المصدر الفعلي `923f715852997b56c7bf6c1229633e2e14e10245`. أُعيد حساب بصمة ZIP محليًا وتطابقت مع digest GitHub.
+- **قياسات وصفية فقط، لا ادعاء تحسن:** على Windows Server 2022 (4 logical CPUs)، وسيط idle-warm كان 223.96 MiB Working Set و247.21 MiB Private Bytes؛ وسيط idle-minimized كان 225.08 MiB و242.77 MiB. وسيط CPU 0% في المجموعتين، وأعلى عينة أقل من 0.76%. لا يوجد baseline A/B مضبوط في هذا الدليل، ولا تمثل هذه القياسات أحمال 1/4/16.
+- **PASS — source regression:** الرأس الحالي `d75da841867fb7b7d8e317f5f2f00463079ddbef` أضاف حارسًا يفرض استخدام `git rev-parse HEAD` والتحقق من مطابقته لـPR head؛ فحوص المصدر [40430518264](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40430518264) نجحت. لأن الفرق بعد SHA UI المختبر هو اختبار مصدر فقط، تخطت بوابة النطاق إعادة بناء UI في ذلك الرأس؛ لا يُنسب اختبار GUI إلى `d75da84`.
+- **بوابات مساعدة على الرأس الحالي:** اختبارات FTP/JUnit الحقيقية على Windows [40430518248](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40430518248)، واختبارات HLS [40430518237](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40430518237)، واختبارات دورة حياة الطابور ونسخ الأجزاء [40430518216](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40430518216) نجحت. بوابات HTTP 1/4/16 وJVM profile وcross-version على commit التوثيق/الاختبار الأخير تم تخطيها حسب النطاق؛ لا تُحسب كاختبارات جديدة على هذا الرأس.
+- **قرار المرحلة:** سلامة مصدر القياس **PASS**؛ اختبار Liquid Progress الوظيفي والمظهر الحالي **PASS** على SHA UI المحدد؛ مقارنة الأداء **OPEN**. إثبات الترقية/التراجع وWinCred سابقًا على `f023a0e` باقٍ ضمن نطاقه لأن تغييرات ما بعده لم تمس NSIS أو هوية/نسخة التثبيت، لكن إعادة الفحص المستقلة على الرأس النهائي لازمة.
+- **التالي:** مقارنة موارد مضبوطة ومتكررة على Windows لخط أساس ومرشح تحت نفس الظروف، مع قياس idle و1/4/16 وتنزيلات ذات SHA متحقق؛ ثم إعادة فحص مستقلة لكل بوابات الإصدار وإنتاج ملف واحد نهائي `HyperGet.exe`. لا merge/release/Torrent.
+
+
+## 2026-10-27 — HyperGet E061 controlled performance comparison: install-file residue
+
+**Current decision:** keep the paired HTTP performance comparison open. The exact-head Windows run [40459096700](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40459096700) built both exact app snapshots and completed only baseline round 1: 21/21 verified HTTP files and live 1/4/16 overlap. It stopped after uninstall left `DownloadManager.exe` in the controlled install directory; no paired performance conclusion is valid.
+
+The harness now has a separate install-file residue inventory with SHA-256, exact runner-temp path and preflight-absence checks, active marker verification, and process termination verification before test-owned cleanup. This is solely to keep the throughput/memory experiment isolated from uninstall cleanup; it **does not** turn uninstall into a PASS. The unresolved product uninstall issue remains a separate acceptance gate.
+
+- Harness fix: [`c92a3de`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/c92a3de40a6d800c34f255f32a2dc456a858e08f).
+- Source regression contracts: [`324fec0`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/324fec0c2484116b76636e1cf9da939cb33bcd33).
+- Checkpoint: [HG_E061_CONTROLLED_PERFORMANCE_COMPARISON.md](checkpoints/HG_E061_CONTROLLED_PERFORMANCE_COMPARISON.md), commit [`b89207a`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/b89207ab1f86f68dffc3d4649f771f22110bbdb5).
+- Exact-head CI for this correction is pending; do not infer PASS from prior harness runs.
+- Exit criteria remain 63 SHA-verified 32-MiB transfers per app snapshot, nine resource rounds per snapshot, strict 1/4/16 overlap, exact source/harness provenance, and no more than 15% regression in median aggregate throughput or peak Working Set/Private Bytes for any workload.
+
+
+
+### E061 — 2026-10-27 controlled comparison: complete matrix, invalid nested round metadata (OPEN)
+
+Windows run [40468354887](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40468354887) built both exact snapshots and produced all 126 SHA-verified 32-MiB transfers, 18 resource summaries and live 1/4/16 overlap. The comparator rejected the artifact because each per-install inner matrix was run with `-Rounds 1`, leaving `Round=1` inside outer round-2 and round-3 folders. Preliminary artifact-only throughput and peak-memory deltas are within 15%, but E061 remains OPEN until the corrected exact-head Windows run emits the official report.
+
+The same artifact showed blank shortcut-target fields. The cleanup path normalizer was swallowing exceptions into empty strings, so ownership checks were not sufficiently fail-closed. The next patch uses explicit Windows separator characters, rejects blank targets, stamps/renames each nested round's evidence to the enclosing round, and makes the comparator reject mismatched round metadata. See [HG_E061_CONTROLLED_PERFORMANCE_COMPARISON.md](checkpoints/HG_E061_CONTROLLED_PERFORMANCE_COMPARISON.md) for exact installer/artifact hashes and acceptance criteria.
+
+
+
+## 2026-10-27 — HyperGet E061 current gate
+
+The controlled Windows performance milestone remains **OPEN**. Run [40475434465](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40475434465) failed its PowerShell parser gate before any build because the round-normalization function was accidentally spliced into the output-name regex. A correction is queued to reconstruct the bounded metadata normalizer, re-hash renamed transfer outputs, normalize all resource CSV round labels, and add a source regression. The next build is permitted only after source contracts and PowerShell parsing pass. Required runtime evidence remains 126 SHA-verified 32-MiB transfers, 18 resource-round records, real 1/4/16 overlap, exact source provenance and unchanged 15% paired throughput/peak-memory gates. Installer residue remains a separate uninstall defect diagnostic. See [HG-E061 checkpoint](checkpoints/HG_E061_CONTROLLED_PERFORMANCE_COMPARISON.md).
+
+
+## 2026-10-27 — E061 source gate follow-up
+
+Run [40478758287](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40478758287) passed PowerShell parsing but failed one benchmark source assertion before build because the local transfer-round check was combined with other provenance guards. The code now separates source/harness/verification checks from explicit `Round=1` validation. No installer or performance data was produced by that run; E061 remains OPEN until exact-head source+parser gates pass and the installed Windows matrix produces the official comparison report.
+
+
+## 2026-10-27 — E061 normalizer invocation restored
+
+Run [40478984763](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40478984763) passed the PowerShell parser but failed the benchmark source contract because the round-normalizer invocation was missing between the one-round summary and uninstall. It has been restored in that exact order. No installer build or performance data was produced; E061 remains OPEN until exact-head source+parser gates pass and the installed matrix emits the official paired report.
+
+
+## 2026-10-27 — E061 result and next bounded body-copy trial (OPEN)
+
+The controlled Windows comparison [run 40485436333](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40485436333) completed the full exact-snapshot matrix: both installers built; 63 SHA-verified 32-MiB downloads per version; nine resource rounds per version; live 1/4/16 overlap. The official result is **FAIL** because the `Semaphore(48)` candidate loses 22.45% median aggregate throughput at 16-way, exceeding the fixed 15% limit. The same workload shows peak Working Set -5.57% and Private Bytes -5.36%; keep these as measured trade-offs, not acceptance.
+
+Artifact [12727621253](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40485436333/artifacts/12727621253), ZIP SHA-256 `339eb61ee276cedae563cc4524c5702a3cc04d5943b727814433dc1c0065a267`. Installer SHA-256 values and per-workload metrics are recorded in `docs/checkpoints/HG_E061_CONTROLLED_PERFORMANCE_COMPARISON.md`.
+
+**Next production trial:** source `c99b6f627de5f1ef1cba9e79f4f8e1baba20ffe1` raises the shared body-copy bound to 60 (reserving four workers under the default 64-worker IO ceiling). The JUnit and source-contract saturation expectations now use 60/61. The next purposeful paired Windows build must answer whether the higher cap retains the modest resource reduction without exceeding 15% throughput loss. Do not change the gate. Expected evidence: 126 SHA-verified transfers, nine resource rounds per version, exact source/harness provenance, active 1/4/16 overlap, official report and artifact digest. Source tests alone are insufficient because they cannot measure real installed Windows sockets, bytes, throughput or process-tree resources.
+
+**Policy clarification (2026-10-24):** a build/installer is authorized when it answers a named functional question and source checks cannot establish the result; it is not reserved only for the final release. Historical no-build wording must not block this milestone. No paid runner/service, main write, auto-merge, release or Torrent.
+
+
+## 2026-10-27 — E061 cap-60 comparison accepted; uninstall becomes next gate
+
+The exact Windows comparison [run 40494020066](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40494020066) completed with **Result=PASS** for candidate source `c99b6f627de5f1ef1cba9e79f4f8e1baba20ffe1` versus baseline `d6ea54a885277cb5b8fd545eb3f3fb0e185b6aa5`. The shared harness was `1d9536fe69a9f886fffc4b389a5f7dfcd7fb73c5`.
+
+Artifact [12733115213](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40494020066/artifacts/12733115213), independently verified ZIP SHA-256 `546166059a6ca224ece94399c84b63981f81e958d0296c148f6f43ad9e8919a0`. Both installers built; 126 × 32-MiB output files independently matched their round fixture SHA-256; three rounds per version and active 1/4/16 workloads completed. All throughput and peak-memory deltas passed the unchanged ≤15% gates (1-way: 0.00% throughput, -0.93% peak WS, -0.96% peak Private; 4-way: -0.03%, -0.38%, -0.59%; 16-way: +3.00%, -1.39%, -3.54%).
+
+This closes the E061 performance sub-milestone for the cap-60 source. It does not claim superiority over IDM or prove performance on consumer hardware.
+
+### Next functional milestone: clean uninstall without deleting user data
+
+The artifact still contains 12 registry and 12 shortcut residue records across six controlled install/uninstall cycles, with zero install-file residue. The comparison harness safely removed only verified test-owned entries, but that diagnostic cleanup is **not** uninstall acceptance.
+
+A bounded NSIS patch now performs shortcut and registry cleanup before `clearFiles` deletes the running uninstaller/install directory:
+- `62467e92d0790d4cd05db76a7a53663b5bc7989b` — installer command order.
+- `8332de37ae00805c6415c061627588e093a56c79` — source regression.
+- `baaa2e452a30a850f40e880f1716f6adc0939259` — source-only workflow trigger/step.
+
+**Pre-build question:** does the actual built NSIS uninstaller remove only this product's registry keys and shortcuts without the benchmark harness intervening, and does the normal uninstall preserve the user's download database/settings/credentials unless explicit data removal is selected?
+
+**Expected Windows evidence:** parser/source contract PASS before build; exact baseline/candidate installer hashes; clean install, launch, completed fixture download, normal uninstall, registry/shortcut absence checked before any harness cleanup; user data sentinel and download record remain; explicit remove-data option tested separately only if the workflow can safely isolate it. Then run the existing cross-version upgrade/rollback E2E to ensure cleanup ordering did not break upgrade compatibility.
+
+**Why source tests are insufficient:** registry view, Start Menu/Desktop shell links, self-removal of the running uninstaller and persisted user data are OS-level behaviors. The NSIS template change has queued the Windows cross-version upgrade/rollback and related PR checks. Keep uninstall acceptance **OPEN** until logs/artifacts prove the assertions; no merge/release/final EXE yet.
+
+
+## 2026-10-27 — Explicit per-user NSIS context added; await runtime proof
+
+The cap-60 controlled Windows performance comparison is accepted (see the E061 checkpoint). The next functional gate is actual uninstall correctness.
+
+Commit [`fbc5b69`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/fbc5b695253a9ecd3d9a8eef357ad28f17f0b179) explicitly pins `SetShellVarContext current` in installer `.onInit` and in the uninstaller, and orders shortcut/registry cleanup before self-removal. This follows the [NSIS reference](https://nsis.sourceforge.io/Reference/SetShellVarContext): shell context controls shell folders and `SHCTX`, and must be set in both installer and uninstaller code.
+
+The source-only regression suite passed on the corrected test commit [`0572c67`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/0572c679559d74a30feba73899d9da4a0cd57996) in run [40520016914](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40520016914).
+
+Windows cross-version upgrade/rollback [run 40519751066](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40519751066) passed source contracts and PowerShell parsing, then began building the exact baseline installer. It must still build the candidate and execute the real upgrade → rollback → uninstall sequence. **Acceptance is only PASS if the actual uninstaller removes the owned registry entries and shortcuts before harness cleanup, while normal uninstall preserves user data/history/WinCred.** If it fails, retain logs and fix the production NSIS behavior; do not paper over the residue in the harness.
+
+
+## 2026-10-27 — E061 + uninstall user-content safety accepted; next HG-03 migration
+
+### Accepted evidence
+- E061 cap-60 controlled HTTP performance: **PASS** at exact tested source `c99b6f627de5f1ef1cba9e79f4f8e1baba20ffe1`, [run 40494020066](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40494020066). 126/126 32-MiB outputs matched SHA-256; nine resource rounds per version; real 1/4/16 overlap; throughput deltas 0.00%, -0.03%, +3.00%, all within the unchanged 15% gate. Artifact digest `546166059a6ca224ece94399c84b63981f81e958d0296c148f6f43ad9e8919a0`.
+- Cross-version upgrade → candidate uninstall → rollback → normal uninstall: **PASS** at candidate source `068e2ff9b66d47764d4d76bae59361a1cf983c9d`, [run 40528393289](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40528393289). Both installers built; baseline/candidate installer SHA-256 `06f562cb2c6558a729f2a34718a8e7c9a233052487d5a1d801862b555a2f1a5d` / `8908a03c81c04896b1aaf693899bc69d4930c421a9c6259aaae3eb5f69f8415c`. Proof artifact [12744944789](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40528393289/artifacts/12744944789), ZIP digest `10672fded4edc52c3911551aa12b0b47d6145ee305db44b096fed3096d8ec2a4`, independently rehashed. Real 8-MiB HTTP fixture expected/actual SHA-256 matched `7d212b9c884f5c77896de960ae17cc341cda43b14d6a971f34ca29ebd4badf7f`; max-concurrent=4, task/history, user data and synthetic WinCred survived upgrade/rollback/uninstall.
+- **Start Menu user-content preservation: PASS.** A unique sentinel SHA-256 `90bf149b878c69fa46b07c4c2e5f2bba7619a9f644b9030dce966ba3c27b3ca9` survived candidate install/uninstall, rollback and normal uninstall. The installer now removes only its exact `.lnk` and attempts non-recursive `RMDir`; test cleanup is token/hash guarded.
+- **Installed UI/Liquid Progress: PASS** at the same exact source in [run 40528393112](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40528393112). Test installer SHA-256 `310692913f1afb2873709d87d214fd12f16f19072fb2682d1d16bfc5eeade47b`; visual artifact [12745446957](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40528393112/artifacts/12745446957), digest `d964b753cf1c05b6a8675af85a2fad412fb8c6496e25caa807bac05fc2f2cc90`, independently rehashed. Capture at 5,308,672/16,777,216 bytes while status was `Downloading`; transfer completed at 16,777,216 bytes with matching expected/actual SHA-256 `341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1`. Same-version reinstall, silent uninstall, registry cleanup and no-auto-launch passed.
+- Source-only safety [40528393345](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40528393345) **PASS**; HLS [40528393465](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40528393465) **29/29 PASS**; FTP/WinCred [40528393231](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40528393231) **29/29 PASS**.
+
+### Next functional milestone — HG-03 executable identity + HG-04 icon
+Correction recorded on 2026-10-27: Windows acceptance at exact source `b63114d0c2fee6e667175302c9bc16a5da414c61` installed `HyperGet.exe` and no `DownloadManager.exe`; the final release deliverable is still not built. Keep package/registry/data-directory/CLI/native-messaging identities stable unless migration tests prove compatibility. Implement a deliberate user-facing launcher rename and final Liquid Glass icon, with regression tests for old/new helper resolution and installed shortcuts, then run exact-head Windows upgrade/rollback and browser/native-host compatibility. Do not rename the root Gradle project casually: `getAppName()`, CLI, native host, install path and package identity are coupled.
+
+**Status:** uninstall user-content safety **PASS**; executable rename/icon and final independent release recheck **OPEN**. Test installers and screenshot artifacts are evidence only, not final delivery.
+
+
+## 2026-10-27 — Continue HG-03/HG-04 from the actual Windows packaging blocker
+
+The latest exact-head Windows GUI run [40545095153](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40545095153) compiled Kotlin and created the app distributable, then failed NSIS packaging with `StrCmp expects 3-4 parameters, got 5` because `closeProcess` used the unsupported `StrCmp /I` form. NSIS `StrCmp` is case-insensitive by default (https://nsis.sourceforge.io/Reference/StrCmp); the production fix removes only `/I` and adds a source regression. The build/runtime question and evidence are recorded in `docs/checkpoints/HG03_WINDOWS_PACKAGING_STRCMP_FIX_2026-10-27.md`.
+
+Continuity correction: the cross-version harness at source `068e2ff9b66d47764d4d76bae59361a1cf983c9d` explicitly expects the baseline `DownloadManager.exe` and the HyperGet candidate `HyperGet.exe`, and its recorded run passed. Thus the launcher rename has historical test evidence; it is not a final release artifact, and the current head must rebuild successfully after the NSIS fix. The source SVG/ICO assets and ICO-format contract already exist. Do not mark current-head installer/icon acceptance complete until the fresh Windows build, installed-tree checks, GUI launch, browser/native-host compatibility, and independent release recheck pass.
+
+
+## 2026-10-27 — HG-03 identity harness follow-up (exact source `b63114d0c2fee6e667175302c9bc16a5da414c61`)
+
+### Actual Windows result
+
+The corrected NSIS script compiled and the installer installed successfully in [Windows GUI smoke run 40546589588](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40546589588). The installed tree contained exactly `HyperGet.exe`, no `DownloadManager.exe`, and the stable `DownloadManagerCli.exe`; the installer SHA-256 was `bf9f01d881c03fd067944f8682ca203238fcb95d3b1b538d947f152694132b39`. The GUI became visible and produced screenshot artifact [12753841163](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40546589588/artifacts/12753841163), whose uploaded SHA-256 digest was `eb2cd4e4ea412bafda80bd8e4da6a99ed7585de9dba5b3018ba32e14fabfef26`.
+
+The GUI smoke then **failed** at the idle CPU/RAM sample because its harness still searched for process `DownloadManager`; the actual renamed GUI process is `HyperGet`. The screenshot and install evidence show the app did launch; this is a stale acceptance-harness identity, not a compile/NSIS or download-engine failure. Liquid Progress and the same-version lifecycle steps were skipped after this failure and are not counted as new passes.
+
+The separate real browser run [40546589599](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40546589599) **PASS** on the same exact source: real Chrome/Firefox extension packaging and native-messaging protocol, with Firefox capturing a real 2 MiB transfer through the installed HyperGet host and verifying SHA-256. Evidence artifact [12754145299](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40546589599/artifacts/12754145299), SHA-256 digest `28fe2b0a3ccbcde654dd0101e4061c9eee789a0d5804e09cfc646749e8ab7714`. The source-only contract run [40546589656](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40546589656) also passed; FTP and HLS JUnit gates [40546589446](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40546589446) and [40546589605](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40546589605) passed, as did queue lifecycle [40546589576](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40546589576). Those results are exact-head evidence for `b63114d0c2fee6e667175302c9bc16a5da414c61`, not a final release.
+
+### Fix in this checkpoint
+
+- Change idle sampling to target `HyperGet`.
+- Make the 1/4/16 process sampler derive the root process name from its supplied GUI executable, while explicitly allowing only the legacy baseline `DownloadManager` and branded candidate `HyperGet`.
+- Update installed active benchmark, JVM profile, HTTP E2E and authenticated FTP E2E to require exactly one `HyperGet.exe`, reject a leftover `DownloadManager.exe`, and retain `DownloadManagerCli.exe` / `DownloadManagerNativeMessagingHost.exe` names.
+- Add PR path triggers and exact-PR-head checkout to installed HTTP E2E; make FTP scope gating rerun on installer/identity/workflow changes.
+- Add a source contract for all these identity assumptions. The next Windows run must prove actual process sampling and transfers, not merely that the scripts mention the new name.
+
+### Acceptance question before the next build
+
+Does each installed Windows harness now discover the branded `HyperGet.exe`, sample the correct visible GUI process, preserve legacy CLI/native-host names, and complete real HTTP pause/resume, authenticated FTP REST resume, Liquid Progress, 1/4/16 throughput/memory sampling, and cross-version data/shortcut/WinCred checks?
+
+**Why source tests are insufficient:** only the Windows installer and actual process tree can establish the launcher name, window process identity, installed shortcuts, real transfers and resource samples.
+
+**Status:** identity-harness patch committed on the existing PR branch; exact-head reruns pending. Final independent release recheck and final `HyperGet.exe` artifact/SHA remain OPEN.
+
+
+## 2026-10-27 — HG-03 exact-head executable-identity acceptance (OPEN)
+
+Current exact PR head e36266add4eb4e009eb6c64a4e71ceae5d5090b7 exposed two harness defects: four installed-workflow CLI selectors were malformed, and the Liquid Progress E2E still searched for the retired DownloadManager GUI process. Source-only run [40549485454](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40549485454) failed those selector contracts; Windows run [40549485330](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40549485330) built/installed/launched the GUI but stopped before the active Liquid Progress transfer because the process filter was stale. Cross-version [40549485561](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40549485561) and browser [40549485303](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40549485303) only passed their scope gates; their functional jobs were skipped.
+
+The next bounded HG-03 repair fixes exact stable CLI discovery, process identity derived from HyperGet.exe, and scope triggers so the cross-version and real Chrome/Firefox installed tests run for this acceptance change. Pre-build question: can the installed HyperGet UI complete the active Liquid Progress scenario and reach cross-version/browser assertions? Source tests cannot prove native process/window detection, NSIS layout, actual transfer bytes or Windows registry/shortcut transitions. Acceptance stays OPEN until exact-head Windows evidence is complete; no release or merge.
+
+
+## 2026-10-27 — Resume the previous HG-03 runtime gate, not a new planning cycle
+
+The exact-head identity build at `4979ee80145d0f77ce646a6088c0f08cededc53f` passed installer creation, installed-tree identity, and the initial 16 MiB HTTP SHA-256 transfer, but the installed HTTP Pause/Resume stage failed because active response bodies remained visible after Pause. The separate FTP E2E reached a partial stage, but its fixture failed to atomically publish the final active-retrieval counter on Windows; that result is inconclusive.
+
+A single cohesive repair now:
+1. propagates an explicit OkHttp `Call.cancel()` action through the existing shared `Connection.close()` lifecycle, with a Kotlin regression and source contract;
+2. makes the FTP loopback fixture retry transient Windows stats-file sharing violations, with a deterministic injected-failure test; and
+3. records HTTP fixture counters if Pause still fails.
+
+Pre-build question: can installed HyperGet stop all live HTTP response bodies, hold bytes steady, and resume to exact SHA-256, while the FTP fixture reliably records server-side closure and then validates real REST resume? Source tests alone cannot prove socket closure or installed CLI/GUI behavior. The Windows E2E rebuild is therefore a purposeful integration test, not a per-line build.
+
+**Gate status:** previous HTTP Pause/Resume = FAIL; previous FTP socket result = INCONCLUSIVE due fixture failure; new exact-head Windows HTTP/FTP runs = pending after this repair; final independent release recheck and final user-facing `HyperGet.exe` artifact remain OPEN.
+
+
+## 2026-10-27 checkpoint — deterministic HTTP fixture readiness (OPEN)
+
+On exact PR head 8e74203ded3ca0177238d0a8fe24a702f885d0fc, installed HTTP run [40571810012](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40571810012) built/installed but failed before transfer with url is not valid; the Pause/Resume assertions were skipped, so no HTTP pause result is claimed. The same-head installed FTP REST-resume/SHA/WinCred [40571810155](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40571810155), Chrome/Firefox capture [40571810035](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40571810035), GUI launch [40571810241](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40571810241), and cross-version upgrade/rollback [40571810080](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40571810080) passed.
+
+The HTTP harnesses waited only for port-file existence, then parsed the content. A visible-but-empty/truncated port file could produce port 0 and an invalid URL. The failing log did not record the actual port, so this is a harness-race hypothesis until the guarded rerun confirms it—not a production HTTP engine defect.
+
+The cohesive patch introduces scripts/Wait-WindowsLoopbackHttpPort.ps1 and wires it into installed HTTP/Pause-Resume, Liquid Progress, cross-version upgrade/rollback, and the 1/4/16 benchmark/memory-profile path. The waiter requires a live server and a complete decimal port in 1..65535; the inline HTTP workflow additionally validates a loopback URI. A Python source-contract test locks shared usage and workflow trigger/scope behavior.
+
+**Pre-build question:** can the exact-head installed HTTP flow obtain a valid endpoint, verify the 16 MiB initial SHA, close all requests on Pause, keep bytes stable, and Resume to exact 32 MiB SHA? Source tests cannot establish file-publication timing, installed IPC or real sockets, so the exact-head Windows build/E2E is required. No performance thresholds are relaxed; current-head performance, independent release recheck, and final HyperGet.exe SHA/artifact remain OPEN.
+
+
+## 2026-10-28 — HG-E063: Stop All late-worker lifecycle gate
+
+A fresh exact-head Windows JUnit run found one failing regression among 203 tests: Stop All could return with a late HTTP request still appearing after an in-flight Resume drained. The cause was an OR worker-loop predicate that did not let a stop request win against a still-active coroutine. The production loop now uses `coroutineActive && !stopRequested`, with a Kotlin predicate regression, stronger real HTTP late-request assertion, and source contract. This is a release-blocking lifecycle gate until a new exact-head Windows run passes with zero failures/errors/skips. The paired 1/4/16 benchmark must also be rerun on the fixed source; results from the pre-fix candidate are not reusable. No threshold changes, merge, release, or Torrent.
+
+
+## 2026-10-28 — HG-E064 controlled benchmark executable identity
+
+The exact-head paired Windows benchmark exposed a harness-only blocker after baseline round 1: candidate install was checked for legacy `DownloadManager.exe`, while the branded candidate installs `HyperGet.exe`. No candidate performance measurements were produced, so this is not a performance result. The harness now resolves the expected GUI by variant, rejects opposite-name residue, and keeps `DownloadManagerCli.exe` stable. Source regression covers the selection; installed Windows comparison must still validate the actual NSIS trees and pass all existing 1/4/16, SHA-256, resource-sampling and 15% gates. Do not reuse the pre-fix run as acceptance evidence.
+
+
+## 2026-10-28 — HG-E065 Stop All / in-flight Resume race
+
+The first PartDownloader loop-predicate change did not fully prevent a late request. The Windows regression still failed because an in-flight Resume could finish HTTP metadata validation and admit a part worker after Stop All had already raised its gate. The manager now publishes a volatile Stop All flag, and HTTP/HLS resume flows abort before part admission when the flag is set; they also avoid racing Stop All with a duplicate asynchronous pause. The previous exact-head suite was 203/204 and remains FAIL. Re-run full Windows JUnit, installed HTTP/FTP and the corrected exact-head paired benchmark before accepting this lifecycle milestone.
+
+
+## 2026-10-28 — HG-E070: exact-head Windows 1/4/16 performance PASS; HG-E071 HLS restart gate opened
+
+**Exact tested application and harness SHA:** `e273a001d254125f1443a7d3ca92f9121c5dc13b` (existing PR #3 head at this checkpoint; no main write/merge).
+
+### HG-E070 — accepted controlled Windows comparison
+
+- Windows run [40626221330](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40626221330), job “Paired exact-snapshot HTTP throughput and memory regression check”: SUCCESS.
+- The job checked out the exact baseline and candidate snapshots, ran source contracts before building both installers, installed each variant in alternating order, and completed three rounds at real concurrency 1/4/16.
+- **63 SHA-256-verified 32 MiB outputs per version** (126 download files across the paired evidence ZIP) and **nine resource measurement sets per version**. The artifact includes per-round download files, verification ledgers, CSV measurements and reports.
+- Artifact [12792141357](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40626221330/artifacts/12792141357), downloaded and independently hashed in this run: `c8744c2f2df96a6fba1e936fc1b35b8205b4ff3209fc91e552de18bf288c387f`.
+- Baseline SHA: `d6ea54a885277cb5b8fd545eb3f3fb0e185b6aa5`; candidate SHA: `e273a001d254125f1443a7d3ca92f9121c5dc13b`; shared measurement harness SHA equals candidate SHA.
+- Candidate median throughput deltas: **+0.33% at 1**, **-0.14% at 4**, **+28.53% at 16**. Peak Working Set deltas: **-1.07%, +3.12%, -0.72%**. Peak Private Bytes deltas: **-0.01%, +3.11%, -2.81%**. All predeclared 15% regression gates PASS.
+- This is a same-runner version-to-version regression comparison, **not** a claim of superiority over Internet Download Manager (IDM). The workflow's separate “Install once; 63 SHA256-verified downloads and 9 real CPU/RAM runs” job was skipped by its scope gate and is not counted as evidence; the paired comparison job above did run the complete three-round matrix.
+- The harness reported candidate-round-3 uninstall registry/shortcut residue and removed those test-owned entries to isolate the next round. This warning is not counted as a clean-uninstall acceptance result.
+
+### Exact-head Windows evidence additionally closed on `e273a00`
+
+- Full downloader/desktop JUnit and installer build: [40626221310](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40626221310) — **248 tests, 0 failures, 0 errors, 0 skips**; test installer SHA-256 `d9294f87897a8eb05b5a7b23efadec189c7b558194ae06f4524fb611e70d68e2`.
+- Installed HTTP Pause/socket-close/Resume/SHA: [40626221413](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40626221413) — PASS.
+- Installed authenticated FTP Pause/REST-after-GUI-restart/WinCred/SHA: [40626221360](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40626221360) — PASS.
+- HLS redirect/segment/JUnit: [40626221317](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40626221317) — PASS; this is not yet installed process-kill/relaunch evidence.
+- Chrome + Firefox installed native-host downloads with SHA verification: [40626221340](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40626221340) — PASS.
+- Installed GUI/Liquid Progress and PE resource audit: [40626221366](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40626221366) — PASS. Actual GUI launcher and setup installer both contain 16/32/48/64/128/256 px 32-bit-alpha icon resources; Liquid Progress reached 32% during a real SHA-verified transfer.
+- Cross-version upgrade/rollback: [40626221354](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40626221354) — PASS.
+- Idle metrics artifact is available from [40626221366](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/40626221366); it is idle-only and must not be represented as active-transfer memory acceptance.
+
+### HG-E071 — pre-build contract for installed HLS process-kill/relaunch
+
+**Acceptance question:** After a real installed HyperGet HLS download has completed and persisted at least one segment while other segments are still active, can the GUI process be force-killed, all segment sockets drain and bytes stop changing, then the same persisted task be resumed after GUI relaunch and assemble the exact original bytes without requesting the already-completed first segment again?
+
+**Expected:** playlist is fetched again after relaunch; segment 1 is requested/completed exactly once; segments 2–4 each finish; no active segment sockets remain; the final assembled file size and SHA-256 match the deterministic local fixture. Any lost task, late writes, repeated completed-segment request, wrong output or timeout is FAIL, not a skip.
+
+**Why source/JUnit checks are insufficient:** they cannot establish Windows process termination, durable task/segment state, installed GUI/CLI IPC, real HTTP socket closure, filesystem staging after a crash, or final assembly across a process boundary. The next targeted Windows installer build is therefore purposeful. Its source contract and PowerShell/Python syntax checks must pass before the build step; no paid runner/API, external service, main write, auto-merge, release or Torrent is involved.
+
+### Still OPEN after E070
+
+- HG-E071 installed HLS process-kill/relaunch acceptance (new targeted E2E gate).
+- Behavioral scheduled-start/stop acceptance.
+- Independent external HTTPS signed-link endpoint acceptance; local verified-TLS/JUnit coverage already passes, but is not an external endpoint test.
+- Independent second full Windows release recheck on the final source SHA.
+- Final user-facing standalone `HyperGet.exe` delivery with verified SHA-256 and a verified artifact link. The current installer artifact is a test build, not that deliverable.

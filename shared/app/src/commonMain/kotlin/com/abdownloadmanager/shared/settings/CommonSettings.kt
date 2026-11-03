@@ -734,6 +734,7 @@ object CommonSettings {
             title = Res.string.settings_api_auth_key.asStringSource(),
             description = Res.string.settings_api_auth_key_description.asStringSource(),
             backedBy = appRepository.apiAuthKey,
+            isSecret = true,
             describe = {
                 if (ApiKeyUtil.isValidKey(it)) {
                     Res.string.enabled.asStringSource()

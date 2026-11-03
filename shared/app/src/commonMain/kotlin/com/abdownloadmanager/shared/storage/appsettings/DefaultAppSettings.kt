@@ -9,9 +9,9 @@ import ir.amirab.downloader.DownloadSettings
 expect object PlatformDefaultSettings : DefaultAppSettings
 
 abstract class DefaultAppSettings {
-    open val theme: String get() = "dark"
-    open val defaultDarkTheme: String get() = "dark"
-    open val defaultLightTheme: String get() = "light"
+    open val theme: String get() = "hyperget_aurora_dark"
+    open val defaultDarkTheme: String get() = "hyperget_aurora_dark"
+    open val defaultLightTheme: String get() = "hyperget_aurora_light"
     open val language: String? get() = null
     open val font: String? get() = null
     open val uiScale: Float? get() = null

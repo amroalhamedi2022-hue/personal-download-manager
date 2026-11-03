@@ -1,0 +1,58 @@
+name: HyperGet settings backup Windows regression
+
+on:
+  pull_request:
+    branches: [codex/repair-rf00-rf01]
+    paths:
+      - ".github/workflows/hyperget-settings-backup-windows.yml"
+      - "desktop/app/build.gradle.kts"
+      - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/storage/AppSettingsStorage.kt"
+      - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/storage/DesktopSettingsBackup.kt"
+      - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/settings/SettingsPage.kt"
+      - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/settings/DesktopSettingsComponent.kt"
+      - "desktop/app/src/test/kotlin/com/abdownloadmanager/desktop/storage/DesktopSettingsBackupTest.kt"
+      - "scripts/source-tests/test_hyperget_settings_backup_source.py"
+      - "shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/ui/configurable/item/StringConfigurable.kt"
+      - "shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/settings/CommonSettings.kt"
+      - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/ui/configurable/comon/renderer/StringConfigurableRenderer.kt"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  settings-backup:
+    runs-on: windows-2022
+    timeout-minutes: 35
+    env:
+      SKIP_ANDROID_BUILD: "true"
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Verify source and privacy guard
+        shell: pwsh
+        run: |
+          python -m unittest discover -s scripts/source-tests -p test_hyperget_settings_backup_source.py -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Set up JetBrains Runtime 25
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: jetbrains
+          java-package: jdk
+          java-version: "25"
+          cache: gradle
+      - name: Run production desktop compile and Kotlin backup tests
+        shell: pwsh
+        run: |
+          ./gradlew.bat --no-daemon --stacktrace --dependency-verification strict :desktop:app:compileKotlin :desktop:app:test
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Save test evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: hyperget-settings-backup-windows-junit
+          path: desktop/app/build/test-results/test/*.xml
+          if-no-files-found: warn
+          retention-days: 7

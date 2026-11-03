@@ -6,6 +6,8 @@ import ir.amirab.downloader.db.IDownloadPartListDb
 import ir.amirab.downloader.downloaditem.*
 import ir.amirab.downloader.downloaditem.contexts.DuplicateRemoval
 import ir.amirab.downloader.downloaditem.contexts.RemovedBy
+import ir.amirab.downloader.downloaditem.contexts.ResumedBy
+import ir.amirab.downloader.downloaditem.contexts.StoppedBy
 import ir.amirab.downloader.downloaditem.DownloadJobStatus
 import ir.amirab.downloader.downloaditem.DownloadStatus
 import ir.amirab.downloader.utils.DuplicateFilterByPath
@@ -34,6 +36,13 @@ internal fun shouldDeleteDownloadOutput(
     status: DownloadStatus,
     removeCompletedFile: Boolean,
 ): Boolean = status != DownloadStatus.Completed || removeCompletedFile
+
+/** A new lifecycle command must not inherit the previous Stop/Resume actor. */
+internal fun contextForLifecyclePause(previous: DownloadItemContext, command: DownloadItemContext): DownloadItemContext =
+    previous.minusKey(StoppedBy).minusKey(ResumedBy) + command
+
+internal fun contextForLifecycleResume(previous: DownloadItemContext, command: DownloadItemContext): DownloadItemContext =
+    previous.minusKey(StoppedBy).minusKey(ResumedBy) + command
 
 internal fun pendingDownloadsToBoot(
     items: List<IDownloadItem>,
@@ -208,16 +217,24 @@ class DownloadManager(
         context: DownloadItemContext = EmptyContext,
     ) = withJobLifecycleLock(id) {
         val itemToDelete = dlListDb.getById(id) ?: return@withJobLifecycleLock
+        // Decide from the persisted state before booting/pausing a job. A normal
+        // pause changes the mutable item status to Paused; using that mutated
+        // status would delete a completed output even when the user chose to
+        // remove only its history entry.
+        val originalStatus = itemToDelete.status
+        val removeOutputFile = shouldDeleteDownloadOutput(
+            status = originalStatus,
+            removeCompletedFile = originalStatus == DownloadStatus.Completed &&
+                alsoRemoveFile(itemToDelete),
+        )
         val job = getDownloadJob(id) ?: createJob(itemToDelete).apply { boot() }
         contextContainer.updateContext(id) { it + context }
-        kotlin.runCatching { job.pause() }
-        job.downloadRemoved(
-            removeOutputFile = shouldDeleteDownloadOutput(
-                status = itemToDelete.status,
-                removeCompletedFile = itemToDelete.status == DownloadStatus.Completed &&
-                    alsoRemoveFile(itemToDelete),
-            ),
-        )
+        if (originalStatus != DownloadStatus.Completed) {
+            // Deletion is fail-closed: never remove files or persisted state if
+            // the active worker could not be stopped and joined successfully.
+            job.pause()
+        }
+        job.downloadRemoved(removeOutputFile = removeOutputFile)
         deleteJob(job.id)
         dlListDb.remove(itemToDelete)
         partListDb.removeParts(id)
@@ -244,7 +261,7 @@ class DownloadManager(
     suspend fun pause(id: Long, context: DownloadItemContext = EmptyContext) {
         withJobLifecycleLock(id) {
             val job = getDownloadJob(id) ?: return@withJobLifecycleLock
-            contextContainer.updateContext(id) { it + context }
+            contextContainer.updateContext(id) { contextForLifecyclePause(it, context) }
             job.pause()
         }
     }
@@ -261,7 +278,7 @@ class DownloadManager(
                     }
                 }
                 job?.let {
-                    contextContainer.updateContext(id) { it + context }
+                    contextContainer.updateContext(id) { contextForLifecycleResume(it, context) }
                     if (it.downloadItem.retryAt != null) {
                         it.restoreInterruptedRetry()
                     } else {
@@ -385,7 +402,7 @@ class DownloadManager(
 
     private val lifecycleCommandLock = Mutex()
     private val stopAllLock = Mutex()
-    private var stopAllInProgress = false
+    @Volatile private var stopAllInProgress = false
     private var startsInFlight = 0
     private var startsDrained = CompletableDeferred(Unit).apply { complete(Unit) }
 
@@ -407,6 +424,15 @@ class DownloadManager(
             if (startsInFlight == 0) {
                 startsDrained.complete(Unit)
             }
+        }
+    }
+
+    /** Read by in-flight jobs that must not start workers after Stop All has been requested. */
+    internal fun isStopAllInProgress(): Boolean = stopAllInProgress
+
+    internal fun throwIfStopAllRequested() {
+        if (stopAllInProgress) {
+            throw kotlinx.coroutines.CancellationException("Stop All requested while a download was resuming")
         }
     }
 
