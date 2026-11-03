@@ -69,6 +69,7 @@ jobs:
           :downloader:monitor:desktopTest
           :shared:app:desktopTest
           :desktop:app:compileKotlin
+          :desktop:app:test
 
       - name: Create Windows package
         shell: bash

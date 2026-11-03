@@ -183,6 +183,10 @@ class DesktopSettingsComponent(
         }
     }
 
+    suspend fun exportNonSecretSettings(): String = appSettings.exportNonSecretSettings()
+
+    suspend fun importNonSecretSettings(text: String) = appSettings.importNonSecretSettings(text)
+
     fun toFront() {
         sendEffect(Effects.BringToFront)
     }
