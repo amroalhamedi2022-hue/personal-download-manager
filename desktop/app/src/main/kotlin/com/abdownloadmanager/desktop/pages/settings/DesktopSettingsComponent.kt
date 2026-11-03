@@ -54,6 +54,23 @@ class DesktopSettingsComponent(
 ) : BaseSettingsComponent(ctx),
     KoinComponent {
     private val appSettings by inject<AppSettingsStorage>()
+
+    // These are the very same persisted desktop flows backing the Appearance
+    // dropdowns and Home toolbar. The live preview never keeps a shadow copy.
+    val toolbarIconSize get() = appSettings.toolbarIconSize
+    val toolbarIconPack get() = appSettings.toolbarIconPack
+
+    fun selectToolbarIconSize(size: String) {
+        if (size in setOf("small", "medium", "large")) {
+            appSettings.toolbarIconSize.value = size
+        }
+    }
+
+    fun selectToolbarIconPack(pack: String) {
+        if (pack == "outline" || pack == "simple") {
+            appSettings.toolbarIconPack.value = pack
+        }
+    }
     private val pageStorage by inject<PageStatesStorage>()
     private val appRepository by inject<AppRepository>()
     private val proxyManager by inject<ProxyManager>()

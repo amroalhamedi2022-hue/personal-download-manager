@@ -86,6 +86,28 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("theme.secondaryAccentColor", THEME_RENDERER)
         self.assertIn("selected = value.id == it.id", THEME_RENDERER)
 
+    def test_appearance_page_previews_the_actual_live_selected_pack_and_size(self):
+        component = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/settings/DesktopSettingsComponent.kt").read_text(encoding="utf-8")
+        page = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/settings/SettingsPage.kt").read_text(encoding="utf-8")
+        preview = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/settings/ToolbarAppearancePreview.kt").read_text(encoding="utf-8")
+        self.assertIn("val toolbarIconSize get() = appSettings.toolbarIconSize", component)
+        self.assertIn("val toolbarIconPack get() = appSettings.toolbarIconPack", component)
+        self.assertIn('if (size in setOf("small", "medium", "large"))', component)
+        self.assertIn('if (pack == "outline" || pack == "simple")', component)
+        self.assertIn("settingsComponent.toolbarIconSize.collectAsState()", page)
+        self.assertIn("settingsComponent.toolbarIconPack.collectAsState()", page)
+        self.assertIn("!searching && currentPage == SettingSection.Appearance", page)
+        self.assertIn("ToolbarAppearancePreview(", page)
+        self.assertIn("settingsComponent::selectToolbarIconSize", page)
+        self.assertIn("settingsComponent::selectToolbarIconPack", page)
+        self.assertIn('if (iconPack == "simple") simpleToolbarGlyph(icon) else null', preview)
+        self.assertIn("onIconPackSelected(choice)", preview)
+        self.assertIn("onIconSizeSelected(choice)", preview)
+        self.assertIn("myColors.primary.copy(alpha = 0.14f)", preview)
+        for icon in ("resume", "pause", "queueStart", "queueStop", "remove", "settings"):
+            self.assertIn(f"MyIcons.{icon}", preview)
+        self.assertNotIn("rememberInfiniteTransition()", preview)
+
     def test_real_simple_icon_pack_and_default_outline_are_persisted(self):
         model = (ROOT / "shared/app/src/desktopMain/kotlin/com/abdownloadmanager/shared/storage/appsettings/IAppSettingsModel.desktop.kt").read_text(encoding="utf-8")
         default = (ROOT / "shared/app/src/desktopMain/kotlin/com/abdownloadmanager/shared/storage/appsettings/DefaultAppSettings.desktop.kt").read_text(encoding="utf-8")
