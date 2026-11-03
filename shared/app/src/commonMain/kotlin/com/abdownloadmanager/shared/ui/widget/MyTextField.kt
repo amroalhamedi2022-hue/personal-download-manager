@@ -29,6 +29,8 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.isSpecified
 import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.pointer.PointerIcon
@@ -66,8 +68,10 @@ fun MyTextField(
     start: @Composable (RowScope.() -> Unit)? = null,
     end: @Composable (RowScope.() -> Unit)? = null,
     visualTransformation: VisualTransformation = VisualTransformation.None,
+    externalFocusRequester: FocusRequester? = null,
+    onEscape: (() -> Unit)? = null,
 ) {
-    val focusRequester = remember { FocusRequester() }
+    val focusRequester = externalFocusRequester ?: remember { FocusRequester() }
     val fm = LocalFocusManager.current
     val isFocused by interactionSource.collectIsFocusedAsState()
 
@@ -87,6 +91,7 @@ fun MyTextField(
             )
             .onKeyEvent {
                 if (it.key == Key.Escape) {
+                    if (it.type == KeyEventType.KeyDown) onEscape?.invoke()
                     fm.clearFocus()
                     true
                 } else false

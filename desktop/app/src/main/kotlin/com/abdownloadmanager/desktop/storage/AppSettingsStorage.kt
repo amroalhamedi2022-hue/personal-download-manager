@@ -56,6 +56,8 @@ class AppSettingsStorage(
     override val showIconLabels = from(AppSettingsModel.showIconLabels)
     override val useRelativeDateTime = from(AppSettingsModel.useRelativeDateTime)
     val useSystemTray = from(AppSettingsModel.useSystemTray)
+    val toolbarIconSize = from(AppSettingsModel.toolbarIconSize)
+    val toolbarIconPack = from(AppSettingsModel.toolbarIconPack)
     override val threadCount = from(AppSettingsModel.threadCount)
     override val maxConcurrentDownloads = from(AppSettingsModel.maxConcurrentDownloads)
     override val dynamicPartCreation = from(AppSettingsModel.dynamicPartCreation)

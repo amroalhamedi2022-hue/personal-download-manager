@@ -13,6 +13,8 @@ data class SingleDownloadPageStateToPersist(
     // Show HyperGet's connection strip and part table for a fresh profile.
     // An explicit user collapse remains persisted by the existing storage.
     val showPartInfo: Boolean = true,
+    // Default visible, but let users persist their choice after hiding the live chart.
+    val showSpeedGraph: Boolean = true,
 ) {
     companion object
 }

@@ -7,6 +7,7 @@ import com.abdownloadmanager.desktop.window.custom.rememberWindowController
 import com.abdownloadmanager.shared.util.ui.icon.MyIcons
 import com.abdownloadmanager.shared.util.mvi.HandleEffects
 import androidx.compose.runtime.*
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.FrameWindowScope
@@ -17,6 +18,8 @@ import androidx.compose.ui.window.v2.WindowSizeProvider
 import androidx.compose.ui.window.v2.rememberWindowState
 import com.abdownloadmanager.shared.singledownloadpage.BaseSingleDownloadComponent
 import com.abdownloadmanager.shared.util.ui.theme.LocalUiScale
+import com.abdownloadmanager.shared.ui.theme.DefaultThemes
+import com.abdownloadmanager.shared.util.ui.LocalMyColors
 import ir.amirab.downloader.downloaditem.DownloadJobStatus
 import ir.amirab.downloader.monitor.CompletedDownloadItemState
 import ir.amirab.downloader.monitor.IDownloadItemState
@@ -25,6 +28,7 @@ import ir.amirab.downloader.monitor.statusOrFinished
 import ir.amirab.downloader.utils.ExceptionUtils
 import ir.amirab.util.desktop.screen.applyUiScale
 import java.awt.Dimension
+import java.awt.GraphicsEnvironment
 import java.awt.Taskbar
 import java.awt.Window
 
@@ -33,9 +37,10 @@ private fun getDownloadTitle(itemState: IDownloadItemState): String {
     return buildString {
         if (itemState is ProcessingDownloadItemState && itemState.percent != null) {
             append("${itemState.percent}%")
-            append(" ")
+            append(" — ")
         }
         append(itemState.name)
+        append(" — HyperGet")
     }
 }
 
@@ -168,17 +173,26 @@ private fun ProgressWindow(
         singleDownloadComponent.close()
     }
     val uiScale = LocalUiScale.current
-    val defaultHeight = 410f.applyUiScale(uiScale)
-    val defaultWidth = 760f.applyUiScale(uiScale)
+    val density = LocalDensity.current.density.coerceAtLeast(1f)
+    // Keep the approved proportions on large screens, but never open the
+    // details window beyond the usable monitor bounds on compact displays.
+    val workArea = remember {
+        GraphicsEnvironment.getLocalGraphicsEnvironment().maximumWindowBounds
+    }
+    val safeWidth = (workArea.width / density - 32f).coerceAtLeast(480f)
+    val safeHeight = (workArea.height / density - 48f).coerceAtLeast(340f)
+    val defaultHeight = 465f.applyUiScale(uiScale)
+    val defaultWidth = 1120f.applyUiScale(uiScale)
 
     val showPartInfo by singleDownloadComponent.showPartInfo.collectAsState()
     val singleDownloadPageSizing = remember(showPartInfo) { SingleProgressDownloadPageSizing() }
-    var h = defaultHeight
-    var w = defaultWidth
-    if (showPartInfo) {
-        h += singleDownloadPageSizing.partInfoHeight.value
-            .applyUiScale(uiScale)
-    }
+    val requestedHeight = defaultHeight + if (showPartInfo) {
+        singleDownloadPageSizing.partInfoHeight.value.applyUiScale(uiScale)
+    } else 0f
+    val h = requestedHeight.coerceAtMost(safeHeight)
+    val w = defaultWidth.coerceAtMost(safeWidth)
+    val minWidth = 580f.applyUiScale(uiScale).coerceAtMost(w)
+    val minHeight = 360f.applyUiScale(uiScale).coerceAtMost(h)
     val state = rememberWindowState(
         initialBoundsProvider = WindowBoundsProvider(
             sizeProvider = WindowSizeProvider.Fixed(
@@ -188,12 +202,13 @@ private fun ProgressWindow(
             positionProvider = WindowPositionProvider.CenteredOnScreen
         )
     )
+    CompositionLocalProvider(LocalMyColors provides DefaultThemes.hyperGetLight) {
     CustomWindow(
         state = state,
-        onRequestToggleMaximize = null,
-        resizable = false,
+        // The reference shows a maximize control; resizing also helps small screens.
+        resizable = true,
         onCloseRequest = onRequestClose,
-        minSize = DpSize(defaultWidth.dp, defaultHeight.dp),
+        minSize = DpSize(minWidth.dp, minHeight.dp),
         windowController = rememberWindowController(
             title = getDownloadTitle(itemState),
         ),
@@ -219,6 +234,7 @@ private fun ProgressWindow(
                 itemState,
             )
         }
+    }
     }
 }
 

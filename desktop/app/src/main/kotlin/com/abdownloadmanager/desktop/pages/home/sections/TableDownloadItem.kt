@@ -23,6 +23,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.abdownloadmanager.resources.Res
+import com.abdownloadmanager.desktop.pages.singleDownloadPage.CompactHomeLiquidProgressTrack
 import com.abdownloadmanager.shared.ui.widget.CheckBox
 import com.abdownloadmanager.shared.ui.widget.Text
 import com.abdownloadmanager.shared.util.*
@@ -447,8 +448,11 @@ private fun ProgressAndPercent(
         statusString = errorReason.title
     }
     Column {
-        val statusText = if (gotAnyProgress) {
-            "${percent ?: "."}% $statusString"
+        // Unknown-length transfers have no meaningful percentage. Show the
+        // real status instead of the old misleading ".% Downloading" text;
+        // the shared compact liquid track animates its indeterminate capsule.
+        val statusText = if (gotAnyProgress && percent != null) {
+            "$percent% $statusString"
         } else {
             statusString
         }
@@ -477,6 +481,18 @@ private fun ProgressStatus(
     background: Brush = myColors.primaryGradient,
     isLiquidActive: Boolean,
 ) {
+    if (isLiquidActive) {
+        // Identical blue/cyan double-wave glass liquid as the full download
+        // window. The Home list shares one animation phase even at 10k rows.
+        // Unknown-length active downloads retain the moving liquid capsule.
+        CompactHomeLiquidProgressTrack(
+            progress = percent?.let { (it / 100f).coerceIn(0f, 1f) },
+            sharedPhase = LocalLiquidProgressPhase.current,
+        )
+        return
+    }
+    // Preserve paused/error/preparing status colors and the thin, static
+    // progress treatment. No animation runs for an inactive download.
     val liquidProgressPhase = LocalLiquidProgressPhase.current
     Box(
         Modifier

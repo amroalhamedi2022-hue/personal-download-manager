@@ -7,6 +7,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -104,6 +105,7 @@ fun IconActionButtonWithBrush(
     Tooltip(contentDescription) {
         WithContentColor(contentColor) {
             val isFocused by interactionSource.collectIsFocusedAsState()
+            val isHovered by interactionSource.collectIsHoveredAsState()
             val isActiveOrFocused = indicateActive || isFocused
             Box(
                 modifier
@@ -113,7 +115,10 @@ fun IconActionButtonWithBrush(
                     }
                     .border(
                         1.dp,
-                        if (enabled) borderColor else disabledBorderColor,
+                        if (!enabled) disabledBorderColor
+                        else if (isHovered && !isActiveOrFocused)
+                            SolidColor(myColors.primary.copy(alpha = 0.55f))
+                        else borderColor,
                         shape
                     )
                     .ifThen(isActiveOrFocused || requiresAttention) {
@@ -125,6 +130,11 @@ fun IconActionButtonWithBrush(
                     }
                     .clip(shape)
                     .background(if (enabled) backgroundColor else disabledBackgroundColor)
+                    // A faint hover wash gives all icon actions one consistent
+                    // response without changing icons, status colors or layout.
+                    .ifThen(enabled && isHovered && !isActiveOrFocused) {
+                        background(myColors.primary.copy(alpha = 0.07f))
+                    }
                     .clickable(
                         enabled = enabled,
                         indication = LocalIndication.current,

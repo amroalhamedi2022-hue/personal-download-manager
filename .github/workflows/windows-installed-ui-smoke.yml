@@ -18,6 +18,9 @@ on:
       - "scripts/source-tests/test_hyperget_http_dispatcher_bound_source.py"
       - "desktop/app/resources/installer/nsis-script-template.nsi"
       - "scripts/Run-WindowsInstallerLifecycleE2E.ps1"
+      - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/HomePage.kt"
+      - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/HomeComponent.kt"
+      - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/HomeWindow.kt"
       - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/TableDownloadItem.kt"
       - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/DownloadList.kt"
       - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/singleDownloadPage/ProgressDownloadPage.kt"
@@ -26,15 +29,25 @@ on:
       - "shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/ui/theme/DefaultThemes.kt"
       - "shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/storage/appsettings/DefaultAppSettings.kt"
       - "shared/app/src/desktopTest/kotlin/com/abdownloadmanager/shared/ui/theme/ModernThemePaletteContractTest.kt"
+      - "shared/app/src/desktopMain/kotlin/com/abdownloadmanager/shared/ui/widget/table/customtable/TableUtils.kt"
+      - "shared/app/src/desktopTest/kotlin/com/abdownloadmanager/shared/ui/widget/table/customtable/TableStatePersistenceTest.kt"
+      - "scripts/Run-WindowsMultiFileDropE2E.ps1"
       - "scripts/Run-WindowsLiquidProgressVisualE2E.ps1"
       - "scripts/Wait-WindowsLoopbackHttpPort.ps1"
       - "scripts/source-tests/test_hyperget_liquid_progress_source.py"
+      - "shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/pages/home/BaseHomeComponent.kt"
+      - "shared/app/src/desktopTest/kotlin/com/abdownloadmanager/shared/pages/home/DownloadSearchMatcherTest.kt"
+      - "shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/pages/home/DroppedLinkFiles.kt"
+      - "shared/app/src/desktopTest/kotlin/com/abdownloadmanager/shared/pages/home/DroppedLinkFilesTest.kt"
+      - "shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/util/extractors/linkextractor/StringUrlExtractor.kt"
+      - "shared/app/src/desktopTest/kotlin/com/abdownloadmanager/shared/util/extractors/linkextractor/StringUrlExtractorMixedListTest.kt"
       - "scripts/source-tests/test_hyperget_executable_identity_workflows.py"
       - "scripts/source-tests/test_hyperget_pr_diff_scope.py"
       - "scripts/audit_windows_icon_resources.py"
       - "scripts/source-tests/test_hyperget_icon_resource_audit.py"
   pull_request:
-    branches: [codex/repair-rf00-rf01]
+    # Isolated one-off visual-acceptance PR; existing production base remains unchanged.
+    branches: [codex/repair-rf00-rf01, experiment/jules-liquid-progress-20261030]
     paths:
       - ".github/workflows/windows-installed-ui-smoke.yml"
       - "desktop/app/build.gradle.kts"
@@ -49,6 +62,9 @@ on:
       - "scripts/source-tests/test_hyperget_http_dispatcher_bound_source.py"
       - "desktop/app/resources/installer/nsis-script-template.nsi"
       - "scripts/Run-WindowsInstallerLifecycleE2E.ps1"
+      - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/HomePage.kt"
+      - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/HomeComponent.kt"
+      - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/HomeWindow.kt"
       - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/TableDownloadItem.kt"
       - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/DownloadList.kt"
       - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/singleDownloadPage/ProgressDownloadPage.kt"
@@ -57,9 +73,18 @@ on:
       - "shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/ui/theme/DefaultThemes.kt"
       - "shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/storage/appsettings/DefaultAppSettings.kt"
       - "shared/app/src/desktopTest/kotlin/com/abdownloadmanager/shared/ui/theme/ModernThemePaletteContractTest.kt"
+      - "shared/app/src/desktopMain/kotlin/com/abdownloadmanager/shared/ui/widget/table/customtable/TableUtils.kt"
+      - "shared/app/src/desktopTest/kotlin/com/abdownloadmanager/shared/ui/widget/table/customtable/TableStatePersistenceTest.kt"
+      - "scripts/Run-WindowsMultiFileDropE2E.ps1"
       - "scripts/Run-WindowsLiquidProgressVisualE2E.ps1"
       - "scripts/Wait-WindowsLoopbackHttpPort.ps1"
       - "scripts/source-tests/test_hyperget_liquid_progress_source.py"
+      - "shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/pages/home/BaseHomeComponent.kt"
+      - "shared/app/src/desktopTest/kotlin/com/abdownloadmanager/shared/pages/home/DownloadSearchMatcherTest.kt"
+      - "shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/pages/home/DroppedLinkFiles.kt"
+      - "shared/app/src/desktopTest/kotlin/com/abdownloadmanager/shared/pages/home/DroppedLinkFilesTest.kt"
+      - "shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/util/extractors/linkextractor/StringUrlExtractor.kt"
+      - "shared/app/src/desktopTest/kotlin/com/abdownloadmanager/shared/util/extractors/linkextractor/StringUrlExtractorMixedListTest.kt"
       - "scripts/source-tests/test_hyperget_executable_identity_workflows.py"
       - "scripts/source-tests/test_hyperget_pr_diff_scope.py"
       - "scripts/audit_windows_icon_resources.py"
@@ -114,7 +139,7 @@ jobs:
           run=false
           while IFS= read -r file; do
             case "$file" in
-              .github/workflows/windows-installed-ui-smoke.yml|desktop/app/resources/installer/nsis-script-template.nsi|desktop/app/build.gradle.kts|desktop/app/icons/icon.ico|desktop/app/icons/hyperget-icon.svg|scripts/Run-WindowsInstallerLifecycleE2E.ps1|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/TableDownloadItem.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/DownloadList.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/singleDownloadPage/ProgressDownloadPage.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/singleDownloadPage/ShowDownloadDialogs.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/singleDownloadPage/SingleDownloadPageStateToPersist.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/singleInstance/service/IDefaultAppIPCService.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/singleInstance/service/DefaultAppIPCServiceImpl.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/cli/download/Download.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/cli/download/open/OpenDownload.kt|shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/ui/theme/DefaultThemes.kt|shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/storage/appsettings/DefaultAppSettings.kt|shared/app/src/desktopTest/kotlin/com/abdownloadmanager/shared/ui/theme/ModernThemePaletteContractTest.kt|scripts/Run-WindowsLiquidProgressVisualE2E.ps1|scripts/Wait-WindowsLoopbackHttpPort.ps1|scripts/source-tests/test_hyperget_liquid_progress_source.py|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/di/Di.kt|scripts/source-tests/test_hyperget_http_dispatcher_bound_source.py)
+              .github/workflows/windows-installed-ui-smoke.yml|desktop/app/resources/installer/nsis-script-template.nsi|desktop/app/build.gradle.kts|desktop/app/icons/icon.ico|desktop/app/icons/hyperget-icon.svg|scripts/Run-WindowsInstallerLifecycleE2E.ps1|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/HomePage.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/HomeComponent.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/HomeWindow.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/TableDownloadItem.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/DownloadList.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/singleDownloadPage/ProgressDownloadPage.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/singleDownloadPage/ShowDownloadDialogs.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/singleDownloadPage/SingleDownloadPageStateToPersist.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/singleInstance/service/IDefaultAppIPCService.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/singleInstance/service/DefaultAppIPCServiceImpl.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/cli/download/Download.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/cli/download/open/OpenDownload.kt|shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/ui/theme/DefaultThemes.kt|shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/storage/appsettings/DefaultAppSettings.kt|shared/app/src/desktopTest/kotlin/com/abdownloadmanager/shared/ui/theme/ModernThemePaletteContractTest.kt|shared/app/src/desktopMain/kotlin/com/abdownloadmanager/shared/ui/widget/table/customtable/TableUtils.kt|shared/app/src/desktopTest/kotlin/com/abdownloadmanager/shared/ui/widget/table/customtable/TableStatePersistenceTest.kt|scripts/Run-WindowsMultiFileDropE2E.ps1|scripts/Run-WindowsLiquidProgressVisualE2E.ps1|scripts/Wait-WindowsLoopbackHttpPort.ps1|scripts/source-tests/test_hyperget_liquid_progress_source.py|shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/pages/home/BaseHomeComponent.kt|shared/app/src/desktopTest/kotlin/com/abdownloadmanager/shared/pages/home/DownloadSearchMatcherTest.kt|shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/pages/home/DroppedLinkFiles.kt|shared/app/src/desktopTest/kotlin/com/abdownloadmanager/shared/pages/home/DroppedLinkFilesTest.kt|shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/util/extractors/linkextractor/StringUrlExtractor.kt|shared/app/src/desktopTest/kotlin/com/abdownloadmanager/shared/util/extractors/linkextractor/StringUrlExtractorMixedListTest.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/di/Di.kt|scripts/source-tests/test_hyperget_http_dispatcher_bound_source.py)
                 run=true ;;
             esac
           done <<< "$changed"
@@ -141,6 +166,7 @@ jobs:
           $scripts = @(
             'scripts/Wait-WindowsLoopbackHttpPort.ps1',
             'scripts/Run-WindowsLiquidProgressVisualE2E.ps1',
+            'scripts/Run-WindowsMultiFileDropE2E.ps1',
             'scripts/Run-WindowsInstallerLifecycleE2E.ps1'
           )
           foreach ($scriptPath in $scripts) {
@@ -165,6 +191,22 @@ jobs:
           cache: gradle
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify Liquid Progress typography and theme selection source contracts
+        shell: pwsh
+        run: python -m unittest discover -s scripts/source-tests -p test_hyperget_liquid_progress_source.py -v
+
+      - name: Verify candidate theme colors and readable palettes
+        shell: bash
+        run: >-
+          ./gradlew --no-daemon --stacktrace
+          --dependency-verification strict
+          :shared:app:desktopTest
+          --tests com.abdownloadmanager.shared.ui.theme.ModernThemePaletteContractTest
+          --tests com.abdownloadmanager.shared.ui.widget.table.customtable.TableStatePersistenceTest
+          --tests com.abdownloadmanager.shared.pages.home.DownloadSearchMatcherTest
+          --tests com.abdownloadmanager.shared.pages.home.DroppedLinkFilesTest
+          --tests com.abdownloadmanager.shared.util.extractors.linkextractor.StringUrlExtractorMixedListTest
 
       - name: Build Windows installer from same source SHA
         shell: bash
@@ -260,6 +302,8 @@ jobs:
               [DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr handle);
               [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
               [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr handle, out RECT rect);
+              [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+              [DllImport("user32.dll")] public static extern void mouse_event(uint flags, uint x, uint y, uint data, UIntPtr extra);
               [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr handle, IntPtr insertAfter, int x, int y, int cx, int cy, uint flags);
           }
           '@
@@ -294,6 +338,101 @@ jobs:
               $target = Join-Path $PWD 'build/ci-release/installed-gui-smoke.png'
               $bitmap.Save($target, [System.Drawing.Imaging.ImageFormat]::Png)
               Write-Host "GUI screenshot: $target"
+
+              # Exercise Ctrl+F against the REAL installed Windows UI. The
+              # shortcut must focus the existing search box; a keypress-only
+              # source assertion does not prove focus or typed input.
+              Add-Type -AssemblyName System.Windows.Forms
+              [HyperGetUiSmokeNative]::SetForegroundWindow($windowHandle) | Out-Null
+              if ([HyperGetUiSmokeNative]::GetForegroundWindow() -ne $windowHandle) {
+                throw 'Cannot focus installed HyperGet for Ctrl+F keyboard acceptance.'
+              }
+              [System.Windows.Forms.SendKeys]::SendWait('^f')
+              Start-Sleep -Milliseconds 250
+              [System.Windows.Forms.SendKeys]::SendWait('hgfocusprobe')
+              Start-Sleep -Milliseconds 350
+              if ([HyperGetUiSmokeNative]::GetForegroundWindow() -ne $windowHandle) {
+                throw 'The installed HyperGet window lost focus during keyboard search acceptance.'
+              }
+              $searchScreenshot = Join-Path $PWD 'build/ci-release/installed-gui-ctrl-f-search.png'
+              $searchBitmap = [System.Drawing.Bitmap]::new($windowWidth, $windowHeight)
+              $searchGraphics = [System.Drawing.Graphics]::FromImage($searchBitmap)
+              try {
+                $searchGraphics.CopyFromScreen(
+                  [System.Drawing.Point]::new($windowRect.Left, $windowRect.Top),
+                  [System.Drawing.Point]::Empty,
+                  [System.Drawing.Size]::new($windowWidth, $windowHeight)
+                )
+                $searchBitmap.Save($searchScreenshot, [System.Drawing.Imaging.ImageFormat]::Png)
+                $changedTextPixels = 0
+                # The actual 1040px Windows screenshot places Search at the
+                # upper-right, between approx 67-85% width, y=10..40.
+                # Compare ONLY glyph interior, not the focus border:
+                # a focus ring by itself cannot satisfy the check.
+                $xStart = [int]($windowWidth * 0.70)
+                $xEnd = [int]($windowWidth * 0.83)
+                for ($pixelY = 14; $pixelY -lt [Math]::Min($windowHeight, 33); $pixelY++) {
+                  for ($pixelX = $xStart; $pixelX -lt $xEnd; $pixelX++) {
+                    $before = $bitmap.GetPixel($pixelX, $pixelY)
+                    $after = $searchBitmap.GetPixel($pixelX, $pixelY)
+                    $diff = [Math]::Abs([int]$before.R - [int]$after.R) +
+                      [Math]::Abs([int]$before.G - [int]$after.G) +
+                      [Math]::Abs([int]$before.B - [int]$after.B)
+                    if ($diff -ge 45) { $changedTextPixels++ }
+                  }
+                }
+                if ($changedTextPixels -lt 85) {
+                  # Diagnose keyboard injection independently: first click the
+                  # visible search box with native mouse and then type text.
+                  # The direct-click probe is NOT a substitute for Ctrl+F.
+                  if (-not [HyperGetUiSmokeNative]::SetCursorPos(
+                    ($windowRect.Left + [int]($windowWidth * 0.75)), ($windowRect.Top + 23)
+                  )) { throw 'Could not position direct-click keyboard diagnostic.' }
+                  [HyperGetUiSmokeNative]::mouse_event([uint32]2, 0, 0, 0, [UIntPtr]::Zero)
+                  [HyperGetUiSmokeNative]::mouse_event([uint32]4, 0, 0, 0, [UIntPtr]::Zero)
+                  [System.Windows.Forms.SendKeys]::SendWait('clickedprobe')
+                  Start-Sleep -Milliseconds 300
+                  $directBitmap = [System.Drawing.Bitmap]::new($windowWidth, $windowHeight)
+                  $directGraphics = [System.Drawing.Graphics]::FromImage($directBitmap)
+                  try {
+                    $directGraphics.CopyFromScreen(
+                      [System.Drawing.Point]::new($windowRect.Left, $windowRect.Top),
+                      [System.Drawing.Point]::Empty,
+                      [System.Drawing.Size]::new($windowWidth, $windowHeight)
+                    )
+                    $directBitmap.Save(
+                      (Join-Path $PWD 'build/ci-release/installed-gui-direct-click-search-diagnostic.png'),
+                      [System.Drawing.Imaging.ImageFormat]::Png
+                    )
+                    $directChangedPixels = 0
+                    for ($y = 14; $y -lt [Math]::Min(33, $windowHeight); $y++) {
+                      for ($x = $xStart; $x -lt $xEnd; $x++) {
+                        $p = $bitmap.GetPixel($x, $y)
+                        $q = $directBitmap.GetPixel($x, $y)
+                        if (([Math]::Abs([int]$p.R - [int]$q.R) +
+                          [Math]::Abs([int]$p.G - [int]$q.G) +
+                          [Math]::Abs([int]$p.B - [int]$q.B)) -ge 45) {
+                          $directChangedPixels++
+                        }
+                      }
+                    }
+                    throw "Ctrl+F search input did not change (glyph pixels=$changedTextPixels). Direct mouse-click + typing diagnostic changed=$directChangedPixels pixels."
+                  } finally {
+                    $directGraphics.Dispose()
+                    $directBitmap.Dispose()
+                  }
+                }
+                Write-Host "PASS: real Windows Ctrl+F focused Search; typed probe changed $changedTextPixels search glyph pixels."
+              } finally {
+                $searchGraphics.Dispose()
+                $searchBitmap.Dispose()
+                # Do not leave a synthetic search/filter in this runner.
+                # Escape should clear the Home search AND return focus
+                # to the download list, without affecting other text fields.
+                [System.Windows.Forms.SendKeys]::SendWait('{ESC}')
+                Start-Sleep -Milliseconds 220
+              }
+
               # Collect an actual process-tree CPU/RAM baseline while the
               # installed app is open and idle. This measures hardware behavior,
               # not the predicted effect of source-level animation changes.
@@ -318,6 +457,27 @@ jobs:
               Stop-Process -Id $started.Id -Force -ErrorAction SilentlyContinue
             }
           }
+
+      - name: Verify native Windows two-file OLE mouse drag
+        # Proven on the isolated Windows PR #4 runner (run 41353646866):
+        # native mouse-down, OLE Copy, and an actual Add Download window.
+        # Gate this experimental PR but keep unrelated older branches diagnostic.
+        # Exact imported URL values still require screenshot/UI inspection.
+        continue-on-error: ${{ github.base_ref != 'experiment/jules-liquid-progress-20261030' }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $sourceSha = (git rev-parse HEAD).Trim()
+          & ./scripts/Run-WindowsMultiFileDropE2E.ps1 -GuiExecutable $env:IDM_SMOKE_EXECUTABLE -SourceSha $sourceSha -OutputDirectory (Join-Path $PWD 'build/ci-release/native-drop')
+
+      - name: Upload native two-file Windows drag diagnostic
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-native-two-file-drag
+          path: build/ci-release/native-drop/*
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Verify real Liquid Progress while an installed download is active
         shell: pwsh
@@ -345,6 +505,18 @@ jobs:
           if (-not (Test-Path -LiteralPath $proof -PathType Leaf)) {
             throw 'Installer lifecycle acceptance proof was not written.'
           }
+
+      - name: Upload exact-SHA verified Windows NSIS installer for user testing
+        # Only publish a candidate when *all* preceding source, Kotlin, GUI,
+        # live HTTP/SHA256, restart and installer lifecycle steps passed.
+        # One EXE is enforced by the earlier installed-GUI acceptance step.
+        if: success()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: hyperget-windows-verified-installer
+          path: build/ci-release/binaries/**/*.exe
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Upload active Liquid Progress screenshot and verified transfer report
         if: always()
@@ -378,6 +550,9 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: windows-installed-gui-smoke
-          path: build/ci-release/installed-gui-smoke.png
+          path: |
+            build/ci-release/installed-gui-smoke.png
+            build/ci-release/installed-gui-ctrl-f-search.png
+            build/ci-release/installed-gui-direct-click-search-diagnostic.png
           if-no-files-found: ignore
           retention-days: 7

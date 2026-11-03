@@ -15,8 +15,9 @@ import com.arkivanov.decompose.ComponentContext
 import ir.amirab.util.compose.asStringSource
 import ir.amirab.util.desktop.poweraction.PowerActionConfig
 import ir.amirab.util.flow.mapTwoWayStateFlow
+import ir.amirab.util.flow.mapStateFlow
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.*
 import org.koin.core.component.get
 import kotlin.getValue
 
@@ -50,6 +51,13 @@ class DesktopSingleDownloadComponent(
     }
     override val defaultShowPartInfo: Boolean = singleDownloadPageStateToPersist.value.showPartInfo
 
+    // Global per-window preference: retain the user's graph choice across downloads and restarts.
+    val showSpeedGraph by lazy { singleDownloadPageStateToPersist.mapStateFlow { it.showSpeedGraph } }
+
+    fun setShowSpeedGraph(visible: Boolean) {
+        singleDownloadPageStateToPersist.update { it.copy(showSpeedGraph = visible) }
+    }
+
     override fun setShowPartInfo(value: Boolean) {
         super.setShowPartInfo(value)
         singleDownloadPageStateToPersist.update {
@@ -57,6 +65,19 @@ class DesktopSingleDownloadComponent(
                 SingleDownloadPageStateToPersist.showPartInfo.set(value)
             }
         }
+    }
+
+    init {
+        // The completion decision may be needed immediately (for a very short
+        // download), before an asynchronous Flow collector can run.
+        itemShouldShowCompletionDialog.value =
+            extraDownloadItemSettingsFlow.value.showCompletionDialogOverride
+        // Keep subsequent updates synchronized with the transactional storage.
+        extraDownloadItemSettingsFlow
+            .map { it.showCompletionDialogOverride }
+            .distinctUntilChanged()
+            .onEach { itemShouldShowCompletionDialog.value = it }
+            .launchIn(scope)
     }
 
     sealed interface Effects : BaseSingleDownloadComponent.Effects.Platform {
@@ -99,7 +120,12 @@ class DesktopSingleDownloadComponent(
                     map = {
                         it ?: globalShowCompletionDialog.value
                     },
-                    unMap = { it }
+                    unMap = { selected ->
+                        extraDownloadItemSettingsFlow.value = extraDownloadItemSettingsFlow.value.copy(
+                            showCompletionDialogOverride = selected,
+                        )
+                        selected
+                    }
                 ),
                 describe = {
                     when (it) {

@@ -97,20 +97,21 @@ fun DownloadList(
     ShowDownloadOptions(
         downloadOptions, onRequestCloseOption
     )
+    // A large multi-selection must not cause O(visible rows x selected rows)
+    // membership checks on every list refresh or when starting a native drag.
+    // The StateFlow selection emits new lists, so cache its ID set until changed.
+    val selectedIds = remember(selectionList) { selectionList.toHashSet() }
     val isALlSelected by derivedStateOf {
-        val list = downloadList
-        if (list.isEmpty()) {
-            false
-        } else {
-            list.map { it.id }.all {
-                it in selectionList
-            }
-        }
+        downloadList.isNotEmpty() && downloadList.all { it.id in selectedIds }
     }
 
-    val listToBeDragged by rememberUpdatedState(
-        downloadList.filter { it.id in selectionList }
-    )
+    // Keep drag order identical to the visible table order. Reuse this result
+    // when only theme/animation state changes, and keep the latest value in
+    // the pointer callback for long-running drags.
+    val selectedDownloadsForDrag = remember(downloadList, selectedIds) {
+        downloadList.filter { it.id in selectedIds }
+    }
+    val listToBeDragged by rememberUpdatedState(selectedDownloadsForDrag)
 
     val hasActiveDownload = downloadList.any { item ->
         item is ProcessingDownloadItemState && item.status == DownloadJobStatus.Downloading
@@ -150,6 +151,7 @@ fun DownloadList(
         val itemHorizontalPadding = 16.dp
         Table(
             tableState = tableState,
+            showColumnConfigButton = true,
             listState = lazyListState,
             key = { it.id },
             list = downloadList,
@@ -187,7 +189,7 @@ fun DownloadList(
                 MyStyledTableHeader(itemHorizontalPadding = itemHorizontalPadding, content = it)
             },
             wrapItem = { _, item, rowContent ->
-                val isSelected = selectionList.contains(item.id)
+                val isSelected = item.id in selectedIds
                 var shouldWaitForSecondClick by remember {
                     mutableStateOf(false)
                 }

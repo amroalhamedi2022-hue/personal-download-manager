@@ -28,6 +28,7 @@ import com.abdownloadmanager.shared.util.mvi.supportEffects
 import com.arkivanov.decompose.ComponentContext
 import ir.amirab.downloader.DownloadManagerEvents
 import ir.amirab.downloader.db.QueueModel
+import ir.amirab.downloader.monitor.IDownloadItemState
 import ir.amirab.downloader.downloaditem.DownloadStatus
 import ir.amirab.downloader.downloaditem.contexts.RemovedBy
 import ir.amirab.downloader.downloaditem.contexts.User
@@ -254,15 +255,15 @@ abstract class BaseHomeComponent(
         snapshotFlow { filterState.statusFilter },
         snapshotFlow { filterState.queueFilter },
     ) { textToSearch, activeDownloads, completeDownloads, categoryFilter, statusFilter, queueFilter ->
-        val isSearching = textToSearch.isNotBlank()
-        val allowedList = categoryFilter?.items ?: queueFilter?.queueItems
+        val searchTerm = textToSearch.trim()
+        // Category/queue items are lists: convert once per recomputation,
+        // rather than scanning up to 10k IDs for every visible row.
+        val allowedIds = (categoryFilter?.items ?: queueFilter?.queueItems)?.toHashSet()
         (activeDownloads + completeDownloads)
             .filter {
                 val statusAccepted = filterState.statusFilter.accept(it)
-                val itemIsInAllowedList = allowedList?.contains(it.id) ?: true
-                val searchAccepted = if (isSearching) {
-                    it.name.contains(filterState.textToSearch, ignoreCase = true)
-                } else true
+                val itemIsInAllowedList = allowedIds?.contains(it.id) ?: true
+                val searchAccepted = matchesDownloadSearch(it, searchTerm)
                 itemIsInAllowedList && statusAccepted && searchAccepted
             }
             // when restart a completed download item there is a duplication in list
@@ -275,9 +276,7 @@ abstract class BaseHomeComponent(
 
     init {
         downloadList.onEach { downloads ->
-            _selectionList.value = selectionList.value.filter { previouslySelectedItem ->
-                downloads.any { it.id == previouslySelectedItem }
-            }
+            _selectionList.value = retainVisibleSelections(selectionList.value, downloads)
         }.launchIn(scope)
 
         downloadSystem.downloadManager.listOfJobsEvents
@@ -297,11 +296,7 @@ abstract class BaseHomeComponent(
         downloadList,
     ) { selectionList, downloadList ->
         val ids = selectionList
-        ids.mapNotNull { id ->
-            downloadList.find {
-                it.id == id
-            }
-        }
+        findVisibleSelectedItems(ids, downloadList)
     }
 
     val selectionContentSize = selectionListItems.mapStateFlow { items ->
@@ -452,4 +447,37 @@ abstract class BaseHomeComponent(
             ) : Common
         }
     }
+}
+
+/** Local-only search; does not log, export, or mutate source URLs. */
+internal fun matchesDownloadSearch(item: IDownloadItemState, term: String): Boolean {
+    val query = term.trim()
+    return query.isEmpty() ||
+        item.name.contains(query, ignoreCase = true) ||
+        item.downloadLink.contains(query, ignoreCase = true)
+}
+
+/**
+ * Preserve selection order and instances while dropping entries no longer
+ * shown by search/category/queue filters. Avoid O(selected * visible) scans
+ * for 1k/10k-row lists during frequent download progress updates.
+ */
+internal fun retainVisibleSelections(
+    selected: List<Long>,
+    visible: List<IDownloadItemState>,
+): List<Long> {
+    if (selected.isEmpty() || visible.isEmpty()) return emptyList()
+    val visibleIds = HashSet<Long>(visible.size)
+    visible.forEach { visibleIds.add(it.id) }
+    return selected.filter { it in visibleIds }
+}
+
+/** Reuse the currently visible item objects, without an O(N x M) scan. */
+internal fun findVisibleSelectedItems(
+    selectedIds: List<Long>,
+    visible: List<IDownloadItemState>,
+): List<IDownloadItemState> {
+    if (selectedIds.isEmpty() || visible.isEmpty()) return emptyList()
+    val byId = visible.associateBy { it.id }
+    return selectedIds.mapNotNull { id -> byId[id] }
 }

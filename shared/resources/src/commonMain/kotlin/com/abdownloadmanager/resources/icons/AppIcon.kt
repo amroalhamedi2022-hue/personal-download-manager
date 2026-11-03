@@ -3,121 +3,130 @@ package com.abdownloadmanager.resources.icons
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.unit.dp
 
+/**
+ * HyperGet brand mark at all in-app/icon-tray sizes. The rounded glass tile,
+ * cyan/blue/violet arrow, halo and download shelf match the approved
+ * desktop/app/icons/hyperget-icon.svg instead of the obsolete purple logo.
+ * Native Windows .ico packaging is intentionally left unchanged.
+ */
 val ABDMIcons.AppIcon: ImageVector
     get() {
-        if (_AppIcon != null) {
-            return _AppIcon!!
-        }
-        _AppIcon = ImageVector.Builder(
-            name = "AppIcon",
-            defaultWidth = 48.dp,
-            defaultHeight = 48.dp,
-            viewportWidth = 48f,
-            viewportHeight = 48f
-        ).apply {
-            path(
-                fill = Brush.linearGradient(
-                    colorStops = arrayOf(
-                        0f to Color(0xFFC631FF),
-                        1f to Color(0xFF4DC4FE)
+        if (_AppIcon == null) {
+            _AppIcon = ImageVector.Builder(
+                name = "HyperGetAppIcon",
+                defaultWidth = 48.dp,
+                defaultHeight = 48.dp,
+                viewportWidth = 48f,
+                viewportHeight = 48f,
+            ).apply {
+                // Glass tile with soft rounded edges and its subtle light rim.
+                path(
+                    fill = Brush.linearGradient(
+                        colors = listOf(Color(0xFF071435), Color(0xFF0D3B8B),
+                            Color(0xFF3C1F86), Color(0xFF08183D)),
+                        start = Offset(2f, 2f),
+                        end = Offset(46f, 46f),
                     ),
-                    start = Offset(50.062f, 23.014f),
-                    end = Offset(-1.681f, 23.014f)
-                ),
-                pathFillType = PathFillType.EvenOdd
-            ) {
-                moveTo(26.89f, 0.892f)
-                curveTo(26.89f, 0.399f, 26.51f, 0f, 26.04f, 0f)
-                horizontalLineTo(21.96f)
-                curveTo(21.49f, 0f, 21.11f, 0.399f, 21.11f, 0.892f)
-                verticalLineTo(17.84f)
-                curveTo(21.11f, 18.333f, 20.729f, 18.732f, 20.26f, 18.732f)
-                horizontalLineTo(18.851f)
-                curveTo(18.16f, 18.732f, 17.758f, 19.552f, 18.16f, 20.143f)
-                lineTo(23.308f, 27.706f)
-                curveTo(23.647f, 28.205f, 24.353f, 28.205f, 24.692f, 27.706f)
-                lineTo(29.84f, 20.143f)
-                curveTo(30.242f, 19.552f, 29.84f, 18.732f, 29.149f, 18.732f)
-                horizontalLineTo(27.74f)
-                curveTo(27.271f, 18.732f, 26.89f, 18.333f, 26.89f, 17.84f)
-                verticalLineTo(0.892f)
-                close()
-                moveTo(1.827f, 33.184f)
-                curveTo(0.621f, 30.273f, 0f, 27.152f, 0f, 24f)
-                horizontalLineTo(7.201f)
-                curveTo(9.804f, 24f, 11.831f, 26.188f, 12.827f, 28.592f)
-                curveTo(13.43f, 30.048f, 14.314f, 31.371f, 15.428f, 32.485f)
-                curveTo(16.543f, 33.6f, 17.866f, 34.484f, 19.322f, 35.087f)
-                curveTo(20.777f, 35.69f, 22.338f, 36f, 23.914f, 36f)
-                curveTo(25.49f, 36f, 27.05f, 35.69f, 28.506f, 35.087f)
-                curveTo(29.962f, 34.484f, 31.285f, 33.6f, 32.399f, 32.485f)
-                curveTo(33.513f, 31.371f, 34.397f, 30.048f, 35f, 28.592f)
-                curveTo(35.996f, 26.188f, 38.023f, 24f, 40.626f, 24f)
-                horizontalLineTo(48f)
-                curveTo(48f, 27.152f, 47.379f, 30.273f, 46.173f, 33.184f)
-                curveTo(44.967f, 36.096f, 43.199f, 38.742f, 40.971f, 40.971f)
-                curveTo(38.742f, 43.199f, 36.096f, 44.967f, 33.184f, 46.173f)
-                curveTo(30.273f, 47.379f, 27.152f, 48f, 24f, 48f)
-                curveTo(20.848f, 48f, 17.727f, 47.379f, 14.816f, 46.173f)
-                curveTo(11.904f, 44.967f, 9.258f, 43.199f, 7.029f, 40.971f)
-                curveTo(4.801f, 38.742f, 3.033f, 36.096f, 1.827f, 33.184f)
-                close()
-                moveTo(11.772f, 5.211f)
-                curveTo(11.126f, 5.731f, 11.016f, 6.686f, 11.525f, 7.345f)
-                curveTo(12.035f, 8.003f, 12.971f, 8.116f, 13.617f, 7.596f)
-                lineTo(15.808f, 5.832f)
-                curveTo(16.454f, 5.312f, 16.564f, 4.357f, 16.055f, 3.698f)
-                curveTo(15.545f, 3.039f, 14.609f, 2.927f, 13.963f, 3.447f)
-                lineTo(11.772f, 5.211f)
-                close()
-                moveTo(36.468f, 5.211f)
-                curveTo(37.114f, 5.731f, 37.224f, 6.686f, 36.715f, 7.345f)
-                curveTo(36.205f, 8.003f, 35.269f, 8.116f, 34.623f, 7.596f)
-                lineTo(32.432f, 5.832f)
-                curveTo(31.786f, 5.312f, 31.676f, 4.357f, 32.185f, 3.698f)
-                curveTo(32.695f, 3.039f, 33.631f, 2.927f, 34.277f, 3.447f)
-                lineTo(36.468f, 5.211f)
-                close()
-                moveTo(4.543f, 17.654f)
-                curveTo(3.778f, 17.346f, 3.403f, 16.464f, 3.704f, 15.683f)
-                lineTo(4.728f, 13.033f)
-                curveTo(5.03f, 12.253f, 5.895f, 11.87f, 6.66f, 12.177f)
-                curveTo(7.425f, 12.485f, 7.8f, 13.368f, 7.499f, 14.148f)
-                lineTo(6.475f, 16.798f)
-                curveTo(6.173f, 17.578f, 5.308f, 17.962f, 4.543f, 17.654f)
-                close()
-                moveTo(44.536f, 15.683f)
-                curveTo(44.838f, 16.464f, 44.462f, 17.346f, 43.697f, 17.654f)
-                curveTo(42.932f, 17.962f, 42.067f, 17.578f, 41.765f, 16.798f)
-                lineTo(40.741f, 14.148f)
-                curveTo(40.44f, 13.368f, 40.815f, 12.485f, 41.58f, 12.177f)
-                curveTo(42.345f, 11.87f, 43.21f, 12.253f, 43.512f, 13.033f)
-                lineTo(44.536f, 15.683f)
-                close()
-            }
-            path(
-                fill = SolidColor(Color.Black),
-                fillAlpha = 0.25f
-            ) {
-                moveTo(40.97f, 40.97f)
-                curveTo(36.47f, 45.471f, 30.365f, 48f, 24f, 48f)
-                curveTo(17.635f, 48f, 11.53f, 45.471f, 7.029f, 40.97f)
-                verticalLineTo(40.97f)
-                curveTo(9.558f, 38.441f, 13.649f, 38.586f, 16.921f, 40.03f)
-                curveTo(19.13f, 41.006f, 21.538f, 41.524f, 24f, 41.524f)
-                curveTo(26.462f, 41.524f, 28.87f, 41.006f, 31.079f, 40.03f)
-                curveTo(34.351f, 38.586f, 38.441f, 38.441f, 40.97f, 40.97f)
-                verticalLineTo(40.97f)
-                close()
-            }
-        }.build()
-
+                    stroke = SolidColor(Color(0xFF8AC9EE)),
+                    strokeAlpha = 0.7f,
+                    strokeLineWidth = 0.45f,
+                ) {
+                    moveTo(11f, 1.5f)
+                    horizontalLineTo(37f)
+                    curveTo(43f, 1.5f, 46.5f, 5f, 46.5f, 11f)
+                    verticalLineTo(37f)
+                    curveTo(46.5f, 43f, 43f, 46.5f, 37f, 46.5f)
+                    horizontalLineTo(11f)
+                    curveTo(5f, 46.5f, 1.5f, 43f, 1.5f, 37f)
+                    verticalLineTo(11f)
+                    curveTo(1.5f, 5f, 5f, 1.5f, 11f, 1.5f)
+                    close()
+                }
+                // Open gradient halo: lighter than the tile, behind the arrow.
+                path(
+                    fill = SolidColor(Color.Transparent),
+                    stroke = Brush.linearGradient(
+                        colors = listOf(Color(0xFF23D8FF), Color(0xFF2F7BFF),
+                            Color(0xFF9649FF), Color(0xFFFF71BC)),
+                        start = Offset(8f, 9f),
+                        end = Offset(40f, 38f),
+                    ),
+                    strokeAlpha = 0.78f,
+                    strokeLineWidth = 1.6f,
+                ) {
+                    moveTo(39f, 22.5f)
+                    curveTo(39f, 30.8f, 32.3f, 37.5f, 24f, 37.5f)
+                    curveTo(15.7f, 37.5f, 9f, 30.8f, 9f, 22.5f)
+                    curveTo(9f, 14.2f, 15.7f, 7.5f, 24f, 7.5f)
+                    curveTo(32.3f, 7.5f, 39f, 14.2f, 39f, 22.5f)
+                    close()
+                }
+                // Approved brand arrow, never an alphabet/font glyph.
+                path(
+                    fill = Brush.linearGradient(
+                        colors = listOf(Color(0xFF72EAFF), Color(0xFF1DAAFF),
+                            Color(0xFF2D70FF), Color(0xFF8048FF),
+                            Color(0xFFE74FCF), Color(0xFFFF935B)),
+                        start = Offset(24f, 8f),
+                        end = Offset(24f, 37f),
+                    ),
+                    stroke = SolidColor(Color(0xFFC6F1FF)),
+                    strokeAlpha = 0.8f,
+                    strokeLineWidth = 0.5f,
+                ) {
+                    moveTo(19.7f, 9f)
+                    horizontalLineTo(28.3f)
+                    verticalLineTo(23.6f)
+                    horizontalLineTo(34.3f)
+                    lineTo(24f, 34.7f)
+                    lineTo(13.7f, 23.6f)
+                    horizontalLineTo(19.7f)
+                    close()
+                }
+                path(fill = SolidColor(Color(0xFFEFFBFF)), fillAlpha = 0.25f) {
+                    moveTo(20.6f, 10.7f)
+                    horizontalLineTo(22.3f)
+                    verticalLineTo(24.3f)
+                    horizontalLineTo(24.5f)
+                    lineTo(23f, 27.2f)
+                    lineTo(20.6f, 24.5f)
+                    close()
+                }
+                // Small, rounded receiving shelf from the approved SVG.
+                path(
+                    fill = Brush.linearGradient(
+                        colors = listOf(Color(0xFF36EBFF), Color(0xFF2A8BFF),
+                            Color(0xFF9A46FF), Color(0xFFFF899A)),
+                        start = Offset(10f, 39f),
+                        end = Offset(38f, 42f),
+                    ),
+                    stroke = SolidColor(Color(0xFFD8F8FF)),
+                    strokeAlpha = 0.65f,
+                    strokeLineWidth = 0.35f,
+                ) {
+                    moveTo(12f, 37f)
+                    horizontalLineTo(36f)
+                    curveTo(37.5f, 37f, 38.5f, 38f, 38.5f, 39.5f)
+                    curveTo(38.5f, 41f, 37.5f, 42f, 36f, 42f)
+                    horizontalLineTo(12f)
+                    curveTo(10.5f, 42f, 9.5f, 41f, 9.5f, 39.5f)
+                    curveTo(9.5f, 38f, 10.5f, 37f, 12f, 37f)
+                    close()
+                }
+                path(fill = SolidColor(Color.White), fillAlpha = 0.32f) {
+                    moveTo(13f, 38.1f)
+                    horizontalLineTo(35f)
+                    verticalLineTo(38.5f)
+                    horizontalLineTo(13f)
+                    close()
+                }
+            }.build()
+        }
         return _AppIcon!!
     }
 

@@ -15,6 +15,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
@@ -34,6 +35,8 @@ fun SearchBox(
     interactionSource: MutableInteractionSource = remember { MutableInteractionSource() },
     placeholder: String = myStringResource(Res.string.search_in_the_list),
     modifier: Modifier,
+    externalFocusRequester: FocusRequester? = null,
+    onEscape: (() -> Unit)? = null,
 ) {
     val shape = myShapes.defaultRounded
     val textSize = myTextSizes.base
@@ -44,6 +47,8 @@ fun SearchBox(
         shape = shape,
         textPadding = textPadding,
         interactionSource = interactionSource,
+        externalFocusRequester = externalFocusRequester,
+        onEscape = onEscape,
         start = {
             WithContentAlpha(
                 animateFloatAsState(if (text.isBlank()) 0.9f else 1f).value

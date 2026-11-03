@@ -11,6 +11,9 @@ data class DesktopExtraDownloadItemSettings(
     override val id: Long,
     val powerActionTypeOnFinish: PowerActionConfig.Type? = null,
     val powerActionUseForceOnFinish: Boolean = false,
+    // Null follows the global preference. A non-null per-download choice must
+    // survive closing and reopening the file progress window and application.
+    val showCompletionDialogOverride: Boolean? = null,
 ) : IExtraDownloadItemSettings, ContainsPowerActionConfigOnFinish {
 
     override fun getPowerActionConfigOnFinish() = powerActionTypeOnFinish?.let {

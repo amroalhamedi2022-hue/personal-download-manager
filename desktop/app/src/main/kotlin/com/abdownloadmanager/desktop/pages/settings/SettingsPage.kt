@@ -77,7 +77,11 @@ private fun SideBarItem(icon: IconSource, name: String, isSelected: Boolean, onC
         Modifier
             .height(IntrinsicSize.Max)
             .ifThen(isSelected) {
-                background(myColors.onBackground / 0.05f)
+                // Keep navigation visibly selected across both light and dark
+                // HyperGet palettes and the user-selectable color families.
+                background(
+                    myColors.primary.copy(alpha = if (myColors.isLight) 0.12f else 0.22f)
+                )
             }
             .selectable(
                 selected = isSelected,
@@ -166,6 +170,8 @@ fun SettingsPage(
     val searching = search.isNotBlank()
     val currentPage by settingsComponent.currentPage.collectAsState()
     val currentConfigurables by settingsComponent.configurables.collectAsState()
+    val toolbarIconSize by settingsComponent.toolbarIconSize.collectAsState()
+    val toolbarIconPack by settingsComponent.toolbarIconPack.collectAsState()
 
     // A search spans Appearance, Download Engine and Browser Integration.
     // Reuse real backedBy controls; the search itself never mutates a setting.
@@ -217,6 +223,16 @@ fun SettingsPage(
                         .padding(horizontal = 8.dp, vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
+                    // Instant, authentic preview of the selected icon artwork.
+                    // Suppress it during settings search so results stay compact.
+                    if (!searching && currentPage == SettingSection.Appearance) {
+                        ToolbarAppearancePreview(
+                            iconSizePreset = toolbarIconSize,
+                            iconPack = toolbarIconPack,
+                            onIconSizeSelected = settingsComponent::selectToolbarIconSize,
+                            onIconPackSelected = settingsComponent::selectToolbarIconPack,
+                        )
+                    }
                     if (displayedSections.isEmpty()) {
                         Text(
                             "No settings match your search.",

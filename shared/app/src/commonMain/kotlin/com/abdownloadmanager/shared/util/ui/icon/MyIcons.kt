@@ -56,7 +56,7 @@ object MyIcons : BaseMyColors() {
     override val remove = ABDMIcons.Delete.asIconSource("remove")
     override val clear = ABDMIcons.Clear.asIconSource("clear")
     override val add = ABDMIcons.Plus.asIconSource("add")
-    override val minus = ABDMIcons.Minus.asIconSource("add")
+    override val minus = ABDMIcons.Minus.asIconSource("minus")
     override val paste = ABDMIcons.Clipboard.asIconSource("paste")
 
     override val copy = ABDMIcons.Copy.asIconSource("copy")
@@ -71,13 +71,13 @@ object MyIcons : BaseMyColors() {
 
     override val fileOpen = file
     override val folderOpen = folder
-    override val pictureFile = ABDMIcons.FilePicture.asIconSource("fileOpen")
-    override val musicFile = ABDMIcons.FileMusic.asIconSource("folderOpen")
-    override val zipFile = ABDMIcons.FileZip.asIconSource("pictureFile")
-    override val videoFile = ABDMIcons.FileVideo.asIconSource("musicFile")
-    override val applicationFile = ABDMIcons.FileApplication.asIconSource("zipFile")
-    override val documentFile = ABDMIcons.FileDocument.asIconSource("videoFile")
-    override val otherFile = ABDMIcons.FileUnknown.asIconSource("applicationFile")
+    override val pictureFile = ABDMIcons.FilePicture.asIconSource("pictureFile")
+    override val musicFile = ABDMIcons.FileMusic.asIconSource("musicFile")
+    override val zipFile = ABDMIcons.FileZip.asIconSource("zipFile")
+    override val videoFile = ABDMIcons.FileVideo.asIconSource("videoFile")
+    override val applicationFile = ABDMIcons.FileApplication.asIconSource("applicationFile")
+    override val documentFile = ABDMIcons.FileDocument.asIconSource("documentFile")
+    override val otherFile = ABDMIcons.FileUnknown.asIconSource("otherFile")
 
     override val lock = ABDMIcons.Lock.asIconSource("lock")
     override val question = ABDMIcons.QuestionMark.asIconSource("question")

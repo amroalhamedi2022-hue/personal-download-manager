@@ -330,14 +330,22 @@ class TableState<Item, Cell : TableCell<Item>>(
 
     fun load(s: SerializableTableState) {
         setCustomSizes {
-            val cellsThatHaveCustomWidth = findCellById(s.sizes.keys)
-            cellsThatHaveCustomWidth.associateWith { s.sizes[it.id]!!.dp }
+            // Restored column widths come from user-edited JSON. A stale fixed
+            // column or a non-finite/out-of-range value must never break layout.
+            findCellById(s.sizes.keys).mapNotNull { cell ->
+                val width = s.sizes[cell.id] ?: return@mapNotNull null
+                val resizeable = cell.size as? CellSize.Resizeable ?: return@mapNotNull null
+                if (!width.isFinite()) return@mapNotNull null
+                cell to width.dp.coerceIn(resizeable.range)
+            }.toMap()
         }
         setOrder(findCellById(s.order))
         setSortBy(
             s.sortBy?.let { sortBy ->
-                findCellById(sortBy.name)?.let {
-                    Sort(it as SortableCell<Item>, sortBy.descending)
+                // A previously persisted id may now refer to a fixed/removed
+                // column. Ignore it instead of crashing on a blind cast.
+                (findCellById(sortBy.name) as? SortableCell<Item>)?.let {
+                    Sort(it, sortBy.descending)
                 }
             }
         )

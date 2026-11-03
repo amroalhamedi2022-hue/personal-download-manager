@@ -4,6 +4,17 @@ import re
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
+HOME_TOOLBAR = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/Actions.kt").read_text(encoding="utf-8")
+WINDOWS_UI_WORKFLOW = (ROOT / ".github/workflows/windows-installed-ui-smoke.yml").read_text(encoding="utf-8")
+HOME_COMPONENT = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/HomeComponent.kt").read_text(encoding="utf-8")
+DROPPED_FILE_READER = (ROOT / "shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/pages/home/DroppedLinkFiles.kt").read_text(encoding="utf-8")
+LINK_EXTRACTOR = (ROOT / "shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/util/extractors/linkextractor/StringUrlExtractor.kt").read_text(encoding="utf-8")
+HOME_PAGE = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/HomePage.kt").read_text(encoding="utf-8")
+HOME_WINDOW = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/HomeWindow.kt").read_text(encoding="utf-8")
+FILTERS = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/Filters.kt").read_text(encoding="utf-8")
+TEXT_FIELD = (ROOT / "shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/ui/widget/MyTextField.kt").read_text(encoding="utf-8")
+TABLE_WIDGET = (ROOT / "shared/app/src/desktopMain/kotlin/com/abdownloadmanager/shared/ui/widget/table/customtable/Table.kt").read_text(encoding="utf-8")
+HOME_DOWNLOAD_LIST = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/DownloadList.kt").read_text(encoding="utf-8")
 TABLE = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/TableDownloadItem.kt").read_text(encoding="utf-8")
 LIST = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/DownloadList.kt").read_text(encoding="utf-8")
 SCRIPT = (ROOT / "scripts/Run-WindowsLiquidProgressVisualE2E.ps1").read_text(encoding="utf-8")
@@ -15,15 +26,240 @@ IPC_IMPL = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/ut
 DOWNLOAD_COMMAND = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/cli/download/Download.kt").read_text(encoding="utf-8")
 OPEN_COMMAND = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/cli/download/open/OpenDownload.kt").read_text(encoding="utf-8")
 DOWNLOAD_WINDOW_STATE = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/singleDownloadPage/SingleDownloadPageStateToPersist.kt").read_text(encoding="utf-8")
+DOWNLOAD_WINDOW_COMPONENT = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/singleDownloadPage/DesktopSingleDownloadPageComponent.kt").read_text(encoding="utf-8")
+EXTRA_DOWNLOAD_SETTINGS_MODEL = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/storage/DesktopExtraDownloadItemSettings.kt").read_text(encoding="utf-8")
+TABS_WIDGET = (ROOT / "shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/ui/widget/Tabs.kt").read_text(encoding="utf-8")
+THEME_MANAGER = (ROOT / "shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/ui/theme/ThemeManager.kt").read_text(encoding="utf-8")
+THEME_RENDERER = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/ui/configurable/comon/renderer/ThemeConfigurableRenderer.kt").read_text(encoding="utf-8")
+FONT_MANAGER = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/settings/FontManager.kt").read_text(encoding="utf-8")
+BRAND_ICON = (ROOT / "shared/resources/src/commonMain/kotlin/com/abdownloadmanager/resources/icons/AppIcon.kt").read_text(encoding="utf-8")
+ICON_REGISTRY = (ROOT / "shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/util/ui/icon/MyIcons.kt").read_text(encoding="utf-8")
+ICON_BUTTON = (ROOT / "shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/ui/widget/MyIconButton.kt").read_text(encoding="utf-8")
 
 
 class LiquidProgressSourceContract(unittest.TestCase):
+    def test_long_url_remains_stable_ltr_inside_an_arabic_download_dialog(self):
+        self.assertIn("preserveUrlDirection = true", PAGE)
+        self.assertIn("TextDirection.Ltr", PAGE)
+        self.assertIn("if (preserveUrlDirection)", PAGE)
+        self.assertIn("Modifier.weight(0.7f)", PAGE)
+        # Remaining transfer/status properties retain the existing marquee.
+        self.assertIn("Modifier.basicMarquee(iterations = Int.MAX_VALUE).weight(0.7f)", PAGE)
+
+    def test_dialog_typography_hierarchy_uses_selected_font_and_scoped_scale(self):
+        self.assertIn("LocalTextSizes provides downloadTextSizes", PAGE)
+        self.assertIn("sm = 12.sp, base = 14.sp, lg = 16.sp, xl = 18.sp", PAGE)
+        self.assertIn("LocalTextStyle provides LocalTextStyle.current.copy(", PAGE)
+        self.assertIn("fontWeight = FontWeight.SemiBold", PAGE)
+        self.assertIn("fontWeight = FontWeight.Medium", PAGE)
+        self.assertIn("overflow = TextOverflow.Ellipsis", PAGE)
+        self.assertIn(".heightIn(min = 32.dp)", PAGE)
+        self.assertIn("FontFamily(\"Segoe UI\")", FONT_MANAGER)
+        self.assertIn("it.equals(\"Segoe UI\", ignoreCase = true)", FONT_MANAGER)
+
+    def test_hyperget_brand_icon_replaces_legacy_purple_glyph_in_window_and_tray(self):
+        self.assertIn('name = "HyperGetAppIcon"', BRAND_ICON)
+        self.assertIn("desktop/app/icons/hyperget-icon.svg", BRAND_ICON)
+        self.assertIn("Color(0xFF071435)", BRAND_ICON)
+        self.assertIn("Color(0xFF72EAFF)", BRAND_ICON)
+        self.assertIn("Color(0xFF36EBFF)", BRAND_ICON)
+        self.assertIn("val ABDMIcons.AppIcon: ImageVector", BRAND_ICON)
+        self.assertIn('override val appIcon = ABDMIcons.AppIcon.asIconSource("appIcon", false)', ICON_REGISTRY)
+        self.assertNotIn("Color(0xFFC631FF)", BRAND_ICON)
+
+    def test_icon_source_names_match_actual_semantics_and_hover_is_subtle(self):
+        for name in ("minus", "pictureFile", "musicFile", "zipFile", "videoFile",
+                     "applicationFile", "documentFile", "otherFile"):
+            self.assertRegex(ICON_REGISTRY, rf'override val {name} = .*?asIconSource\("{name}"\)')
+        self.assertIn("collectIsHoveredAsState()", ICON_BUTTON)
+        self.assertIn("background(myColors.primary.copy(alpha = 0.07f))", ICON_BUTTON)
+        self.assertIn("SolidColor(myColors.primary.copy(alpha = 0.55f))", ICON_BUTTON)
+        self.assertIn("if (!enabled) disabledBorderColor", ICON_BUTTON)
+
+    def test_theme_selector_miniature_previews_actual_secondary_accent(self):
+        self.assertIn("val secondaryAccentColor: Color = accentColor", THEME_MANAGER)
+        self.assertIn("secondaryAccentColor = secondary", THEME_MANAGER)
+        self.assertIn("private fun ThemeWindowSwatch(theme: ThemeInfo, selected: Boolean)", THEME_RENDERER)
+        self.assertIn(".background(theme.backgroundColor)", THEME_RENDERER)
+        self.assertIn(".background(theme.color)", THEME_RENDERER)
+        self.assertIn(".background(theme.accentColor)", THEME_RENDERER)
+        self.assertIn("theme.secondaryAccentColor", THEME_RENDERER)
+        self.assertIn("selected = value.id == it.id", THEME_RENDERER)
+
+    def test_real_installed_settings_window_is_screenshotted_not_faked(self):
+        self.assertIn("SendWait('^%s')", SCRIPT)
+        self.assertIn("FindVisibleWindow(", SCRIPT)
+        self.assertIn("'Settings'", SCRIPT)
+        self.assertIn("hyperget-appearance-live-preview.png", SCRIPT)
+        self.assertIn("Actual Appearance window too small for preview capture", SCRIPT)
+        self.assertIn("AppearanceStudioVerified = $appearanceStudioVerified", SCRIPT)
+        self.assertIn("AppearancePreviewScreenshot = if ($appearanceStudioVerified)", SCRIPT)
+        self.assertIn("PostMessage(", SCRIPT)
+
+    def test_appearance_page_previews_the_actual_live_selected_pack_and_size(self):
+        component = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/settings/DesktopSettingsComponent.kt").read_text(encoding="utf-8")
+        page = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/settings/SettingsPage.kt").read_text(encoding="utf-8")
+        preview = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/settings/ToolbarAppearancePreview.kt").read_text(encoding="utf-8")
+        self.assertIn("val toolbarIconSize get() = appSettings.toolbarIconSize", component)
+        self.assertIn("val toolbarIconPack get() = appSettings.toolbarIconPack", component)
+        self.assertIn('if (size in setOf("small", "medium", "large"))', component)
+        self.assertIn('if (pack == "outline" || pack == "simple")', component)
+        self.assertIn("settingsComponent.toolbarIconSize.collectAsState()", page)
+        self.assertIn("settingsComponent.toolbarIconPack.collectAsState()", page)
+        self.assertIn("!searching && currentPage == SettingSection.Appearance", page)
+        self.assertIn("ToolbarAppearancePreview(", page)
+        self.assertIn("settingsComponent::selectToolbarIconSize", page)
+        self.assertIn("settingsComponent::selectToolbarIconPack", page)
+        self.assertIn('if (iconPack == "simple") simpleToolbarGlyph(icon) else null', preview)
+        self.assertIn("onIconPackSelected(choice)", preview)
+        self.assertIn("onIconSizeSelected(choice)", preview)
+        self.assertIn("myColors.primary.copy(alpha = 0.14f)", preview)
+        for icon in ("resume", "pause", "queueStart", "queueStop", "remove", "settings"):
+            self.assertIn(f"MyIcons.{icon}", preview)
+        self.assertNotIn("rememberInfiniteTransition()", preview)
+
+    def test_real_simple_icon_pack_and_default_outline_are_persisted(self):
+        model = (ROOT / "shared/app/src/desktopMain/kotlin/com/abdownloadmanager/shared/storage/appsettings/IAppSettingsModel.desktop.kt").read_text(encoding="utf-8")
+        default = (ROOT / "shared/app/src/desktopMain/kotlin/com/abdownloadmanager/shared/storage/appsettings/DefaultAppSettings.desktop.kt").read_text(encoding="utf-8")
+        storage = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/storage/AppSettingsStorage.kt").read_text(encoding="utf-8")
+        settings = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/settings/DesktopSettings.kt").read_text(encoding="utf-8")
+        cfg = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/settings/DesktopSettingsComponent.kt").read_text(encoding="utf-8")
+        artwork = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/SimpleToolbarIcons.kt").read_text(encoding="utf-8")
+        self.assertIn("val toolbarIconPack: String", model)
+        self.assertIn("prop(AppSettingsModel::toolbarIconPack) bind S.string().catch", model)
+        self.assertIn("toolbarIconPack = it[AppSettingsModel::toolbarIconPack]", model)
+        self.assertIn('val toolbarIconPack: String get() = "outline"', default)
+        self.assertIn("val toolbarIconPack = from(AppSettingsModel.toolbarIconPack)", storage)
+        self.assertIn('possibleValues = listOf("outline", "simple")', settings)
+        self.assertIn("DesktopSettings.toolbarIconPackConfig(appSettings)", cfg)
+        self.assertIn("component.toolbarIconPack.collectAsState().value", HOME_PAGE)
+        self.assertIn('if (iconPack == "simple") simpleToolbarGlyph(it) else null', HOME_TOOLBAR)
+        self.assertIn("internal fun simpleToolbarGlyph(icon: IconSource): ImageVector?", artwork)
+        for name in ("resume", "pause", "queueStart", "queueStop", "queue",
+                     "stopAll", "stop", "remove", "settings"):
+            self.assertIn(f'"{name}"', artwork)
+        self.assertIn("path(fill = SolidColor(Color.White))", artwork)
+        self.assertIn("pathFillType = PathFillType.EvenOdd", artwork)
+        self.assertIn("return simpleHomeIcons[key]", artwork)
+        self.assertIn("MyIcon(", HOME_TOOLBAR)  # custom/icon plugin fallback
+
+    def test_persistent_three_size_windows_home_toolbar(self):
+        model = (ROOT / "shared/app/src/desktopMain/kotlin/com/abdownloadmanager/shared/storage/appsettings/IAppSettingsModel.desktop.kt").read_text(encoding="utf-8")
+        default = (ROOT / "shared/app/src/desktopMain/kotlin/com/abdownloadmanager/shared/storage/appsettings/DefaultAppSettings.desktop.kt").read_text(encoding="utf-8")
+        storage = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/storage/AppSettingsStorage.kt").read_text(encoding="utf-8")
+        settings = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/settings/DesktopSettings.kt").read_text(encoding="utf-8")
+        settings_component = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/settings/DesktopSettingsComponent.kt").read_text(encoding="utf-8")
+        self.assertIn("val toolbarIconSize: String", model)
+        self.assertIn("prop(AppSettingsModel::toolbarIconSize) bind S.string().catch", model)
+        self.assertIn("toolbarIconSize = it[AppSettingsModel::toolbarIconSize]", model)
+        self.assertIn('val toolbarIconSize: String get() = "medium"', default)
+        self.assertIn("val toolbarIconSize = from(AppSettingsModel.toolbarIconSize)", storage)
+        self.assertIn('possibleValues = listOf("small", "medium", "large")', settings)
+        self.assertIn("DesktopSettings.toolbarIconSizeConfig(appSettings)", settings_component)
+        self.assertIn("component.toolbarIconSize.collectAsState().value", HOME_PAGE)
+        self.assertIn('"small" -> 16.dp', HOME_TOOLBAR)
+        self.assertIn('"large" -> 28.dp', HOME_TOOLBAR)
+        self.assertIn("else -> 20.dp", HOME_TOOLBAR)
+        self.assertIn("collectIsHoveredAsState()", HOME_TOOLBAR)
+        self.assertIn("interactionSource = interactionSource", HOME_TOOLBAR)
+
+    def test_theme_selector_shows_candidate_palette_and_preserves_modes(self):
+        self.assertIn("val backgroundColor: Color = color", THEME_MANAGER)
+        self.assertIn("val accentColor: Color = color", THEME_MANAGER)
+        self.assertIn("backgroundColor = background", THEME_MANAGER)
+        self.assertIn("accentColor = primary", THEME_MANAGER)
+        self.assertIn("getThemeById(themeId)?.takeUnless { it.isLight }", THEME_MANAGER)
+        self.assertIn("getThemeById(themeId)?.takeIf { it.isLight }", THEME_MANAGER)
+        self.assertIn(".background(theme.backgroundColor)", THEME_RENDERER)
+        self.assertIn(".background(theme.accentColor)", THEME_RENDERER)
+        self.assertIn(".background(theme.color)", THEME_RENDERER)
+        self.assertNotIn("Brush.verticalGradient(myColors.primaryGradientColors)", THEME_RENDERER)
+
     def test_one_shared_clock_is_created_only_when_a_download_is_active(self):
         self.assertIn("hasActiveDownload = downloadList.any", LIST)
         self.assertIn("rememberInfiniteTransition()", LIST)
         self.assertIn("infiniteRepeatable(", LIST)
         self.assertIn("LocalLiquidProgressPhase provides liquidProgressPhase", LIST)
         self.assertNotIn("rememberInfiniteTransition", TABLE)
+
+    def test_installed_clipboard_search_restores_native_foreground_after_sta_probe(self):
+        # Keep actual OS clipboard roundtrip assertion; do not merely trust
+        # foreground/native key presses or a pre-seeded clipboard string.
+        self.assertIn("for ($focusAttempt = 1; $focusAttempt -le 5; $focusAttempt++)", SCRIPT)
+        self.assertIn("GetForegroundWindow() -eq $mainWindowHandle", SCRIPT)
+        self.assertIn("Clipboard copy acceptance could not restore", SCRIPT)
+        self.assertIn("SendWait('^f')", SCRIPT)
+        self.assertIn("SendWait('^a')", SCRIPT)
+        self.assertIn("SendWait('^c')", SCRIPT)
+        self.assertIn("if ($copiedSearchText -cne $clipboardProbe)", SCRIPT)
+        self.assertIn("throw \"Ctrl+V/Ctrl+C real HomeSearch regression:", SCRIPT)
+
+    def test_dark_home_liquid_empty_channel_follows_theme_not_light_dialog(self):
+        track = PAGE.split("private fun LiquidProgressTrack(", 1)[1].split(
+            "private fun RenderPartInfo(", 1
+        )[0]
+        home = PAGE.split("internal fun CompactHomeLiquidProgressTrack(", 1)[1].split(
+            "private fun RenderPartInfo(", 1
+        )[0]
+        self.assertIn("unfilledTrackColor: Color? = null", track)
+        self.assertIn("outlineColor: Color? = null", track)
+        self.assertIn("val trackBrush = unfilledTrackColor?.let { SolidColor(it) }", track)
+        self.assertIn("Color(0xFFEAF0F7), Color(0xFFDDE5F0)", track)
+        self.assertIn("outlineColor ?: Color(0xFFBFCAD9)", track)
+        self.assertIn("unfilledTrackColor = myColors.surface", home)
+        self.assertIn("outlineColor = myColors.onSurface.copy(alpha = 0.14f)", home)
+        self.assertIn("HomeLiquidDarkBackgroundTested = $homeLiquidDarkBackgroundTested", SCRIPT)
+        self.assertIn("HomeLiquidUnfilledTrackPixelRGB = $homeLiquidUnfilledTrackPixelRGB", SCRIPT)
+        self.assertIn("$probeX = [int][Math]::Round($mainWidth * 0.590)", SCRIPT)
+        self.assertIn("$probeY = [int][Math]::Round($mainHeight * 0.213)", SCRIPT)
+        self.assertIn("dark mode background regression", SCRIPT)
+
+    def test_main_list_uses_the_exact_dialog_liquid_with_one_shared_clock(self):
+        # This is the real dialog renderer, not a separate shimmer imitation.
+        self.assertIn(
+            "import com.abdownloadmanager.desktop.pages.singleDownloadPage.CompactHomeLiquidProgressTrack",
+            TABLE,
+        )
+        home_track = PAGE.split("internal fun CompactHomeLiquidProgressTrack(", 1)[1].split(
+            "private fun RenderPartInfo(", 1
+        )[0]
+        self.assertIn("LocalLiquidAnimationPhase provides sharedPhase", home_track)
+        self.assertIn("LiquidProgressTrack(", home_track)
+        self.assertIn("colors = referenceLiquidColors", home_track)
+        self.assertIn("modifier = Modifier.fillMaxWidth().height(12.dp)", home_track)
+        self.assertIn("bubbleCount = 6", home_track)
+        self.assertIn("compact = true", home_track)
+        self.assertNotIn("rememberInfiniteTransition", home_track)
+        active_row = TABLE.split("private fun ProgressStatus(", 1)[1].split(
+            "val liquidProgressPhase =", 1
+        )[0]
+        self.assertIn("if (isLiquidActive)", active_row)
+        self.assertIn("CompactHomeLiquidProgressTrack(", active_row)
+        self.assertIn("sharedPhase = LocalLiquidProgressPhase.current", active_row)
+        self.assertIn("percent?.let { (it / 100f).coerceIn(0f, 1f) }", active_row)
+        self.assertIn("LocalLiquidProgressPhase provides liquidProgressPhase", LIST)
+
+    def test_unknown_size_home_progress_does_not_claim_bogus_percentage(self):
+        # Active unknown-length downloads now use the dialog's indeterminate
+        # liquid capsule; no nonnumeric ".%" label is shown to the user.
+        status = TABLE.split("private fun ProgressAndPercent(", 1)[1].split(
+            "private fun ProgressStatus(", 1
+        )[0]
+        self.assertIn("if (gotAnyProgress && percent != null)", status)
+        self.assertIn('"$percent% $statusString"', status)
+        self.assertNotIn('${percent ?: "."}', status)
+        self.assertIn("statusString", status)
+        self.assertIn("percent?.let { (it / 100f).coerceIn(0f, 1f) }", TABLE)
+
+    def test_home_bulk_selection_membership_is_linear_not_quadratic(self):
+        self.assertIn("val selectedIds = remember(selectionList) { selectionList.toHashSet() }", LIST)
+        self.assertIn("downloadList.isNotEmpty() && downloadList.all { it.id in selectedIds }", LIST)
+        self.assertIn("val selectedDownloadsForDrag = remember(downloadList, selectedIds)", LIST)
+        self.assertIn("downloadList.filter { it.id in selectedIds }", LIST)
+        self.assertIn("val isSelected = item.id in selectedIds", LIST)
+        self.assertIn("rememberUpdatedState(selectedDownloadsForDrag)", LIST)
+        self.assertNotIn("list.map { it.id }.all", LIST)
+        self.assertNotIn("selectionList.contains(item.id)", LIST)
 
     def test_progress_phase_is_read_in_draw_not_by_each_row_composition(self):
         progress = TABLE.split("private fun ProgressStatus(", 1)[1]
@@ -72,6 +308,25 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("StatusAtCapture = $statusAtCapture", SCRIPT)
         self.assertIn("$actualSha -eq $expectedSha", SCRIPT)
 
+    def test_windows_visual_capture_rejects_off_screen_clipping(self):
+        self.assertIn("System.Windows.Forms.Screen", SCRIPT)
+        self.assertIn("FromHandle($windowHandle).Bounds", SCRIPT)
+        self.assertIn("$windowRect.Right -gt $displayBounds.Right", SCRIPT)
+        self.assertIn("$windowRect.Bottom -gt $displayBounds.Bottom", SCRIPT)
+        self.assertIn("outside display bounds", SCRIPT)
+        self.assertIn("DwmGetWindowAttribute", SCRIPT)
+        self.assertIn("$dwmVisibleWindowRect", SCRIPT)
+        self.assertIn("$windowRect = $dwmVisibleWindowRect", SCRIPT)
+        self.assertIn("$maxInvisibleFrame = 12", SCRIPT)
+        self.assertIn("$outsideRight -gt $maxInvisibleFrame", SCRIPT)
+        self.assertIn("$captureWidth = $captureRight - $captureLeft", SCRIPT)
+        self.assertIn("$captureHeight = $captureBottom - $captureTop", SCRIPT)
+        self.assertIn("[System.Drawing.Bitmap]::new($captureWidth, $captureHeight)", SCRIPT)
+        self.assertLess(
+            SCRIPT.index("outside display bounds"),
+            SCRIPT.index("$bitmap = [System.Drawing.Bitmap]::new"),
+        )
+
     def test_visual_gate_selects_the_download_details_window_not_the_main_list(self):
         self.assertIn("FindVisibleWindow", SCRIPT)
         self.assertIn("FindVisibleWindowExcluding", SCRIPT)
@@ -89,6 +344,12 @@ class LiquidProgressSourceContract(unittest.TestCase):
             SCRIPT.index("$windowHandle = $detailWindowHandle"),
             SCRIPT.index("$windowRect = [HyperGetLiquidProgressNative+RECT]::new()"),
         )
+
+    def test_graph_visibility_is_persisted_and_user_controlled(self):
+        self.assertIn("val showSpeedGraph: Boolean = true", DOWNLOAD_WINDOW_STATE)
+        self.assertIn("mapStateFlow { it.showSpeedGraph }", DOWNLOAD_WINDOW_COMPONENT)
+        self.assertIn("fun setShowSpeedGraph(visible: Boolean)", DOWNLOAD_WINDOW_COMPONENT)
+        self.assertIn("setShowSpeedGraph(!showSpeedGraph)", PAGE)
 
     def test_fresh_download_window_shows_connection_details_by_default(self):
         self.assertIn("val showPartInfo: Boolean = true", DOWNLOAD_WINDOW_STATE)
@@ -298,12 +559,221 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("drawWithCache", progress)
         self.assertNotIn("rememberInfiniteTransition", progress)
 
+    def test_reference_visual_parity_light_window_parts_and_graph_toggle(self):
+        window = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/singleDownloadPage/ShowDownloadDialogs.kt").read_text(encoding="utf-8")
+        self.assertIn("LocalMyColors provides DefaultThemes.hyperGetLight", window)
+        self.assertIn("val defaultWidth = 1120f", window)
+        self.assertIn("val defaultHeight = 465f", window)
+        self.assertIn("val safeWidth = (workArea.width / density - 32f)", window)
+        self.assertIn("val safeHeight = (workArea.height / density - 48f)", window)
+        self.assertIn("val w = defaultWidth.coerceAtMost(safeWidth)", window)
+        self.assertIn("val h = requestedHeight.coerceAtMost(safeHeight)", window)
+        self.assertIn("resizable = true", window)
+        self.assertNotIn("onRequestToggleMaximize = null,", window.split("private fun ProgressWindow(", 1)[1].split("private fun UpdateTaskBar(", 1)[0])
+        self.assertIn('append(" — HyperGet")', window)
+        self.assertIn("val showSpeedGraph by singleDownloadComponent.showSpeedGraph.collectAsState()", PAGE)
+        self.assertIn('"Hide graph"', PAGE)
+        self.assertIn('text = "Show graph"', PAGE)
+        self.assertIn("RoundedCornerShape(4.dp)", PAGE)
+        self.assertIn("compact = true", PAGE)
+        self.assertIn(".padding(horizontal = 4.dp)", PAGE)
+        self.assertIn("Tabs outside the bordered information panel", PAGE)
+        self.assertIn("URL", PAGE)
+        self.assertIn("itemState.downloadLink.asStringSource()", PAGE)
+        self.assertIn("java.text.NumberFormat.getIntegerInstance()", PAGE)
+        self.assertIn("Reference: byte summary on the left, buttons centered", PAGE)
+        self.assertNotIn("private fun RenderActions(", PAGE)
+        self.assertIn("useEqualWeights = sortedParts.any", PAGE)
+        self.assertIn("if (part.status == PartDownloadStatus.Completed)", PAGE)
+        self.assertIn("PartDownloadStatus.Completed -> referenceLiquidColors", PAGE)
+        self.assertIn("if (index % 2 == 0) Color.White", PAGE)
+        self.assertIn("Modifier.width(58.dp).fillMaxHeight()", PAGE)
+        self.assertIn("Color(0xFFF7FBFF), Color(0xFFEAF5FF)", PAGE)
+        self.assertIn("primary = isResumeSupported", PAGE)
+
     def test_single_download_page_liquid_track_height_and_specular_gloss(self):
-        self.assertIn(".height(22.dp)", PAGE)
-        self.assertIn("Top specular gloss highlight for 3D liquid reflection", PAGE)
-        self.assertIn("Color.White.copy(alpha = 0.45f)", PAGE)
-        self.assertIn("Color.White.copy(alpha = 0.55f)", PAGE)
-        self.assertIn("Inner soft bubble highlight dot for 3D depth", PAGE)
+        self.assertIn(".height(42.dp)", PAGE)
+        self.assertIn("val glassTop = Brush.verticalGradient(", PAGE)
+        self.assertIn("Color.White.copy(alpha = 0.48f)", PAGE)
+        self.assertIn("Color.White.copy(alpha = 0.86f)", PAGE)
+        self.assertIn("drawCircle(Color(0xFFB1F9FF).copy(alpha = 0.12f)", PAGE)
+        self.assertIn("style = Stroke(width = (bubbleRadius * 0.13f)", PAGE)
+
+    def test_parts_table_fits_visible_width_without_losing_resizable_columns(self):
+        section = PAGE.split("private fun RenderPartInfo(", 1)[1].split("private fun prettifyStatus(", 1)[0]
+        self.assertIn("BoxWithConstraints(", section)
+        self.assertIn("val usableWidth = (maxWidth - horizontalPadding * 2 - 24.dp)", section)
+        self.assertIn("val resizeWidth = usableWidth - 58.dp", section)
+        self.assertIn("val totalWidth = (resizeWidth - statusWidth - downloadedWidth)", section)
+        self.assertIn("remember(usableWidth)", section)
+        self.assertIn("initialCustomSizes = mapOf(", section)
+        self.assertIn("PartInfoCells.Status to statusWidth", section)
+        self.assertIn("PartInfoCells.Downloaded to downloadedWidth", section)
+        self.assertIn("PartInfoCells.Total to totalWidth", section)
+        self.assertIn("tableState = fittedTableState", section)
+        self.assertIn("CellSize.Resizeable", PAGE)
+        self.assertIn("selectVisibleDownloadParts(itemState.parts, onlyActiveParts)", section)
+
+    def test_independent_compact_parts_keep_the_new_slim_height_and_readable_gaps(self):
+        parts = PAGE.split("private fun RenderParts(", 1)[1].split("private fun RenderPart(", 1)[0]
+        self.assertIn(".height(20.dp)", PAGE)
+        self.assertIn(".height(14.dp)", parts)
+        self.assertIn(".padding(horizontal = 4.dp)", parts)
+        self.assertNotIn(".padding(horizontal = 2.dp)", parts)
+        self.assertIn(".height(42.dp)", PAGE)
+        self.assertIn("bubbleCount = 3", PAGE)
+
+    def test_windows_completion_dialog_override_is_written_and_restored_without_shutdown(self):
+        self.assertIn("$completionPreferenceDiskTested = $false", SCRIPT)
+        self.assertIn("$tab.Name -eq 'on-completion'", SCRIPT)
+        self.assertIn("GetPixel(175, 61)", SCRIPT)
+        self.assertIn("GetPixel(($preview.Width - 55), 150)", SCRIPT)
+        self.assertIn("[int]$toggleSample.R -le 225", SCRIPT)
+        self.assertIn("extra_download_settings", SCRIPT)
+        self.assertIn("showCompletionDialogOverride", SCRIPT)
+        self.assertIn("foreach ($expected in @((-not $initialEnabled), $initialEnabled))", SCRIPT)
+        self.assertIn("CompletionPreferenceDiskTested = $completionPreferenceDiskTested", SCRIPT)
+        self.assertIn("CompletionPreferenceRestartTested = $completionPreferenceRestartTested", SCRIPT)
+        self.assertIn("liquid-progress-tab-on-completion-after-restart.png", SCRIPT)
+        self.assertIn("Stop-Process -Id $originalGuiId -Force", SCRIPT)
+        self.assertIn("Start-Process -FilePath $guiPath -PassThru", SCRIPT)
+        self.assertIn("download open $taskId", SCRIPT)
+        self.assertIn("Restart fixture must remain paused", SCRIPT)
+        self.assertIn("Paused download details did not reopen after GUI restart.", SCRIPT)
+        self.assertIn("paused task reopened with saved per-file switch state", SCRIPT)
+        self.assertIn("liquid-progress-tab-on-completion-before-restart.png", SCRIPT)
+        self.assertIn("$taskId = $verifiedDownloadId", SCRIPT)
+        self.assertIn("$switchBlue -ne (-not $initialEnabled)", SCRIPT)
+        self.assertIn("Could not restore the completion preference on disk after restart", SCRIPT)
+        self.assertIn("Never click the shutdown-on-completion control", SCRIPT)
+
+    def test_installed_windows_screenshots_show_real_active_main_download_row(self):
+        self.assertIn("hyperget-main-list-active-download.png", SCRIPT)
+        self.assertIn("MainDownloadListScreenshot = [IO.Path]::GetFileName($mainDownloadListScreenshot)", SCRIPT)
+        self.assertIn("MainDownloadListStatusAtCapture = $mainDownloadListStatusAtCapture", SCRIPT)
+        self.assertIn("$mainDownloadListStatusAtCapture = $statusAtCapture", SCRIPT)
+        self.assertIn("CopyFromScreen(", SCRIPT)
+        self.assertIn("Installed main download list was obscured", SCRIPT)
+        self.assertIn("do not assert pixel-perfect IDM parity", SCRIPT)
+
+    def test_columns_menu_is_clicked_and_visually_proven_in_real_windows_fixture(self):
+        self.assertIn("hyperget-main-columns-menu-open.png", SCRIPT)
+        self.assertIn("ColumnsMenuTested = $columnsMenuTested", SCRIPT)
+        self.assertIn("ColumnsMenuResult = $columnsMenuResult", SCRIPT)
+        self.assertIn("ColumnsMenuScreenshot = if ($columnsMenuScreenshot)", SCRIPT)
+        self.assertIn("$brightIconSamples -lt 3", SCRIPT)
+        self.assertIn("$columnsX = $mainLeft + $mainWidth - 25", SCRIPT)
+        self.assertIn("if ($changedSamples -lt 400)", SCRIPT)
+        self.assertIn("A changing", SCRIPT)
+        self.assertIn("Liquid progress fill must NOT falsely satisfy this gate", SCRIPT)
+
+    def test_windows_paused_restart_allows_only_invisible_os_border_and_rejects_real_overflow(self):
+        self.assertIn("function Get-ValidatedVisibleDownloadRect", SCRIPT)
+        self.assertIn("$outsideLeft -le 12 -and $outsideTop -le 12", SCRIPT)
+        self.assertIn("$outsideRight -le 12 -and $outsideBottom -le 12", SCRIPT)
+        self.assertIn("$visible.Left = [Math]::Max($raw.Left, $screen.Left)", SCRIPT)
+        self.assertIn("$visible.Right = [Math]::Min($raw.Right, $screen.Right)", SCRIPT)
+        self.assertIn("window never settled into the known 1024x728 visible CI layout", SCRIPT)
+        self.assertIn("Get-ValidatedVisibleDownloadRect -Handle $probeHandle", SCRIPT)
+        self.assertIn("Get-ValidatedVisibleDownloadRect -Handle $restartDetail", SCRIPT)
+        self.assertNotIn("Paused fixture geometry was not safe for on-screen switch interaction.", SCRIPT)
+
+    def test_main_url_search_keeps_real_download_row_visible_in_windows_ci(self):
+        self.assertIn("hyperget-main-search-by-source-url.png", SCRIPT)
+        self.assertIn("SendKeys]::SendWait('^f')", SCRIPT)
+        self.assertIn("SendKeys]::SendWait('127.0.0.1')", SCRIPT)
+        self.assertIn("SourceUrlSearchTested = $sourceUrlSearchTested", SCRIPT)
+        self.assertIn("SourceUrlSearchScreenshot = if ($sourceUrlSearchTested)", SCRIPT)
+        self.assertIn("$retainedNamePixels -lt 12", SCRIPT)
+        self.assertIn("SendKeys]::SendWait('{BACKSPACE}')", SCRIPT)
+
+    def test_installed_windows_captures_other_idm_tabs_without_claiming_false_parity(self):
+        self.assertIn("liquid-progress-tab-{0}.png", SCRIPT)
+        self.assertIn("@{ Name = 'speed'; OffsetX = 81 }", SCRIPT)
+        self.assertIn("@{ Name = 'on-completion'; OffsetX = 174 }", SCRIPT)
+        self.assertIn("@{ Name = 'info-restored'; OffsetX = 28 }", SCRIPT)
+        self.assertIn("GetForegroundWindow() -ne $windowHandle", SCRIPT)
+        self.assertIn("TabScreenshotFiles = @($tabCaptureFiles)", SCRIPT)
+        self.assertIn("real Windows click screenshots recorded for human IDM tab review", SCRIPT)
+        self.assertNotIn("TabVisualTested = $true", SCRIPT)
+
+    def test_idm_tabs_are_text_only_selected_and_reset_their_scroll(self):
+        self.assertIn("showIcon = false", PAGE)
+        self.assertIn("showSelectionUnderline = true", PAGE)
+        self.assertIn("LaunchedEffect(selectedTab) { scrollState.scrollTo(0) }", PAGE)
+        self.assertIn("Info -> RenderInfo(", PAGE)
+        self.assertIn("Settings -> RenderSettings(", PAGE)
+        self.assertIn("OnCompletion -> RenderOnCompletion(", PAGE)
+        self.assertIn("showIcon: Boolean = true", TABS_WIDGET)
+        self.assertIn("showSelectionUnderline: Boolean = false", TABS_WIDGET)
+        self.assertIn("if (showIcon)", TABS_WIDGET)
+        self.assertIn("if (selected && showSelectionUnderline)", TABS_WIDGET)
+
+    def test_only_active_filter_keeps_segmented_bars_and_table_consistent(self):
+        section = PAGE.split("private fun RenderPartInfo(", 1)[1].split("private fun prettifyStatus(", 1)[0]
+        self.assertIn("val visibleParts = remember(itemState.parts, onlyActiveParts)", section)
+        self.assertIn("visibleParts.map { it.value }", section)
+        self.assertIn("list = visibleParts,", section)
+        self.assertNotIn("list = listToShow,", section)
+
+    def test_completion_dialog_choice_is_backward_compatible_and_persisted_per_download(self):
+        self.assertIn("@Serializable", EXTRA_DOWNLOAD_SETTINGS_MODEL)
+        self.assertIn("val showCompletionDialogOverride: Boolean? = null", EXTRA_DOWNLOAD_SETTINGS_MODEL)
+        self.assertIn("extraDownloadItemSettingsFlow.value.showCompletionDialogOverride", DOWNLOAD_WINDOW_COMPONENT)
+        self.assertIn(".map { it.showCompletionDialogOverride }", DOWNLOAD_WINDOW_COMPONENT)
+        self.assertIn(".distinctUntilChanged()", DOWNLOAD_WINDOW_COMPONENT)
+        self.assertIn("itemShouldShowCompletionDialog.value = it", DOWNLOAD_WINDOW_COMPONENT)
+        self.assertIn("extraDownloadItemSettingsFlow.value = extraDownloadItemSettingsFlow.value.copy(", DOWNLOAD_WINDOW_COMPONENT)
+        self.assertIn("showCompletionDialogOverride = selected", DOWNLOAD_WINDOW_COMPONENT)
+        self.assertIn("selected", DOWNLOAD_WINDOW_COMPONENT)
+        self.assertIn("it ?: globalShowCompletionDialog.value", DOWNLOAD_WINDOW_COMPONENT)
+        self.assertIn("powerActionTypeOnFinish = when (it)", DOWNLOAD_WINDOW_COMPONENT)
+
+    def test_graph_hide_reclaims_height_without_clipping_settings(self):
+        self.assertIn("val panelHeight = when (selectedTab)", PAGE)
+        self.assertIn("Info -> if (showSpeedGraph) 232.dp else 196.dp", PAGE)
+        self.assertIn("Settings, OnCompletion -> 144.dp", PAGE)
+        self.assertIn(".height(panelHeight)", PAGE)
+        self.assertIn("Color(0xFF122AEF)", PAGE)
+        self.assertIn("Color(0xFF00DFEB)", PAGE)
+
+    def test_refined_liquid_density_and_graph_controls(self):
+        track = PAGE.split("private fun LiquidProgressTrack(", 1)[1].split("private fun RenderPartInfo(", 1)[0]
+        self.assertIn("if (active && fillWidth > size.height * 1.1f)", track)
+        self.assertIn("val visibleBubbleCount = bubbleCount.coerceAtMost(", track)
+        self.assertIn("repeat(visibleBubbleCount)", track)
+        self.assertIn("index * 0.618034f", track)
+        self.assertIn("!it.partSpace.isFinite()", PAGE)
+        self.assertIn('text = "Hide graph"', PAGE)
+        self.assertIn("maxSpeed.toDouble() * tick / 4.0", PAGE)
+
+    def test_reference_partial_fill_has_visible_main_and_connection_bubbles(self):
+        track = PAGE.split("private fun LiquidProgressTrack(", 1)[1].split("private fun RenderPartInfo(", 1)[0]
+        # A 37% fill in a 1024px screenshot must not collapse to just seven
+        # bubbles, and a 35%-filled 120px connection must show more than one.
+        self.assertIn("if (compact) 0.50f else 0.60f", track)
+        self.assertEqual(min(18, int((1024 * 0.37) / (42 * 0.60))), 15)
+        self.assertIn("bubbleCount = 18", PAGE)
+        self.assertGreaterEqual(min(3, int((120 * 0.35) / (14 * 0.50))), 2)
+        self.assertIn("val bubbleRadius = size.height * (0.058f + (index % 4) * 0.026f)", track)
+        self.assertIn("if (index % 3 == 0) 0.66f else 0.43f", track)
+        self.assertIn("drawPath(surfaceWave, color = Color.White.copy(alpha = 0.20f))", track)
+        self.assertIn("drawPath(secondaryWave, color = Color(0xFFB3FFFF).copy(alpha = 0.15f))", track)
+        self.assertNotIn("rememberInfiniteTransition", track)
+
+
+    def test_reference_liquid_draws_real_crests_and_keeps_shared_animation(self):
+        track = PAGE.split("private fun LiquidProgressTrack(", 1)[1].split("private fun RenderPartInfo(", 1)[0]
+        self.assertIn(".drawWithCache {", track)
+        self.assertIn("clipPath(fillClip)", track)
+        self.assertIn("surfaceWave.lineTo(x, y)", track)
+        self.assertIn("secondaryWave.lineTo(x, y)", track)
+        self.assertIn("referenceLiquidColors", PAGE)
+        self.assertIn(".height(20.dp)", PAGE)
+        self.assertIn(".height(14.dp)", PAGE)
+        self.assertIn("val fillWidth = size.width * fraction", track)
+        self.assertIn("val phase = if (active) sharedPhase.value else 0f", track)
+        self.assertNotIn("rememberInfiniteTransition", track)
 
     def test_contrast_values_meet_visual_minimums_without_new_animation_loops(self):
         # Numeric bounds complement the rendering E2E: string-presence checks
@@ -343,5 +813,210 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertNotIn("rememberInfiniteTransition", progress)
 
 
+
+    def test_compact_connection_tracks_are_thin_independent_and_stateful(self):
+        section = PAGE.split("private fun RenderParts(", 1)[1]
+        track = PAGE.split("private fun LiquidProgressTrack(", 1)[1].split("private fun RenderPartInfo(", 1)[0]
+        self.assertIn("verticalAlignment = Alignment.CenterVertically", section)
+        self.assertIn(".height(14.dp)", section)
+        self.assertIn(".padding(horizontal = 4.dp)", section)
+        self.assertIn("bubbleCount = 3", section)
+        self.assertIn("PartDownloadStatus.Completed -> referenceLiquidColors", section)
+        self.assertIn("PartDownloadStatus.IDLE -> listOf(Color(0xFF8197B5), Color(0xFFB8C8DC))", section)
+        self.assertIn("is PartDownloadStatus.Canceled -> listOf(myColors.error, myColors.warning)", section)
+        self.assertIn("active = part.status == PartDownloadStatus.ReceivingData", section)
+        self.assertIn(".border(if (compact) 0.75.dp else 1.dp", track)
+        self.assertIn("val sharedPhase = LocalLiquidAnimationPhase.current", track)
+        self.assertNotIn("rememberInfiniteTransition", track)
+
+
+    def test_main_toolbar_labels_and_icons_are_legible_without_touching_download_dialog(self):
+        # P3 icon sizing is explicitly configurable; never reintroduce the
+        # old hardcoded 20/24dp label-dependent icon pair.
+        self.assertIn('"small" -> 16.dp', HOME_TOOLBAR)
+        self.assertIn('"large" -> 28.dp', HOME_TOOLBAR)
+        self.assertIn("else -> 20.dp", HOME_TOOLBAR)
+        self.assertIn("fontSize = myTextSizes.base", HOME_TOOLBAR)
+        self.assertIn("PaddingValues(horizontal = touchPadding, vertical = 8.dp)", HOME_TOOLBAR)
+        self.assertIn("collectIsHoveredAsState()", HOME_TOOLBAR)
+        self.assertNotIn("val iconSize = if (showLabels) 20.dp else 24.dp", HOME_TOOLBAR)
+        self.assertIn(".horizontalScroll(scrollState)", HOME_TOOLBAR)
+        self.assertNotIn("fontSize = myTextSizes.sm", HOME_TOOLBAR)
+
+    def test_idm_columns_configuration_is_discoverable_without_reimplementing_persistence(self):
+        self.assertIn("showColumnConfigButton: Boolean = false", TABLE_WIDGET)
+        self.assertIn("showColumnConfigButton = true", HOME_DOWNLOAD_LIST)
+        self.assertIn("if (showColumnConfigButton)", TABLE_WIDGET)
+        self.assertIn("Tooltip(Res.string.customize_columns.asStringSource())", TABLE_WIDGET)
+        self.assertIn("myStringResource(Res.string.customize_columns)", TABLE_WIDGET)
+        self.assertIn("showColumnConfig = true", TABLE_WIDGET)
+        self.assertIn("onDismissRequest = { showColumnConfig = false }", TABLE_WIDGET)
+        self.assertIn("matcher = {", TABLE_WIDGET)
+        self.assertIn("it.button == PointerButton.Secondary", TABLE_WIDGET)
+        self.assertIn("ReorderableColumn(", TABLE_WIDGET)
+        self.assertIn("tableState.setOrder", TABLE_WIDGET)
+        self.assertIn("tableState.setVisibleCells", TABLE_WIDGET)
+        self.assertIn("tableState::reset", TABLE_WIDGET)
+
+    def test_escape_clears_only_home_search_not_every_text_field(self):
+        self.assertIn("onEscape: (() -> Unit)? = null", TEXT_FIELD)
+        self.assertIn("if (it.type == KeyEventType.KeyDown) onEscape?.invoke()", TEXT_FIELD)
+        self.assertIn("onEscape = onEscape", FILTERS)
+        self.assertIn('onEscape = { component.filterState.textToSearch = "" }', HOME_PAGE)
+        self.assertIn("SendKeys]::SendWait('{ESC}')", WINDOWS_UI_WORKFLOW)
+
+    def test_main_search_ctrl_f_uses_existing_text_field_without_mutating_filters(self):
+        self.assertIn('"$metaKey F" to ::focusHomeSearch', HOME_COMPONENT)
+        self.assertIn("item(Res.string.search_in_the_list.asStringSource())", HOME_COMPONENT)
+        self.assertIn("focusHomeSearch()", HOME_COMPONENT)
+        self.assertIn("requestSearchFocus.tryEmit(Unit)", HOME_COMPONENT)
+        self.assertIn("val requestSearchFocus = MutableSharedFlow<Unit>(extraBufferCapacity = 1)", HOME_COMPONENT)
+        self.assertIn("component.requestSearchFocus.collect", HOME_PAGE)
+        self.assertIn("searchFocusRequester.requestFocus()", HOME_PAGE)
+        self.assertIn("externalFocusRequester = searchFocusRequester", HOME_PAGE)
+        self.assertIn("externalFocusRequester = externalFocusRequester", FILTERS)
+        self.assertIn("externalFocusRequester ?: remember { FocusRequester() }", TEXT_FIELD)
+        self.assertIn("focusRequester.requestFocus()", TEXT_FIELD)
+
+    def test_copy_paste_in_focused_search_are_not_hijacked_by_download_shortcuts(self):
+        self.assertIn("isHomeSearchFocused: Boolean = false", HOME_COMPONENT)
+        self.assertIn("SideEffect { component.isHomeSearchFocused = isFocused }", HOME_PAGE)
+        self.assertIn("onDispose { component.isHomeSearchFocused = false }", HOME_PAGE)
+        self.assertIn("homeComponent.isHomeSearchFocused", HOME_WINDOW)
+        self.assertIn("keyEvent.key == Key.C || keyEvent.key == Key.V", HOME_WINDOW)
+        self.assertIn("homeComponent.shortcutManager.handle(keyEvent)", HOME_WINDOW)
+
+    def test_ctrl_f_has_compose_key_handler_for_jbr_without_awt_event(self):
+        self.assertIn("keyEvent.type == KeyEventType.KeyDown", HOME_WINDOW)
+        self.assertIn("keyEvent.key == Key.F", HOME_WINDOW)
+        self.assertIn("keyEvent.isCtrlPressed || keyEvent.isMetaPressed", HOME_WINDOW)
+        self.assertIn("homeComponent.focusHomeSearch()", HOME_WINDOW)
+        self.assertIn("homeComponent.shortcutManager.handle(keyEvent)", HOME_WINDOW)
+        self.assertIn("fun focusHomeSearch()", HOME_COMPONENT)
+
+    def test_windows_gui_smoke_checks_keyboard_search_with_real_typing_and_image(self):
+        self.assertIn("installed-gui-ctrl-f-search.png", WINDOWS_UI_WORKFLOW)
+        self.assertIn("SendKeys]::SendWait('^f')", WINDOWS_UI_WORKFLOW)
+        self.assertIn("SendKeys]::SendWait('hgfocusprobe')", WINDOWS_UI_WORKFLOW)
+        self.assertIn("$changedTextPixels -lt 85", WINDOWS_UI_WORKFLOW)
+        self.assertIn("SendKeys]::SendWait('{ESC}')", WINDOWS_UI_WORKFLOW)
+
+    def test_all_home_shortcuts_have_unique_keystrokes_and_search_is_not_shadowed(self):
+        import re
+        # DesktopShortcutManager uses a map, so a second registration silently
+        # shadows the first action; this must never recur.
+        keys = re.findall(r'^\s*"\$metaKey(?: [A-Za-z]+)+" to ', HOME_COMPONENT, re.MULTILINE)
+        self.assertGreaterEqual(len(keys), 10)
+        self.assertEqual(len(keys), len(set(keys)), "Duplicate modifier shortcuts shadow another action")
+        self.assertIn('"$metaKey F" to ::focusHomeSearch', HOME_COMPONENT)
+        self.assertIn('"$metaKey shift O" to downloadActions.openFolderAction', HOME_COMPONENT)
+        self.assertNotIn('"$metaKey F" to downloadActions.openFolderAction', HOME_COMPONENT)
+        self.assertIn("keyEvent.key == Key.F", HOME_WINDOW)
+
+    def test_native_two_file_mouse_drop_is_gated_for_pr4_with_truthful_evidence(self):
+        self.assertIn("Run-WindowsMultiFileDropE2E.ps1", WINDOWS_UI_WORKFLOW)
+        self.assertIn("windows-native-two-file-drag", WINDOWS_UI_WORKFLOW)
+        # This native gesture was observed passing on hosted Windows in run
+        # 41353646866. Require it for PR #4, but not unrelated PR bases.
+        self.assertIn(
+            "continue-on-error: ${{ github.base_ref != 'experiment/jules-liquid-progress-20261030' }}",
+            WINDOWS_UI_WORKFLOW,
+        )
+        native = (ROOT / "scripts/Run-WindowsMultiFileDropE2E.ps1").read_text(encoding="utf-8")
+        self.assertIn("SetFileDropList", native)
+        self.assertIn("DoDragDrop", native)
+        self.assertIn("mouse_event", native)
+        self.assertIn("OpenedNewDialog", native)
+        self.assertIn("NativeMouseDownReceived", native)
+        self.assertIn("'Copy'", native)
+        self.assertIn("ExpectedUrls=@($urlOne,$urlTwo)", native)
+        self.assertIn(r"\u0642\u0635\u0635", native)
+        self.assertIn(r"\u062d\u0643\u0627\u064a\u0627\u062a", native)
+        self.assertIn("ConvertFrom-Json", native)
+        # The screenshot is reviewed separately; automation still only
+        # proves mouse/OLE/new-dialog, never the two full rendered URL values.
+        self.assertIn("exact two URL rows need separate screenshot/UI review", native)
+
+    def test_real_windows_clipboard_probe_fails_closed_instead_of_claiming_source_only(self):
+        self.assertIn("$clipboardShortcutsTested = $false", SCRIPT)
+        self.assertIn("'HYPERGET-COPY-NOT-YET-TESTED'", SCRIPT)
+        self.assertIn("[System.Windows.Forms.SendKeys]::SendWait('^v')", SCRIPT)
+        self.assertIn("[System.Windows.Forms.SendKeys]::SendWait('^c')", SCRIPT)
+        self.assertIn("if ($copiedSearchText -cne $clipboardProbe)", SCRIPT)
+        self.assertIn("ClipboardShortcutsTested = $clipboardShortcutsTested", SCRIPT)
+        self.assertIn("'-Sta'", SCRIPT)
+
+    def test_external_file_drop_defers_filesystem_reads_until_mouse_release(self):
+        start = HOME_PAGE.split("override fun onStarted(event: DragAndDropEvent)", 1)[1].split(
+            "override fun onEnded", 1
+        )[0]
+        self.assertIn("!event.awtTransferable.isDataFlavorSupported(DataFlavor.javaFileListFlavor)", start)
+        self.assertIn("onDraggedIn(event)", start)
+        on_drop = HOME_PAGE.split("override fun onDrop(event: DragAndDropEvent): Boolean", 1)[1]
+        self.assertIn("onDraggedIn(event)", on_drop)
+        self.assertIn("component.onDropped()", on_drop)
+
+    def test_windows_drop_re_reads_transfer_payload_at_actual_drop(self):
+        # A file list might be advertised on drag-start yet unavailable
+        # for reading until the OS delivers the drop event.
+        drop_handler = HOME_PAGE.split("override fun onDrop(event: DragAndDropEvent): Boolean", 1)[1].split(
+            "return true", 1
+        )[0]
+        self.assertIn("onDraggedIn(event)", drop_handler)
+        self.assertIn("component.onDropped()", drop_handler)
+        self.assertIn("component.onDragExit()", drop_handler)
+        self.assertLess(drop_handler.index("onDraggedIn(event)"), drop_handler.index("component.onDropped()"))
+        self.assertNotIn("if (Platform.isMac())", drop_handler)
+
+    def test_windows_drag_uses_file_list_before_text_fallback(self):
+        # Windows Explorer can advertise javaFileListFlavor and stringFlavor
+        # simultaneously. A text-first branch silently skips actual .url/.txt
+        # files, even though the multi-file decoder itself is correct.
+        handler = HOME_PAGE.split("private fun onDraggedIn(", 1)[1].split(
+            "override fun onStarted", 1
+        )[0]
+        self.assertLess(
+            handler.index("if (event.awtTransferable.isDataFlavorSupported(DataFlavor.javaFileListFlavor))"),
+            handler.index("if (event.awtTransferable.isDataFlavorSupported(DataFlavor.stringFlavor))"),
+        )
+        self.assertIn("component.onExternalFilesDraggedIn", handler)
+        self.assertIn("component.onExternalTextDraggedIn", handler)
+        self.assertIn("as? List<*>", handler)
+        self.assertIn("component.onDragExit()", handler)
+
+    def test_multi_dropped_link_files_are_bounded_and_use_existing_import_parser(self):
+        self.assertIn("onExternalTextDraggedIn { readDroppedLinkFiles(paths) }", HOME_COMPONENT)
+        self.assertIn("maxFiles: Int = 16", DROPPED_FILE_READER)
+        self.assertIn("maxTotalBytes: Long = 1024L * 1024L", DROPPED_FILE_READER)
+        self.assertIn("if (!file.isFile || !file.canRead())", DROPPED_FILE_READER)
+        self.assertIn("input.readNBytes(maxRead + 1)", DROPPED_FILE_READER)
+        self.assertIn("raw.any { it == 0.toByte() }", DROPPED_FILE_READER)
+        self.assertIn("inspectedCount++", DROPPED_FILE_READER)
+        self.assertIn("if (inspectedCount >= maxFiles", DROPPED_FILE_READER)
+        self.assertIn("Charsets.UTF_16LE", DROPPED_FILE_READER)
+        self.assertIn("Charsets.UTF_16BE", DROPPED_FILE_READER)
+        self.assertIn("remaining -= size", DROPPED_FILE_READER)
+        self.assertIn("if (raw.size.toLong() != size)", DROPPED_FILE_READER)
+        self.assertIn(".distinctBy { it.link }", HOME_COMPONENT)
+
+    def test_verified_windows_installer_uploaded_only_after_full_acceptance(self):
+        self.assertIn("Upload exact-SHA verified Windows NSIS installer for user testing", WINDOWS_UI_WORKFLOW)
+        upload_block = WINDOWS_UI_WORKFLOW.split(
+            "- name: Upload exact-SHA verified Windows NSIS installer for user testing", 1
+        )[1].split("- name: Upload active Liquid Progress screenshot", 1)[0]
+        self.assertIn("if: success()", upload_block)
+        self.assertIn("name: hyperget-windows-verified-installer", upload_block)
+        self.assertIn("path: build/ci-release/binaries/**/*.exe", upload_block)
+        self.assertIn("if-no-files-found: error", upload_block)
+
+    def test_mixed_multifile_link_extraction_keeps_embedded_and_whole_line_urls(self):
+        self.assertIn("return input.lineSequence()", LINK_EXTRACTOR)
+        self.assertIn("if (isDownloadUrl(fullLine))", LINK_EXTRACTOR)
+        self.assertIn("urlRegex.findAll(line)", LINK_EXTRACTOR)
+        self.assertIn(".distinct()", LINK_EXTRACTOR)
+        self.assertNotIn("if (linksInEachLines.isNotEmpty())", LINK_EXTRACTOR)
+        self.assertIn("--tests com.abdownloadmanager.shared.util.extractors.linkextractor.StringUrlExtractorMixedListTest", WINDOWS_UI_WORKFLOW)
+
 if __name__ == "__main__":
     unittest.main()
+

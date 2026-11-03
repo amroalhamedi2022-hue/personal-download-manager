@@ -15,6 +15,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.*
 import androidx.compose.foundation.v2.ScrollbarAdapter
 import com.abdownloadmanager.shared.ui.widget.Text
+import com.abdownloadmanager.shared.ui.widget.Tooltip
+import ir.amirab.util.compose.asStringSource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -60,6 +63,7 @@ fun <T, C : TableCell<T>> Table(
     listState: LazyListState = rememberLazyListState(),
     horizontalScrollState: ScrollState = rememberScrollState(),
     resizeCellsOnResizeTableWidth: Boolean = false,
+    showColumnConfigButton: Boolean = false,
     renderHeaderCell: @Composable (C) -> Unit = { DefaultRenderHeader(it) },
     drawOnEmpty: @Composable BoxScope.() -> Unit = {},
     wrapHeader: @Composable TableScope.(rowContent: @Composable () -> Unit) -> Unit = { content -> content() },
@@ -186,6 +190,40 @@ fun <T, C : TableCell<T>> Table(
                     if (list.isEmpty()) {
                         Box(Modifier.padding().fillMaxSize()) {
                             drawOnEmpty()
+                        }
+                    }
+                    // IDM-like discoverable Columns control for opted-in tables only.
+                    // This opens the SAME stateful menu as right-click on the header;
+                    // visibility/order/size changes remain persisted by TableState.
+                    if (showColumnConfigButton) {
+                        Box(
+                            Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(top = 3.dp, end = 6.dp)
+                        ) {
+                            Tooltip(Res.string.customize_columns.asStringSource()) {
+                                Box(
+                                    Modifier
+                                        .size(28.dp)
+                                        .clip(myShapes.defaultRounded)
+                                        .background(myColors.surface)
+                                        .border(
+                                            1.dp,
+                                            myColors.onBackground / 8,
+                                            myShapes.defaultRounded
+                                        )
+                                        .clickable(role = Role.Button) {
+                                            showColumnConfig = true
+                                        },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    MyIcon(
+                                        MyIcons.settings,
+                                        myStringResource(Res.string.customize_columns),
+                                        Modifier.size(17.dp)
+                                    )
+                                }
+                            }
                         }
                     }
                 }
