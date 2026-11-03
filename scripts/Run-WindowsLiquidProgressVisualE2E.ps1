@@ -278,7 +278,7 @@ public static class HyperGetLiquidProgressNative {
             throw 'Appearance capture could not foreground the real Settings window.'
         }
         Start-Sleep -Milliseconds 650 # Let Compose commit the initial Appearance layout.
-        $settingsRect = New-Object HyperGetLiquidProgressNative+RECT
+        $settingsRect = [HyperGetLiquidProgressNative+RECT]::new()
         if (-not [HyperGetLiquidProgressNative]::GetWindowRect($settingsWindowHandle, [ref]$settingsRect)) {
             throw 'Cannot read actual installed Appearance window bounds.'
         }
@@ -315,7 +315,11 @@ public static class HyperGetLiquidProgressNative {
             Start-Sleep -Milliseconds 500
         }
         [HyperGetLiquidProgressNative]::BringWindowToTop($windowHandle) | Out-Null
-        [HyperGetLiquidProgressNative]::SetForegroundWindow($windowHandle) | Out-Null
+        for ($focusAttempt = 0; $focusAttempt -lt 8; $focusAttempt++) {
+            [HyperGetLiquidProgressNative]::SetForegroundWindow($windowHandle) | Out-Null
+            if ([HyperGetLiquidProgressNative]::GetForegroundWindow() -eq $windowHandle) { break }
+            Start-Sleep -Milliseconds 150
+        }
         if ([HyperGetLiquidProgressNative]::GetForegroundWindow() -ne $windowHandle) {
             throw 'Appearance capture could not return focus to installed HyperGet Home.'
         }
