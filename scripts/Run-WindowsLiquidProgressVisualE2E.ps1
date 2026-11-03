@@ -174,6 +174,8 @@ public static class HyperGetLiquidProgressNative {
     [DllImport("user32.dll")]
     public static extern bool ShowWindow(IntPtr handle, int command);
     [DllImport("user32.dll")]
+    public static extern bool PostMessage(IntPtr handle, uint message, IntPtr wParam, IntPtr lParam);
+    [DllImport("user32.dll")]
     public static extern bool SetForegroundWindow(IntPtr handle);
     [DllImport("user32.dll")]
     public static extern bool BringWindowToTop(IntPtr handle);
@@ -243,6 +245,80 @@ public static class HyperGetLiquidProgressNative {
     Start-Sleep -Milliseconds 250
     if ([HyperGetLiquidProgressNative]::GetForegroundWindow() -ne $windowHandle) {
         throw 'Foreground window is not the installed HyperGet window; refusing an obscured screenshot.'
+    }
+
+    # Open the real, installed Appearance window before starting the live
+    # transfer. This proves the interactive icon studio is visible in the
+    # actual Windows app; a source-only assertion cannot establish that.
+    $appearancePreviewScreenshot = Join-Path $root 'hyperget-appearance-live-preview.png'
+    $appearanceStudioVerified = $false
+    $settingsWindowHandle = [IntPtr]::Zero
+    Add-Type -AssemblyName System.Windows.Forms
+    Add-Type -AssemblyName System.Drawing
+    try {
+        [System.Windows.Forms.SendKeys]::SendWait('^%s') # Actual Ctrl+Alt+S Home shortcut
+        for ($attempt = 0; $attempt -lt 40; $attempt++) {
+            $settingsWindowHandle = [HyperGetLiquidProgressNative]::FindVisibleWindow(
+                [uint32]$window.Id, 'Settings'
+            )
+            if ($settingsWindowHandle -ne [IntPtr]::Zero) { break }
+            Start-Sleep -Milliseconds 250
+        }
+        if ($settingsWindowHandle -eq [IntPtr]::Zero) {
+            throw 'Ctrl+Alt+S did not open an actual HyperGet Settings window.'
+        }
+        [HyperGetLiquidProgressNative]::ShowWindow($settingsWindowHandle, 9) | Out-Null
+        [HyperGetLiquidProgressNative]::BringWindowToTop($settingsWindowHandle) | Out-Null
+        for ($focusAttempt = 0; $focusAttempt -lt 5; $focusAttempt++) {
+            [HyperGetLiquidProgressNative]::SetForegroundWindow($settingsWindowHandle) | Out-Null
+            if ([HyperGetLiquidProgressNative]::GetForegroundWindow() -eq $settingsWindowHandle) { break }
+            Start-Sleep -Milliseconds 150
+        }
+        if ([HyperGetLiquidProgressNative]::GetForegroundWindow() -ne $settingsWindowHandle) {
+            throw 'Appearance capture could not foreground the real Settings window.'
+        }
+        Start-Sleep -Milliseconds 650 # Let Compose commit the initial Appearance layout.
+        $settingsRect = New-Object HyperGetLiquidProgressNative+RECT
+        if (-not [HyperGetLiquidProgressNative]::GetWindowRect($settingsWindowHandle, [ref]$settingsRect)) {
+            throw 'Cannot read actual installed Appearance window bounds.'
+        }
+        $settingsWidth = [int]($settingsRect.Right - $settingsRect.Left)
+        $settingsHeight = [int]($settingsRect.Bottom - $settingsRect.Top)
+        if ($settingsWidth -lt 540 -or $settingsHeight -lt 380) {
+            throw "Actual Appearance window too small for preview capture: ${settingsWidth}x${settingsHeight}."
+        }
+        $settingsBitmap = [System.Drawing.Bitmap]::new($settingsWidth, $settingsHeight)
+        $settingsGraphics = [System.Drawing.Graphics]::FromImage($settingsBitmap)
+        try {
+            $settingsGraphics.CopyFromScreen(
+                [System.Drawing.Point]::new($settingsRect.Left, $settingsRect.Top),
+                [System.Drawing.Point]::Empty,
+                [System.Drawing.Size]::new($settingsWidth, $settingsHeight)
+            )
+            $settingsBitmap.Save($appearancePreviewScreenshot, [System.Drawing.Imaging.ImageFormat]::Png)
+        } finally {
+            $settingsGraphics.Dispose()
+            $settingsBitmap.Dispose()
+        }
+        if ((Get-Item -LiteralPath $appearancePreviewScreenshot).Length -lt 9000) {
+            throw 'Installed Appearance screenshot was empty or unexpectedly small.'
+        }
+        $appearanceStudioVerified = $true
+        Write-Host 'PASS: installed HyperGet Settings opened by Ctrl+Alt+S; real Appearance screenshot captured.'
+    } finally {
+        if ($settingsWindowHandle -ne [IntPtr]::Zero) {
+            # Target the Settings HWND directly. Never send a blind Alt+F4
+            # that could close the main app or cancel the running fixture.
+            [HyperGetLiquidProgressNative]::PostMessage(
+                $settingsWindowHandle, [uint32]0x0010, [IntPtr]::Zero, [IntPtr]::Zero
+            ) | Out-Null
+            Start-Sleep -Milliseconds 500
+        }
+        [HyperGetLiquidProgressNative]::BringWindowToTop($windowHandle) | Out-Null
+        [HyperGetLiquidProgressNative]::SetForegroundWindow($windowHandle) | Out-Null
+        if ([HyperGetLiquidProgressNative]::GetForegroundWindow() -ne $windowHandle) {
+            throw 'Appearance capture could not return focus to installed HyperGet Home.'
+        }
     }
 
     $fileName = 'hyperget-liquid-progress.bin'
@@ -1514,6 +1590,8 @@ public static class HyperGetLiquidProgressNative {
 
     [pscustomobject]@{
         SourceSHA = $SourceSha
+        AppearanceStudioVerified = $appearanceStudioVerified
+        AppearancePreviewScreenshot = if ($appearanceStudioVerified) { [IO.Path]::GetFileName($appearancePreviewScreenshot) } else { $null }
         TaskId = $taskId
         StatusAtCapture = $statusAtCapture
         ActiveDistinctTasksAtCapture = [int]$preScreenshotStats.active_distinct_tasks

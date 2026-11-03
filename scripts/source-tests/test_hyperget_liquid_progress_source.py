@@ -86,6 +86,16 @@ class LiquidProgressSourceContract(unittest.TestCase):
         self.assertIn("theme.secondaryAccentColor", THEME_RENDERER)
         self.assertIn("selected = value.id == it.id", THEME_RENDERER)
 
+    def test_real_installed_settings_window_is_screenshotted_not_faked(self):
+        self.assertIn("SendWait('^%s')", SCRIPT)
+        self.assertIn("FindVisibleWindow(", SCRIPT)
+        self.assertIn("'Settings'", SCRIPT)
+        self.assertIn("hyperget-appearance-live-preview.png", SCRIPT)
+        self.assertIn("Actual Appearance window too small for preview capture", SCRIPT)
+        self.assertIn("AppearanceStudioVerified = $appearanceStudioVerified", SCRIPT)
+        self.assertIn("AppearancePreviewScreenshot = if ($appearanceStudioVerified)", SCRIPT)
+        self.assertIn("PostMessage(", SCRIPT)
+
     def test_appearance_page_previews_the_actual_live_selected_pack_and_size(self):
         component = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/settings/DesktopSettingsComponent.kt").read_text(encoding="utf-8")
         page = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/settings/SettingsPage.kt").read_text(encoding="utf-8")
