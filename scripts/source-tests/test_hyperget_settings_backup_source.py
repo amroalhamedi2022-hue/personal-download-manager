@@ -27,6 +27,17 @@ class SettingsBackupSourceTest(unittest.TestCase):
         self.assertIn("StandardOpenOption.CREATE_NEW", page)
         self.assertIn("JOptionPane.YES_NO_OPTION", page)
 
+    def test_browser_api_key_masked_by_default(self):
+        configurable = (ROOT / "shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/ui/configurable/item/StringConfigurable.kt").read_text(encoding="utf-8")
+        common = (ROOT / "shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/settings/CommonSettings.kt").read_text(encoding="utf-8")
+        renderer = (ROOT / "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/ui/configurable/comon/renderer/StringConfigurableRenderer.kt").read_text(encoding="utf-8")
+        self.assertIn("val isSecret: Boolean = false", configurable)
+        body = common.split("fun apiAuthKey(", 1)[1].split("fun proxyConfig(", 1)[0]
+        self.assertIn("isSecret = true", body)
+        self.assertIn("PasswordVisualTransformation()", renderer)
+        self.assertIn("if (cfg.isSecret && !revealSecret)", renderer)
+        self.assertIn('if (revealSecret) "Hide" else "Show"', renderer)
+
     def test_kotlin_behavioral_tests_exist(self):
         t = (ROOT / "desktop/app/src/test/kotlin/com/abdownloadmanager/desktop/storage/DesktopSettingsBackupTest.kt").read_text(encoding="utf-8")
         for name in ("exportDoesNotIncludeSecurityOrBrowserSecrets",

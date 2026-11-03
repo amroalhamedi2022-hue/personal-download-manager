@@ -86,8 +86,7 @@ internal object DesktopSettingsBackup {
         require(restored.maxDownloadRetryCount in 0..100) { "Invalid retry count." }
         require(restored.speedLimit > 0L) { "Invalid speed limit." }
         require(restored.minPartSize > 0L) { "Invalid part size." }
-        require(restored.uiScale == null ||
-            restored.uiScale in 0.5f..3f) { "Invalid UI scale." }
+        require(restored.uiScale?.let { it in 0.5f..3f } ?: true) { "Invalid UI scale." }
         require(restored.defaultDownloadFolder.isNotBlank() &&
             restored.defaultDownloadFolder.length <= 4096) { "Invalid download folder." }
         require(restored.userAgent.length <= 1024) { "Invalid user agent." }

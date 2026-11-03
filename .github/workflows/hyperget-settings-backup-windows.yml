@@ -12,6 +12,9 @@ on:
       - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/settings/DesktopSettingsComponent.kt"
       - "desktop/app/src/test/kotlin/com/abdownloadmanager/desktop/storage/DesktopSettingsBackupTest.kt"
       - "scripts/source-tests/test_hyperget_settings_backup_source.py"
+      - "shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/ui/configurable/item/StringConfigurable.kt"
+      - "shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/settings/CommonSettings.kt"
+      - "desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/ui/configurable/comon/renderer/StringConfigurableRenderer.kt"
   workflow_dispatch:
 
 permissions:
