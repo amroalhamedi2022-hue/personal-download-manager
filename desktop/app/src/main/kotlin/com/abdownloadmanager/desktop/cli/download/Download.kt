@@ -1,6 +1,7 @@
 package com.abdownloadmanager.desktop.cli.download
 
 import com.abdownloadmanager.desktop.cli.download.add.AddDownload
+import com.abdownloadmanager.desktop.cli.download.open.OpenDownload
 import com.abdownloadmanager.desktop.cli.download.pause.PauseDownload
 import com.abdownloadmanager.desktop.cli.download.remove.RemoveDownload
 import com.abdownloadmanager.desktop.cli.download.resume.ResumeDownload
@@ -17,6 +18,7 @@ class Download : SuspendingCliktCommand("download") {
             RemoveDownload(),
             PauseDownload(),
             ResumeDownload(),
+            OpenDownload(),
         )
     }
 
