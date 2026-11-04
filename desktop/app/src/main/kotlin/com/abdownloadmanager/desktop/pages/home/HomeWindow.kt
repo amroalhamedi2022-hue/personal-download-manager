@@ -8,6 +8,8 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.key.isCtrlPressed
 import androidx.compose.ui.input.key.isMetaPressed
+import androidx.compose.ui.input.key.isShiftPressed
+import androidx.compose.ui.input.key.isAltPressed
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.WindowPlacement
@@ -80,6 +82,11 @@ private fun HomeWindow(
                     keyEvent.key == Key.F &&
                     (keyEvent.isCtrlPressed || keyEvent.isMetaPressed)) {
                     homeComponent.focusHomeSearch()
+                    true
+                } else if (keyEvent.type == KeyEventType.KeyDown &&
+                    keyEvent.key == Key.F3 &&
+                    !keyEvent.isCtrlPressed && !keyEvent.isMetaPressed && !keyEvent.isAltPressed) {
+                    homeComponent.findAdjacentSearchResult(backwards = keyEvent.isShiftPressed)
                     true
                 } else if (homeComponent.isHomeSearchFocused &&
                     (keyEvent.isCtrlPressed || keyEvent.isMetaPressed) &&
