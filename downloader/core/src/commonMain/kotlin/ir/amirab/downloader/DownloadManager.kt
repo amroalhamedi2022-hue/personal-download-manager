@@ -207,18 +207,25 @@ class DownloadManager(
         context: DownloadItemContext = EmptyContext,
     ) = withJobLifecycleLock(id) {
         val itemToDelete = dlListDb.getById(id) ?: return@withJobLifecycleLock
+        // Decide from the persisted state before booting/pausing a job. A normal
+        // pause changes the mutable item status to Paused; using that mutated
+        // status would delete a completed output even when the user chose to
+        // remove only its history entry.
+        val originalStatus = itemToDelete.status
+        val removeOutputFile = shouldDeleteDownloadOutput(
+            status = originalStatus,
+            removeCompletedFile = originalStatus == DownloadStatus.Completed &&
+                alsoRemoveFile(itemToDelete),
+        )
         val job = getDownloadJob(id) ?: createJob(itemToDelete).apply { boot() }
         // Do not call manager.pause() here: it would re-acquire this item's lock.
-        kotlin.runCatching { job.pause() }
-        // at this point: job will be created (and booted) if it was not created before
         contextContainer.updateContext(id) { it + context }
-        job.downloadRemoved(
-            removeOutputFile = shouldDeleteDownloadOutput(
-                status = itemToDelete.status,
-                removeCompletedFile = itemToDelete.status == DownloadStatus.Completed &&
-                    alsoRemoveFile(itemToDelete),
-            ),
-        )
+        if (originalStatus != DownloadStatus.Completed) {
+            // Deletion is fail-closed: never remove files or persisted state if
+            // the active worker could not be stopped and joined successfully.
+            job.pause()
+        }
+        job.downloadRemoved(removeOutputFile = removeOutputFile)
         deleteJob(job.id)
         dlListDb.remove(itemToDelete)
         partListDb.removeParts(id)

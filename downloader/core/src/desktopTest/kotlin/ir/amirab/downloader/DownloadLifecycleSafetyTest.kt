@@ -3,9 +3,11 @@ package ir.amirab.downloader
 import ir.amirab.downloader.db.IDownloadListDb
 import ir.amirab.downloader.db.MemoryDownloadPartStatesDB
 import ir.amirab.downloader.destination.DownloadDestination
+import ir.amirab.downloader.destination.SimpleDownloadDestination
 import ir.amirab.downloader.downloaditem.DownloadJob
 import ir.amirab.downloader.downloaditem.DownloadJobExtraConfig
 import ir.amirab.downloader.downloaditem.DownloadJobStatus
+import ir.amirab.downloader.downloaditem.DownloadStatus
 import ir.amirab.downloader.downloaditem.IDownloadItem
 import ir.amirab.downloader.downloaditem.http.HttpDownloadCredentials
 import ir.amirab.downloader.downloaditem.http.HttpDownloadItem
@@ -24,10 +26,71 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class DownloadLifecycleSafetyTest {
+
+    @Test
+    fun deletingCompletedHistoryPreservesOutputUnlessExplicitlyRequested() = runBlocking {
+        for (removeCompletedFile in listOf(false, true)) {
+            val outputFolder = Files.createTempDirectory("completed-delete-policy-").toFile()
+            val item = testItem(if (removeCompletedFile) 61 else 60).apply {
+                folder = outputFolder.absolutePath
+                name = "completed.bin"
+                status = DownloadStatus.Completed
+            }
+            val output = outputFolder.resolve(item.name).apply { writeText("finished bytes") }
+            val audit = LifecycleAudit()
+            val listDb = TestDownloadListDb(listOf(item))
+            val manager = createManager(listOf(item), audit, listDb = listDb)
+
+            try {
+                manager.deleteDownload(item.id, alsoRemoveFile = { removeCompletedFile })
+
+                assertEquals(null, listDb.getById(item.id))
+                assertTrue(manager.downloadJobs.none { it.id == item.id })
+                assertEquals(!removeCompletedFile, output.exists())
+                assertTrue(audit.pausedIds.isEmpty(), "a completed item must not be paused during deletion")
+            } finally {
+                manager.downloadJobs.forEach(DownloadJob::close)
+                manager.downloadDataFolder.deleteRecursively()
+                outputFolder.deleteRecursively()
+            }
+        }
+    }
+
+    @Test
+    fun deletionKeepsFilesAndDatabaseWhenWorkerCannotBeStopped() = runBlocking {
+        val outputFolder = Files.createTempDirectory("failed-delete-stop-").toFile()
+        val item = testItem(62).apply {
+            folder = outputFolder.absolutePath
+            name = "active.bin"
+            status = DownloadStatus.Downloading
+        }
+        val output = outputFolder.resolve(item.name).apply { writeText("partial bytes") }
+        val audit = LifecycleAudit().apply {
+            pauseFailure = IllegalStateException("worker did not stop")
+        }
+        val listDb = TestDownloadListDb(listOf(item))
+        val manager = createManager(listOf(item), audit, listDb = listDb)
+
+        try {
+            manager.boot()
+            assertFailsWith<IllegalStateException> {
+                manager.deleteDownload(item.id, alsoRemoveFile = { true })
+            }
+
+            assertEquals(item, listDb.getById(item.id))
+            assertTrue(manager.downloadJobs.any { it.id == item.id })
+            assertTrue(output.exists())
+        } finally {
+            manager.downloadJobs.forEach(DownloadJob::close)
+            manager.downloadDataFolder.deleteRecursively()
+            outputFolder.deleteRecursively()
+        }
+    }
 
     @Test
     fun concurrentResumeCreatesAndActivatesOnlyOneJob() = runBlocking {
@@ -176,12 +239,13 @@ class DownloadLifecycleSafetyTest {
         audit: LifecycleAudit,
         releaseResume: CompletableDeferred<Unit> = CompletableDeferred<Unit>().apply { complete(Unit) },
         statusOnBoot: Map<Long, DownloadJobStatus> = emptyMap(),
+        listDb: TestDownloadListDb = TestDownloadListDb(items),
     ): DownloadManager {
         val registry = DownloaderRegistry().apply {
             add(LifecycleTestDownloader(audit, releaseResume, statusOnBoot))
         }
         return DownloadManager(
-            dlListDb = TestDownloadListDb(items),
+            dlListDb = listDb,
             partListDb = MemoryDownloadPartStatesDB(),
             settings = DownloadSettings(),
             emptyFileCreator = EmptyFileCreator(
@@ -210,6 +274,7 @@ class DownloadLifecycleSafetyTest {
         val maxLifecycleCommands = AtomicInteger()
         val firstResumeEntered = CompletableDeferred<Unit>()
         val pausedIds = java.util.concurrent.ConcurrentLinkedQueue<Long>()
+        var pauseFailure: Throwable? = null
 
         suspend fun <T> trackLifecycleCommand(block: suspend () -> T): T {
             val current = lifecycleCommandsInFlight.incrementAndGet()
@@ -251,6 +316,15 @@ class DownloadLifecycleSafetyTest {
         private val releaseResume: CompletableDeferred<Unit>,
         private val statusOnBoot: DownloadJobStatus?,
     ) : DownloadJob(downloadManager) {
+        private val destination by lazy {
+            SimpleDownloadDestination(
+                file = java.io.File(downloadItem.folder, downloadItem.name),
+                appendExtensionToIncompleteDownloads = false,
+                downloadId = id,
+                emptyFileCreator = downloadManager.emptyFileCreator,
+            )
+        }
+
         override suspend fun actualBoot() {
             statusOnBoot?.let { status ->
                 _status.value = status
@@ -260,7 +334,7 @@ class DownloadLifecycleSafetyTest {
             }
         }
 
-        override fun getDestination(): DownloadDestination = error("destination is not used")
+        override fun getDestination(): DownloadDestination = destination
         override fun initializeDestination() = Unit
         override suspend fun reset() {
             audit.trackLifecycleCommand {
@@ -283,10 +357,11 @@ class DownloadLifecycleSafetyTest {
 
         override suspend fun pause(throwable: Throwable) {
             audit.trackLifecycleCommand {
+                audit.pauseFailure?.let { throw it }
                 _isDownloadActive.value = false
                 downloadItem.retryAttempt = 0
                 downloadItem.retryAt = null
-                _status.value = DownloadJobStatus.Canceled(throwable)
+                onDownloadCanceled(throwable)
                 audit.pausedIds += id
             }
         }
@@ -307,14 +382,20 @@ class DownloadLifecycleSafetyTest {
     }
 
     private class TestDownloadListDb(
-        private val items: List<HttpDownloadItem>,
+        items: List<HttpDownloadItem>,
     ) : IDownloadListDb {
-        override suspend fun getAll(): List<IDownloadItem> = items
+        private val items = items.toMutableList()
+
+        override suspend fun getAll(): List<IDownloadItem> = items.toList()
         override suspend fun getById(id: Long): IDownloadItem? = items.firstOrNull { it.id == id }
         override suspend fun add(item: IDownloadItem) = error("not used")
         override suspend fun update(item: IDownloadItem) = Unit
-        override suspend fun remove(item: IDownloadItem) = error("not used")
-        override suspend fun removeById(itemId: Long) = error("not used")
+        override suspend fun remove(item: IDownloadItem) {
+            items.removeAll { it.id == item.id }
+        }
+        override suspend fun removeById(itemId: Long) {
+            items.removeAll { it.id == itemId }
+        }
         override suspend fun getLastId(): Long = items.maxOfOrNull { it.id } ?: -1
     }
 }

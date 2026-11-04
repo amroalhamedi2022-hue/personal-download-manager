@@ -6,6 +6,7 @@ import ir.amirab.util.compose.asStringSource
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
@@ -41,7 +42,7 @@ class SettingsSearchTest {
         val match = filterSettingsGroups(listOf(original), "ERROR").single()
         assertSame(main, match.mainConfigurable)
         assertEquals(listOf(error), match.nestedConfigurable)
-        match.mainConfigurable!!.set(true)
+        assertIs<BooleanConfigurable>(match.mainConfigurable).set(true)
         assertTrue(enabled.value)
     }
 
