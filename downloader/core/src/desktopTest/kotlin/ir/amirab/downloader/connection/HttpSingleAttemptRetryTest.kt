@@ -40,6 +40,30 @@ class HttpSingleAttemptRetryTest {
         }
     }
 
+    @Test fun rateLimited429WithRetryAfterIsOneObservableAttempt() = runBlocking<Unit> {
+        val requests = AtomicInteger(0)
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/rate-limited") { exchange ->
+            requests.incrementAndGet()
+            exchange.responseHeaders.set("Retry-After", "7")
+            exchange.sendResponseHeaders(429, -1)
+            exchange.close()
+        }
+        server.start()
+        try {
+            val info = createClient().head(
+                HttpDownloadCredentials("http://127.0.0.1:${server.address.port}/rate-limited"),
+                null,
+                null,
+            )
+            assertEquals(429, info.statusCode)
+            assertEquals("7", info.responseHeaders["retry-after"])
+            assertEquals(1, requests.get(), "429 must be handled by the job retry budget, not hidden OkHttp retries")
+        } finally {
+            server.stop(0)
+        }
+    }
+
     @Test fun regularSuccessAndHeadersRemainIntact() = runBlocking<Unit> {
         val requests = AtomicInteger()
         val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
