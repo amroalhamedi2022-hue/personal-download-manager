@@ -8,6 +8,11 @@ on:
     branches: [codex/repair-rf00-rf01]
     paths:
       - ".github/workflows/windows-installed-ftp-e2e.yml"
+      - "desktop/app/build.gradle.kts"
+      - "desktop/app/resources/installer/nsis-script-template.nsi"
+      - "desktop/app/icons/icon.ico"
+      - "desktop/app/icons/hyperget-icon.svg"
+      - "buildSrc/src/main/kotlin/buildlogic/versioning/VersionUtil.kt"
       - "scripts/LocalFtpFixture.py"
       - "scripts/test_local_ftp_fixture.py"
       - "scripts/Run-WindowsInstalledFtpE2E.ps1"
@@ -18,9 +23,14 @@ on:
       - "downloader/core/src/**/ftp/**"
   workflow_dispatch:
   push:
-    branches: [codex/repair-rf00-rf01]
+    branches: [main, codex/repair-rf00-rf01]
     paths:
       - ".github/workflows/windows-installed-ftp-e2e.yml"
+      - "desktop/app/build.gradle.kts"
+      - "desktop/app/resources/installer/nsis-script-template.nsi"
+      - "desktop/app/icons/icon.ico"
+      - "desktop/app/icons/hyperget-icon.svg"
+      - "buildSrc/src/main/kotlin/buildlogic/versioning/VersionUtil.kt"
       - "scripts/LocalFtpFixture.py"
       - "scripts/test_local_ftp_fixture.py"
       - "scripts/Run-WindowsInstalledFtpE2E.ps1"
@@ -56,7 +66,7 @@ jobs:
           python3 -m unittest scripts/test_local_ftp_fixture.py
 
   change-scope:
-    name: Gate installed FTP build on relevant latest-commit changes
+    name: Gate installed FTP build on the full relevant change range
     runs-on: ubuntu-24.04
     outputs:
       run: ${{ steps.scope.outputs.run }}
@@ -65,20 +75,29 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
-          fetch-depth: 2
-      - name: Run installed FTP only for relevant latest-commit changes
+          fetch-depth: 0
+      - name: Run installed FTP only for relevant changes
         id: scope
+        env:
+          HYPERGET_EVENT_BEFORE: ${{ github.event.before || '' }}
         shell: bash
         run: |
           if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
             echo "run=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          changed="$(git diff --name-only HEAD^ HEAD)"
+          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            git fetch --no-tags origin "+refs/heads/${GITHUB_BASE_REF}:refs/remotes/origin/${GITHUB_BASE_REF}"
+            changed="$(git diff --name-only "origin/$GITHUB_BASE_REF...HEAD")"
+          elif [[ "$GITHUB_EVENT_NAME" == "push" && -n "$HYPERGET_EVENT_BEFORE" && "$HYPERGET_EVENT_BEFORE" != "0000000000000000000000000000000000000000" ]]; then
+            changed="$(git diff --name-only "$HYPERGET_EVENT_BEFORE" "$GITHUB_SHA")"
+          else
+            changed="$(git show --pretty='' --name-only HEAD)"
+          fi
           run=false
           while IFS= read -r file; do
             case "$file" in
-              scripts/LocalFtpFixture.py|scripts/test_local_ftp_fixture.py|scripts/Run-WindowsInstalledFtpE2E.ps1|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/AppComponent.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/cli/download/add/**|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/enterurl/**|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/singleInstance/service/**|downloader/core/src/**/ftp/**)
+              scripts/LocalFtpFixture.py|scripts/test_local_ftp_fixture.py|.github/workflows/windows-installed-ftp-e2e.yml|scripts/Run-WindowsInstalledFtpE2E.ps1|desktop/app/build.gradle.kts|desktop/app/resources/installer/nsis-script-template.nsi|desktop/app/icons/icon.ico|desktop/app/icons/hyperget-icon.svg|buildSrc/src/main/kotlin/buildlogic/versioning/VersionUtil.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/AppComponent.kt|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/cli/download/add/**|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/enterurl/**|desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/utils/singleInstance/service/**|downloader/core/src/**/ftp/**)
                 run=true ;;
             esac
           done <<< "$changed"

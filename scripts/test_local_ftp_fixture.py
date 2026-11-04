@@ -8,6 +8,9 @@ import time
 import unittest
 from io import BytesIO
 from pathlib import Path
+from unittest import mock
+
+from scripts.LocalFtpFixture import replace_with_retry
 
 
 class LocalFtpFixtureTest(unittest.TestCase):
@@ -51,12 +54,44 @@ class LocalFtpFixtureTest(unittest.TestCase):
         ftp.voidcmd("TYPE I")
         return ftp
 
+    def test_atomic_stats_replace_retries_transient_windows_sharing_violation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            temporary = root / "stats.json.tmp"
+            destination = root / "stats.json"
+            temporary.write_text('{"active_retrievals": 0}', encoding="utf-8")
+            destination.write_text('{"active_retrievals": 1}', encoding="utf-8")
+            real_replace = os.replace
+            attempts = 0
+
+            def fail_twice_then_replace(source, target):
+                nonlocal attempts
+                attempts += 1
+                if attempts < 3:
+                    raise PermissionError("synthetic Windows sharing violation")
+                real_replace(source, target)
+
+            with mock.patch("scripts.LocalFtpFixture.os.replace", side_effect=fail_twice_then_replace):
+                replace_with_retry(temporary, destination, max_attempts=4, retry_delay_seconds=0)
+
+            self.assertEqual(3, attempts)
+            self.assertEqual('{"active_retrievals": 0}', destination.read_text(encoding="utf-8"))
+            self.assertFalse(temporary.exists())
+
     def test_authenticated_size_mdtm_and_exact_binary_retrieval(self):
         with self.connect() as ftp:
             self.assertEqual(self.source.stat().st_size, ftp.size("/" + self.source.name))
             self.assertEqual("213 20261023000000", ftp.sendcmd("MDTM /" + self.source.name))
             received = BytesIO()
             ftp.retrbinary("RETR /" + self.source.name, received.write)
+        self.assertEqual(self.source.read_bytes(), received.getvalue())
+
+    def test_relative_ftp_paths_are_accepted_for_aria2_compatibility(self):
+        with self.connect() as ftp:
+            self.assertEqual(self.source.stat().st_size, ftp.size(self.source.name))
+            self.assertEqual("213 20261023000000", ftp.sendcmd("MDTM " + self.source.name))
+            received = BytesIO()
+            ftp.retrbinary("RETR " + self.source.name, received.write)
         self.assertEqual(self.source.read_bytes(), received.getvalue())
 
     def test_wrong_password_is_rejected_without_retrieval(self):
