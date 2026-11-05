@@ -216,7 +216,7 @@ jobs:
         run: |
           set -euo pipefail
           branch='autodev/real-f01-08-content-range'
-          expected='84e21f9997ee856c1dbba8daa309f6a49e06d58e'
+          expected='ba10b648d75b7f9487e5de73c45a05895c29bf8e'
           actual="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$branch" --jq .object.sha)"
           [[ "$actual" == "$expected" ]] || { echo "::error::Code branch moved; refusing dispatch"; exit 1; }
           gh workflow run private-windows-validation.yml --ref "$branch"
