@@ -87,6 +87,22 @@ class HttpResumeIdentityPolicyTest {
     }
 
     @Test
+    fun malformedStrongEtagCannotAuthoriseSignedLinkRotation() {
+        val invalid = listOf(
+            "\"part\" \"other\"", "\"embedded\"quote\"", "\"line\\nfeed\"",
+            "\"carriage\\rreturn\"", "\"tab\\tcharacter\"", "\"del\\u007fcharacter\"",
+        )
+        invalid.forEach { candidate ->
+            assertFalse(isStrongHttpETag(candidate), "Rejected malformed ETag: ${candidate.length} chars")
+            assertFalse(canReuseHttpPartialAfterLinkChange(original, rotated, candidate, 42))
+            assertFailsWith<FileChangedException.ETagChangedException> {
+                validateRemoteFileIdentity(42, candidate, 42, candidate, requireStrongETag = true)
+            }
+        }
+        assertTrue(isStrongHttpETag("\"valid-opaque:123\""))
+    }
+
+    @Test
     fun rotatingUrlGuardSurvivesSerializationAndLegacyRecordsDefaultOff() {
         val original = HttpDownloadItem(
             link = "https://example.test/file?token=old",
