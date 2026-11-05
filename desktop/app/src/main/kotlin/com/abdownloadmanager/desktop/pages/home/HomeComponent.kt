@@ -38,6 +38,7 @@ import com.arkivanov.decompose.ComponentContext
 import ir.amirab.downloader.monitor.*
 import ir.amirab.downloader.queue.QueueManager
 import ir.amirab.util.flow.combineStateFlows
+import ir.amirab.util.flow.mapStateFlow
 import ir.amirab.util.flow.mapTwoWayStateFlow
 import ir.amirab.downloader.downloaditem.IDownloadCredentials
 import ir.amirab.util.AppVersionTracker
