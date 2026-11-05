@@ -38,8 +38,6 @@ class PowerActionWindows(
                 "powershell.exe",
                 "-NoProfile",
                 "-NonInteractive",
-                "-ExecutionPolicy",
-                "Bypass",
                 "-Command",
                 WINDOWS_SLEEP_COMMAND,
             )
@@ -48,6 +46,6 @@ class PowerActionWindows(
 
     private companion object {
         const val WINDOWS_SLEEP_COMMAND =
-            "Add-Type -Name HyperGetSleepBridge -Namespace HyperGet -MemberDefinition '[System.Runtime.InteropServices.DllImport(\"powrprof.dll\", SetLastError=true)] public static extern bool SetSuspendState(bool hibernate, bool forceCritical, bool disableWakeEvent);'; if (-not [HyperGet.HyperGetSleepBridge]::SetSuspendState(`$false, `$false, `$false)) { exit 1 }"
+            "Add-Type -Name HyperGetSleepBridge -Namespace HyperGet -MemberDefinition '[System.Runtime.InteropServices.DllImport(\"powrprof.dll\", SetLastError=true)] public static extern bool SetSuspendState(bool hibernate, bool forceCritical, bool disableWakeEvent);'; if (-not [HyperGet.HyperGetSleepBridge]::SetSuspendState(\$false, \$false, \$false)) { exit 1 }"
     }
 }
