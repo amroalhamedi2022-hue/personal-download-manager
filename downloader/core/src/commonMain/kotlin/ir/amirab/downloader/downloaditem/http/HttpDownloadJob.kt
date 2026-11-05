@@ -36,17 +36,25 @@ internal fun validateRemoteFileIdentity(
     expectedETag: String?,
     actualLength: Long?,
     actualETag: String?,
+    requireStrongETag: Boolean = false,
 ) {
     if (actualLength != expectedLength) {
         throw FileChangedException.LengthChangedException(expectedLength, actualLength ?: -1)
     }
-    if (expectedETag != null &&
-        (actualETag != null && expectedETag != actualETag ||
-            isStrongHttpETag(expectedETag) && actualETag == null)
-    ) {
-        // A missing validator must not silently approve previously staged bytes.
-        // Weak ETags keep the legacy compatibility behaviour when absent.
-        throw FileChangedException.ETagChangedException(expectedETag, actualETag ?: "<missing>")
+    if (requireStrongETag) {
+        // A rotated signed URL is not the original resource identity. Preserve
+        // its bytes only after the new server confirms the exact strong tag.
+        if (!isStrongHttpETag(expectedETag) ||
+            !isStrongHttpETag(actualETag) ||
+            expectedETag != actualETag
+        ) {
+            throw FileChangedException.ETagChangedException(
+                expectedETag ?: "<missing>", actualETag ?: "<missing>",
+            )
+        }
+    } else if (expectedETag != null && actualETag != null && expectedETag != actualETag) {
+        // Preserve historical length-based fallback for unchanged URLs.
+        throw FileChangedException.ETagChangedException(expectedETag, actualETag)
     }
 }
 
@@ -156,6 +164,7 @@ class HttpDownloadJob(
         setParts(emptyList())
         downloadItem.contentLength = IDownloadItem.LENGTH_UNKNOWN
         downloadItem.serverETag = null
+        downloadItem.requireStrongETagOnResume = false
         downloadItem.status = DownloadStatus.Added
         downloadItem.startTime = null
         downloadItem.completeTime = null
@@ -344,6 +353,11 @@ class HttpDownloadJob(
                 reset()
                 if (wasActive && !shouldUpdateDestination) resume()
             } else {
+                if (previousItem.link.substringBefore('#') != newItem.link.substringBefore('#')) {
+                    // This flag is serialized with the download, so a crash between
+                    // link update and network validation cannot bypass the check.
+                    downloadItem.requireStrongETagOnResume = true
+                }
                 onLinkChanged()
             }
         }
@@ -771,7 +785,9 @@ class HttpDownloadJob(
                 expectedETag = oldServerETag,
                 actualLength = totalLength,
                 actualETag = newServerETag,
+                requireStrongETag = downloadItem.requireStrongETagOnResume,
             )
+            downloadItem.requireStrongETagOnResume = false
         }
 //            thisLogger().info("fetchDownloadInfoAndValidate :${response.code},${response.headers} ")
         saveState()
