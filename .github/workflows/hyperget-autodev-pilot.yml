@@ -135,11 +135,17 @@ jobs:
           remaining = set(subprocess.check_output(
               ["git", "ls-files", "--modified", "--others", "--exclude-standard"], text=True
           ).splitlines())
-          if remaining != expected:
-              raise SystemExit(f"REJECTED: expected only {expected}; found {remaining}")
-          print("PASS: exactly one permitted Kotlin regression-test file changed")
+          if remaining - windows_wrappers != expected:
+              raise SystemExit(f"REJECTED: expected only {expected} and EOL-only wrappers; found {remaining}")
+          wrappers_remaining = sorted(remaining & windows_wrappers)
+          if wrappers_remaining and subprocess.run(
+              ["git", "diff", "--ignore-space-at-eol", "--exit-code", "--", *wrappers_remaining],
+              check=False
+          ).returncode != 0:
+              raise SystemExit("REJECTED unexpected content change in Windows wrappers")
+          print("PASS: intended Kotlin test is sole content change; wrappers are verified EOL-only")
           PY
-          git diff --check
+          git diff --check -- "$TARGET_FILE"
           git diff --stat -- "$TARGET_FILE"
 
       - name: Publish isolated draft PR and launch real Windows validation
