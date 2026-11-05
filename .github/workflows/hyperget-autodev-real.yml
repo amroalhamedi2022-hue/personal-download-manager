@@ -1,0 +1,151 @@
+name: HyperGet autonomous functionality (bounded Gemini)
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/hyperget-autodev-real.yml"
+      - "docs/autodev/**"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "dry-run checks the backlog; implement works on one approved task"
+        type: choice
+        required: true
+        default: dry-run
+        options:
+          - dry-run
+          - implement
+  schedule:
+    - cron: "23 */6 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hyperget-autodev-real
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    name: Verify finite functionality backlog (no AI credits)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Verify selector and approved task paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile docs/autodev/task_runner.py
+          python3 docs/autodev/task_runner.py verify
+
+  implement:
+    name: Produce one bounded production fix and regression tests
+    if: >-
+      github.event_name == 'schedule' ||
+      (github.event_name == 'workflow_dispatch' &&
+       inputs.mode == 'implement' &&
+       github.ref == 'refs/heads/main')
+    needs: preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    env:
+      MODEL: google/gemini-3-flash-preview
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Choose first unfinished, unlocked approved task
+        id: pick
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 docs/autodev/task_runner.py select
+
+      - name: Check free-tier key and reserve durable task branch
+        if: steps.pick.outputs.task != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.DEFAULT_GEMINI_API_KEY }}
+          TASK_ID: ${{ steps.pick.outputs.task }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "$GOOGLE_GENERATIVE_AI_API_KEY" ]]; then
+            echo "::error::DEFAULT_GEMINI_API_KEY missing: no AI request made"
+            exit 1
+          fi
+          if [[ "$(gh api "repos/$GITHUB_REPOSITORY/branches/main" --jq '.commit.sha')" != "$(git rev-parse HEAD)" ]]; then
+            echo "::error::main advanced; refuse stale-base generation"
+            exit 1
+          fi
+          branch="autodev/real-$TASK_ID"
+          git switch -c "$branch"
+          git remote set-url origin "https://x-access-token:$GH_TOKEN@github.com/$GITHUB_REPOSITORY.git"
+          git push origin "HEAD:refs/heads/$branch"
+          git remote set-url origin "https://github.com/$GITHUB_REPOSITORY.git"
+          echo "Reserved durable task branch $branch; failed runs will not silently repeat AI calls" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Install pinned OpenCode CLI
+        if: steps.pick.outputs.task != ''
+        run: npm install --global @opencode/cli@2.2.4
+
+      - name: Implement code and tests using Gemini
+        if: steps.pick.outputs.task != ''
+        env:
+          GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.DEFAULT_GEMINI_API_KEY }}
+          TASK_PROMPT: ${{ steps.pick.outputs.prompt }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          timeout 24m opencode run --standalone --auto --model "$MODEL" "$(cat "$TASK_PROMPT")"
+
+      - name: Reject unrelated files and test-only changes
+        if: steps.pick.outputs.task != ''
+        env:
+          TASK_ID: ${{ steps.pick.outputs.task }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 docs/autodev/task_runner.py validate "$TASK_ID"
+
+      - name: Publish actual code, propose draft PR, dispatch Windows acceptance
+        if: steps.pick.outputs.task != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TASK_ID: ${{ steps.pick.outputs.task }}
+          ALLOWED_PATHS: ${{ steps.pick.outputs.paths }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch="autodev/real-$TASK_ID"
+          read -r -a files <<< "$ALLOWED_PATHS"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- "${files[@]}"
+          git commit -m "fix(windows): $TASK_ID guarded functionality and regression"
+          code_sha="$(git rev-parse HEAD)"
+          git remote set-url origin "https://x-access-token:$GH_TOKEN@github.com/$GITHUB_REPOSITORY.git"
+          git push origin "HEAD:refs/heads/$branch"
+          git remote set-url origin "https://github.com/$GITHUB_REPOSITORY.git"
+          echo "REAL CODE SHA: $code_sha ($branch)" >> "$GITHUB_STEP_SUMMARY"
+          if gh pr create --draft --base main --head "$branch" \
+             --title "fix(windows): $TASK_ID (Gemini; Windows acceptance pending)" \
+             --body "Generated by bounded OpenCode/Gemini workflow run $GITHUB_RUN_ID. Exact code SHA: $code_sha. Review changed source and regression tests; full Windows CI must pass before merge. No visual/theme or Copilot work."; then
+            echo "Draft PR created for $branch" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning::GitHub Actions PR creation blocked by repository policy; pushed code is preserved"
+            echo "PR CREATION BLOCKED — https://github.com/$GITHUB_REPOSITORY/compare/main...$branch?expand=1" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          gh workflow run private-windows-validation.yml --ref "$branch"
+          echo "Windows CI dispatched, NOT YET PASSED; check exact SHA $code_sha" >> "$GITHUB_STEP_SUMMARY"
