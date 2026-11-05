@@ -4,6 +4,7 @@ import ir.amirab.util.desktop.poweraction.PowerActionConfig
 import ir.amirab.util.desktop.poweraction.PowerActionWindows
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class PowerActionTest {
@@ -48,8 +49,8 @@ class PowerActionTest {
         assertEquals("powershell.exe", commands[0].first())
         assertTrue(commands[0].contains("-NoProfile"))
         assertTrue(commands[0].contains("-NonInteractive"))
-        assertTrue(commands[0].contains("-ExecutionPolicy"))
-        assertTrue(commands[0].contains("Bypass"))
-        assertTrue(commands[0].last().contains("SetSuspendState(`$false, `$false, `$false)"))
+        assertFalse(commands[0].contains("-ExecutionPolicy"))
+        assertFalse(commands[0].contains("Bypass"))
+        assertTrue(commands[0].last().contains("SetSuspendState(\$false, \$false, \$false)"))
     }
 }
