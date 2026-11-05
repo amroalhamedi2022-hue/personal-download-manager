@@ -5,8 +5,12 @@ import java.util.Locale
 /** Whether an HTTP validator can safely identify bytes across a rotated download URL. */
 internal fun isStrongHttpETag(value: String?): Boolean {
     val tag = value?.trim() ?: return false
+    // A strong validator must be one complete quoted opaque tag, not a header
+    // containing embedded quotes, control characters or an extra field value.
+    // Reject ambiguous validators rather than reusing potentially unrelated bytes.
     return tag.length >= 3 && tag.first() == '"' && tag.last() == '"' &&
-        !tag.startsWith("W/", ignoreCase = true)
+        !tag.startsWith("W/", ignoreCase = true) &&
+        tag.substring(1, tag.lastIndex).none { it == '"' || it.code < 0x20 || it.code == 0x7f }
 }
 
 /**
