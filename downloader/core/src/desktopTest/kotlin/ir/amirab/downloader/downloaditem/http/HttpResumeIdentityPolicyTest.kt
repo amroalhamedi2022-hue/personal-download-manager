@@ -1,6 +1,8 @@
 package ir.amirab.downloader.downloaditem.http
 
 import ir.amirab.downloader.exception.FileChangedException
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import kotlin.test.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertFailsWith
@@ -64,27 +66,55 @@ class HttpResumeIdentityPolicyTest {
     }
 
     @Test
-    fun strongEtagIsRequiredAndMustRemainPresentOnResponse() {
+    fun rotatedLinkRequiresMatchingStrongEtagFromServer() {
         assertTrue(isStrongHttpETag("\"abc\""))
         assertFalse(isStrongHttpETag("W/\"abc\""))
         assertFalse(isStrongHttpETag("\"\""))
         assertFalse(isStrongHttpETag(null))
 
-        validateRemoteFileIdentity(42, "\"abc\"", 42, "\"abc\"")
+        validateRemoteFileIdentity(
+            42, "\"abc\"", 42, "\"abc\"", requireStrongETag = true,
+        )
         assertFailsWith<FileChangedException.ETagChangedException> {
-            validateRemoteFileIdentity(42, "\"abc\"", 42, null)
+            validateRemoteFileIdentity(42, "\"abc\"", 42, null, requireStrongETag = true)
         }
         assertFailsWith<FileChangedException.ETagChangedException> {
-            validateRemoteFileIdentity(42, "\"abc\"", 42, "W/\"abc\"")
+            validateRemoteFileIdentity(42, "\"abc\"", 42, "W/\"abc\"", requireStrongETag = true)
         }
         assertFailsWith<FileChangedException.ETagChangedException> {
-            validateRemoteFileIdentity(42, "\"abc\"", 42, "\"different\"")
+            validateRemoteFileIdentity(42, "\"abc\"", 42, "\"different\"", requireStrongETag = true)
         }
+    }
+
+    @Test
+    fun rotatingUrlGuardSurvivesSerializationAndLegacyRecordsDefaultOff() {
+        val original = HttpDownloadItem(
+            link = "https://example.test/file?token=old",
+            id = 71,
+            folder = "downloads",
+            name = "file.bin",
+            contentLength = 42,
+            serverETag = "\"safe\"",
+            requireStrongETagOnResume = true,
+        )
+        val restored = Json.decodeFromString<HttpDownloadItem>(Json.encodeToString(original))
+        assertTrue(restored.requireStrongETagOnResume)
+
+        val mutable = original.copy(requireStrongETagOnResume = false)
+        mutable.applyFrom(restored)
+        assertTrue(mutable.requireStrongETagOnResume)
+
+        val legacy = Json.decodeFromString<HttpDownloadItem>(
+            """{"link":"https://example.test/file","id":72,"folder":"downloads","name":"file.bin"}"""
+        )
+        assertFalse(legacy.requireStrongETagOnResume)
     }
 
     @Test
     fun legacyMissingOrWeakEtagDoesNotIntroduceNewResumeFailures() {
         validateRemoteFileIdentity(42, null, 42, null)
+        // Historical behaviour on unchanged URLs must still allow absent ETag.
+        validateRemoteFileIdentity(42, "\"abc\"", 42, null)
         validateRemoteFileIdentity(42, "W/\"old\"", 42, null)
         assertFailsWith<FileChangedException.LengthChangedException> {
             validateRemoteFileIdentity(42, null, 41, null)
