@@ -8,3 +8,9 @@
 - Exact Windows workflow candidate SHA `10e1c60498a4b2d2b6411dfa91ca28721d538e86`, [run 41997550655](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/41997550655). **Check completed conclusion before acceptance**; no PASS claimed while in progress.
 - Before merge: require completed/success Windows Kotlin tests, desktop compilation, installer and NSIS safe install/uninstall; remove temporary branch trigger, verify production/test SHA unchanged, re-read main HEAD and mergeability. Manual installed GUI acceptance pending.
 - F01-02 active16 Working Set +18.77% / Private Bytes +18.95% historical benchmark FAIL remains unresolved; no threshold relaxation. PR3 queue intermittent test failure remains independent.
+
+## 2026-11-05 follow-up (automation)
+- Windows validation [41997550655](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/41997550655) was previously observed **completed/success** on production/test SHA `10e1c60498a4b2d2b6411dfa91ca28721d538e86`; do not equate workflow-only changes with a new tested source SHA.
+- Removed temporary feature-branch CI trigger in workflow-only commit [`6407681`](https://github.com/amroalhamedi2022-hue/personal-download-manager/commit/6407681fcee4e0439987237c490c45829d360eaf). Kotlin source and tests unchanged.
+- GitHub compare `main...feature/http-etag-validator-hardening-20261105` reports main base SHA `36da525d557cb67ac64c1900a2a65f0ee417dd31`, **diverged: ahead 6, behind 1**; PR metadata reports **mergeable=false**. Do not merge until reconciled, exact mergeability and Windows acceptance confirmed. Manual installed GUI acceptance remains pending.
+- No new F01-02 active16 fix in this follow-up; historical memory regression remains FAIL.
