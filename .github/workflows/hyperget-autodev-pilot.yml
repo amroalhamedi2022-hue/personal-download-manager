@@ -115,8 +115,28 @@ jobs:
               ["git", "ls-files", "--modified", "--others", "--exclude-standard"], text=True
           ).splitlines())
           expected = {os.environ["TARGET_FILE"]}
-          if changed != expected:
-              raise SystemExit(f"REJECTED: expected only {expected}; found {changed}")
+          # Windows .bat scripts can be re-staged as CRLF/LF conversions on
+          # Linux runners. Accept ONLY EOL-only changes in these two known
+          # wrappers, and discard them before any commit. Real content edits
+          # or other changed paths still hard-fail.
+          windows_wrappers = {
+              "gradlew.bat",
+              "shared/updater/src/desktopMain/resources/com/abdownloadmanager/updater/updater_windows.bat",
+          }
+          extra = changed - expected
+          if not extra.issubset(windows_wrappers):
+              raise SystemExit(f"REJECTED unexpected changed paths: {extra}")
+          if extra:
+              command = ["git", "diff", "--ignore-space-at-eol", "--exit-code", "--", *sorted(extra)]
+              if subprocess.run(command, check=False).returncode != 0:
+                  raise SystemExit(f"REJECTED non-EOL changes to Windows wrappers: {extra}")
+              subprocess.run(["git", "restore", "--", *sorted(extra)], check=True)
+              print(f"Restored harmless EOL-only changes in: {sorted(extra)}")
+          remaining = set(subprocess.check_output(
+              ["git", "ls-files", "--modified", "--others", "--exclude-standard"], text=True
+          ).splitlines())
+          if remaining != expected:
+              raise SystemExit(f"REJECTED: expected only {expected}; found {remaining}")
           print("PASS: exactly one permitted Kotlin regression-test file changed")
           PY
           git diff --check
