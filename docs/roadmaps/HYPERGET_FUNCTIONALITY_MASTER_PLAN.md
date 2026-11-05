@@ -295,3 +295,14 @@
 - Four shared desktop Kotlin regression tests added: forward/reverse, wrap, invisible selection, no matches, one item and 10k rows.
 - **CODED, NOT WIN_E2E_PASS** until exact-head Kotlin compile/tests, installed Windows GUI keyboard and screen capture succeed. F03-04 remains OPEN overall: keyboard/text-copy and full shortcut/action parity require separate acceptance.
 - PR #3 `ff0fd84` stays Draft and is NOT merged into main. PR #4 is visual-only and untouched. Main remains untouched in this batch.
+
+## 2026-11-05 — F09-02 bounded batch URL generation (Windows verified candidate)
+- Candidate branch `feature/batch-url-safety-20261105`, originally based on `main eebc55752ee92364d9fca6f43362a91ef218665f`, PR #7.
+- Production changes: `BatchImportSafety.kt` and `BaseBatchDownloadComponent.kt`; overflow-safe Long count for `0..Int.MAX_VALUE`, strict 1,000-URL preflight BEFORE iteration, full-link and duplicate checks at confirmation, single-item behavior preserved, custom wildcard padding clamped to 10 digits, no printing signed URLs on invalid confirmation.
+- Eight **real Kotlin desktop regression cases** added in `BatchImportSafetyTest.kt`: overflow/no iteration, invalid ranges, zero padding/order, duplicate rejection, malformed middle URL, exact count, 10k pre-enumeration rejection, and excessive custom padding.
+- Local isolated `kotlinc 1.9.0` + Java 21 smoke PASS on pure helper/wildcard semantics; not a Gradle substitute.
+- **Exact production/CI SHA `5b9c61629e37649ccf79bb0e86b61e46d25cb4cd` Windows Actions [41976032690](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/41976032690): success**, including shared desktop Kotlin tests, compile, Windows package, installed NSIS/safe-uninstall. Later workflow-reconciliation and documentation-only commits do not change these Kotlin sources; recheck head status before merge.
+- Scope excludes Liquid Glass, icons, palettes, HTTP/FTP engine and existing user data. F09-02 still PARTIAL overall: numeric generation safety is accepted; import/export, GUI paste UX and batch duplicate-preview have separate requirements.
+- Concurrent PR #5 was independently merged to main as `e7c51b403e4fcc0ea10c415082f3c9059cb13eff` after Windows run `41825085206`; PR #3 benchmark memory failure and PR #6 HTTP 429 acceptance remain separate.
+
+- **Cross-feature Windows proof:** [41977058414](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/41977058414) SUCCESS on SHA `239d96e3b129c7c898c67d88a069eb99e5877817`: tested batch URL safety plus already-verified F3 main search together, built Windows NSIS and completed safe install/uninstall. CI branch-trigger cleanup/docs commits after this SHA did not change Kotlin. Full source-IDM user acceptance and unrelated PR3 memory benchmark remain OPEN.

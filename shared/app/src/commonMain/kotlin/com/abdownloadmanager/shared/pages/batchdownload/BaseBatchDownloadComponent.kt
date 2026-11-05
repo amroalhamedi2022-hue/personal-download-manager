@@ -97,9 +97,13 @@ open class BaseBatchDownloadComponent(
             else -> {
                 val listSize = it.size()
                 when {
-                    listSize < 1 -> BatchDownloadValidationResult.Others
-                    listSize > MAX_ALLOWED_RANGE -> BatchDownloadValidationResult.MaxRangeExceed(MAX_ALLOWED_RANGE)
-                    !HttpUrlUtils.isValidUrl(it.first()) -> BatchDownloadValidationResult.URLInvalid
+                    listSize < 1L -> BatchDownloadValidationResult.Others
+                    listSize > MAX_ALLOWED_RANGE.toLong() -> BatchDownloadValidationResult.MaxRangeExceed(MAX_ALLOWED_RANGE)
+                    // A multi-entry numeric range without '*' produces the
+                    // same URL repeatedly. Never silently enqueue duplicates.
+                    listSize > 1L && '*' !in it.string -> BatchDownloadValidationResult.URLInvalid
+                    !HttpUrlUtils.isValidUrl(it.first()) ||
+                        !HttpUrlUtils.isValidUrl(it.last()) -> BatchDownloadValidationResult.URLInvalid
                     else -> BatchDownloadValidationResult.Ok
                 }
             }
@@ -112,14 +116,18 @@ open class BaseBatchDownloadComponent(
     }
 
     fun confirm() {
-        if (!canConfirm.value) {
-            println(batch.value?.toList())
-            return
-        }
-        val items = batch.value?.toList()?.takeIf { it.isNotEmpty() }
-        if (items != null) {
-            importLinks(items)
-        }
+        if (!canConfirm.value) return
+        val candidate = batch.value ?: return
+        // Recheck every generated URL (not only the first/last preview) and
+        // its uniqueness, with the same 1,000-item bound, before import.
+        // Never print links here: signed URLs can contain private tokens.
+        val items = validatedBatchUrls(
+            urls = candidate,
+            expectedCount = candidate.size(),
+            maxCount = MAX_ALLOWED_RANGE,
+            isValidUrl = { HttpUrlUtils.isValidUrl(it) },
+        ) ?: return
+        importLinks(items)
         onClose()
     }
 
@@ -156,9 +164,12 @@ data class WildcardString(
         if (wildcardLength is WildcardLength.Unspecified) {
             return str
         }
+        val safeMinimum = minimumAllowed.coerceIn(1, 10)
         val length = when (wildcardLength) {
-            is WildcardLength.Custom -> wildcardLength.v.coerceAtLeast(minimumAllowed)
-            WildcardLength.Auto -> minimumAllowed
+            // UI limits custom length to 10, but persisted/model callers can
+            // still provide arbitrary Int values. Never allocate huge padding.
+            is WildcardLength.Custom -> wildcardLength.v.coerceIn(safeMinimum, 10)
+            WildcardLength.Auto -> safeMinimum
             WildcardLength.Unspecified -> null
         }
         if (length != null) {
@@ -179,7 +190,7 @@ data class WildcardString(
         return get(range.last)
     }
 
-    fun size() = range.last - range.first + 1
+    fun size(): Long = batchRangeCount(range.first, range.last)
 
     override fun iterator(): Iterator<String> {
         return range
