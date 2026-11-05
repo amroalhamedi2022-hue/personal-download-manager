@@ -89,8 +89,8 @@ class HttpResumeIdentityPolicyTest {
     @Test
     fun malformedStrongEtagCannotAuthoriseSignedLinkRotation() {
         val invalid = listOf(
-            "\"part\" \"other\"", "\"embedded\"quote\"", "\"line\\nfeed\"",
-            "\"carriage\\rreturn\"", "\"tab\\tcharacter\"", "\"del\\u007fcharacter\"",
+            "\"part\" \"other\"", "\"embedded\"quote\"", "\"line\nfeed\"",
+            "\"carriage\rreturn\"", "\"tab\tcharacter\"", "\"del\u007fcharacter\"",
         )
         invalid.forEach { candidate ->
             assertFalse(isStrongHttpETag(candidate), "Rejected malformed ETag: ${candidate.length} chars")
