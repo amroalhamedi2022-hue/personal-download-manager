@@ -72,7 +72,7 @@ jobs:
       - name: Refuse duplicate or unconfigured runs
         env:
           GH_TOKEN: ${{ github.token }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.DEFAULT_GEMINI_API_KEY }}
         shell: bash
         run: |
           set -euo pipefail
@@ -96,7 +96,7 @@ jobs:
       - name: Make one bounded source change with Gemini
         if: env.pilot_already_done != 'true'
         env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.DEFAULT_GEMINI_API_KEY }}
         shell: bash
         run: |
           set -euo pipefail
