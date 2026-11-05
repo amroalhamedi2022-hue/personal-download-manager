@@ -420,9 +420,10 @@ class DownloadManager(
     }
 
     fun getActiveCount(): Int {
-        return downloadJobs.filter {
-            it.status.value is DownloadJobStatus.IsActive
-        }.size
+        // Capture the job registry atomically: lifecycle callbacks may replace it
+        // while the scheduler is counting active transfers.
+        val jobs = synchronized(jobModificationLock) { downloadJobs }
+        return jobs.count { it.status.value is DownloadJobStatus.IsActive }
     }
 
     fun calculateOutputFile(downloadItem: IDownloadItem): File {
