@@ -47,8 +47,10 @@ PRs, aria2 engine switching, app releases, or financial data.
 
 - `f01-08-content-range`: validate HTTP Content-Range bounds, overflow and
   malformed responses (production code + desktop regression suite).
-- `f01-06-retry-after-strict`: strict Retry-After HTTP-date validation and
-  integer overflow safety (production code + desktop regression suite).
+- `f01-06-retry-after-strict`: **RETIRED — ALREADY IMPLEMENTED** in
+  main commit `f6c2bc6` with `RetryPolicyRobustnessTest.kt` and successful
+  Windows CI `42083837712`. The duplicate queue entry was removed before
+  any unnecessary Gemini invocation.
 
 Each has a fixed exact-path prompt under `docs/autodev/tasks/`. More work
 requires explicitly adding another reviewed task; it must never invent a

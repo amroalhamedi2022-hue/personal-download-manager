@@ -24,16 +24,6 @@ TASKS = (
             "downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/connection/response/headers/RangeHeaderExtractorTest.kt",
         ),
     },
-    {
-        "id": "f01-06-retry-after-strict",
-        "prompt": "docs/autodev/tasks/F01-06-retry-after-strict.md",
-        "marker": "fun retryAfterDateRejectsTrailingJunk()",
-        "marker_path": "downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/downloaditem/RetryPolicyStrictTest.kt",
-        "paths": (
-            "downloader/core/src/commonMain/kotlin/ir/amirab/downloader/downloaditem/RetryPolicy.kt",
-            "downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/downloaditem/RetryPolicyStrictTest.kt",
-        ),
-    },
 )
 
 # Windows .bat line endings can be normalized by Linux checkouts; never stage
