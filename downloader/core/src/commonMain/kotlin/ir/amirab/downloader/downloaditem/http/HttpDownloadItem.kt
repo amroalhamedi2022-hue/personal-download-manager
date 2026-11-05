@@ -36,6 +36,9 @@ data class HttpDownloadItem(
     override var speedLimit: Long = 0,//0 is unlimited
     var maxRetryCount: Int? = null,
     override var fileChecksum: String? = null,
+    // Durable guard for a retained partial when only a signed URL changed.
+    // Defaults false for every pre-existing persisted download record.
+    var requireStrongETagOnResume: Boolean = false,
 ) : IDownloadItem, IHttpDownloadCredentials {
     override fun copy(
         id: Option<Long>,
@@ -180,6 +183,7 @@ fun HttpDownloadItem.applyFrom(other: HttpDownloadItem) {
     maxRetryCount = other.maxRetryCount
 
     fileChecksum = other.fileChecksum
+    requireStrongETagOnResume = other.requireStrongETagOnResume
 }
 
 fun HttpDownloadItem.withHttpCredentials(credentials: IHttpDownloadCredentials) = apply {
