@@ -12,9 +12,12 @@ API, automatic merging, theme work, engine migrations, or release publishing.
   `docs/autodev/PILOT_TASK.md`: one HTTP 429 / HTTP-date Kotlin regression.
 - Only that test file may change. The runner refuses unknown, extra or
   unrelated modifications; the AI step does not receive a GitHub token.
-- A successful implementation run publishes a **draft PR** and explicitly
-  dispatches `private-windows-validation.yml` on the generated branch.
-  **The dispatch does not prove the Windows tests passed.**
+- A successful implementation run commits source on a new, isolated branch,
+  attempts to create a **draft PR**, then dispatches `private-windows-validation.yml`
+  on the exact branch. GitHub may deny PR creation to `GITHUB_TOKEN` despite
+  accepting the code push. In that case the branch and CI still exist, and a
+  human or the ChatGPT GitHub connector must create the PR. Never claim it
+  exists without a link. **Dispatch does not prove Windows acceptance.**
 - The 6-hour schedule is inert unless repository variable
   `HYPERGET_AUTODEV_ENABLED` is exactly `true`. Keep it disabled for
   the pilot. Repeated runs are blocked while a pilot PR is open, and the
