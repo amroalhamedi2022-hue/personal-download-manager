@@ -52,8 +52,7 @@ jobs:
     name: Generate one isolated test change (review required)
     if: >-
       (github.event_name == 'workflow_dispatch' && inputs.mode == 'implement' && github.ref == 'refs/heads/main') ||
-      (github.event_name == 'schedule' && vars.HYPERGET_AUTODEV_ENABLED == 'true') ||
-      (github.event_name == 'pull_request' && github.head_ref == 'experiment/opencode-once-20261105' && github.event.pull_request.head.repo.full_name == github.repository)
+      (github.event_name == 'schedule' && vars.HYPERGET_AUTODEV_ENABLED == 'true')
     needs: preflight
     runs-on: ubuntu-24.04
     timeout-minutes: 45
@@ -169,3 +168,33 @@ jobs:
           # Dispatch explicitly: PRs created by GITHUB_TOKEN can otherwise be approval-gated.
           gh workflow run private-windows-validation.yml --ref "$branch"
           echo "Draft PR created from $branch; Windows acceptance dispatched, not yet proven." >> "$GITHUB_STEP_SUMMARY"
+
+
+  dispatch-accepted-code-windows-ci:
+    name: Dispatch Windows CI for accepted Gemini-produced commit (one shot)
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.head_ref == 'experiment/opencode-once-20261105' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    needs: preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Verify exact Gemini code SHA and dispatch Windows acceptance
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch='autodev/pilot-41997933490'
+          expected='6e2b94d753fe84d2b63fa4729ddd2d50f8d3b542'
+          actual="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$branch" --jq '.object.sha')"
+          if [[ "$actual" != "$expected" ]]; then
+            echo "::error::Pilot commit moved; refusing to test a different SHA."
+            exit 1
+          fi
+          gh workflow run private-windows-validation.yml --ref "$branch"
+          echo "Dispatched full Windows acceptance for exact tested code SHA: $expected" >> "$GITHUB_STEP_SUMMARY"
