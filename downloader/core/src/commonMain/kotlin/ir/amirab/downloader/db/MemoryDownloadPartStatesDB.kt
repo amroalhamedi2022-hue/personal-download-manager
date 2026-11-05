@@ -2,22 +2,34 @@ package ir.amirab.downloader.db
 
 import ir.amirab.downloader.part.Parts
 
+/**
+ * In-memory part state is accessed by independent download workers and lifecycle
+ * commands. Guard the map as a single critical section so clear/remove/set do
+ * not race with reads during concurrent transfers.
+ */
 class MemoryDownloadPartStatesDB : IDownloadPartListDb {
+    private val lock = Any()
     private val list = mutableMapOf<Long, Parts>()
-    override suspend fun getParts(id: Long): Parts? {
-        return list[id]
+
+    override suspend fun getParts(id: Long): Parts? = synchronized(lock) {
+        list[id]
     }
 
     override suspend fun setParts(id: Long, parts: Parts) {
-        list[id] = parts.clone()
+        synchronized(lock) {
+            list[id] = parts.clone()
+        }
     }
 
     override suspend fun removeParts(id: Long) {
-        list.remove(id)
+        synchronized(lock) {
+            list.remove(id)
+        }
     }
 
     override suspend fun clear() {
-        list.clear()
+        synchronized(lock) {
+            list.clear()
+        }
     }
-
 }
