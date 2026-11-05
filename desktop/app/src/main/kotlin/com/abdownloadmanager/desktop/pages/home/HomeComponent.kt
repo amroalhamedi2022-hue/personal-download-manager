@@ -27,6 +27,7 @@ import com.abdownloadmanager.shared.pagemanager.FileChecksumDialogManager
 import com.abdownloadmanager.shared.pagemanager.NotificationSender
 import com.abdownloadmanager.shared.pagemanager.QueuePageManager
 import com.abdownloadmanager.shared.pages.home.BaseHomeComponent
+import com.abdownloadmanager.shared.pages.home.nextVisibleSearchResultId
 import com.abdownloadmanager.shared.pages.home.readDroppedLinkFiles
 import com.abdownloadmanager.shared.util.*
 import com.abdownloadmanager.shared.util.FileIconProvider
@@ -168,6 +169,22 @@ class HomeComponent(
     @Volatile var isHomeSearchFocused: Boolean = false
     fun focusHomeSearch() {
         requestSearchFocus.tryEmit(Unit)
+    }
+
+    /** F3 / Shift+F3 select the next/previous result and bring it into view. */
+    fun findAdjacentSearchResult(backwards: Boolean = false) {
+        if (filterState.textToSearch.isBlank()) {
+            focusHomeSearch()
+            return
+        }
+        val visibleIds = tableState.sortedList(downloadList.value).map { it.id }
+        val id = nextVisibleSearchResultId(
+            visibleIds = visibleIds,
+            selectedId = selectionList.value.lastOrNull(),
+            backwards = backwards,
+        ) ?: return
+        newSelection(listOf(id))
+        sendEffect(BaseHomeComponent.Effects.Common.ScrollToDownloadItem(id, skipIfVisible = true))
     }
 
     private val mainItem = MutableStateFlow<Long?>(null)
