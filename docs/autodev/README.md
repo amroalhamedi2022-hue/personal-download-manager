@@ -20,7 +20,7 @@ API, automatic merging, theme work, engine migrations, or release publishing.
   the pilot. Repeated runs are blocked while a pilot PR is open, and the
   already-implemented named test is a no-op (no AI credits).
 - The model is `google/gemini-3-flash-preview`, using
-  `GEMINI_API_KEY` from GitHub Actions Secrets. It can be free only
+  `DEFAULT_GEMINI_API_KEY` from GitHub Actions Secrets. It can be free only
   within the Gemini API free-tier quota for the user's project and region.
   Do not enable a billed API project for this experiment.
 
@@ -31,7 +31,8 @@ API, automatic merging, theme work, engine migrations, or release publishing.
 2. Obtain your own key at https://aistudio.google.com/api-keys from a
    free-tier eligible project. Never paste it into chat or any committed file.
 3. Repository Settings > Secrets and variables > Actions > New repository
-   secret: name `GEMINI_API_KEY`, value the key. No PAT is necessary.
+   secret: name `DEFAULT_GEMINI_API_KEY`, value the key. No PAT is necessary.
+   The workflow maps this secret to OpenCode's `GOOGLE_GENERATIVE_AI_API_KEY` environment variable.
 4. Actions > **HyperGet OpenCode unattended pilot** > Run workflow:
    select branch `main`, mode `dry-run`. Confirm the preflight is green.
 5. Run the workflow again with mode `implement`. Confirm **one draft PR**
