@@ -45,7 +45,10 @@ jobs:
       github.event_name == 'schedule' ||
       (github.event_name == 'workflow_dispatch' &&
        inputs.mode == 'implement' &&
-       github.ref == 'refs/heads/main')
+       github.ref == 'refs/heads/main') ||
+      (github.event_name == 'pull_request' &&
+       github.head_ref == 'experiment/autodev-real-once-20261105' &&
+       github.event.pull_request.head.repo.full_name == github.repository)
     needs: preflight
     runs-on: ubuntu-24.04
     timeout-minutes: 45
@@ -58,6 +61,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: main # Temporary one-shot PR must implement against reviewed main source
           persist-credentials: false
           fetch-depth: 1
 
