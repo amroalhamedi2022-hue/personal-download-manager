@@ -1,0 +1,143 @@
+name: HyperGet OpenCode unattended pilot
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/hyperget-autodev-pilot.yml"
+      - "docs/autodev/**"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "dry-run verifies setup; implement invokes Gemini and proposes a code PR"
+        type: choice
+        required: true
+        default: dry-run
+        options:
+          - dry-run
+          - implement
+  schedule:
+    - cron: "17 */6 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hyperget-autodev-pilot
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    name: Check autonomous development configuration (no AI credits)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check exact pilot task and Windows validation workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          task = Path("docs/autodev/PILOT_TASK.md").read_text(encoding="utf-8")
+          target = Path("downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/connection/HttpSingleAttemptRetryTest.kt")
+          windows = Path(".github/workflows/private-windows-validation.yml").read_text(encoding="utf-8")
+          assert target.is_file(), "Targeted Kotlin test file missing"
+          assert "rateLimited429WithHttpDateRetryAfterIsOneObservableAttempt" in task
+          assert "workflow_dispatch:" in windows, "Windows acceptance must support explicit dispatch"
+          assert "GEMINI_API_KEY" not in task, "Do not put secrets in an AI task prompt"
+          print("PASS: task, target file and Windows validation dispatch are present")
+          PY
+
+  implement:
+    name: Generate one isolated test change (review required)
+    if: >-
+      (github.event_name == 'workflow_dispatch' && inputs.mode == 'implement' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'schedule' && vars.HYPERGET_AUTODEV_ENABLED == 'true')
+    needs: preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    env:
+      TARGET_FILE: downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/connection/HttpSingleAttemptRetryTest.kt
+      MODEL: google/gemini-3-flash-preview
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Refuse duplicate or unconfigured runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "$GEMINI_API_KEY" ]]; then
+            echo "::error::GEMINI_API_KEY is missing; no AI invocation was attempted."
+            exit 1
+          fi
+          if gh pr list --base main --state open --json headRefName --jq '.[] | select(.headRefName | startswith("autodev/pilot-"))' | grep -q .; then
+            echo "::error::An autodev pilot PR is already open; review it before another run."
+            exit 1
+          fi
+          if grep -q 'fun rateLimited429WithHttpDateRetryAfterIsOneObservableAttempt' "$TARGET_FILE"; then
+            echo "::notice::Pilot regression test already exists; no duplicate or AI call."
+            echo "pilot_already_done=true" >> "$GITHUB_ENV"
+          fi
+
+      - name: Install pinned OpenCode CLI
+        if: env.pilot_already_done != 'true'
+        run: npm install --global @opencode/cli@2.2.4
+
+      - name: Make one bounded source change with Gemini
+        if: env.pilot_already_done != 'true'
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          timeout 24m opencode run --standalone --auto --model "$MODEL" "$(cat docs/autodev/PILOT_TASK.md)"
+
+      - name: Reject unrelated edits and whitespace errors
+        if: env.pilot_already_done != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os, subprocess
+          changed = set(subprocess.check_output(
+              ["git", "ls-files", "--modified", "--others", "--exclude-standard"], text=True
+          ).splitlines())
+          expected = {os.environ["TARGET_FILE"]}
+          if changed != expected:
+              raise SystemExit(f"REJECTED: expected only {expected}; found {changed}")
+          print("PASS: exactly one permitted Kotlin regression-test file changed")
+          PY
+          git diff --check
+          git diff --stat -- "$TARGET_FILE"
+
+      - name: Publish isolated draft PR and launch real Windows validation
+        if: env.pilot_already_done != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch="autodev/pilot-$GITHUB_RUN_ID"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git add -- "$TARGET_FILE"
+          git commit -m "test(http): cover 429 Retry-After HTTP-date without hidden retries"
+          # The AI step has no GitHub token. Supply it only after validating changed paths.
+          git remote set-url origin "https://x-access-token:$GH_TOKEN@github.com/$GITHUB_REPOSITORY.git"
+          git push origin "HEAD:refs/heads/$branch"
+          git remote set-url origin "https://github.com/$GITHUB_REPOSITORY.git"
+          gh pr create --draft --base main --head "$branch"             --title "test(http): Gemini/OpenCode pilot regression (Windows acceptance pending)"             --body "Unattended OpenCode pilot. Allowed scope: one HTTP regression test only. No production logic, themes, or installer modifications. Windows validation is dispatched for this exact branch; inspect its result and test report before merging. Generated by workflow run $GITHUB_RUN_ID. Manual review required."
+          # Dispatch explicitly: PRs created by GITHUB_TOKEN can otherwise be approval-gated.
+          gh workflow run private-windows-validation.yml --ref "$branch"
+          echo "Draft PR created from $branch; Windows acceptance dispatched, not yet proven." >> "$GITHUB_STEP_SUMMARY"
