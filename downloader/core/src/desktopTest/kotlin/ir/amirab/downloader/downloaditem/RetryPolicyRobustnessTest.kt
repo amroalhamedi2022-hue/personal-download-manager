@@ -74,6 +74,24 @@ class RetryPolicyRobustnessTest {
     }
 
     @Test
+    fun retryAfterRejectsControlCharactersButAllowsHttpOws() {
+        val now = Instant.parse("2015-10-21T07:27:00Z").toEpochMilli()
+        assertEquals(23_000L, calculateRetryDelayMillis(0, "\t 23 \t", now))
+        val invalid = listOf(
+            "23\r\nRetry-After: 900",
+            "23\n",
+            "23\r",
+            "23\u0000",
+            "23\u007f",
+            "\u200323",
+            "Wed, 21 Oct 2015 07:28:00 GMT\n",
+        )
+        invalid.forEach { header ->
+            assertEquals(3_000L, calculateRetryDelayMillis(0, header, now), "Invalid header: $header")
+        }
+    }
+
+    @Test
     fun cyclicExceptionCausesNeverHangRetryAfterInspection() {
         val first = IllegalStateException("first")
         val second = IllegalStateException("second")
