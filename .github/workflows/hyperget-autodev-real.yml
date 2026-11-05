@@ -45,7 +45,10 @@ jobs:
       github.event_name == 'schedule' ||
       (github.event_name == 'workflow_dispatch' &&
        inputs.mode == 'implement' &&
-       github.ref == 'refs/heads/main')
+       github.ref == 'refs/heads/main') ||
+      (github.event_name == 'pull_request' &&
+       github.head_ref == 'experiment/autodev-quota-recovery-20261105' &&
+       github.event.pull_request.head.repo.full_name == github.repository)
     needs: preflight
     runs-on: ubuntu-24.04
     timeout-minutes: 45
@@ -58,6 +61,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: autodev/real-f01-08-content-range # Recover the exact durable task lease
           persist-credentials: false
           fetch-depth: 1
 
@@ -69,10 +73,18 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 docs/autodev/task_runner.py select
+          python3 docs/autodev/task_runner.py verify
+          actual="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/autodev/real-f01-08-content-range" --jq .object.sha)"
+          expected='3b525cff1853750563eb2bb0e9e84fa86eaa46e2'
+          [[ "$actual" == "$expected" ]] || { echo "::error::Task lease moved"; exit 1; }
+          [[ "$(git rev-parse HEAD)" == "$expected" ]] || exit 1
+          echo "task=f01-08-content-range" >> "$GITHUB_OUTPUT"
+          echo "prompt=docs/autodev/tasks/F01-08-content-range.md" >> "$GITHUB_OUTPUT"
+          echo "paths=downloader/core/src/commonMain/kotlin/ir/amirab/downloader/connection/response/headers/RangeHeaderExtractor.kt downloader/core/src/desktopTest/kotlin/ir/amirab/downloader/connection/response/headers/RangeHeaderExtractorTest.kt" >> "$GITHUB_OUTPUT"
+          echo "One-time recovery of previously reserved branch, without creating another task" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Check free-tier key and reserve durable task branch
-        if: steps.pick.outputs.task != ''
+        if: steps.pick.outputs.task != '' && github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
           GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.DEFAULT_GEMINI_API_KEY }}
