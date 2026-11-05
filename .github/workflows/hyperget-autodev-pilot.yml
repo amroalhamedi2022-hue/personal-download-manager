@@ -15,8 +15,7 @@ on:
         options:
           - dry-run
           - implement
-  schedule:
-    - cron: "17 */6 * * *"
+  # Old pilot is manual-only; the bounded real-task workflow owns the schedule.
 
 permissions:
   contents: read
