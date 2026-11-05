@@ -99,7 +99,7 @@ jobs:
         if: steps.pick.outputs.task != ''
         run: npm install --global @opencode/cli@2.2.4
 
-      - name: Implement code and tests using Gemini
+      - name: Implement code and tests with bounded free-tier 429 recovery
         if: steps.pick.outputs.task != ''
         env:
           GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.DEFAULT_GEMINI_API_KEY }}
@@ -107,7 +107,42 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          timeout 24m opencode run --standalone --auto --model "$MODEL" "$(cat "$TASK_PROMPT")"
+          # Free-tier Gemini 3 Flash can allow only 5 generateContent requests
+          # per minute. A single coding agent can exceed that while reading
+          # files. Resume the same OpenCode session after a bounded wait;
+          # never begin another full session or spin indefinitely.
+          prompt="$(cat "$TASK_PROMPT")"
+          for attempt in 1 2 3 4; do
+            log="$RUNNER_TEMP/hyperget-opencode-attempt-$attempt.log"
+            set +e
+            if [[ "$attempt" == 1 ]]; then
+              timeout 15m opencode run --standalone --auto --model "$MODEL" "$prompt" 2>&1 | tee "$log"
+            else
+              timeout 15m opencode run --standalone --auto --continue --model "$MODEL" \
+                "Continue the SAME approved task from this session. Finish the two permitted code and test files. Do not change any other files. Do not re-read already inspected files unless necessary." 2>&1 | tee "$log"
+            fi
+            status=${PIPESTATUS[0]}
+            set -e
+            if [[ "$status" == 0 ]]; then
+              echo "OpenCode finished on attempt $attempt" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            if ! grep -Eq 'generate_content_free_tier_requests|generate_content_free_tier|rate.*limit|[Qq]uota exceeded|HTTP 429' "$log"; then
+              echo "::error::Non-quota OpenCode failure. No automatic retries."
+              exit "$status"
+            fi
+            if grep -Eiq 'per day|daily|requests per day|RPD' "$log"; then
+              echo "::error::Daily quota exceeded. Stopping without retries or billing."
+              exit 1
+            fi
+            if [[ "$attempt" == 4 ]]; then
+              echo "::error::Free-tier request quota still exceeded after 4 bounded attempts."
+              exit 1
+            fi
+            echo "::warning::Gemini per-minute quota reached. Resuming saved OpenCode session after cooldown."
+            sleep 80
+          done
+          exit 1
 
       - name: Reject unrelated files and test-only changes
         if: steps.pick.outputs.task != ''
