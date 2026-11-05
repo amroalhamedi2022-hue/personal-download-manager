@@ -38,6 +38,7 @@ import com.arkivanov.decompose.ComponentContext
 import ir.amirab.downloader.monitor.*
 import ir.amirab.downloader.queue.QueueManager
 import ir.amirab.util.flow.combineStateFlows
+import ir.amirab.util.flow.mapStateFlow
 import ir.amirab.util.flow.mapTwoWayStateFlow
 import ir.amirab.downloader.downloaditem.IDownloadCredentials
 import ir.amirab.util.AppVersionTracker
@@ -188,6 +189,13 @@ class HomeComponent(
     }
 
     private val mainItem = MutableStateFlow<Long?>(null)
+    private val completedDownloadIdsFlow = downloadSystem.downloadMonitor.completedDownloadListFlow
+        .mapStateFlow { downloads -> downloads.map { it.id } }
+    private val deleteCompletedAction = createDeleteCompletedDownloadsAction(
+        scope = scope,
+        completedDownloadIdsFlow = completedDownloadIdsFlow,
+        requestDelete = ::requestDelete,
+    )
 
 
     val menu: List<MenuItem.SubMenu> = buildMenu {
@@ -200,11 +208,16 @@ class HomeComponent(
 
         }
         subMenu(Res.string.tasks.asStringSource()) {
-//            +toggleQueueAction
+            +openQueuesAction
+            separator()
             +startQueueGroupAction
             +stopQueueGroupAction
             separator()
             +stopAllAction
+            +deleteCompletedAction
+            separator()
+            +useSpeedLimiterAction
+            +gotoSettingsAction
             separator()
             subMenu(
                 title = Res.string.delete.asStringSource(),
@@ -443,16 +456,16 @@ class HomeComponent(
     }
     val showLabels = appSettings.showIconLabels
     val headerActions = buildMenu {
+        +newDownloadAction
         separator()
         +downloadActions.resumeAction
         +downloadActions.pauseAction
+        +stopAllAction
+        +deleteCompletedAction
         separator()
         +startQueueGroupAction
         +stopQueueGroupAction
         +openQueuesAction
-        separator()
-        +stopAllAction
-        separator()
         +downloadActions.deleteAction
         separator()
         +gotoSettingsAction
