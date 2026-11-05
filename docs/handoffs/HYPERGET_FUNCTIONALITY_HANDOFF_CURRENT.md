@@ -56,6 +56,8 @@
   - `./gradlew --no-daemon --stacktrace :desktop:app:compileKotlin :desktop:app:test --tests com.abdownloadmanager.desktop.poweraction.PowerActionTest`
   - Failure: `Could not resolve com.android.tools.build:gradle:9.1.1` (`dl.google.com` DNS/host unavailable in sandbox).
 - Branch-only CI trigger adjustment added in this PR: `.github/workflows/private-windows-validation.yml` now includes push branch `feature/idm-power-actions-20261105` so exact-HEAD Windows validation can run for this PR branch without changing global acceptance policy.
+- Exact-HEAD Windows workflow evidence on this branch:
+  - [Private Windows validation #41987555451](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/41987555451) for head SHA `afe775b02047247d751f82ee99b61d6309732f9d` finished with `action_required` and zero started jobs (`failed_jobs: 0`, `total_jobs: 0`) — treat as **BLOCKED**, not PASS.
 - Remaining Windows acceptance gaps for PR #8:
-  1. Exact-HEAD `private-windows-validation.yml` run on branch SHA after latest push.
+  1. Re-run/approve exact-HEAD `private-windows-validation.yml` for latest branch SHA until jobs actually execute (current status is blocked `action_required`).
   2. Confirm `:desktop:app:compileKotlin`, `:desktop:app:test`, packaging, and installed safe-uninstall checks are green on Windows runner.
