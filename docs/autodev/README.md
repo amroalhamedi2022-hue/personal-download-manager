@@ -30,7 +30,11 @@ PRs, aria2 engine switching, app releases, or financial data.
    visible lease; subsequent schedules cannot silently re-bill the model.
 4. Run pinned OpenCode with `google/gemini-3-flash-preview`. No Copilot,
    Codex, Work or paid OpenAI API. The free Gemini quota is external, limited,
-   and must be verified on the user's AI Studio project.
+   and must be verified on the user's AI Studio project. Gemini 3 Flash's
+   free-tier per-minute budget may be only **5 generateContent calls**. If a
+   temporary 429 occurs, the runner waits 80 seconds and resumes the same
+   OpenCode session using `--continue` (at most four tries total). Daily
+   quota or non-quota errors stop immediately; never enable billing.
 5. Demand exactly the approved **production Kotlin file and regression-test
    file**. Reject any extra source changes; tolerate EOL-only differences in
    two legacy Windows .bat scripts without committing them. The selected
