@@ -32,8 +32,10 @@ class HostLimitRegistry {
         val normalizedPattern = normalizeHost(host)
         synchronized(rulesLock) {
             rules = rules + (normalizedPattern to limits)
+            // Publish the rule and apply it to every cached host atomically.
+            // Otherwise an older concurrent configure can overwrite a newer cap.
+            reconfigureEntries()
         }
-        reconfigureEntries()
     }
 
     fun replaceLimits(limitsByHostPattern: Map<String, HostLimits>) {
@@ -42,8 +44,8 @@ class HostLimitRegistry {
         }
         synchronized(rulesLock) {
             rules = normalizedRules
+            reconfigureEntries()
         }
-        reconfigureEntries()
     }
 
     fun speedLimiterForHost(host: String): SpeedLimiter = entryForHost(host).speedLimiter
@@ -69,9 +71,16 @@ class HostLimitRegistry {
 
     private fun entryForHost(host: String): HostLimitEntry {
         val normalizedHost = normalizeHost(host)
-        return entries.computeIfAbsent(normalizedHost) {
-            HostLimitEntry().also { entry ->
-                entry.configure(resolveLimits(normalizedHost))
+        // Fast path for existing entries; a live reconfiguration updates their
+        // gates in-place without requiring the registry lock on every acquire.
+        entries[normalizedHost]?.let { return it }
+        return synchronized(rulesLock) {
+            // Prevent a first-time host entry from being created with an old rule
+            // between a rule update and its reconfiguration pass.
+            entries.computeIfAbsent(normalizedHost) {
+                HostLimitEntry().also { entry ->
+                    entry.configure(resolveLimits(normalizedHost))
+                }
             }
         }
     }
