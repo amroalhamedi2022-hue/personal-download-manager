@@ -43,3 +43,19 @@
 - PR #6 test-only adds HTTP 429 one-attempt / Retry-After header regression: verified Windows [41976256808](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/41976256808), [41977309984](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/41977309984), and most-recent combined F3+Batch+429 [41978082441](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/41978082441) **SUCCESS** at SHA `6244ac6665fb5c627f6c053d9f4045bebf057ed1`. Later CI trigger and docs-only commits leave tested Kotlin untouched.
 - PR #3 still separate Draft and **not safe** to bulk merge (16-active memory benchmark failure). PR #4 visuals-only untouched. Next functional priorities: F01-02 performance failure root cause, IDM menu/queue/scheduler parity, then collector/archives/media and final 1k/10k Windows stress.
 - Check fresh main/PR/CI before merge. Do not claim 100% complete or change any Liquid Glass/icons/theme.
+
+## 2026-11-05 — PR #8 Windows-first power actions follow-up (exact SHA evidence)
+- Branch synced with latest `main` via merge commit `4f0c5da` before additional PR #8 changes to avoid overwriting parallel merged work (PR #6 + PR #7).
+- Windows-only source/test fix commit: `44575b4e271f9099f95f8ccfd799e50231b68e88`.
+  - Windows Hibernate corrected to native `shutdown /h` (no invalid `/t 0`).
+  - Windows Sleep now requests suspend through `SetSuspendState(hibernate=false)` via injectable command execution; note: Windows policy/hardware prerequisites must allow suspend and can still block sleep.
+  - Shutdown action keeps force behavior (`/f` only when requested).
+  - Linux/macOS Hibernate/Sleep changes from this PR were reverted to baseline behavior (kept unchanged).
+  - Deterministic tests are Windows-command mapping only; CI tests never execute real sleep/hibernate/shutdown.
+- Local desktop validation command attempted and **BLOCKED** by sandbox dependency resolution:
+  - `./gradlew --no-daemon --stacktrace :desktop:app:compileKotlin :desktop:app:test --tests com.abdownloadmanager.desktop.poweraction.PowerActionTest`
+  - Failure: `Could not resolve com.android.tools.build:gradle:9.1.1` (`dl.google.com` DNS/host unavailable in sandbox).
+- Branch-only CI trigger adjustment added in this PR: `.github/workflows/private-windows-validation.yml` now includes push branch `feature/idm-power-actions-20261105` so exact-HEAD Windows validation can run for this PR branch without changing global acceptance policy.
+- Remaining Windows acceptance gaps for PR #8:
+  1. Exact-HEAD `private-windows-validation.yml` run on branch SHA after latest push.
+  2. Confirm `:desktop:app:compileKotlin`, `:desktop:app:test`, packaging, and installed safe-uninstall checks are green on Windows runner.
