@@ -28,3 +28,9 @@
 - Acceptance **pending**: run shared desktop tests/Kotlin Windows compile and real installed GUI F3/Shift+F3; no release or main merge yet. Follow F03-04 in the master plan.
 - Highest risk on the main functional roadmap remains the documented 16-active benchmark regression; do not widen 15% threshold or misreport failed runs. Next priority: benchmark root-cause review, PR3 selective integration and toolbar/menus/shortcuts acceptance from 26-image functional audit.
 - New separate hourly automation has been created for actual functional work, checking latest HEAD/PRs/CI first and avoiding visual changes.
+
+## 2026-11-05 — Desktop power actions (implementation ready; CI pending)
+- Branch `feature/idm-power-actions-20261105` adds native Hibernate and Sleep execution to the existing post-download power-action path on Windows, Linux, and macOS; Windows forced shutdown now includes `/f`. No theme or Liquid Glass files changed.
+- Added injectable command execution and three focused tests covering command selection, force propagation, Linux D-Bus/systemctl fallback, and macOS commands.
+- Local Gradle test was blocked before compilation because `com.android.tools.build:gradle:9.1.1` was unavailable from `dl.google.com` and not cached; `git diff --check` passes. Windows CI remains the acceptance authority.
+- F04-09/F06-05 remain open overall until exact-head Windows compile/tests and safe installed completion-action acceptance; do not merge automatically.
