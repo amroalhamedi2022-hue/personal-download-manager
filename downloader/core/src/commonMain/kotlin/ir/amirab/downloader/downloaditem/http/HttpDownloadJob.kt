@@ -40,50 +40,16 @@ internal fun validateRemoteFileIdentity(
     if (actualLength != expectedLength) {
         throw FileChangedException.LengthChangedException(expectedLength, actualLength ?: -1)
     }
-    if (expectedETag != null && actualETag != null && expectedETag != actualETag) {
-        throw FileChangedException.ETagChangedException(expectedETag, actualETag)
+    if (expectedETag != null &&
+        (actualETag != null && expectedETag != actualETag ||
+            isStrongHttpETag(expectedETag) && actualETag == null)
+    ) {
+        // A missing validator must not silently approve previously staged bytes.
+        // Weak ETags keep the legacy compatibility behaviour when absent.
+        throw FileChangedException.ETagChangedException(expectedETag, actualETag ?: "<missing>")
     }
 }
 
-internal fun sameHttpResourceLocation(firstUrl: String, secondUrl: String): Boolean {
-    // Signed URLs commonly rotate credentials, but arbitrary query values can
-    // select a *different file* behind the same path. Never reuse a partial
-    // download when an identity-bearing query parameter changed.
-    fun isEphemeralCredentialParameter(name: String): Boolean {
-        val key = name.lowercase(java.util.Locale.ROOT)
-        return key.startsWith("x-amz-") || key.startsWith("x-goog-") ||
-            key in setOf(
-                "token", "access_token", "signature", "sig", "expires",
-                "expiry", "expiration", "policy", "key-pair-id", "googleaccessid",
-            )
-    }
-
-    fun resourceIdentity(url: String): Pair<String, List<String>> {
-        val withoutFragment = url.substringBefore('#')
-        val withoutQuery = withoutFragment.substringBefore('?')
-        val schemeSeparator = withoutQuery.indexOf("://")
-        val location = if (schemeSeparator < 0) {
-            withoutQuery
-        } else {
-            val scheme = withoutQuery.substring(0, schemeSeparator).lowercase(java.util.Locale.ROOT)
-            val authorityAndPath = withoutQuery.substring(schemeSeparator + 3)
-            val pathStart = authorityAndPath.indexOf('/')
-            val authority = if (pathStart < 0) authorityAndPath else authorityAndPath.substring(0, pathStart)
-            val path = if (pathStart < 0) "" else authorityAndPath.substring(pathStart)
-            "$scheme://${authority.lowercase(java.util.Locale.ROOT)}$path"
-        }
-        val persistentQuery = withoutFragment.substringAfter('?', "")
-            .split('&')
-            .filter { parameter ->
-                parameter.isNotEmpty() &&
-                    !isEphemeralCredentialParameter(parameter.substringBefore('='))
-            }
-            .sorted()
-        return location to persistentQuery
-    }
-
-    return resourceIdentity(firstUrl) == resourceIdentity(secondUrl)
-}
 internal suspend fun persistProgressAfterFlush(
     flushDestination: () -> Unit,
     persistSnapshot: suspend () -> Unit,
@@ -346,7 +312,12 @@ class HttpDownloadJob(
         val shouldUpdateDestination = previousDestination != newDestination
         val linkChanged = previousItem.link != newItem.link
         val resourceLocationChanged = linkChanged &&
-            !sameHttpResourceLocation(previousItem.link, newItem.link)
+            !canReuseHttpPartialAfterLinkChange(
+                previousUrl = previousItem.link,
+                nextUrl = newItem.link,
+                savedETag = previousItem.serverETag,
+                savedContentLength = previousItem.contentLength,
+            )
         val wasActive = isDownloadActive.value ||
             activeDownloadScope?.isActive == true ||
             getPartDownloaderList().any { it.active }
