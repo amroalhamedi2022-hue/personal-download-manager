@@ -45,10 +45,7 @@ jobs:
       github.event_name == 'schedule' ||
       (github.event_name == 'workflow_dispatch' &&
        inputs.mode == 'implement' &&
-       github.ref == 'refs/heads/main') ||
-      (github.event_name == 'pull_request' &&
-       github.head_ref == 'experiment/autodev-quota-recovery-20261105' &&
-       github.event.pull_request.head.repo.full_name == github.repository)
+       github.ref == 'refs/heads/main')
     needs: preflight
     runs-on: ubuntu-24.04
     timeout-minutes: 45
@@ -196,3 +193,31 @@ jobs:
           fi
           gh workflow run private-windows-validation.yml --ref "$branch"
           echo "Windows CI dispatched, NOT YET PASSED; check exact SHA $code_sha" >> "$GITHUB_STEP_SUMMARY"
+
+  dispatch-content-range-windows-ci:
+    name: Dispatch real Windows acceptance for Content-Range fix
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.head_ref == 'experiment/autodev-quota-recovery-20261105' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    needs: preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Dispatch only for exact manually completed code SHA
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch='autodev/real-f01-08-content-range'
+          expected='84e21f9997ee856c1dbba8daa309f6a49e06d58e'
+          actual="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$branch" --jq .object.sha)"
+          [[ "$actual" == "$expected" ]] || { echo "::error::Code branch moved; refusing dispatch"; exit 1; }
+          gh workflow run private-windows-validation.yml --ref "$branch"
+          echo "Dispatched full Windows JUnit/EXE/NSIS validation on exact SHA $expected; not yet PASS" >> "$GITHUB_STEP_SUMMARY"
