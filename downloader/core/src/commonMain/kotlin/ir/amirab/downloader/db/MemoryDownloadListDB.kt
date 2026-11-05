@@ -38,7 +38,9 @@ class MemoryDownloadListDB : IDownloadListDb {
         val index = list.indexOfFirst {
             it.id == itemId
         }
-        list.removeAt(index)
+        if (index >= 0) {
+            list.removeAt(index)
+        }
     }
 
     override suspend fun getLastId(): Long {
