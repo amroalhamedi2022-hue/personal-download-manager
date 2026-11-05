@@ -10,7 +10,7 @@ data class ContentRangeValue(
 /**
  * Parse the HTTP Content-Range header without trusting malformed server bounds.
  *
- * Accept standard "bytes 0-9/10", "bytes */10" (416) and the legacy
+ * Accept standard "bytes 0-9/10", the 416 unsatisfied-range form, and legacy
  * "0-9/10" form used by some servers. Unknown total size ("*") remains
  * supported for satisfied byte ranges; it must never mask an invalid range.
  *
