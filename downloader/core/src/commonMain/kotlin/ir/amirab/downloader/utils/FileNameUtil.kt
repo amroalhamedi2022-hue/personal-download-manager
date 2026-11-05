@@ -10,9 +10,11 @@ object FileNameUtil {
      * make sure to validate name before using this function
      */
     fun getExtensionOrNull(filename: String): String? {
-        return filename
-            .substringAfterLast('.', "")
-            .takeIf { it.isNotEmpty() }
+        // A leading dot alone denotes a hidden file, not an extension.
+        // A trailing dot is likewise not a usable extension.
+        val lastDot = filename.lastIndexOf('.')
+        return filename.substring(lastDot + 1)
+            .takeIf { lastDot > 0 && it.isNotEmpty() }
     }
 
     fun numberedIfExists(filename: File): Flow<File> {
