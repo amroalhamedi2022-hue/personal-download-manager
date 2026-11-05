@@ -20,3 +20,18 @@
 3. بعد **كل جولة كبيرة** عدّل **هذا الملف نفسه** (SHA، المنجز، الاختبارات، المتبقي، التالي) وحدّث IDs الخطة بالدليل، ورفع نسخته إلى مكتبة ChatGPT `/HyperGet/HYPERGET_FUNCTIONALITY_HANDOFF_CURRENT.md`. لا تخلط الثيمات مع الوظائف.
 
 **رسالة الاستكمال:** «كمل وظائف HyperGet من أحدث `docs/handoffs/HYPERGET_FUNCTIONALITY_HANDOFF_CURRENT.md`، افحص HEAD وWindows Actions، نفّذ الناقص فقط وادمج الآمن في main، ثم حدّث الهند أوف والخطة والمكتبة». 
+
+## 2026-11-04 — Functional-only implementation checkpoint
+- Fresh `main` at this review: `eebc55752ee92364d9fca6f43362a91ef218665f` (test(ftp): harden installed Windows acceptance); old handoff reference `673b29d` is superseded.
+- PR #3 HEAD `ff0fd84be441557eb2e00dc0016259e65b369ac3` still open and unmerged. PR #4 HEAD `a5867fdc940fd197b290ee32815ce91e2712dd79` still Draft and untouched. Do not blindly merge either into main.
+- New isolated feature branch `feature/idm-find-next-f3-20261104` from main: `F3` / `Shift+F3` selects adjacent filtered result in actual sorted table order and scrolls the existing list. Production commits `4b67c4f`, `50f04f3`, `1a7033e`; Kotlin regression test commit `caf4416`.
+- Acceptance **pending**: run shared desktop tests/Kotlin Windows compile and real installed GUI F3/Shift+F3; no release or main merge yet. Follow F03-04 in the master plan.
+- Highest risk on the main functional roadmap remains the documented 16-active benchmark regression; do not widen 15% threshold or misreport failed runs. Next priority: benchmark root-cause review, PR3 selective integration and toolbar/menus/shortcuts acceptance from 26-image functional audit.
+- New separate hourly automation has been created for actual functional work, checking latest HEAD/PRs/CI first and avoiding visual changes.
+
+## 2026-11-05 — Functional-only batch acceptance and safe merge checkpoint
+- Current verified main before this candidate: `e7c51b403e4fcc0ea10c415082f3c9059cb13eff`, squash merge PR #5 (F3 / Shift+F3) after [41825085206](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/41825085206) SUCCESS. Main exact-merge Windows run [41976368859](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/41976368859) must be read separately.
+- Batch PR #7 feature commits `f2177cc`, `ac3af72`, `d97cc1d`: overflow-proof numeric ranges, bounded/final unique+URL validation, capped padding, removed sensitive URL debug println, 8 Kotlin tests. CI-only trigger `5b9c616` **Windows SUCCESS** [41976032690](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/41976032690), on exact tested SHA `5b9c61629e37649ccf79bb0e86b61e46d25cb4cd`.
+- `320b493` is workflow-only reconciliation to avoid conflict with main's PR5 CI change; docs-only follows; retain the exact tested code SHA separately. Full physical batch GUI user acceptance remains pending. Scope excluded theme/engine changes.
+- PR #6 HTTP 429 Windows run [41976256808](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/41976256808) started; check final result and reconcile its CI trigger before safe merge. PR #3 (FTP/Queue) still has failed 16-active memory benchmark; do not bulk merge. PR #4 is visuals only; untouched.
+- Next: require exact successful post-merge main Windows CI; complete branch conflict checks, merge only safe functionality-only changes, continue F01-02 memory and IDM command parity.
