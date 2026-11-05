@@ -8,24 +8,46 @@ class PowerActionWindows(
     override fun initiate(config: PowerActionConfig): Boolean {
         return when (config.type) {
             PowerActionConfig.Type.Shutdown -> shutdown(config.force)
-            PowerActionConfig.Type.Hibernate -> execute(shutdownCommand("/h", config.force))
-            PowerActionConfig.Type.Sleep -> execute(
-                arrayOf("rundll32.exe", "powrprof.dll,SetSuspendState", "0", "1", "0")
-            )
+            PowerActionConfig.Type.Hibernate -> hibernate()
+            PowerActionConfig.Type.Sleep -> sleep()
         }
     }
 
     private fun shutdown(force: Boolean): Boolean {
-        return execute(shutdownCommand("/s", force))
-    }
-
-    private fun shutdownCommand(mode: String, force: Boolean): Array<String> {
-        return buildList {
+        val command = buildList {
             add("shutdown")
-            add(mode)
+            add("/s")
             add("/t")
             add("0")
             if (force) add("/f")
         }.toTypedArray()
+        return execute(command)
+    }
+
+    private fun hibernate(): Boolean {
+        return execute(arrayOf("shutdown", "/h"))
+    }
+
+    /**
+     * Requests suspend (sleep) via SetSuspendState with hibernate=false.
+     * Windows power policy can still block sleep, and hybrid/power-management settings must permit suspend.
+     */
+    private fun sleep(): Boolean {
+        return execute(
+            arrayOf(
+                "powershell.exe",
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                WINDOWS_SLEEP_COMMAND,
+            )
+        )
+    }
+
+    private companion object {
+        const val WINDOWS_SLEEP_COMMAND =
+            "Add-Type -Name HyperGetSleepBridge -Namespace HyperGet -MemberDefinition '[System.Runtime.InteropServices.DllImport(\"powrprof.dll\", SetLastError=true)] public static extern bool SetSuspendState(bool hibernate, bool forceCritical, bool disableWakeEvent);'; if (-not [HyperGet.HyperGetSleepBridge]::SetSuspendState(`$false, `$false, `$false)) { exit 1 }"
     }
 }
