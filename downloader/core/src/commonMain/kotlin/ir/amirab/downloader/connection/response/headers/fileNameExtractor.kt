@@ -29,10 +29,12 @@ fun extractFileNameFromContentDisposition(contentDispositionValue: String): Stri
     return null
 }
 
-private val asciiFileNameRegex = """filename=(["']?)(?<fileName>.*?[^\\])\1(?:; ?|$)"""
+// Match complete disposition parameter names, not x-filename or other suffixes.
+private val asciiFileNameRegex = """(?:^|;\s*)filename\s*=\s*(["']?)(?<fileName>.*?[^\\])\1(?:\s*;|$)"""
     .toRegex(RegexOption.IGNORE_CASE)
 
-private val utf8FileNameRegex = """filename\*=UTF-8''(?<fileName>[^;\s]+)(?:; ?|$)"""
+// RFC 8187 permits an optional language tag: filename*=UTF-8'ar'%XX%YY.
+private val utf8FileNameRegex = """(?:^|;\s*)filename\*\s*=\s*UTF-8'[^']*'(?<fileName>[^;\s]+)(?:\s*;|$)"""
     .toRegex(RegexOption.IGNORE_CASE)
 
 /**
