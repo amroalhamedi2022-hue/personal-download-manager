@@ -19,7 +19,10 @@ fun splitToRange(size: Long, minPartSize: Long, maxPartCount: Long): List<LongRa
     val maxPartsRespectingMinimum = (size / minPartSize).coerceAtLeast(1)
     val actualPartCount = minOf(maxPartCount, maxPartsRespectingMinimum)
     val idealPartSize = size / actualPartCount
-    val ranges = mutableListOf<LongRange>()
+    // Reserve the common 16-connection case without repeated backing-array growth.
+    // Bound the reservation so untrusted part-count settings cannot request a huge
+    // contiguous allocation before any range has been generated.
+    val ranges = ArrayList<LongRange>(minOf(actualPartCount, 64L).toInt())
     var start = 0L
     var end = 0L
     for (i in 1..actualPartCount) {
