@@ -33,6 +33,8 @@ class HttpLimiterChainTest {
                 assertEquals(expected, received.readUtf8())
             }
         }.awaitAll()
+        // JUnit4 requires a void test method, not the List<Unit> from awaitAll().
+        Unit
     }
 
     @Test
