@@ -6,27 +6,33 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 
 class MemoryDownloadListDB : IDownloadListDb {
 
+    // The list is shared by UI/lifecycle commands and independent download workers.
+    // Guard duplicate detection and every structural mutation as one operation.
+    private val lock = Any()
     private val list: MutableList<IDownloadItem> = mutableListOf()
-    override suspend fun getAll(): List<IDownloadItem> {
-        return list.toList()
+
+    override suspend fun getAll(): List<IDownloadItem> = synchronized(lock) {
+        list.toList()
     }
 
-    override suspend fun getById(id: Long): IDownloadItem? {
-        return list.find { it.id == id }
+    override suspend fun getById(id: Long): IDownloadItem? = synchronized(lock) {
+        list.find { it.id == id }
     }
 
     override suspend fun add(item: IDownloadItem) {
-        require(list.all { it.id != item.id }) {
-            "duplicate download id"
+        synchronized(lock) {
+            require(list.all { it.id != item.id }) {
+                "duplicate download id"
+            }
+            list.add(item)
         }
-        list.add(item)
     }
 
     override suspend fun update(item: IDownloadItem) {
-        list.indexOfFirst {
-            it.id == item.id
-        }.takeIf { it != -1 }?.let { index ->
-            list.set(index, item)
+        synchronized(lock) {
+            list.indexOfFirst { it.id == item.id }
+                .takeIf { it != -1 }
+                ?.let { index -> list[index] = item }
         }
     }
 
@@ -35,18 +41,16 @@ class MemoryDownloadListDB : IDownloadListDb {
     }
 
     override suspend fun removeById(itemId: Long) {
-        val index = list.indexOfFirst {
-            it.id == itemId
-        }
-        if (index >= 0) {
-            list.removeAt(index)
+        synchronized(lock) {
+            val index = list.indexOfFirst { it.id == itemId }
+            if (index >= 0) {
+                list.removeAt(index)
+            }
         }
     }
 
-    override suspend fun getLastId(): Long {
-        return list.maxByOrNull {
-            it.id
-        }?.id ?: -1
+    override suspend fun getLastId(): Long = synchronized(lock) {
+        list.maxByOrNull { it.id }?.id ?: -1
     }
 
     private val flow = MutableSharedFlow<List<IDownloadItem>>(
