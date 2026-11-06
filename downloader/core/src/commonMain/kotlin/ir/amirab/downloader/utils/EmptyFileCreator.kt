@@ -59,16 +59,13 @@ class EmptyFileCreator(
 
                     currentLength < length -> {
                         if (canWeUseSparse) {
-                            if (!file.delete()) {
-                                throw IOException("can't delete file")
-                            }
-                            if (sparseFile.createSparseFile(file)) {
-                                onProgressUpdate(null)
-                                writeAtLast(file, length)
-                            } else {
-                                file.createNewFile()
-                                fillOutput(file, length, onProgressUpdate)
-                            }
+                            // A partially downloaded destination already contains
+                            // committed bytes. Never delete/recreate it just to
+                            // extend its length; that silently destroys resumable data.
+                            // The existing file may already be sparse, and setLength
+                            // preserves all previously written bytes.
+                            onProgressUpdate(null)
+                            RandomAccessFile(file, "rw").use { it.setLength(length) }
                         } else {
                             fillOutput(file, length, onProgressUpdate)
                         }
@@ -89,7 +86,11 @@ class EmptyFileCreator(
                     onProgressUpdate(null)
                     writeAtLast(file, length)
                 } else {
-                    file.createNewFile()
+                    if (!file.createNewFile()) {
+                        // A different writer created the destination after the
+                        // exists() check. Never append zeroes to its content.
+                        throw IOException("Destination appeared while preparing: ${file.absolutePath}")
+                    }
                     fillOutput(file, length, onProgressUpdate)
                 }
                 onProgressUpdate(100)
