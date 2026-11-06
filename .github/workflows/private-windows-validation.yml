@@ -1,10 +1,9 @@
 name: Private Windows validation
-# Temporary host wildcard matcher validation; remove after exact-SHA PASS.
 
 on:
   workflow_dispatch:
   push:
-    branches: [main, codex/p2-10-restart-persistence, fix/host-wildcard-linear-matcher-20261106]
+    branches: [main, codex/p2-10-restart-persistence]
     paths:
       - ".github/workflows/private-windows-validation.yml"
       - "build.gradle.kts"
