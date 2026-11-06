@@ -8,8 +8,22 @@ import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlin.test.assertNotSame
 
 class MemoryDownloadPartStatesDBConcurrencyTest {
+    @Test
+    fun readReturnsIndependentSnapshotRatherThanStoredPartObject() = runBlocking {
+        val db = MemoryDownloadPartStatesDB()
+        val original = RangedParts(emptyList())
+        db.setParts(42L, original)
+        val first = db.getParts(42L)
+        val second = db.getParts(42L)
+        assertEquals(original, first)
+        assertEquals(first, second)
+        assertNotSame(original, first)
+        assertNotSame(first, second)
+    }
+
     @Test
     fun concurrentSixteenWorkersKeepIndependentPartStates() = runBlocking {
         val db = MemoryDownloadPartStatesDB()
