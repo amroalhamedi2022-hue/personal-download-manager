@@ -36,7 +36,10 @@ data class RangedPart(
         }
 
     override val percent: Int?
-        get() = partLength?.let { calcPercent(howMuchProceed(), it) }
+        get() = partLength?.let { length ->
+            // A corrupted or stale cursor below the start can overflow subtraction.
+            if (current < from) 0 else calcPercent(howMuchProceed(), length)
+        }
 
     // The next byte index cannot be represented after Long.MAX_VALUE.
     // In particular, wrapping MAX_VALUE + 1 must never report completion.
