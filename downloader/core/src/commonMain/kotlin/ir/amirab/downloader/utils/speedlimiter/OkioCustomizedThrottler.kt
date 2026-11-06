@@ -132,6 +132,9 @@ class OkioCustomizedThrottler internal constructor(
     fun source(source: Source): Source {
         return object : ForwardingSource(source) {
             override fun read(sink: Buffer, byteCount: Long): Long {
+                // Okio permits zero-byte reads. Do not send those through take(),
+                // which correctly requires a strictly positive throttle grant.
+                if (byteCount == 0L) return super.read(sink, 0L)
                 try {
                     val toRead = take(byteCount)
                     return super.read(sink, toRead)
