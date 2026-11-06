@@ -67,7 +67,7 @@ class HttpPartDownloader(
             val limitedSource = chainSpeedLimiters(
                 connect.source,
                 speedLimiters,
-                hostLimitRegistry?.speedLimiterForUrl(credentials.link),
+                hostPermit?.speedLimiter,
             )
             val source = hostPermit?.releaseWhenClosed(limitedSource) ?: limitedSource
             return connect.copy(source = source)
