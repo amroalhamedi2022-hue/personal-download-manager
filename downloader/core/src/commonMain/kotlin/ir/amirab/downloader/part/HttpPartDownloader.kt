@@ -64,15 +64,12 @@ class HttpPartDownloader(
                     }
                 }
                 .getOrThrow()
-            val limiters = buildList {
-                addAll(speedLimiters)
-                hostLimitRegistry?.speedLimiterForUrl(credentials.link)?.let(::add)
-            }
-            val source = limiters.fold<SpeedLimiter, Source>(connect.source) { acc, speedLimiter ->
-                speedLimiter.source(acc)
-            }.let { limitedSource ->
-                hostPermit?.releaseWhenClosed(limitedSource) ?: limitedSource
-            }
+            val limitedSource = chainSpeedLimiters(
+                connect.source,
+                speedLimiters,
+                hostLimitRegistry?.speedLimiterForUrl(credentials.link),
+            )
+            val source = hostPermit?.releaseWhenClosed(limitedSource) ?: limitedSource
             return connect.copy(source = source)
         } catch (failure: Throwable) {
             kotlin.runCatching { openedConnection?.close() }
@@ -167,4 +164,18 @@ class HttpPartDownloader(
         return partSplitSupport.splitPart()
     }
 
+}
+
+/**
+ * Preserve the existing outermost host limiter ordering, without allocating
+ * an intermediate per-connection list for every parallel HTTP range request.
+ */
+internal fun chainSpeedLimiters(
+    source: Source,
+    jobLimiters: List<SpeedLimiter>,
+    hostLimiter: SpeedLimiter?,
+): Source {
+    var limited = source
+    for (limiter in jobLimiters) limited = limiter.source(limited)
+    return hostLimiter?.source(limited) ?: limited
 }
