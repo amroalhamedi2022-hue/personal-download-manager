@@ -58,7 +58,11 @@ class MemoryDownloadListDB : IDownloadListDb {
     )
 
     suspend fun onDbUpdate() {
-        flow.tryEmit(getAll())
+        // Snapshot and publish under the same lock: a delayed publisher must not
+        // overwrite a newer notification with an older database snapshot.
+        synchronized(lock) {
+            flow.tryEmit(list.toList())
+        }
     }
 
     suspend fun allAsFlow() = flow
