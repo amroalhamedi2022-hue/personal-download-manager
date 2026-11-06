@@ -55,10 +55,18 @@ class MemoryDownloadListDB : IDownloadListDb {
 
     private val flow = MutableSharedFlow<List<IDownloadItem>>(
         replay = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST
-    )
+    ).also {
+        // A new subscriber should see the empty database immediately, without
+        // depending on an unrelated mutation to trigger the first notification.
+        it.tryEmit(emptyList())
+    }
 
     suspend fun onDbUpdate() {
-        flow.tryEmit(getAll())
+        // Snapshot and publish under the same lock: a delayed publisher must not
+        // overwrite a newer notification with an older database snapshot.
+        synchronized(lock) {
+            flow.tryEmit(list.toList())
+        }
     }
 
     suspend fun allAsFlow() = flow
