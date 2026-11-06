@@ -1,5 +1,9 @@
 package ir.amirab.downloader.db
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -21,4 +25,22 @@ class MemoryDownloadListDBTest {
         db.onDbUpdate()
         assertTrue(db.getAll().isEmpty())
     }
+    @Test
+    fun concurrentNotificationsPublishAConsistentSnapshot() = runBlocking {
+        val db = MemoryDownloadListDB()
+        (1..16).map {
+            async(Dispatchers.Default) {
+                db.onDbUpdate()
+            }
+        }.awaitAll()
+        assertEquals(db.getAll(), db.allAsFlow().first())
+    }
+
+    @Test
+    fun repeatedNotificationsKeepLatestReplayAvailable() = runBlocking {
+        val db = MemoryDownloadListDB()
+        repeat(32) { db.onDbUpdate() }
+        assertEquals(emptyList(), db.allAsFlow().first())
+    }
+
 }
