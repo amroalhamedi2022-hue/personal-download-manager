@@ -100,17 +100,29 @@ class HostLimitRegistry {
     }
 
     private fun resolveLimits(host: String): HostLimits {
-        return rules.entries
-            .asSequence()
-            .filter { (pattern, _) -> patternMatchesHost(pattern, host) }
-            .sortedWith(
-                compareBy<Map.Entry<String, HostLimits>> { (pattern, _) -> pattern.count { it == '*' } }
-                    .thenByDescending { (pattern, _) -> pattern.length }
-                    .thenBy { (pattern, _) -> pattern }
-            )
-            .firstOrNull()
-            ?.value
-            ?: HostLimits()
+        // Preserve the exact wildcard-count, longest-pattern, lexical tie
+        // ordering without allocating or sorting a list on every cached-host
+        // creation or live policy reconfiguration (including 16 active hosts).
+        val snapshot = rules
+        var bestPattern: String? = null
+        var bestLimit: HostLimits? = null
+        var bestWildcardCount = Int.MAX_VALUE
+        for ((pattern, limit) in snapshot) {
+            if (!patternMatchesHost(pattern, host)) continue
+            val wildcardCount = pattern.count { it == '*' }
+            val previous = bestPattern
+            if (previous == null ||
+                wildcardCount < bestWildcardCount ||
+                (wildcardCount == bestWildcardCount &&
+                    (pattern.length > previous.length ||
+                        (pattern.length == previous.length && pattern < previous)))
+            ) {
+                bestPattern = pattern
+                bestLimit = limit
+                bestWildcardCount = wildcardCount
+            }
+        }
+        return bestLimit ?: HostLimits()
     }
 
     private fun patternMatchesHost(pattern: String, host: String): Boolean {
