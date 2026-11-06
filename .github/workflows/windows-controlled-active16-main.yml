@@ -72,8 +72,11 @@ jobs:
             }
           }
           Write-Host 'PASS: all benchmark PowerShell scripts parse before any build.'
-          python harness/scripts/test_local_http_range_fixture.py -v
-          if ($LASTEXITCODE -ne 0) { throw 'Controlled benchmark source contracts failed before build.' }
+          Push-Location harness
+          try {
+            python -m unittest scripts/test_local_http_range_fixture.py -v
+            if ($LASTEXITCODE -ne 0) { throw 'HTTP Range fixture regressions failed before build.' }
+          } finally { Pop-Location }
           $out = 'harness/build/ci-release/controlled-comparison'
           New-Item -ItemType Directory -Path $out -Force | Out-Null
           "HYPERGET_COMPARISON_OUTPUT=$((Resolve-Path $out).Path)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
