@@ -114,11 +114,31 @@ class HostLimitRegistry {
     }
 
     private fun patternMatchesHost(pattern: String, host: String): Boolean {
-        val regex = pattern
-            .split("*")
-            .joinToString(".*") { Regex.escape(it) }
-            .toRegex(RegexOption.IGNORE_CASE)
-        return regex.matches(host)
+        // Match glob '*' without allocating and compiling a Regex for each
+        // active host. Greedy backtracking is linear for these simple globs.
+        var patternIndex = 0
+        var hostIndex = 0
+        var lastStar = -1
+        var afterStar = 0
+        while (hostIndex < host.length) {
+            when {
+                patternIndex < pattern.length && pattern[patternIndex] == '*' -> {
+                    lastStar = patternIndex++
+                    afterStar = hostIndex
+                }
+                patternIndex < pattern.length && pattern[patternIndex] == host[hostIndex] -> {
+                    patternIndex++
+                    hostIndex++
+                }
+                lastStar >= 0 -> {
+                    patternIndex = lastStar + 1
+                    hostIndex = ++afterStar
+                }
+                else -> return false
+            }
+        }
+        while (patternIndex < pattern.length && pattern[patternIndex] == '*') patternIndex++
+        return patternIndex == pattern.length
     }
 }
 
