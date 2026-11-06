@@ -1,4 +1,5 @@
 name: Private Windows validation
+# Temporary host wildcard matcher validation; remove after exact-SHA PASS.
 
 on:
   workflow_dispatch:
