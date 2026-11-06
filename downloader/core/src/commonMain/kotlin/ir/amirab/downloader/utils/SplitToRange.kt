@@ -31,7 +31,9 @@ fun splitToRange(size: Long, minPartSize: Long, maxPartCount: Long): List<LongRa
             end++
         }
         ranges.add(start..end)
-        start = end + 1
+        // The final range can end at Long.MAX_VALUE - 1; do not advance
+        // the cursor after the last part (or perform unnecessary arithmetic).
+        if (i < actualPartCount) start = end + 1
     }
     return ranges
 }
