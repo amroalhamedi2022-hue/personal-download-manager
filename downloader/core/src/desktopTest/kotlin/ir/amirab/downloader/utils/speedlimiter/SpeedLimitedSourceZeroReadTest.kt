@@ -21,9 +21,9 @@ class SpeedLimitedSourceZeroReadTest {
         val limiter = SpeedLimiter().apply { bytesPerSecond(10_000L) }
         val source = limiter.source(Buffer().writeUtf8("download"))
         val received = Buffer()
-        source.use {
-            repeat(16) { assertEquals(0L, it.read(received, 0L)) }
-            assertEquals(8L, it.read(received, 8L))
+        source.use { throttled ->
+            repeat(16) { assertEquals(0L, throttled.read(received, 0L)) }
+            assertEquals(8L, throttled.read(received, 8L))
         }
         assertEquals("download", received.readUtf8())
     }
