@@ -32,6 +32,9 @@ import ir.amirab.downloader.utils.hostlimits.HostLimitRegistry
 import ir.amirab.downloader.utils.hostlimits.HostLimits
 import java.io.File
 
+internal fun <T> countActiveJobs(items: List<T>, statusOf: (T) -> DownloadJobStatus): Int =
+    items.count { statusOf(it) is DownloadJobStatus.IsActive }
+
 internal fun shouldDeleteDownloadOutput(
     status: DownloadStatus,
     removeCompletedFile: Boolean,
@@ -420,9 +423,10 @@ class DownloadManager(
     }
 
     fun getActiveCount(): Int {
-        return downloadJobs.filter {
-            it.status.value is DownloadJobStatus.IsActive
-        }.size
+        // Capture the job registry atomically: lifecycle callbacks may replace it
+        // while the scheduler is counting active transfers.
+        val jobs = synchronized(jobModificationLock) { downloadJobs }
+        return countActiveJobs(jobs) { it.status.value }
     }
 
     fun calculateOutputFile(downloadItem: IDownloadItem): File {
