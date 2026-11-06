@@ -22,6 +22,24 @@ Validation performed by the shared Private Windows validation workflow (same tes
 ```
 Workflow additionally runs Windows NSIS installed safe-uninstall check and uploads package/proof artifacts. Branch-only CI workflow modifications were reverted to the baseline blob `0fd348e612abc1760662998f618887ae6e05070a` *after* each exact-code Windows success; no intervening source/test Kotlin changes.
 
-Open acceptance: **F01-02 is NOT closed**. Historical PR #3 16-active performance regression (Working Set +18.77%, Private Bytes +18.95%, threshold +15%) remains unproven fixed; require real 1/4/16 × 3 comparison and throughput/CPU/IO evidence. These unit regressions and Windows packaging runs are not a substitute. All manual installed GUI checks remain PENDING. New PR #40 ranged-part large-number progress regression requires separate exact-source Windows acceptance before merge; do not mark passed from this checkpoint.
+Open acceptance: **F01-02 is NOT closed**. Historical PR #3 16-active performance regression (Working Set +18.77%, Private Bytes +18.95%, threshold +15%) remains unproven fixed; require real 1/4/16 × 3 comparison and throughput/CPU/IO evidence. These unit regressions and Windows packaging runs are not a substitute. All manual installed GUI checks remain PENDING. Ranged-part and persistence regressions listed below have passed the exact-source Windows checks, but have not yet demonstrated the 16-active installed resource regression gate.
 
-Next: verify integrated main SHA on Windows; complete PR #40 Windows tests; isolate real PR #3 16-active benchmark bottleneck without bulk-merging the divergent FTP/queue tree. Never modify PR #4 visuals or Copilot-owned F03/F07/PR #8/Issue #11.
+Next: verify the latest integrated main SHA on Windows and examine PR #47 installed active transfer measurements and paired exact-baseline candidate comparison, without bulk-merging PR #3 FTP/queue. Never modify PR #4 visuals or Copilot-owned F03/F07/PR #8/Issue #11.
+
+
+## Additional Windows-tested functional completions
+
+| PR | Actual Kotlin change and tests | Exact tested source SHA | Windows CI evidence | Main squash SHA |
+| --- | --- | --- | --- | --- |
+| #40 | Ranged-part progress cannot round huge incomplete transfers up to 100% or mistake a wrapped Long end marker for completion; four Kotlin regressions | `d906bd7f36baa3739d87ae853a9b728f3a141516` | [42175129444](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/42175129444) completed/success | `1cd74be9fcbd05eeb8039dcd679cc85118e5bbb7` |
+| #41 | Serialize in-memory download registry structure and atomic duplicate admissions across 16 workers; three regressions | `1254dbd9db1182c9698a321eeaef8cdf6cd4811d` | [42175801078](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/42175801078) attempt 1 failed known unrelated queue concurrency test; **attempt 2 completed/success on same exact SHA** | `f772692ba3f38e33de30f1165abfc85b210d31ae` |
+| #44 | Per-ID part-state file lock preserves .tmp/.bak transaction safety while different downloads persist concurrently; three regressions | `f42cbf8ad5cacf51465938acb84fa89234c06cfc` | [42176565302](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/42176565302) completed/success | `168433e37996a95163ed9f2813469434bc0ce929` |
+
+The temporary Windows workflow triggers were subsequently removed with workflow-only commits; do **not** report these cleanup SHAs as Windows-tested Kotlin changes. Latest integrated main SHA should always be fetched fresh; no GUI manual acceptance follows from CI.
+
+## Real F01-02 installed performance evidence now in progress
+
+Draft [PR #47](https://github.com/amroalhamedi2022-hue/personal-download-manager/pull/47) isolates only the 1/4/16 Windows benchmark fixture/scripts from divergent PR #3 (no FTP/queue source or theme), adds Windows installer/CLI scenario execution, and strictly compares candidate versus exact baseline using the original 15% memory and throughput contract. 
+- Single candidate SHA-verified 63-transfer matrix: [42177900051](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/42177900051); result not yet certified at this checkpoint.
+- Exact installed paired baseline `d6ea54a885277cb5b8fd545eb3f3fb0e185b6aa5` vs candidate harness: [42178280134](https://github.com/amroalhamedi2022-hue/personal-download-manager/actions/runs/42178280134); result not yet certified at this checkpoint.
+- Mark **F01-02 OPEN** unless actual paired report passes 15% Working Set and Private Bytes and does not exceed the allowable throughput regression, with all 1/4/16×3 SHA-verified downloads and usable resource metrics. Preserve failure diagnostics. Manual Windows GUI inspection is PENDING.
