@@ -1,5 +1,7 @@
 package ir.amirab.downloader.part
 
+import ir.amirab.downloader.utils.calcPercent
+
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
@@ -33,16 +35,14 @@ data class RangedPart(
             (it - from) + 1
         }
 
-    override val percent
-        get() = run {
-            val partLength = partLength ?: return@run null
-            (howMuchProceed().toDouble() / partLength.toDouble()) * 100
-        }?.toInt()
+    override val percent: Int?
+        get() = partLength?.let { calcPercent(howMuchProceed(), it) }
 
-    //    because of end inclusive completed position will be $to + 1
+    // The next byte index cannot be represented after Long.MAX_VALUE.
+    // In particular, wrapping MAX_VALUE + 1 must never report completion.
     override val isCompleted: Boolean
-        get() = to?.let {
-            current == it + 1
+        get() = to?.let { end ->
+            end != Long.MAX_VALUE && current == end + 1
         } ?: false
 
     fun setBlindAsCompleted() {
