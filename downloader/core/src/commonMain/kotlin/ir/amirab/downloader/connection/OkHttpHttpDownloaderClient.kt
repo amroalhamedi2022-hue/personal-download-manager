@@ -111,12 +111,10 @@ class OkHttpHttpDownloaderClient(
         ) {
             ProxyStrategy.Direct -> return this
             ProxyStrategy.UseSystem -> {
-                newBuilder()
-                    .proxySelector(
-                        systemProxySelectorProvider.getSystemProxySelector()
-                            ?: ProxySelector.getDefault()
-                    )
-                    .build()
+                withSystemProxySelector(
+                    systemProxySelectorProvider.getSystemProxySelector()
+                        ?: ProxySelector.getDefault()
+                )
             }
 
             is ProxyStrategy.ByScript -> {
@@ -228,3 +226,14 @@ class OkHttpHttpDownloaderClient(
         )
     }
 }
+
+/**
+ * Reuse an OkHttp client when the effective system proxy selector has not
+ * changed. A new client per HTTP range request otherwise creates unnecessary
+ * builders and connection metadata for 16 active downloads.
+ *
+ * Selector identity (not equality) ensures live proxy configuration changes
+ * still get a rebuilt client and all inherited dispatcher/pool settings.
+ */
+internal fun OkHttpClient.withSystemProxySelector(selector: ProxySelector): OkHttpClient =
+    if (proxySelector === selector) this else newBuilder().proxySelector(selector).build()
