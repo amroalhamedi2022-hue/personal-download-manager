@@ -13,6 +13,14 @@ class NumUtilRegressionTest {
     }
 
     @Test
+    fun veryLargeIncompleteTransfersNeverReportComplete() {
+        assertEquals(99, calcPercent(Long.MAX_VALUE - 1L, Long.MAX_VALUE))
+        assertEquals(100, calcPercent(Long.MAX_VALUE, Long.MAX_VALUE))
+        assertEquals(0, calcPercent(0L, Long.MAX_VALUE))
+        assertEquals(99, calcPercent(999L, 1000L))
+    }
+
+    @Test
     fun percentagesStayWithinBounds() {
         assertEquals(0, calcPercent(-1L, 100L))
         assertEquals(100, calcPercent(101, 100))
