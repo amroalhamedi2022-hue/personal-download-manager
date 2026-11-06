@@ -22,10 +22,10 @@ object FileNameUtil {
             if (!filename.exists()) {
                 emit(filename)
             }
-            val ext = filename.extension
-                .takeIf { it.isNotEmpty() }
-                ?.let { ".$it" }.orEmpty()
-            val name = filename.nameWithoutExtension
+            // Hidden names such as ".env" have no extension; File.extension
+            // would incorrectly split them into an empty stem and "env".
+            val ext = getExtensionOrNull(filename.name)?.let { ".$it" }.orEmpty()
+            val name = filename.name.removeSuffix(ext)
             var counter = 1
             while (currentCoroutineContext().isActive) {
                 val newFile = filename.parentFile.resolve(
