@@ -45,4 +45,26 @@ class HlsTransferAndPlaylistSafetyTest {
         assertFalse(isHlsPlaylistContentType("text/plain"))
         assertFalse(isHlsPlaylistContentType(null))
     }
+    @Test fun playlistReaderPreservesUnicodeSegmentNames() {
+        val content = "#EXTM3U\\n#EXTINF:6,\\nمقطع-١.ts\\n"
+        assertEquals(
+            content,
+            readBoundedHlsPlaylist(ByteArrayInputStream(content.toByteArray(Charsets.UTF_8))),
+        )
+    }
+
+    @Test fun playlistReaderRejectsMalformedUtf8InsteadOfReplacingUriBytes() {
+        val malformed = byteArrayOf(35, 69, 88, 84, 77, 51, 85, 10, 0xC3.toByte(), 0x28)
+        assertFailsWith<IOException> {
+            readBoundedHlsPlaylist(ByteArrayInputStream(malformed))
+        }
+    }
+
+    @Test fun playlistReaderRejectsTruncatedUtf8AtEndOfBody() {
+        val truncated = byteArrayOf(35, 69, 88, 84, 77, 51, 85, 10, 0xE2.toByte(), 0x82.toByte())
+        assertFailsWith<IOException> {
+            readBoundedHlsPlaylist(ByteArrayInputStream(truncated))
+        }
+    }
+
 }
