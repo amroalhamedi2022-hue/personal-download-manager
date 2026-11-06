@@ -26,6 +26,18 @@ class SplitToRangeAllocationTest {
     }
 
     @Test
+    fun maximumLongSizeProducesContiguousSixteenPartsWithoutOverflow() {
+        val parts = splitToRange(Long.MAX_VALUE, 1L, 16L)
+        assertEquals(16, parts.size)
+        assertEquals(0L, parts.first().first)
+        assertEquals(Long.MAX_VALUE - 1, parts.last().last)
+        parts.zipWithNext().forEach { (left, right) ->
+            assertEquals(left.last + 1, right.first)
+        }
+        assertTrue(parts.all { it.first <= it.last })
+    }
+
+    @Test
     fun smallerThanMinimumStaysSinglePart() {
         assertEquals(listOf(0L..6L), splitToRange(7, 512, 16))
     }
