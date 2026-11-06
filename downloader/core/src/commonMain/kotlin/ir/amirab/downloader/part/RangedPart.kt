@@ -6,6 +6,14 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 
+// Inclusive ranges can span Long.MAX_VALUE + 1 bytes (0..Long.MAX_VALUE),
+// which is not representable as a Long. Saturate instead of wrapping negative.
+internal fun boundedInclusiveLength(start: Long, end: Long): Long {
+    if (start < 0L || end < start) return 0L
+    val span = end - start
+    return if (span == Long.MAX_VALUE) Long.MAX_VALUE else span + 1L
+}
+
 @Serializable
 data class RangedPart(
     var from: Long,
@@ -27,18 +35,19 @@ data class RangedPart(
     override val statusFlow = MutableStateFlow<PartDownloadStatus>(PartDownloadStatus.IDLE)
 
     val remainingLength
-        get() = to?.let {
-            (it - current) + 1
-        }
+        get() = to?.let { boundedInclusiveLength(current, it) }
     val partLength
-        get() = to?.let {
-            (it - from) + 1
-        }
+        get() = to?.let { boundedInclusiveLength(from, it) }
 
     override val percent: Int?
         get() = partLength?.let { length ->
             // A corrupted or stale cursor below the start can overflow subtraction.
-            if (current < from) 0 else calcPercent(howMuchProceed(), length)
+            if (current < from) 0 else {
+                val percent = calcPercent(howMuchProceed(), length)
+                // Saturating an unrepresentably long range must not imply
+                // the last byte has been transferred.
+                if (!isCompleted && percent == 100) 99 else percent
+            }
         }
 
     // The next byte index cannot be represented after Long.MAX_VALUE.
