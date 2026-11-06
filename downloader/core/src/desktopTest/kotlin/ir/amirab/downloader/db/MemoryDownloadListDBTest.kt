@@ -1,10 +1,12 @@
 package ir.amirab.downloader.db
 
+import ir.amirab.downloader.downloaditem.http.HttpDownloadItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -41,6 +43,30 @@ class MemoryDownloadListDBTest {
         val db = MemoryDownloadListDB()
         repeat(32) { db.onDbUpdate() }
         assertEquals(emptyList(), db.allAsFlow().first())
+    }
+
+    @Test
+    fun newSubscribersReceiveInitialEmptySnapshotWithoutWaitingForMutation() = runBlocking {
+        val db = MemoryDownloadListDB()
+        val snapshot = withTimeout(2_000) { db.allAsFlow().first() }
+        assertTrue(snapshot.isEmpty())
+    }
+
+    @Test
+    fun parallelMutationsAndNotificationsCannotLeaveStaleReplay() = runBlocking {
+        val db = MemoryDownloadListDB()
+        (1L..16L).map { id ->
+            async(Dispatchers.Default) {
+                db.add(HttpDownloadItem(
+                    link = "https://example.test/$id",
+                    id = id,
+                    folder = ".",
+                    name = "$id.bin",
+                ))
+                db.onDbUpdate()
+            }
+        }.awaitAll()
+        assertEquals((1L..16L).toList(), db.allAsFlow().first().map { it.id }.sorted())
     }
 
 }
