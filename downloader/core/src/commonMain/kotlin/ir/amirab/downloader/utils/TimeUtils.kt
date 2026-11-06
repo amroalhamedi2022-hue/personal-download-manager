@@ -11,7 +11,7 @@ object TimeUtils {
     // SimpleDateFormat accepts impossible calendar dates and trailing text,
     // which can undermine Last-Modified based resume identity checks.
     private val imfFixdate = Regex(
-        """(Mon|Tue|Wed|Thu|Fri|Sat|Sun), \\d{2} (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \\d{4} \\d{2}:\\d{2}:\\d{2} GMT"""
+        """(Mon|Tue|Wed|Thu|Fri|Sat|Sun), \d{2} (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{4} \d{2}:\d{2}:\d{2} GMT"""
     )
     private val strictHttpDate = DateTimeFormatter
         .ofPattern("EEE, dd MMM uuuu HH:mm:ss 'GMT'", Locale.US)
