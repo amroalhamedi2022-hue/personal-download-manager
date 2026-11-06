@@ -53,7 +53,7 @@ class HostLimitRegistry {
     fun speedLimiterForUrl(url: String): SpeedLimiter? = hostFromUrl(url)?.let(::speedLimiterForHost)
 
     suspend fun acquireForHost(host: String): HostConnectionPermit =
-        entryForHost(host).connectionGate.acquire()
+        entryForHost(host).let { it.connectionGate.acquire(it.speedLimiter) }
 
     suspend fun acquireForUrl(url: String): HostConnectionPermit? =
         hostFromUrl(url)?.let { acquireForHost(it) }
@@ -156,6 +156,9 @@ class HostLimitRegistry {
 
 class HostConnectionPermit internal constructor(
     private val release: () -> Unit,
+    // The permit already resolved the effective host: expose its existing
+    // limiter so HTTP parts do not parse and look up the URL a second time.
+    internal val speedLimiter: SpeedLimiter,
 ) : Closeable {
     private val released = AtomicBoolean(false)
 
@@ -206,7 +209,7 @@ private class HostConnectionGate {
         }
     }
 
-    suspend fun acquire(): HostConnectionPermit {
+    suspend fun acquire(speedLimiter: SpeedLimiter): HostConnectionPermit {
         while (true) {
             val observedRevision = state.value.revision
             val acquired = synchronized(lock) {
@@ -222,7 +225,7 @@ private class HostConnectionGate {
                 }
             }
             if (acquired) {
-                return HostConnectionPermit(::release)
+                return HostConnectionPermit(::release, speedLimiter)
             }
             state.first { it.revision != observedRevision }
         }
