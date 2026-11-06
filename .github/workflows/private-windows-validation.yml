@@ -3,7 +3,7 @@ name: Private Windows validation
 on:
   workflow_dispatch:
   push:
-    branches: [main, codex/p2-10-restart-persistence, fix/per-id-part-file-storage-20261106]
+    branches: [main, codex/p2-10-restart-persistence]
     paths:
       - ".github/workflows/private-windows-validation.yml"
       - "build.gradle.kts"
