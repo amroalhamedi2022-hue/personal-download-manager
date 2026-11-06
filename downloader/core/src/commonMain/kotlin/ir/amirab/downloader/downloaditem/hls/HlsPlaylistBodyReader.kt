@@ -3,6 +3,9 @@ package ir.amirab.downloader.downloaditem.hls
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.io.InputStream
+import java.nio.ByteBuffer
+import java.nio.charset.CharacterCodingException
+import java.nio.charset.CodingErrorAction
 
 /** Hard cap applies to actual bytes received, not just Content-Length. */
 internal const val MAX_HLS_PLAYLIST_BYTES: Int = 2 * 1024 * 1024
@@ -35,5 +38,16 @@ internal fun readBoundedHlsPlaylist(
         output.write(chunk, 0, read)
         total += read
     }
-    return output.toString(Charsets.UTF_8.name())
+    // HLS playlists are UTF-8. The default String decoder silently inserts
+    // replacement characters for malformed bytes, potentially changing a
+    // signed segment URI and corrupting persisted segment identity.
+    return try {
+        Charsets.UTF_8.newDecoder()
+            .onMalformedInput(CodingErrorAction.REPORT)
+            .onUnmappableCharacter(CodingErrorAction.REPORT)
+            .decode(ByteBuffer.wrap(output.toByteArray()))
+            .toString()
+    } catch (failure: CharacterCodingException) {
+        throw IOException("Invalid UTF-8 in HLS playlist", failure)
+    }
 }
