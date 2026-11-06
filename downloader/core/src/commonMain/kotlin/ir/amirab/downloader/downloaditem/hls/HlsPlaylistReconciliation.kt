@@ -19,8 +19,21 @@ internal fun reconcileHlsSegments(
     previous: List<HlsSegmentSnapshot>,
     incoming: List<HlsSegmentSnapshot>,
 ): List<HlsSegmentSnapshot> {
-    val previousBySequence = previous.associateBy { it.sequence }
+    // Repeated sequence IDs cannot identify a unique on-disk segment. Never
+    // reuse bytes from an ambiguous persisted sequence after a playlist refresh.
+    val previousBySequence = HashMap<Long, HlsSegmentSnapshot?>()
+    for (saved in previous) {
+        if (previousBySequence.containsKey(saved.sequence)) {
+            previousBySequence[saved.sequence] = null
+        } else {
+            previousBySequence[saved.sequence] = saved
+        }
+    }
+    val incomingSequences = HashSet<Long>(incoming.size)
     return incoming.map { fresh ->
+        require(incomingSequences.add(fresh.sequence)) {
+            "HLS playlist repeats media sequence ${fresh.sequence}"
+        }
         val old = previousBySequence[fresh.sequence]
         if (old != null && old.uri == fresh.uri && old.duration == fresh.duration) {
             fresh.copy(completed = old.completed, length = old.length, current = old.current)
