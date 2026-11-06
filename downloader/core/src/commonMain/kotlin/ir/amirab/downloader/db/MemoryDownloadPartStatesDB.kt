@@ -12,7 +12,8 @@ class MemoryDownloadPartStatesDB : IDownloadPartListDb {
     private val list = mutableMapOf<Long, Parts>()
 
     override suspend fun getParts(id: Long): Parts? = synchronized(lock) {
-        list[id]
+        // Never expose the stored Parts instance to callers that may mutate it.
+        list[id]?.clone()
     }
 
     override suspend fun setParts(id: Long, parts: Parts) {
