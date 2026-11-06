@@ -28,9 +28,11 @@ object FileNameUtil {
             val name = filename.name.removeSuffix(ext)
             var counter = 1
             while (currentCoroutineContext().isActive) {
-                val newFile = filename.parentFile.resolve(
-                    "${name}_${counter}${ext}"
-                )
+                val candidateName = "${name}_${counter}${ext}"
+                // File("report.zip") has no parentFile. Relative paths are
+                // valid inputs and must not fail before the first collision.
+                val newFile = filename.parentFile?.resolve(candidateName)
+                    ?: File(candidateName)
                 if (!newFile.exists()) {
                     emit(newFile)
                 }

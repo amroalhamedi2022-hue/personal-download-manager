@@ -3,6 +3,7 @@ package ir.amirab.downloader.utils
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
+import java.io.File
 import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -60,6 +61,22 @@ class FileNameUtilExtensionTest {
         } finally {
             folder.deleteRecursively()
         }
+    }
+
+    @Test
+    fun numberedRelativeFileWithoutParentDoesNotThrow() = runBlocking {
+        val basename = "hyperget-relative-${System.nanoTime()}"
+        val file = File("$basename.zip")
+        val names = FileNameUtil.numberedIfExists(file).take(2).toList().map { it.name }
+        assertEquals(listOf("$basename.zip", "${basename}_1.zip"), names)
+    }
+
+    @Test
+    fun numberedRelativeHiddenFileRetainsItsLeadingDot() = runBlocking {
+        val basename = ".hyperget-relative-${System.nanoTime()}"
+        val file = File(basename)
+        val names = FileNameUtil.numberedIfExists(file).take(2).toList().map { it.name }
+        assertEquals(listOf(basename, "${basename}_1"), names)
     }
 
 }
