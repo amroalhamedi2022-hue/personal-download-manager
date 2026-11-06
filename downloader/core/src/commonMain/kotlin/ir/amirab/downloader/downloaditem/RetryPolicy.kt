@@ -53,7 +53,11 @@ internal fun Throwable.retryAfterHeaderOrNull(): String? {
 }
 
 private fun parseRetryAfterMillis(value: String?, nowEpochMillis: Long): Long? {
-    val normalized = value?.trim()?.takeIf(String::isNotEmpty) ?: return null
+    // HTTP field OWS is SP / HTAB only. Reject embedded controls rather than
+    // silently accepting CR/LF or Unicode whitespace around a server deadline.
+    val raw = value ?: return null
+    if (raw.any { it == '\r' || it == '\n' || (it.code < 0x20 && it != '\t') || it.code == 0x7f }) return null
+    val normalized = raw.trim(' ', '\t').takeIf(String::isNotEmpty) ?: return null
 
     // A huge but syntactically valid delta-seconds must be clamped to our
     // existing safety cap, not mistaken for an invalid header and retried early.
