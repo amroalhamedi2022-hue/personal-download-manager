@@ -22,7 +22,7 @@ data class RangedParts(
     val list: List<RangedPart>
 ) : Parts {
     override fun clone(): Parts {
-        return copy()
+        return copy(list = list.map { it.copy() })
     }
 }
 
@@ -35,6 +35,6 @@ data class MediaSegments(
     val list: List<MediaSegment>
 ) : Parts {
     override fun clone(): Parts {
-        return copy()
+        return copy(list = list.map { it.copy() })
     }
 }
