@@ -1,8 +1,12 @@
 package ir.amirab.downloader.utils.hostlimits
 
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.async
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.withTimeout
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 
 class HostWildcardMatcherTest {
     @Test
@@ -15,14 +19,14 @@ class HostWildcardMatcherTest {
             )
         )
         val matching = registry.acquireForHost("aXXbYYc.example.test")
-        val matchingWaiter = kotlinx.coroutines.async(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
+        val matchingWaiter = async(start = CoroutineStart.UNDISPATCHED) {
             registry.acquireForHost("aXXbYYc.example.test")
         }
         try {
-            kotlin.test.assertFalse(matchingWaiter.isCompleted)
+            assertFalse(matchingWaiter.isCompleted)
         } finally {
             matching.close()
-            kotlinx.coroutines.withTimeout(3_000) { matchingWaiter.await() }.close()
+            withTimeout(3_000) { matchingWaiter.await() }.close()
         }
         val unmatched = registry.acquireForHost("xaXXbYYc.example.test")
         val another = registry.acquireForHost("xaXXbYYc.example.test")
