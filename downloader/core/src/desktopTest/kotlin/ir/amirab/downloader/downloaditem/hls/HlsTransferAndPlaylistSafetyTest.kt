@@ -46,7 +46,7 @@ class HlsTransferAndPlaylistSafetyTest {
         assertFalse(isHlsPlaylistContentType(null))
     }
     @Test fun playlistReaderPreservesUnicodeSegmentNames() {
-        val content = "#EXTM3U\\n#EXTINF:6,\\nمقطع-١.ts\\n"
+        val content = "#EXTM3U\n#EXTINF:6,\nمقطع-١.ts\n"
         assertEquals(
             content,
             readBoundedHlsPlaylist(ByteArrayInputStream(content.toByteArray(Charsets.UTF_8))),
