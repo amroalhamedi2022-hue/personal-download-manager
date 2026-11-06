@@ -79,8 +79,10 @@ class PartSplitSupport(
             val delta = part.to!! - safeZone
             val safeZoneToEnd = safeZone + divideDelta(delta)
 //            val oldPart = part.copy()
-            if (safeZoneToEnd + 1 > part.to!!) {
-                //new part will exceed current part boundaries
+            // Compare before incrementing: Long.MAX_VALUE + 1 would wrap
+            // and manufacture a negative start for a non-existent next part.
+            if (safeZoneToEnd >= part.to!!) {
+                // No representable byte remains for a separate range.
                 return null
             }
             val newPart = RangedPart(
