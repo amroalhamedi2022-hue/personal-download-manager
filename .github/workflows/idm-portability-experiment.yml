@@ -1,0 +1,26 @@
+name: IDM official Windows experiment
+on:
+  push:
+    branches:
+      - experiment/idm-windows-portability-20261116
+permissions:
+  contents: read
+jobs:
+  verify-install-and-export:
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify installer and build private encrypted ZIP
+        shell: pwsh
+        env:
+          IDM_PUBLIC_KEY_DER_B64: MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAhU1EJ4DskGEX+Uq9dY0vWGqoznZjhu2PeR4fBTTt6AZCNUwiYk1Gd5EKBLECogXqrTMMAMI+2gTF7EE4RYBVBAEpI8ka16EyLchSFjY9XhZxGeLjzOAp4hOcrg7KsMgqnaAfT11ytTkyPp5OduIwJiyXTbIuLHL6UZxyouxVqdbRwd0FtDTM3ZTcuS+/V7R8VeYVf/vJ6DCAtTc1GXEA6ajtNhD9Wuc62HXuUfmKztVVXbXOvZbR9C4UEEyvjmJ0pV7Od4lfD90SxQsokjjCHoTOP6wZybk6CdGHiszH/ljTbH9yHvgAabV7bMNLR+cdG+DuVK1tlUcQ7CCZNve6nuX77APKuQ2NycXTO6RUSr5o+nz1JPAVUpRGbRhKgB/cExw5CGdiDu51zUdsyGRbL0FI0RARNEiL5pRCORIDne61tio34pvoW9Qn6MViKssULrra0kH76/Rnr9PR28QHjQ7/3btAqVMzNETxEZ9lW8zp4TvM1JipoHtW26UsJlW/AgMBAAE=
+        run: ./tools/idm_portability_experiment.ps1
+      - name: Upload encrypted archive and test report only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: idm-experiment-encrypted
+          path: encrypted_result/
+          if-no-files-found: warn
+          retention-days: 1
