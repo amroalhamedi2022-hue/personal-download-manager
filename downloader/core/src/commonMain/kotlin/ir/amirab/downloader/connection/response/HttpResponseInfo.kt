@@ -34,7 +34,10 @@ data class HttpResponseInfo(
         val responseLength = contentLength ?: return@lazy null
         // partial length only valid when we have content-length header
         if (isPartial) {
-            contentRange?.fullSize ?: responseLength
+            // Content-Length on 206 is the size of this response fragment,
+            // never a fallback for the full resource length. A missing or
+            // unknown Content-Range total must remain unknown on resume.
+            contentRange?.fullSize
         } else responseLength
     }
     override val requiresAuth by lazy {

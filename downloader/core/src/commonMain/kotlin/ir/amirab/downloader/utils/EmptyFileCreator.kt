@@ -40,7 +40,7 @@ class EmptyFileCreator(
                 return@withContext
             }
             val canWeUseSparse = canWeUseSparse(file)
-            val remainingSpace = diskStat.getRemainingSpace(file.parentFile)
+            val remainingSpace = diskStat.getRemainingSpace(file.absoluteFile.parentFile)
             if (file.exists()) {
                 val currentLength = file.length()
                 val requiredLength = length - currentLength
@@ -112,7 +112,7 @@ class EmptyFileCreator(
 
     private suspend fun fillOutput(outputFile: File, length: Long, onProgressUpdate: (percent: Int) -> Unit) {
         val much = length - outputFile.length()
-        val remainingSpace = diskStat.getRemainingSpace(outputFile.parentFile)
+        val remainingSpace = diskStat.getRemainingSpace(outputFile.absoluteFile.parentFile)
         if (remainingSpace < much) {
             throw NoSpaceInStorageException(remainingSpace, much)
         }

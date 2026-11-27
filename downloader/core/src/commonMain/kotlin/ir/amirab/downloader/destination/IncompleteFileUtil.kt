@@ -20,7 +20,10 @@ object IncompleteFileUtil {
             // see https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file#maximum-path-length-limitation
             val trimmedFileName = if (Platform.isWindows()) {
                 // this + 1 is to account for last slash in the path
-                val parentPathLength = file.parentFile.path.length + 1
+                // Include the current working directory for relative input paths.
+                // File("report.bin").parentFile is null, but the on-disk
+                // staging path still needs to respect Windows length limits.
+                val parentPathLength = file.absoluteFile.parentFile.path.length + 1
                 file.name.take(
                     (SYSTEM_MAXIMUM_FULL_PATH_LENGTH - (parentPathLength + ext.length))
                         // maybe the remaining length is negative which means the file name is too long even after trim!
@@ -33,7 +36,7 @@ object IncompleteFileUtil {
                 file.name.take(SYSTEM_MAXIMUM_FILE_LENGTH - ext.length)
             }
 
-            return file.parentFile.resolve(trimmedFileName + ext)
+            return file.parentFile?.resolve(trimmedFileName + ext) ?: File(trimmedFileName + ext)
         }
         return file
     }
