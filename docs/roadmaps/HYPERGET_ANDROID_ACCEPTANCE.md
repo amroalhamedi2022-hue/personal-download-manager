@@ -19,3 +19,6 @@ CODED: full 64-bit notification identities (tag + ID, unique data URI per task);
 
 ## Specific next verification
 Run :android:app:testDebugUnitTest and :android:app:assembleDebug for internal validation only; no debug APK as user release. Test distinct notification actions (including IDs with identical hashCode) and cross-app spoofing on device. Check browser same-tab navigation, expiry, two tabs same URL, external first-run sharing, permission flows, and notification service across API versions. Confirm generated manifest and signing environment before release. Source-only changes are not acceptance.
+
+## Verified isolated evidence
+Production commit 2ca25068486b8554e96c47190b32d71d9a17426d; BrowserRequestCache.kt blob 0381438d9a6432b48980cc87c25720316351dcd3 matched local Git blob byte-for-byte. Standalone Kotlin/JVM harness: 6/6 PASS (tab isolation, renewed expiry, expiry boundary, bounded eviction, tab closure, exact URL/one-time retrieval). This is not Android Gradle/JUnit/device acceptance. PR #67 is draft. Dedicated Android CI runs a single initial branch-specific build and subsequent manual dispatches; internal debug build is not a user release and no APK or signing secret is uploaded. No Windows workflow changed.
