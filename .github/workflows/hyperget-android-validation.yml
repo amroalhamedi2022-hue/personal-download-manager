@@ -1,0 +1,60 @@
+name: HyperGet Android validation
+on:
+  workflow_dispatch:
+  push:
+    branches: ['feature/hyperget-android-20261128']
+    paths: ['.github/workflows/hyperget-android-validation.yml']
+permissions:
+  contents: read
+concurrency:
+  group: android-validation-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  android-validation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: jetbrains
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Install required Android platform
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK=$(sed -n 's/^androidCompileSdk = "\([0-9]*\)"/\1/p' gradle/libs.versions.toml)
+          test -n "$SDK"
+          sdkmanager "platforms;android-$SDK"
+      - name: Compile Android and run unit tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x gradlew
+          ./gradlew --no-daemon :android:app:testDebugUnitTest :android:app:assembleDebug
+      - name: Verify cache regression XML
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+          paths=list(Path('android/app/build/test-results/testDebugUnitTest').rglob('TEST-*BrowserRequestCacheTest.xml'))
+          assert len(paths)==1, paths
+          suite=ET.parse(paths[0]).getroot()
+          assert int(suite.attrib['tests'])>=6, suite.attrib
+          assert all(int(suite.attrib.get(k,0))==0 for k in ('failures','errors','skipped')),suite.attrib
+          print('BrowserRequestCacheTest:',suite.attrib)
+          PY
+          find android/app/build/outputs/apk/debug -name '*.apk' -type f -print -quit | grep -q '\.apk$'
+      - name: Preserve test evidence only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hyperget-android-test-evidence-${{ github.sha }}
+          path: |
+            android/app/build/test-results/testDebugUnitTest/
+            android/app/build/reports/tests/testDebugUnitTest/
+          if-no-files-found: warn

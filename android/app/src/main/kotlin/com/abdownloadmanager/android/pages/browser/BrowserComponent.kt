@@ -41,7 +41,7 @@ class BrowserComponent(
     componentContext,
 ), ContainsEffects<BrowserComponent.Effects> by supportEffects() {
     val downloadInterceptor = DownloadInterceptor(
-        scope, {
+        {
             val intent = when (it.size) {
                 0 -> null
                 1 -> AddSingleDownloadActivity.createIntent(
