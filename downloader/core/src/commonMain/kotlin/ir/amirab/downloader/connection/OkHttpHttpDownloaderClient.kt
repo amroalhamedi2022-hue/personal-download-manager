@@ -62,9 +62,6 @@ class OkHttpHttpDownloaderClient(
                 Request.Builder()
                     .url(downloadCredentials.link)
                     .apply {
-                        defaultHeadersInFirst().forEach { (k, v) ->
-                            header(k, v)
-                        }
                         // we don't to add something that we sure that it will be overridden later
                         if (downloadCredentials.userAgent == null) {
                             // only add default user agent if we don't specify it
@@ -81,9 +78,10 @@ class OkHttpHttpDownloaderClient(
                             ?.forEach { (k, v) ->
                                 header(k, v)
                             }
-                        defaultHeadersInLast().forEach { (k, v) ->
-                            header(k, v)
-                        }
+                        // Keep identity after caller headers to protect byte
+                        // ranges from transparent content decompression, while
+                        // avoiding two temporary maps per HTTP connection.
+                        header("accept-encoding", "identity")
                         val username = downloadCredentials.username
                         val password = downloadCredentials.password
                         if (username?.isNotBlank() == true && password?.isNotBlank() == true) {
