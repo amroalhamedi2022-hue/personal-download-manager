@@ -36,7 +36,7 @@ android {
     buildTypes {
         debug {
             applicationIdSuffix = ".debug"
-            resValue("string", "app_short_name", "AB DM - Debug")
+            resValue("string", "app_short_name", "HyperGet - Debug")
         }
     }
     buildFeatures {
@@ -53,6 +53,7 @@ dependencies {
     implementation(libs.decompose.jbCompose)
     implementation(libs.aboutLibraries.core)
     implementation(project(":shared:app"))
+    testImplementation("junit:junit:4.13.2")
     ksp(libs.arrow.opticKsp)
 }
 
@@ -133,8 +134,8 @@ tasks.register(CiUtils.getCreateBinaryFolderForCiTaskName()) {
 
 private val localProperties by lazy {
     val file = project.rootProject.projectDir.resolve("local.properties")
-    file.inputStream().use {
-        Properties().apply { load(it) }
+    Properties().apply {
+        if (file.isFile) file.inputStream().use { load(it) }
     }
 }
 

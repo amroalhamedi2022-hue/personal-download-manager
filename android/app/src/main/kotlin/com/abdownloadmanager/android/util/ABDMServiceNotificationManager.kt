@@ -9,6 +9,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.net.Uri
 import androidx.compose.runtime.*
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -84,7 +85,7 @@ class ABDMServiceNotificationManager(
             IntentFilter().apply {
                 this.addAction(AndroidConstants.Intents.NOTIFICATION_DELETED)
             },
-            ContextCompat.RECEIVER_EXPORTED,
+            ContextCompat.RECEIVER_NOT_EXPORTED,
         )
     }
 
@@ -152,7 +153,8 @@ class ABDMServiceNotificationManager(
                             delay(1.seconds)
                             runCatching {
                                 notificationManagerCompat.notify(
-                                    getNotificationIdForDownloadItem(event.downloadItem.id),
+                                    getNotificationTagForDownloadItem(event.downloadItem.id),
+                                    0,
                                     createFinishedDownloadItemNotification(event.downloadItem)
                                 )
                             }.onFailure {
@@ -170,12 +172,16 @@ class ABDMServiceNotificationManager(
         notificationUpdateJob = null
     }
 
-    private fun getNotificationIdForDownloadItem(downloadId: Long): Int {
-        return AndroidConstants.SERVICE_NOTIFICATION_ID + 1 + downloadId.hashCode()
+    private fun getNotificationTagForDownloadItem(downloadId: Long): String = "download:$downloadId"
+
+    // PendingIntent equality ignores extras. Use the full Long ID as intent data.
+    private fun Intent.forDownload(downloadId: Long): Intent = apply {
+        data = Uri.parse("hyperget-internal://download/$downloadId")
+        setPackage(context.packageName)
     }
 
     private fun dismissDownloadNotification(downloadId: Long) {
-        notificationManagerCompat.cancel(getNotificationIdForDownloadItem(downloadId))
+        notificationManagerCompat.cancel(getNotificationTagForDownloadItem(downloadId), 0)
     }
 
 
@@ -221,7 +227,7 @@ class ABDMServiceNotificationManager(
                 PendingIntent.getBroadcast(
                     context,
                     AndroidConstants.SERVICE_NOTIFICATION_ID,
-                    Intent(AndroidConstants.Intents.NOTIFICATION_DELETED),
+                    Intent(AndroidConstants.Intents.NOTIFICATION_DELETED).setPackage(context.packageName),
                     flagOfPendingIntent,
                 )
             )
@@ -231,7 +237,7 @@ class ABDMServiceNotificationManager(
                 0, exit, PendingIntent.getBroadcast(
                     context,
                     AndroidConstants.SERVICE_NOTIFICATION_ID,
-                    Intent(AndroidConstants.Intents.EXIT_ACTION),
+                    Intent(AndroidConstants.Intents.EXIT_ACTION).setPackage(context.packageName),
                     flagOfPendingIntent,
                 )
             )
@@ -239,7 +245,7 @@ class ABDMServiceNotificationManager(
                 0, stopAll, PendingIntent.getBroadcast(
                     context,
                     AndroidConstants.SERVICE_NOTIFICATION_ID,
-                    Intent(AndroidConstants.Intents.STOP_ALL_ACTION),
+                    Intent(AndroidConstants.Intents.STOP_ALL_ACTION).setPackage(context.packageName),
                     flagOfPendingIntent,
                 )
             )
@@ -269,7 +275,7 @@ class ABDMServiceNotificationManager(
             AndroidConstants.SERVICE_NOTIFICATION_ID,
             SingleDownloadPageActivity.createIntent(
                 context, downloadItemState.id, true
-            ),
+            ).forDownload(downloadItemState.id),
             flagOfPendingIntent
         )
         val status = downloadItemState.status
@@ -295,7 +301,7 @@ class ABDMServiceNotificationManager(
                         PendingIntent.getBroadcast(
                             context,
                             AndroidConstants.SERVICE_NOTIFICATION_ID,
-                            Intent(AndroidConstants.Intents.STOP_ACTION).apply {
+                            Intent(AndroidConstants.Intents.STOP_ACTION).forDownload(downloadItemState.id).apply {
                                 putExtra(
                                     AndroidConstants.Intents.TOGGLE_DOWNLOAD_ACTION_DOWNLOAD_ID,
                                     downloadItemState.id
@@ -311,7 +317,7 @@ class ABDMServiceNotificationManager(
                         PendingIntent.getBroadcast(
                             context,
                             AndroidConstants.SERVICE_NOTIFICATION_ID,
-                            Intent(AndroidConstants.Intents.RESUME_ACTION).apply {
+                            Intent(AndroidConstants.Intents.RESUME_ACTION).forDownload(downloadItemState.id).apply {
                                 putExtra(
                                     AndroidConstants.Intents.TOGGLE_DOWNLOAD_ACTION_DOWNLOAD_ID,
                                     downloadItemState.id
@@ -339,7 +345,7 @@ class ABDMServiceNotificationManager(
             AndroidConstants.SERVICE_NOTIFICATION_ID,
             SingleDownloadPageActivity.createIntent(
                 context, downloadItemState.id, true
-            ),
+            ).forDownload(downloadItemState.id),
             flagOfPendingIntent
         )
         return NotificationCompat
@@ -435,7 +441,8 @@ class ABDMServiceNotificationManager(
             @SuppressLint("MissingPermission")
             runCatching {
                 notificationManagerCompat.notify(
-                    getNotificationIdForDownloadItem(iDownloadItemState.id),
+                    getNotificationTagForDownloadItem(iDownloadItemState.id),
+                    0,
                     createDownloadItemNotification(iDownloadItemState)
                 )
             }.onFailure {

@@ -41,7 +41,7 @@ class WebViewRegistry(
                 tab = tab,
                 navigator = WebViewNavigator(scope),
                 webView = null,
-                client = ABDMWebViewClient(browserComponent.downloadInterceptor, scope),
+                client = ABDMWebViewClient(browserComponent.downloadInterceptor, scope, tab.tabId),
                 chromeClient = ABDMChromeClient(browserComponent, ::getWebViewHolder),
                 webViewFactory = this,
             )
@@ -50,11 +50,13 @@ class WebViewRegistry(
 
     fun removeViewHolder(id: String) {
         viewHolders.remove(id)?.release()
+        browserComponent.downloadInterceptor.clearTab(id)
     }
 
     fun disposeAll() {
-        viewHolders.forEach { (_, holder) ->
+        viewHolders.forEach { (id, holder) ->
             holder.release()
+            browserComponent.downloadInterceptor.clearTab(id)
         }
         viewHolders.clear()
     }
@@ -91,15 +93,14 @@ class WebViewRegistry(
             }
             webView.setDownloadListener { url, userAgent, _, _, _ ->
                 scope.launch(Dispatchers.Main) {
-                    if (!webView.canGoBack() && webView.originalUrl == null) {
-                        browserComponent.closeTab(tab.tabId)
-                    }
+                    val closeAfterDownload = !webView.canGoBack() && webView.originalUrl == null
                     browserComponent.downloadInterceptor.onDownloadStart(
                         url,
                         userAgent,
                         webView.originalUrl ?: webView.openedBy,
                         tab,
                     )
+                    if (closeAfterDownload) browserComponent.closeTab(tab.tabId)
                 }
             }
             webView.tabId = tab.tabId
@@ -150,14 +151,18 @@ interface WebViewFactory {
 class ABDMWebViewClient(
     private val requestInterceptor: DownloadInterceptor,
     private val scope: CoroutineScope,
+    private val tabId: String,
 ) : AccompanistWebViewClient() {
     override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
-        if (request != null) {
+        if (request != null && request.method.equals("GET", ignoreCase = true)) {
+            val requestUrl = request.url.toString()
+            val headers = request.requestHeaders.toMap()
             scope.launch(Dispatchers.Main) {
                 requestInterceptor.interceptRequest(
+                    tabId,
                     ABDMWebRequest(
-                        url = request.url.toString(),
-                        headers = request.requestHeaders,
+                        url = requestUrl,
+                        headers = headers,
                         page = view?.originalUrl ?: view?.url
                     )
                 )

@@ -37,13 +37,13 @@
         </activity>
         <activity
                 android:name=".pages.singledownload.SingleDownloadPageActivity"
-                android:exported="true"
+                android:exported="false"
                 android:theme="@style/Theme.ABDownloadManager.Transparent"
                 android:windowSoftInputMode="adjustResize"
         />
         <activity
                 android:name=".pages.downloaderror.DownloadErrorActivity"
-                android:exported="true"
+                android:exported="false"
                 android:theme="@style/Theme.ABDownloadManager.Transparent"
                 android:windowSoftInputMode="adjustResize"
         />
@@ -104,7 +104,7 @@
 
         <activity
                 android:name=".pages.crashreport.CrashReportActivity"
-                android:exported="true"
+                android:exported="false"
                 android:theme="@style/Theme.ABDownloadManager.Transparent"
                 android:windowSoftInputMode="adjustResize"
         />

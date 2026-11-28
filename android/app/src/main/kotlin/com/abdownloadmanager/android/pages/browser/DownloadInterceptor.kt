@@ -5,10 +5,6 @@ import com.abdownloadmanager.android.ui.widget.WebViewState
 import com.abdownloadmanager.shared.pages.adddownload.AddDownloadCredentialsInUiProps
 import ir.amirab.downloader.downloaditem.http.HttpDownloadCredentials
 import ir.amirab.util.HttpUrlUtils
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import kotlin.time.Duration.Companion.milliseconds
 
 typealias ABDMWebRequestId = String
 
@@ -21,14 +17,13 @@ data class ABDMWebRequest(
 }
 
 interface RequestInterceptor {
-    fun interceptRequest(request: ABDMWebRequest)
+    fun interceptRequest(tabId: String, request: ABDMWebRequest)
 }
 
 class DownloadInterceptor(
-    private val scope: CoroutineScope,
     private val onNewDownload: (newDownloads: List<AddDownloadCredentialsInUiProps>) -> Unit,
 ) : RequestInterceptor {
-    private val requests = mutableMapOf<String, ABDMWebRequest>()
+    private val requests = BrowserRequestCache<ABDMWebRequest>()
 
     fun onDownloadStart(
         url: String?,
@@ -47,6 +42,7 @@ class DownloadInterceptor(
             userAgent = userAgent,
             page = page,
             webViewState = tab.tabState,
+            tabId = tab.tabId,
         )
         onNewDownload(
             listOf(
@@ -62,27 +58,20 @@ class DownloadInterceptor(
         )
     }
 
-    override fun interceptRequest(
-        request: ABDMWebRequest,
-    ) {
-        addToHeaders(request)
+    override fun interceptRequest(tabId: String, request: ABDMWebRequest) {
+        requests.put(tabId, request.url, request.copy(headers = request.headers.toMap()))
     }
 
-    private fun addToHeaders(request: ABDMWebRequest) {
-        requests[request.id] = request
-        scope.launch {
-            delay(REMOVE_REQUESTS_DELAY.milliseconds)
-            requests.remove(request.id)
-        }
-    }
+    fun clearTab(tabId: String) = requests.clearTab(tabId)
 
     private fun getWebRequestOrDefault(
         url: String,
         userAgent: String?,
         page: String?,
         webViewState: WebViewState,
+        tabId: String,
     ): ABDMWebRequest {
-        var request = requests[url]
+        var request = requests.take(tabId, url)
         if (request == null) {
             request = ABDMWebRequest(
                 url = url,
@@ -101,7 +90,7 @@ class DownloadInterceptor(
             return request
         }
         val userAgentKey = "User-Agent"
-        if (request.headers.containsKey(userAgentKey)) {
+        if (request.headers.keys.any { it.equals(userAgentKey, ignoreCase = true) }) {
             return request
         }
         return request.copy(
@@ -116,23 +105,16 @@ class DownloadInterceptor(
         val cookieFromCookieManager =
             CookieManager.getInstance().getCookie(url)?.takeIf { it.isNotBlank() } ?: return request
         val cookieKey = "Cookie"
-        val currentCookie = request.headers[cookieKey]?.takeIf { it.isNotBlank() }
-        return request.copy(
-            headers = request.headers.plus(
-                cookieKey to if (currentCookie != null) {
-                    "$currentCookie; $cookieFromCookieManager"
-                } else {
-                    cookieFromCookieManager
-                }
-            )
-        )
+        // Prefer the actual intercepted Cookie header; never append duplicate cookies.
+        if (request.headers.any { (key, value) -> key.equals(cookieKey, true) && value.isNotBlank() }) {
+            return request
+        }
+        return request.copy(headers = request.headers.filterKeys { !it.equals(cookieKey, true) } +
+            (cookieKey to cookieFromCookieManager))
     }
 
     private fun getPageUrl(state: WebViewState): String? {
         return state.lastLoadedUrl
     }
 
-    companion object {
-        private const val REMOVE_REQUESTS_DELAY = 20_000L
-    }
 }

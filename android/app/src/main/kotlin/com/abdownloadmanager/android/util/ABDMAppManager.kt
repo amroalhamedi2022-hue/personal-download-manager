@@ -211,17 +211,6 @@ class ABDMAppManager(
                             }
                     }
 
-                    AndroidConstants.Intents.TOGGLE_ACTION -> {
-                        intent
-                            .getLongExtra(AndroidConstants.Intents.TOGGLE_DOWNLOAD_ACTION_DOWNLOAD_ID, -1)
-                            .takeIf { it > -1 }
-                            ?.let {
-                                scope.launch {
-                                    TODO("Toggle action not implemented yet")
-                                }
-                            }
-                    }
-
                     AndroidConstants.Intents.STOP_ALL_ACTION -> {
                         scope.launch {
                             downloadSystem.stopAnything()
@@ -244,19 +233,23 @@ class ABDMAppManager(
             context,
             receiver,
             IntentFilter().apply {
-                addAction(AndroidConstants.Intents.TOGGLE_ACTION)
-                addAction(AndroidConstants.Intents.RESUME_ACTION)
-                addAction(AndroidConstants.Intents.STOP_ACTION)
                 addAction(AndroidConstants.Intents.STOP_ALL_ACTION)
                 addAction(AndroidConstants.Intents.EXIT_ACTION)
             },
-            ContextCompat.RECEIVER_EXPORTED,
+            ContextCompat.RECEIVER_NOT_EXPORTED,
         )
-        return {
-            for (receiver in listOf(receiver)) {
-                context.unregisterReceiver(receiver)
-            }
-        }
+        ContextCompat.registerReceiver(
+            context,
+            receiver,
+            IntentFilter().apply {
+                addAction(AndroidConstants.Intents.RESUME_ACTION)
+                addAction(AndroidConstants.Intents.STOP_ACTION)
+                addDataScheme("hyperget-internal")
+                addDataAuthority("download", null)
+            },
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
+        return { context.unregisterReceiver(receiver) }
     }
 
     suspend fun startOurService() {
