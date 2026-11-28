@@ -161,7 +161,7 @@ try {
                 $evidence = "InstallPath=$registeredInstall"
             } else {
                 $runTarget = Normalize-RegistryValuePath ([string]$properties.DownloadManager)
-                $expectedExe = Normalize-RegistryValuePath (Join-Path $installDir 'DownloadManager.exe')
+                $expectedExe = Normalize-RegistryValuePath (Join-Path $installDir 'HyperGet.exe')
                 $nonMetadata = @($properties.PSObject.Properties | Where-Object { $_.Name -notmatch '^PS' })
                 if (-not [string]::IsNullOrWhiteSpace($runTarget)) {
                     $owned = $runTarget -eq $expectedExe
@@ -366,7 +366,7 @@ try {
         foreach ($shortcut in $shortcuts) {
             if (Test-Path -LiteralPath $shortcut) { throw "Uninstall left product shortcut: $shortcut" }
         }
-        foreach ($name in @('DownloadManager.exe','DownloadManagerCli.exe','uninstall.exe')) {
+        foreach ($name in @('HyperGet.exe','DownloadManager.exe','DownloadManagerCli.exe','uninstall.exe')) {
             if (Test-Path -LiteralPath (Join-Path $installDir $name)) { throw "Uninstall left $name in the install directory." }
         }
         if (Test-Path -LiteralPath $installDir) { throw 'Uninstall left the controlled install directory behind.' }
@@ -528,10 +528,10 @@ try {
         }
         if ($install.ExitCode -ne 0) { throw "$Variant installer exit code $($install.ExitCode)." }
         $script:ActiveInstallDir = $installDir
-        # The comparison intentionally uses the legacy base-branch app and the branded PR candidate.
-        # Discover the expected GUI by variant; a stale/duplicate opposite-name GUI is a packaging defect.
-        $expectedGuiName = if ($Variant -eq 'candidate') { 'HyperGet.exe' } else { 'DownloadManager.exe' }
-        $unexpectedGuiName = if ($Variant -eq 'candidate') { 'DownloadManager.exe' } else { 'HyperGet.exe' }
+        # Both pinned snapshots already use HyperGet branding (baseline 72aa73ca).
+        # Keep strict rejection of duplicate or stale legacy GUI binaries.
+        $expectedGuiName = 'HyperGet.exe'
+        $unexpectedGuiName = 'DownloadManager.exe'
         $gui = @(Get-ChildItem -LiteralPath $installDir -File -Recurse -Filter $expectedGuiName)
         $unexpectedGui = @(Get-ChildItem -LiteralPath $installDir -File -Recurse -Filter $unexpectedGuiName)
         $cli = @(Get-ChildItem -LiteralPath $installDir -File -Recurse -Filter 'DownloadManagerCli.exe')
