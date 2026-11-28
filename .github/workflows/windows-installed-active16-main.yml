@@ -1,0 +1,117 @@
+name: HyperGet installed Windows 1-4-16 active transfer evidence
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [test/installed-windows-active16-benchmark-20261106]
+    paths:
+      - ".github/workflows/windows-installed-active16-main.yml"
+      - "scripts/Run-WindowsActiveBenchmarkMatrix.ps1"
+      - "scripts/Measure-WindowsDownloadManager.ps1"
+      - "scripts/Wait-WindowsLoopbackHttpPort.ps1"
+      - "scripts/LocalHttpRangeFixture.py"
+      - "scripts/Summarize-WindowsActiveBenchmark.ps1"
+      - "scripts/test_local_http_range_fixture.py"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-active16-evidence-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  installed-active-evidence:
+    name: Build, install, and measure 63 verified Windows transfers
+    runs-on: windows-2022
+    timeout-minutes: 120
+    env:
+      SKIP_ANDROID_BUILD: "true"
+    steps:
+      - name: Check out exact app and harness source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up JetBrains Runtime 25
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: jetbrains
+          java-package: jdk
+          java-version: "25"
+          cache: gradle
+
+      - name: Verify source, fixtures, and benchmark script syntax
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ((git rev-parse HEAD).Trim() -ne $env:GITHUB_SHA) { throw 'Benchmark checkout does not match the GitHub run SHA' }
+          foreach ($file in @('Run-WindowsActiveBenchmarkMatrix.ps1', 'Measure-WindowsDownloadManager.ps1', 'Wait-WindowsLoopbackHttpPort.ps1', 'Summarize-WindowsActiveBenchmark.ps1')) {
+            $path = Join-Path 'scripts' $file
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path).Path, [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors.Count -gt 0) { $errors | ForEach-Object { Write-Host $_.ToString() }; throw "PowerShell parse failed: $path" }
+          }
+          python -m unittest scripts/test_local_http_range_fixture.py -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Build exactly one Windows release candidate
+        shell: bash
+        run: >-
+          ./gradlew --no-daemon --stacktrace
+          --dependency-verification strict
+          createReleaseFolderForCi
+
+      - name: Install Windows GUI and CLI in clean isolated location
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installers = @(Get-ChildItem -LiteralPath 'build/ci-release/binaries' -File -Recurse -Filter '*.exe')
+          if ($installers.Count -ne 1) { throw "Expected one NSIS installer; got $($installers.Count)" }
+          $installDir = Join-Path $env:RUNNER_TEMP 'hyperget-active16-installed'
+          if (Test-Path -LiteralPath $installDir) { throw 'Install directory must be clean' }
+          $installer = Start-Process -FilePath $installers[0].FullName -ArgumentList @('/S', "/D=$installDir") -PassThru
+          if (-not $installer.WaitForExit(180000)) {
+            Stop-Process -Id $installer.Id -Force -ErrorAction SilentlyContinue
+            throw 'Silent installation timed out'
+          }
+          if ($installer.ExitCode -ne 0) { throw "Installer exit code $($installer.ExitCode)" }
+          $executables = @(Get-ChildItem -LiteralPath $installDir -Recurse -File -Filter '*.exe')
+          $gui = @($executables | Where-Object { $_.BaseName -eq 'HyperGet' })
+          $cli = @($executables | Where-Object { $_.BaseName -eq 'DownloadManagerCli' })
+          if ($gui.Count -ne 1 -or $cli.Count -ne 1) { throw "Unexpected installer executable inventory: GUI=$($gui.Count) CLI=$($cli.Count)" }
+          "HG_ACTIVE_GUI=$($gui[0].FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "HG_ACTIVE_CLI=$($cli[0].FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "HG_ACTIVE_INSTALLER_SHA256=$((Get-FileHash -LiteralPath $installers[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant())" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Measure three rounds each of 1, 4 and 16 live tasks
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & ./scripts/Run-WindowsActiveBenchmarkMatrix.ps1 -GuiExecutable $env:HG_ACTIVE_GUI -CliExecutable $env:HG_ACTIVE_CLI -SourceSha $env:GITHUB_SHA -HarnessSha $env:GITHUB_SHA -OutputDirectory 'build/ci-release/active16-evidence' -Rounds 3 -SampleSeconds 8 -FileSizeMiB 32 -ServerChunkDelayMs 500 -CompletionTimeoutSeconds 300
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Assert all 63 SHA256 and concurrent task proofs, summarize CPU and memory
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & ./scripts/Summarize-WindowsActiveBenchmark.ps1 -Directory 'build/ci-release/active16-evidence' -SourceSha $env:GITHUB_SHA -HarnessSha $env:GITHUB_SHA -Rounds 3
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $report = 'build/ci-release/active16-evidence/benchmark-report.md'
+          if (-not (Test-Path -LiteralPath $report -PathType Leaf)) { throw 'Benchmark evidence report is missing' }
+          Get-Content -LiteralPath $report
+          Get-Content -LiteralPath $report | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+
+      - name: Upload SHA-bound Windows benchmark evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: hyperget-windows-installed-active16-evidence
+          path: |
+            build/ci-release/active16-evidence/measurements/*.csv
+            build/ci-release/active16-evidence/verified-transfers.csv
+            build/ci-release/active16-evidence/round-summary.csv
+            build/ci-release/active16-evidence/benchmark-report.md
+            build/ci-release/active16-evidence/failure-diagnostics.txt
+            build/ci-release/active16-evidence/server-stderr.txt
+          if-no-files-found: warn
+          retention-days: 14
